@@ -431,16 +431,14 @@ export class LimitGate {
                 const epoch = this.#deps.epoch(model.provider);
                 const attempt = await this.#attempt(underlying, model, context, options, out);
 
-                this.#leave(waiter);
-
+                // However the attempt ended, the gate its request held as canary is settled below or by `#leave`:
+                // none stays probing with a canary that cannot finish it.
                 if (attempt.type === "done") {
-                    if (canary !== undefined) {
-                        if (attempt.content) {
-                            this.#open(canary, true);
-                        } else {
-                            this.#free(canary, waiter);
-                        }
+                    if (canary !== undefined && attempt.content) {
+                        this.#open(canary, true);
                     }
+
+                    this.#leave(waiter);
 
                     return;
                 }
@@ -455,10 +453,7 @@ export class LimitGate {
                 });
 
                 if (verdict.type === "other" || isAborted(signal)) {
-                    if (canary !== undefined) {
-                        this.#free(canary, waiter);
-                    }
-
+                    this.#leave(waiter);
                     this.#flush(attempt, out);
 
                     return;
@@ -466,14 +461,14 @@ export class LimitGate {
 
                 // Signed in or out meanwhile: the limit is the old account's. Try again with the new one.
                 if (this.#deps.epoch(model.provider) !== epoch) {
-                    if (canary !== undefined) {
-                        this.#free(canary, waiter);
-                    }
+                    this.#leave(waiter);
 
                     continue;
                 }
 
-                const gated = this.#limited(model, verdict, canary);
+                const gated = this.#limited(model, verdict, waiter, canary);
+
+                this.#leave(waiter);
 
                 if (gated.state === "refusing") {
                     // Gave up: this request fails with what the gate says.
@@ -640,7 +635,8 @@ export class LimitGate {
     #limited(
         model: Model<Api>,
         verdict: Extract<ReturnType<typeof classify>, { type: "limit" }>,
-        canary: Gate | undefined,
+        waiter: Waiter,
+        held: Gate | undefined,
     ): Gate {
         const tuning = this.#tuning;
         const now = this.#now();
@@ -648,10 +644,16 @@ export class LimitGate {
             verdict.scope === "account"
                 ? this.#accountKey(model.provider)
                 : this.#modelKey(model.provider, model.id);
-        let gate = this.#gates.get(key);
+        // The gate this request held as canary: its failure settles that gate, whichever scope it now reads.
+        const owned = held?.canary === waiter ? held : undefined;
 
-        // The canary's own failure moves the gate it came out of on, even when the scope now reads differently.
-        gate ??= canary !== undefined && canary.key === key ? canary : undefined;
+        // The scope moved (an overload, then a plan's usage limit): the old gate closes now, and its waiters go on
+        // to the new one. It must not stay probing with a canary that is no longer there.
+        if (owned !== undefined && owned.key !== key) {
+            this.#open(owned, true);
+        }
+
+        let gate = this.#gates.get(key);
 
         if (gate === undefined) {
             gate = {
@@ -771,6 +773,11 @@ export class LimitGate {
     #free(gate: Gate, waiter: Waiter): void {
         if (gate.canary === waiter) {
             gate.canary = undefined;
+
+            // A gate that is gone has let its waiters go: waking them now would end their spacing.
+            if (this.#gates.get(gate.key) !== gate) {
+                return;
+            }
 
             if (gate.state === "probing") {
                 gate.state = "waiting";
@@ -898,9 +905,8 @@ export class LimitGate {
         delete waiter.at;
         gate.waiters.delete(waiter);
 
-        if (gate.canary === waiter && isAborted(waiter.signal)) {
-            this.#free(gate, waiter);
-        }
+        // Whatever the reason it leaves, a gate does not stay probing for a canary that is gone.
+        this.#free(gate, waiter);
 
         this.#deps.changed();
     }

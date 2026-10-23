@@ -638,3 +638,63 @@ test("a backoff delay is cut to the deadline, so no request goes out after it", 
     // Requests at 0 and 40 ms; the next would be at 80, past 60: the delay is cut to 60, and that request is the last.
     assert.ok(last <= 60 + 15, `the last request was at ${last} ms`);
 });
+
+test("a canary whose failure moves the scope leaves no gate probing, and the next request goes", async () => {
+    const { g } = gate();
+    // An overload (the model's gate), then a usage limit with a reset now (the account's), then an answer.
+    const rt = runtime(
+        [{ fail: "529 overloaded_error" }, { fail: "429 usage limit. Try again in 0s" }],
+        { ok: "yes" },
+    );
+
+    g.install(rt.models);
+
+    const first = await drain(rt.models.streamSimple(model("m", "p"), { messages: [] } as never));
+
+    assert.equal(first.result.stopReason, "stop");
+    assert.equal(rt.calls.length, 3);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepEqual(
+        g.gates().map((each) => [each.key, each.probing]),
+        [],
+        "no gate is left, least of all one probing with no canary",
+    );
+
+    // The next request is not held by a gate that nobody can finish.
+    const started = Date.now();
+    const next = await drain(rt.models.streamSimple(model("m", "p"), { messages: [] } as never));
+
+    assert.equal(next.result.stopReason, "stop");
+    assert.ok(Date.now() - started < 300);
+    assert.equal(rt.calls.length, 4);
+});
+
+test("a gate never stays probing after its canary's request ends, however it ends", async () => {
+    const { g } = gate({ tuning: { ...TUNING, backoffMs: [30] } });
+    const rt = runtime([{ fail: "529 overloaded_error" }], { hang: true });
+    const stop = new AbortController();
+
+    g.install(rt.models);
+
+    // One request closes the gate; it is stopped while its canary is out.
+    const run = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+
+    await until(() => g.gates()[0]?.probing === true);
+    stop.abort();
+    await run;
+    assert.equal(g.gates()[0]?.probing, false);
+});
+
+async function until(check: () => boolean, ms = 2000): Promise<void> {
+    const started = Date.now();
+
+    while (!check()) {
+        if (Date.now() - started > ms) {
+            throw new Error("timed out");
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+}
