@@ -378,6 +378,11 @@ export class LimitGate {
             }
 
             if (now >= deadline) {
+                // Nobody waits at it (a stopped wait, or a restart): it stays, and `#closed` lets one canary go.
+                if (gate.waiters.size === 0) {
+                    continue;
+                }
+
                 this.#giveUp(
                     gate,
                     `${gate.reason} Not waiting: it did not clear in ${span(now - gate.since)}.`,
