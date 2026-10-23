@@ -201,3 +201,4 @@ Checks for every commit: `npm run check`, `npm run lint`, `npm test`, `npm run f
 - **Retry now** acts on the session's own wait and on its subagents' waits. A viewer cannot use it.
 - **`limitWaitHours`** is 0, 1, 6, 12, or 24 (default 6), set in the Providers sheet.
 - **The wait is not a Pi Durable `retry` phase.** It is a nap inside the request. If Pi Durable gets a retry decision hook, the gate can use it for the wait with no change that people can see.
+- **Statuses that wait.** When the response's status is known, it decides first: only 408, 429, and 5xx (not 501 or 505) can wait. A 409 waits only when a header gives a reset time (`retry-after`, `retry-after-ms`, or a known reset header). A 403 waits only in a usage limit's own shape, with a reset time. Any other 4xx never waits, whatever its text says.

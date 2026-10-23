@@ -96,8 +96,9 @@ const USAGE_SHAPE =
     /GoUsageLimitError|FreeUsageLimitError|Monthly usage limit reached|usage_limit_reached|subscription_sharing_usage_limit_exceeded/i;
 
 /**
- * Whether a response's status can be a failure that clears with time: a timeout, a conflict, a rate limit, or a server
- * that failed (not one that does not implement the request). Any other status is a refusal that waiting does not change.
+ * Whether a response's status can be a failure that clears with time: a timeout, a rate limit, a server that failed
+ * (not one that does not implement the request), or a conflict (only with a reset time in a header: see `classify`).
+ * Any other status is a refusal that waiting does not change.
  */
 function statusWaits(status: number): boolean {
     return (
@@ -352,9 +353,19 @@ export function classify(input: LimitInput): Classified {
 
     const headers = facts?.headers ?? {};
     const fromHeader = fromHeaders(headers, now);
+
+    // A conflict is a refusal of this request, not of load: it waits only when the response itself says when to try
+    // again (a header). Pi Durable's own short retries still cover a conflict that clears at once.
+    if (status === 409 && fromHeader.resetAt === undefined) {
+        return { type: "other", why: "HTTP 409" };
+    }
+
     const usage = USAGE.test(message) || fromHeader.account;
     const transient =
-        (status !== undefined && TRANSIENT_STATUS.has(status)) || TRANSIENT.test(message);
+        (status !== undefined && TRANSIENT_STATUS.has(status)) ||
+        // A conflict that says when to try again (checked above) is a wait.
+        status === 409 ||
+        TRANSIENT.test(message);
 
     if (!usage && !transient) {
         return {

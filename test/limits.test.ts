@@ -324,7 +324,7 @@ test("a known HTTP status decides first: a permanent 4xx never waits, whatever i
     }
 
     // The statuses that clear with time still wait.
-    for (const status of [408, 409, 429, 500, 502, 503, 504, 529]) {
+    for (const status of [408, 429, 500, 502, 503, 504, 529]) {
         assert.equal(
             classify({ provider: "p", message: `${status} overloaded`, facts: facts(status), now })
                 .type,
@@ -362,4 +362,44 @@ test("a usage limit sent as a 403 with a reset time waits; a plain 403 does not"
             .type,
         "other",
     );
+});
+
+test("a plain 409 does not wait; a 409 that gives a reset time does", () => {
+    assert.equal(
+        classify({
+            provider: "p",
+            message: "409 Conflict: resource already exists",
+            facts: facts(409),
+            now,
+        }).type,
+        "other",
+    );
+    // Text that says "try again in" is not a reset the response gave: only a header counts for a 409.
+    assert.equal(
+        classify({
+            provider: "p",
+            message: "409 conflict. Try again in 5 s",
+            facts: facts(409),
+            now,
+        }).type,
+        "other",
+    );
+
+    for (const headers of [
+        { "retry-after": "5" },
+        { "retry-after-ms": "5000" },
+        { "x-ratelimit-reset-requests": "5s" },
+    ] as Record<string, string>[]) {
+        const result = limit(
+            classify({
+                provider: "p",
+                message: "409 Conflict: the request is locked",
+                facts: facts(409, headers),
+                now,
+            }),
+        );
+
+        assert.equal(result.resetAt, now + 5000, JSON.stringify(headers));
+        assert.equal(result.source, "header");
+    }
 });
