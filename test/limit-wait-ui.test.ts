@@ -9,6 +9,7 @@ import {
     scriptedModel,
     until,
 } from "./helpers.ts";
+import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
@@ -17,6 +18,7 @@ import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai/providers/
 import { Browsers } from "../src/server/browser.ts";
 import { findBrowser } from "../src/server/browser/discovery.ts";
 import type { BrowserPage } from "../src/server/browser/page.ts";
+import { VIEWPORTS } from "../src/server/browser/viewport.ts";
 import { createHandler } from "../src/server/http.ts";
 
 const real = {
@@ -86,6 +88,24 @@ test(
             async () => /Waiting for .*Retry now/s.test(await line()),
             "the live line",
             20_000,
+        );
+
+        // On a phone the line wraps: Retry now stays in the column, and the conversation does not scroll sideways.
+        await page.setViewport(VIEWPORTS.mobile);
+
+        const fits = JSON.parse(
+            await page.evaluate(`
+                const scroller = document.querySelector(".pane > .scroller");
+                const retry = document.querySelector(".live-retry").getBoundingClientRect();
+
+                return JSON.stringify(retry.right <= innerWidth && scroller.scrollWidth <= scroller.clientWidth);
+            `),
+        );
+
+        assert.equal(
+            fits,
+            true,
+            "Retry now is on screen and the conversation does not scroll sideways",
         );
 
         state.limited = false;

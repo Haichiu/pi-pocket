@@ -471,6 +471,7 @@ function SessionRow({
                 ${
                     session.busy &&
                     !session.waiting &&
+                    session.limited === undefined &&
                     !fork &&
                     html`<span class="session-working" title="Working"></span>`
                 }

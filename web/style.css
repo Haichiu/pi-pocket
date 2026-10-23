@@ -2776,6 +2776,22 @@ pre.diff .del {
     background: var(--accent-soft);
 }
 
+/* Narrow: the line wraps, so the wait's facts and Retry now stay inside the column. */
+@media (max-width: 600px) {
+    .live-line {
+        flex-wrap: wrap;
+        row-gap: 2px;
+    }
+
+    .live-line .live-limit {
+        flex: 0 1 auto;
+    }
+
+    .live-why {
+        flex: 1 1 100%;
+    }
+}
+
 .live-esc {
     flex: none;
     margin-left: auto;
@@ -5623,6 +5639,20 @@ button.session-chip {
         20px 0 40px -20px var(--sh);
     overflow: hidden;
     animation: drawer-in var(--t-in) var(--ease-out);
+}
+
+/* The drawer's rail keeps its buttons clear of the notch, as the home list's does; its line stays at their edge. */
+.drawer > .rail {
+    width: calc(56px + var(--inset-l));
+    padding-left: var(--inset-l);
+}
+
+/* Wide enough for `.overlay`'s 16px margin, the drawer starts that far in: the notch is that much nearer. */
+@media (min-width: 700px) {
+    .drawer > .rail {
+        width: calc(56px + max(0px, var(--inset-l) - 16px));
+        padding-left: max(0px, calc(var(--inset-l) - 16px));
+    }
 }
 
 @keyframes drawer-in {
