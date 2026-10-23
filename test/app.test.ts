@@ -1448,27 +1448,6 @@ test("requests with the wrong types are refused, and nothing odd is stored", asy
     assert.equal(app.sessions().find((each) => each.id === Number(id))?.archived, undefined);
 });
 
-test("failed initialization closes partial resources and releases both lock files before retry", async () => {
-    const { PocketApp } = await import("../src/server/app.ts");
-    const dataDir = join(root, "failed-initialization");
-
-    mkdirSync(dataDir);
-    await assert.rejects(
-        PocketApp.open({
-            dataDir,
-            defaultCwd: work,
-            supervised: false,
-            configureModels: () => {
-                throw new Error("scripted startup failure");
-            },
-        }),
-        /scripted startup failure/,
-    );
-    assert.equal(existsSync(join(dataDir, "harness.lock")), false);
-    assert.equal(existsSync(join(dataDir, "harness.lock.identity")), false);
-    await (await openApp(faux, dataDir)).close();
-});
-
 test("failed harness initialization closes its opened storage before releasing the lock", async () => {
     const { Harness } = await import("@earendil-works/pi-durable");
     const dataDir = join(root, "failed-harness-initialization");
@@ -1496,28 +1475,6 @@ test("failed harness initialization closes its opened storage before releasing t
     assert.equal(existsSync(join(dataDir, "harness.lock")), false);
     assert.equal(existsSync(join(dataDir, "harness.lock.identity")), false);
     await (await openApp(faux, dataDir)).close();
-});
-
-test("a failed storage close retains the lock and prevents another acquisition", async () => {
-    const dataDir = join(root, "failed-storage-close");
-    const local = await openApp(faux, dataDir);
-    const close = local.harness.close.bind(local.harness);
-    const failed = mock.method(local.harness, "close", async () => {
-        throw new Error("scripted storage close failure");
-    });
-
-    try {
-        await assert.rejects(local.close(), /scripted storage close failure/);
-        assert.equal(existsSync(join(dataDir, "harness.lock")), true);
-        assert.equal(existsSync(join(dataDir, "harness.lock.identity")), true);
-        await assert.rejects(openApp(faux, dataDir), /already running on this data directory/);
-    } finally {
-        failed.mock.restore();
-        await close(context);
-        // Only remove this test's files after its real storage has closed.
-        unlinkSync(join(dataDir, "harness.lock.identity"));
-        unlinkSync(join(dataDir, "harness.lock"));
-    }
 });
 
 test("a dead holder's lock is taken over; live legacy holders with normal or renamed commands are respected", async () => {

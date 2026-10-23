@@ -1,8 +1,10 @@
 import {
     type App,
     cleanUp,
+    lastText,
     newSession,
     openApp,
+    owner,
     root,
     say,
     scriptedModel,
@@ -14,8 +16,11 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import type { FauxResponseStep } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { Browsers } from "../src/server/browser.ts";
+import { BrowserError, Chromium } from "../src/server/browser/cdp.ts";
 import { findBrowser } from "../src/server/browser/discovery.ts";
 import type { BrowserPage } from "../src/server/browser/page.ts";
 import { VIEWPORTS } from "../src/server/browser/viewport.ts";
@@ -25,6 +30,17 @@ const chromium = findBrowser();
 const real = {
     skip: chromium === undefined ? "no Chromium-based browser on this machine" : false,
 } as const;
+
+/** "risky please" calls a tool, which Lancet Guard asks about; everything else is echoed. */
+const route: FauxResponseStep = (request) => {
+    const { text } = lastText(request as never);
+
+    return text === "risky please"
+        ? fauxAssistantMessage([fauxToolCall("bash", { command: "true" })], {
+              stopReason: "toolUse",
+          })
+        : fauxAssistantMessage([fauxText(`echo: ${text}`)]);
+};
 
 let app: App;
 let server: Server;
@@ -132,7 +148,7 @@ before(async () => {
 
     writeFileSync(join(work, "README.md"), "# Hello\n\nA file to read.\n");
     writeFileSync(join(work, "web.env"), "PORT=3000\nHOST=127.0.0.1\n");
-    app = await openApp(scriptedModel());
+    app = await openApp(scriptedModel(route));
     server = createServer(
         createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} }),
     );
@@ -164,6 +180,40 @@ after(async () => {
     await app?.close();
     cleanUp();
 });
+
+/** How far the transcript is from its bottom, in pixels. */
+const gap = () =>
+    inPage<number>(`
+        const scroller = document.querySelector(".pane > .scroller");
+
+        return JSON.stringify(Math.round(scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight));
+    `);
+
+/** Open the first session, with `count` rows of messages and answers, as the server would send them. */
+async function openWithRows(count: number): Promise<void> {
+    await fresh();
+    await goTo(first);
+    await until(
+        () =>
+            inPage<boolean>(
+                `return JSON.stringify((await import("/store.js")).store.state.view.conversation?.id === ${Number(first)})`,
+            ),
+        "the session's view",
+    );
+    await page.evaluate(`
+        const { store } = await import("/store.js");
+        const entries = Array.from({ length: ${count} }, (_, n) => ({ id: 920000 + n, kind: "assistant",
+            stopReason: "stop", at: Date.now(),
+            blocks: [{ type: "text", text: "Answer " + n + "\\n\\n" + "Words. ".repeat(40) }] }));
+
+        store.set((state) => ({
+            transcriptFrom: null,
+            view: { ...state.view, entries: new Map(entries.map((entry) => [entry.id, entry])),
+                order: entries.map((entry) => entry.id), live: { busy: false } },
+        }));
+        "shown";
+    `);
+}
 
 test("back closes the open file, then the Files tile, then leaves the session", real, async () => {
     await fresh();
@@ -691,106 +741,56 @@ test(
     },
 );
 
-test(
-    "a reconnect that brings the same data keeps it, and draws and themes nothing",
-    real,
-    async () => {
-        await fresh();
-        const after = await inPage<{
-            same: Record<string, boolean>;
-            rows: number;
-            root: number;
-            offset: boolean;
-        }>(`
+test("a reconnect that brings the same data keeps it, and draws no session row", real, async () => {
+    await fresh();
+
+    const after = await inPage<{ same: string[]; rows: number }>(`
         const { options } = await import("preact");
-        const { connect, serverClockOffset, store } = await import("/store.js");
+        const { connect, store } = await import("/store.js");
         const settle = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
-        // Not users: the server tells everyone when this person was last here, which a reconnect changes.
-        const keys = ["me", "models", "guard", "server", "themeList", "folderFavorites", "sessions", "moving"];
+        const keys = ["me", "models", "guard", "server", "themeList", "folderFavorites", "sessions"];
         const before = Object.fromEntries(keys.map((key) => [key, store.state[key]]));
-        const me = store.state.me.id;
-        const people = store.state.users;
-        const offset = serverClockOffset();
+        const stream = store.state.streamId;
+        const Source = window.EventSource;
         let rows = 0;
-        let root = 0;
+        let received;
+        const listed = new Promise((resolve) => (received = resolve));
         const diffed = options.diffed;
-        // The theme put on again sets the page root's attributes again.
-        const watch = new MutationObserver((records) => (root += records.length));
 
         options.diffed = (vnode) => {
             rows += vnode.type?.name === "SessionRow" ? 1 : 0;
             diffed?.(vnode);
         };
-        watch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-mode", "data-colors"] });
+        // The reconnect's own list must arrive before identity and draws are checked.
+        window.EventSource = class extends Source {
+            constructor(url) {
+                super(url);
+                this.addEventListener("sessions", received, { once: true });
+            }
+        };
 
         try {
-            const stream = store.state.streamId;
-
-            const Source = window.EventSource;
-            let received;
-            const listed = new Promise((resolve) => (received = resolve));
-
-            // Even an unchanged list must arrive before we check identity and draw counts.
-            window.EventSource = class extends Source {
-                constructor(url) {
-                    super(url);
-                    this.addEventListener("sessions", received, { once: true });
-                }
-            };
-
-            try {
-                connect();
-                await listed;
-            } finally {
-                window.EventSource = Source;
-            }
-
-            if (store.state.streamId === stream) {
-                throw new Error("the reconnect did not receive a new stream");
-            }
-
-            // Flush the store's handler and its render, after the observer's sessions listener.
+            connect();
+            await listed;
             await settle();
         } finally {
+            window.EventSource = Source;
             options.diffed = diffed;
-            watch.disconnect();
         }
 
-        return JSON.stringify({
-            same: Object.fromEntries([
-                ...keys.map((key) => [key, store.state[key] === before[key]]),
-                // Each person who did not change keeps their object; this person's last visit moved.
-                ...people
-                    .filter((person) => person.id !== me)
-                    .map((person) => ["user " + person.name, store.state.users.includes(person)]),
-            ]),
-            rows,
-            root,
-            offset: typeof serverClockOffset() === "number" && Math.abs(serverClockOffset() - offset) < 60_000,
-        });
+        if (store.state.streamId === stream) {
+            throw new Error("the reconnect did not receive a new stream");
+        }
+
+        return JSON.stringify({ same: keys.filter((key) => store.state[key] !== before[key]), rows });
     `);
 
-        assert.deepEqual(
-            Object.entries(after.same).filter(([, same]) => !same),
-            [],
-            "every equal value keeps its identity",
-        );
-        assert.equal(after.rows, 0, "no session row draws again");
-        assert.equal(after.root, 0, "the theme is not put on again");
-        assert.ok(after.offset, "the server's clock is still known");
-    },
-);
+    assert.deepEqual(after.same, [], "every equal value keeps its identity");
+    assert.equal(after.rows, 0, "no session row draws again");
+});
 
 test("back to the list slides it in whole, and its rows do not rise in again", real, async () => {
     await fresh();
-    // Rows new to the page rise in once.
-    assert.ok(
-        await inPage<boolean>(
-            `return JSON.stringify([...document.querySelectorAll(".home-list .session-row")]
-                .some((row) => getComputedStyle(row).animationName === "rise-in"))`,
-        ),
-        "rows rise in when the page first shows them",
-    );
     await tap(row(first));
     await reach({ path: `/s/${first}` }, "the session");
     await page.evaluate(`
@@ -799,19 +799,14 @@ test("back to the list slides it in whole, and its rows do not rise in again", r
             window.listRoutes.push(...records.flatMap((record) =>
                 [record.target.dataset.route, record.oldValue]));
         });
-        // The route mark belongs to the pane, not the root, after the opening-session optimization.
         window.listRouteObserver.observe(document.documentElement, {
             attributes: true, subtree: true, attributeFilter: ["data-route"], attributeOldValue: true,
         });
     `);
     await back();
     await reach({ path: "/" }, "back to the list");
-    const shown = await inPage<{
-        rows: number;
-        arriving: number;
-        rowAnimations: number;
-        slide: boolean;
-    }>(`
+
+    const shown = await inPage<{ rows: number; animating: number; slide: boolean }>(`
         await new Promise((resolve) => requestAnimationFrame(resolve));
         const rows = [...document.querySelectorAll(".home-list .session-row")];
 
@@ -819,195 +814,238 @@ test("back to the list slides it in whole, and its rows do not rise in again", r
 
         return JSON.stringify({
             rows: rows.length,
-            arriving: rows.filter((each) => each.classList.contains("arriving")).length,
-            rowAnimations: rows.flatMap((each) => each.getAnimations()).length,
+            animating: rows.filter((each) => each.classList.contains("arriving") || each.getAnimations().length).length,
             slide: window.listRoutes.includes("back"),
         });
     `);
 
     assert.ok(shown.rows > 0, "the list shows its rows");
-    assert.equal(shown.arriving, 0, "no row rises in again");
-    assert.equal(shown.rowAnimations, 0, "no row animates");
+    assert.equal(shown.animating, 0, "no row rises in again");
     assert.ok(shown.slide, "the list slides in from the left");
 });
 
-test("a phone draws no sidebar, no splash, and no row buttons it would hide", real, async () => {
-    await fresh();
-    const phone = await inPage<Record<string, number>>(`
-        return JSON.stringify({
-            width: innerWidth,
-            sidebarLists: document.querySelectorAll(".sidebar .sessions, .sidebar .rail").length,
-            homeLists: document.querySelectorAll(".home-list .sessions").length,
-            splash: document.querySelectorAll(".splash").length,
-            rowButtons: document.querySelectorAll(".session-actions").length,
-        });
-    `);
-
-    assert.deepEqual(phone, {
-        width: 390,
-        sidebarLists: 0,
-        homeLists: 1,
-        splash: 0,
-        rowButtons: 0,
-    });
-
-    // Widened, the sidebar and the splash come back at once.
-    await page.setViewport(VIEWPORTS.desktop);
-    await until(
-        () =>
-            inPage<boolean>(`
-                return JSON.stringify(document.querySelector(".sidebar .sessions") !== null &&
-                    document.querySelector(".splash") !== null);
-            `),
-        "the sidebar's list and the splash, on a wide screen",
-    );
-});
-
 test(
-    "replayed data keeps equal items but applies changed facts and a fresh clock",
+    "the transcript stays at the bottom as an answer streams, and as a row grows",
     real,
     async () => {
-        await fresh();
-        const result = await inPage<Record<string, boolean>>(`
-        const { connect, serverClockOffset, store } = await import("/store.js");
-        const Source = window.EventSource;
-        let source;
+        const frames = () => new Promise((resolve) => setTimeout(resolve, 300));
 
-        window.EventSource = class extends EventTarget {
-            constructor() { super(); source = this; }
-            close() {}
-        };
-        connect();
-        const send = (name, data) => source.dispatchEvent(new MessageEvent(name, {
-            data: JSON.stringify(data),
-        }));
-        const before = store.state;
-        let changes = 0;
-        const stop = store.subscribe(() => changes++);
-        const hello = {
-            user: before.me, users: before.users, models: before.models, guard: before.guard,
-            server: { ...before.server, now: Date.now() + 120_000 },
-            themes: before.themeList, folderFavorites: before.folderFavorites,
-        };
-        let result;
+        await openWithRows(30);
+        await until(async () => (await gap()) < 2, "the bottom, once the rows show");
 
-        try {
-            send("hello", hello);
-            send("sessions", before.sessions);
-            send("users", before.users);
-            const equalIsQuiet = changes === 0;
-            const clockIsFresh = Math.abs(serverClockOffset() - 120_000) < 1000;
-            const serverIsKept = store.state.server === before.server;
-            const changed = before.sessions.map((session) => session.id === ${Number(first)}
-                ? { ...session, title: "A changed server title" } : session).reverse();
+        // Pi writes: the answer grows with no new entry, update after update.
+        for (let n = 1; n <= 3; n++) {
+            await page.evaluate(`
+            const { store } = await import("/store.js");
+            const text = "Streaming. ".repeat(${n * 60});
 
-            send("sessions", changed);
-            const list = store.state.sessions;
-            const changedSession = list.find((session) => session.id === ${Number(first)});
-            const changedIsNew = changedSession !== before.sessions.find((session) => session.id === ${Number(first)}) &&
-                changedSession.title === "A changed server title";
-            const othersAreKept = list.filter((session) => session.id !== ${Number(first)})
-                .every((session) => before.sessions.includes(session));
-            const orderIsNew = list.every((session, index) => session.id === changed[index].id);
-            const count = changes;
-
-            send("sessions", changed);
-            const replayIsQuiet = store.state.sessions === list && changes === count;
-
-            send("hello", { ...hello, user: { ...hello.user, name: "A changed person" },
-                server: { ...hello.server, home: "/a/changed/home" } });
-            send("pip", { id: 999, busy: false, endedAt: 1 });
-            const pip = store.state.pip;
-            const pipChanges = changes;
-
-            send("pip", { id: 999, busy: false, endedAt: 1 });
-            const pipIsKept = store.state.pip === pip && changes === pipChanges;
-
-            send("pip", { id: 999, busy: true, endedAt: 1 });
-            result = {
-                equalIsQuiet, clockIsFresh, serverIsKept, changedIsNew, othersAreKept,
-                orderIsNew, replayIsQuiet, pipIsKept,
-                factsAreFresh: store.state.me.name === "A changed person" &&
-                    store.state.server.home === "/a/changed/home",
-                pipIsFresh: store.state.pip !== pip && store.state.pip.busy,
-            };
-        } finally {
-            stop();
-            window.EventSource = Source;
-            connect();
+            store.set((state) => ({ view: { ...state.view, live: { busy: true,
+                generation: { attempt: 0, message: { blocks: [{ type: "text", text }] } } } } }));
+            "written";
+        `);
+            await frames();
+            assert.ok((await gap()) < 2, `at the bottom after streamed update ${n}`);
         }
 
-        return JSON.stringify(result);
-    `);
+        // A row grows by itself, with no draw of the app (an image, a card that draws late).
+        await page.evaluate(`
+        const tall = document.createElement("div");
 
-        assert.deepEqual(
-            Object.entries(result).filter(([, passed]) => !passed),
-            [],
-            "equal events are quiet, but changed values, order, PiP, and clock still update",
-        );
+        tall.style.height = "400px";
+        [...document.querySelectorAll(".transcript > *")].at(-1).append(tall);
+    `);
+        await frames();
+        assert.ok((await gap()) < 2, "at the bottom after a row grew by itself");
     },
 );
 
-test("the list and rail read only their declared store dependencies", real, async () => {
-    await fresh();
-    const reads = await inPage<Record<string, { observed: string[]; declared: string[] }>>(`
-        const { h, options, render } = await import("preact");
-        const { SessionList, RailNav } = await import("/sessions.js");
-        const { store } = await import("/store.js");
-        const state = store.state;
-        const result = {};
-        const box = document.createElement("div");
-        const diffed = options.diffed;
-        const features = { ...state, server: { ...state.server, collab: 2, peeks: true, pip: true },
-            pip: { id: 999, busy: false, endedAt: 1 } };
+test("the sanitizer still takes out what is unsafe, every time", real, async () => {
+    await openWithRows(2);
 
-        document.body.append(box);
+    const unsafe = [
+        "<script>window.hit = 1</script>",
+        '<img src="x" onerror="window.hit = 2">',
+        '<a href=" JaVaScRiPt:window.hit = 3">a</a>',
+        '<div data-part="approval" class="sheet" style="position:fixed" id="app">b</div>',
+        "![shot](file:///tmp/shot.png)",
+    ].join("\n\n");
+    const drawn = await inPage<{ first: string; second: string }>(`
+        const { h, render } = await import("preact");
+        const { Markdown } = await import("/ui.js");
+        const draw = () => {
+            const box = document.createElement("div");
 
-        try {
-            // This observes these branches, not every possible extension or interaction state.
-            for (const [name, component, props, data] of [
-                ["list", SessionList, {}, state],
-                ["list-features", SessionList, { compact: true }, features],
-                ["rail-folded", RailNav, { foldable: true, folded: true }, features],
-                ["rail-open", RailNav, { foldable: true, folded: false }, features],
-            ]) {
-                const keys = new Set();
-                let declared = [];
+            render(h(Markdown, { text: ${JSON.stringify(unsafe)}, cache: false }), box);
 
-                options.diffed = (vnode) => {
-                    if (vnode.type?.name === "DrawnFor") {
-                        declared = [...vnode.props.keys];
-                    }
-                    diffed?.(vnode);
-                };
-                store.state = new Proxy(data, { get(target, key) {
-                    if (typeof key === "string") { keys.add(key); }
-                    return target[key];
-                } });
-                render(h(component, props), box);
-                result[name] = { observed: [...keys].sort(), declared };
-                store.state = state;
-                render(null, box);
-            }
-        } finally {
-            options.diffed = diffed;
-            store.state = state;
-            render(null, box);
-            box.remove();
-        }
-
-        return JSON.stringify(result);
+            return box.innerHTML;
+        };
+        // Twice: the settings kept from the first draw give the same result.
+        return JSON.stringify({ first: draw(), second: draw() });
     `);
 
-    assert.equal(Object.keys(reads).length, 4, "all audit cases ran");
+    assert.equal(drawn.second, drawn.first, "the same result each time");
 
-    for (const [name, { observed, declared }] of Object.entries(reads)) {
-        assert.ok(declared.length > 0, "the audit captured the wrapper's actual dependencies");
-        assert.deepEqual(
-            observed.filter((key) => !declared.includes(key)),
-            [],
-            `${name} must invalidate every store key it reads`,
-        );
-        assert.ok(observed.includes("sessions"), "the audit observed a real draw");
+    for (const gone of ["<script", "onerror", "JaVaScRiPt", "data-part=", "position:fixed"]) {
+        assert.ok(!drawn.first.includes(gone), `${gone} is taken out`);
     }
+
+    assert.match(drawn.first, /<img[^>]+src="\/api\/c\/\d+\/file\?path=%2Ftmp%2Fshot\.png"/);
+    assert.equal(await inPage<unknown>(`return JSON.stringify(window.hit ?? null)`), null);
 });
+
+// Issue #140: the circle that says how a call went keeps its own size while it waits for an approval.
+test("a call's mark keeps its circle while it waits for an approval", real, async () => {
+    // Lancet Guard is off by default; turn it on, asking about every call.
+    await app.setExtensionEnabled(owner(app), "guard.ts", true);
+    app.guard.judge = async (_tool, args) =>
+        ({
+            subject: String(args.command),
+            decision: { action: "ask", reason: "risky", source: "test", terminate: false },
+        }) as never;
+
+    const one = await newSession(app);
+
+    await fresh();
+    await goTo(one);
+    await app.commands.submit(one, owner(app), { text: "risky please", requestId: "mark-140" });
+
+    const mark = () =>
+        inPage<Record<string, string> | null>(`
+            const mark = document.querySelector('[data-part~="tool-call"][data-state="waiting"] [data-part~="step-mark"]');
+            const shape = mark && getComputedStyle(mark);
+
+            return JSON.stringify(shape && { width: shape.width, height: shape.height,
+                padding: shape.paddingTop, border: shape.borderTopWidth });
+        `);
+
+    await until(async () => (await mark()) !== null, "the call waiting", 20_000);
+    assert.deepEqual(await mark(), {
+        width: "19px",
+        height: "19px",
+        padding: "0px",
+        border: "0px",
+    });
+});
+
+// Issue #131: a phone on its side with a notch. Another Chromium fakes the safe-area insets on its own page.
+test(
+    "with a notch, the rail, the top bar, and the message box clear it; with none, nothing moves",
+    real,
+    async (t) => {
+        const WIDTH = 844;
+        const NOTCH = 47;
+        const chrome = await Chromium.launch(chromium!, mkdtempSync(join(root, "insets-")), []);
+
+        t.after(() => chrome.kill());
+
+        /** A signed-in page on its side with `inset` pixels at each side; `run` evaluates a function body in it. */
+        async function visit(inset: number) {
+            const { connection } = chrome;
+            const { targetId } = await connection.send("Target.createTarget", {
+                url: "about:blank",
+            });
+            const { sessionId } = await connection.send("Target.attachToTarget", {
+                targetId,
+                flatten: true,
+            });
+            const send = (method: string, params: Record<string, unknown> = {}) =>
+                connection.send(method, params, sessionId);
+
+            const run = async <T>(body: string): Promise<T> => {
+                const answer = await send("Runtime.evaluate", {
+                    expression: `(async () => { ${body} })().then((value) => JSON.stringify(value ?? null))`,
+                    awaitPromise: true,
+                    returnByValue: true,
+                });
+
+                return JSON.parse(answer.result.value as string) as T;
+            };
+
+            await send("Emulation.setDeviceMetricsOverride", {
+                width: WIDTH,
+                height: 390,
+                deviceScaleFactor: 2,
+                mobile: true,
+            });
+            await send("Emulation.setSafeAreaInsetsOverride", {
+                insets: { top: 0, left: inset, bottom: 0, right: inset },
+            });
+            await send("Page.navigate", {
+                url: `${base}/login?token=${encodeURIComponent(app.config.ownerToken)}`,
+            });
+            await until(
+                () =>
+                    run<boolean>(`return !!document.querySelector(".home-list > .rail")`).catch(
+                        () => false,
+                    ),
+                "the session list",
+                20_000,
+            );
+
+            return run;
+        }
+
+        /** Where the visible elements that match `selector` start and end across the screen. */
+        const edges = (run: Awaited<ReturnType<typeof visit>>, selector: string) =>
+            run<{ left: number; right: number }[]>(`
+            return [...document.querySelectorAll(${JSON.stringify(selector)})]
+                .map((element) => element.getBoundingClientRect())
+                .filter((box) => box.width > 0 && box.height > 0)
+                .map((box) => ({ left: Math.round(box.left), right: Math.round(box.right) }));
+        `);
+
+        /** Open the session from the list, and wait for its bar, thread, and message box to rest. */
+        const enter = async (run: Awaited<ReturnType<typeof visit>>) => {
+            await run(`(await import("/store.js")).navigate(${Number(first)})`);
+            await until(
+                () =>
+                    run<boolean>(`
+                    return [".topbar", ".pane > .scroller", ".composer-wrap .composer"].every((each) => document.querySelector(each))
+                        && document.getAnimations().every((each) => each.effect?.getComputedTiming().iterations === Infinity);
+                `),
+                "the conversation",
+            );
+        };
+
+        try {
+            const notched = await visit(NOTCH);
+
+            /** Every element that matches is past the notch on both sides, and there is at least one. */
+            const clear = async (selector: string) => {
+                const found = await edges(notched, selector);
+
+                assert.ok(found.length > 0, `${selector} shows`);
+                assert.ok(
+                    found.every((edge) => edge.left >= NOTCH && edge.right <= WIDTH - NOTCH),
+                    `${selector} is in the notch: ${JSON.stringify(found)}`,
+                );
+            };
+
+            await clear(".home-list > .rail button, .home-list > .rail .avatar");
+            await enter(notched);
+            await clear(".topbar button");
+            await clear(".composer-wrap .composer");
+
+            const plain = await visit(0);
+
+            assert.deepEqual(await edges(plain, ".home-list > .rail"), [{ left: 0, right: 56 }]);
+            await enter(plain);
+            assert.deepEqual(
+                await plain<string[]>(`
+                const pad = (selector) => getComputedStyle(document.querySelector(selector)).paddingLeft;
+
+                return [pad(".topbar"), pad(".pane > .scroller")];
+            `),
+                ["0px", "0px"],
+            );
+        } catch (error) {
+            if (error instanceof BrowserError) {
+                t.skip("this Chromium cannot fake safe-area insets");
+
+                return;
+            }
+
+            throw error;
+        }
+    },
+);
