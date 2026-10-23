@@ -77,10 +77,6 @@ The owner sign-in link is in the log (`docker compose logs pi-pocket | grep '/lo
 
 The full tour is in [docs/features.md](docs/features.md).
 
-## Standalone extensions
-
-[Ponytail](https://github.com/piromagnus/pi-pocket-ponytail) adds minimal-code modes, a session-menu selector, and verification reminders without Ponytail-specific core code. Its [installation and update guide](https://github.com/piromagnus/pi-pocket-ponytail#updates) explains how to keep the installed drop-in in sync with its `main` branch.
-
 ## Remote access
 
 Choose a mode in the launcher, or pass `--access`:

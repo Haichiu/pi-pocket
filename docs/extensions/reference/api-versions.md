@@ -78,3 +78,4 @@ Each member in the reference has its own Since line. These parts came together:
 | `host.fetchPublic` (experimental)                                                                                                    | 0.20.0 |
 | Keys in the message boxes: `pocket.composerKey` (experimental)                                                                       | 0.20.0 |
 | The session's messages: `pocket.onConversation`, `messages`, `reveal` (experimental)                                                 | 0.20.0 |
+| `group` in `pocket.menu` (experimental)                                                                                              | 0.21.0 |

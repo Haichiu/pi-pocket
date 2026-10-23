@@ -752,8 +752,9 @@ export type MenuSpec = Action & {
     hint?: string;
     /**
      * The menu group. Defaults to "app"; "session" shows only in a session.
-     * Experimental: older apps ignore this field and use the App group.
+     * Older apps ignore this field and use the App group.
      * @since 0.21.0
+     * @experimental
      */
     group?: "app" | "session";
 };
