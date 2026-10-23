@@ -310,3 +310,56 @@ test("response facts keep limit headers and nothing else", () => {
         "x-codex-primary-used-percent",
     ]);
 });
+
+test("a known HTTP status decides first: a permanent 4xx never waits, whatever its text says", () => {
+    for (const status of [400, 401, 404, 405, 413, 415, 422]) {
+        const result = classify({
+            provider: "p",
+            message: `${status} invalid_request_error: unsupported parameter 'rate_limit' (too many requests, overloaded)`,
+            facts: facts(status),
+            now,
+        });
+
+        assert.equal(result.type, "other", `HTTP ${status}`);
+    }
+
+    // The statuses that clear with time still wait.
+    for (const status of [408, 409, 429, 500, 502, 503, 504, 529]) {
+        assert.equal(
+            classify({ provider: "p", message: `${status} overloaded`, facts: facts(status), now })
+                .type,
+            "limit",
+            `HTTP ${status}`,
+        );
+    }
+
+    // A status that is not a failure of load, even with a 5xx's shape: not implemented does not clear.
+    assert.equal(
+        classify({ provider: "p", message: "501 not implemented", facts: facts(501), now }).type,
+        "other",
+    );
+});
+
+test("a usage limit sent as a 403 with a reset time waits; a plain 403 does not", () => {
+    const usage = limit(
+        classify({
+            provider: "openai-codex",
+            message: "403 usage_limit_reached. Try again in ~30 min.",
+            facts: facts(403),
+            now,
+        }),
+    );
+
+    assert.equal(usage.scope, "account");
+    assert.equal(usage.resetAt, now + 30 * 60_000);
+    assert.equal(
+        classify({ provider: "p", message: "403 Forbidden", facts: facts(403), now }).type,
+        "other",
+    );
+    // With no reset time, a usage limit has nothing to wait until.
+    assert.equal(
+        classify({ provider: "p", message: "403 usage_limit_reached", facts: facts(403), now })
+            .type,
+        "other",
+    );
+});

@@ -88,6 +88,26 @@ const TRANSIENT =
 
 const TRANSIENT_STATUS = new Set([429, 500, 502, 503, 504, 520, 524, 529]);
 
+/**
+ * The usage limits that providers send as a 429, or as a 403 with a reset time: only these shapes (not any "usage
+ * limit" in a text) let a 403 wait.
+ */
+const USAGE_SHAPE =
+    /GoUsageLimitError|FreeUsageLimitError|Monthly usage limit reached|usage_limit_reached|subscription_sharing_usage_limit_exceeded/i;
+
+/**
+ * Whether a response's status can be a failure that clears with time: a timeout, a conflict, a rate limit, or a server
+ * that failed (not one that does not implement the request). Any other status is a refusal that waiting does not change.
+ */
+function statusWaits(status: number): boolean {
+    return (
+        status === 408 ||
+        status === 409 ||
+        status === 429 ||
+        (status >= 500 && status < 600 && status !== 501 && status !== 505)
+    );
+}
+
 const UNITS: Record<string, number> = {
     ms: 1,
     millisecond: 1,
@@ -314,7 +334,15 @@ export function classify(input: LimitInput): Classified {
         return { type: "other", why: "context overflow" };
     }
 
-    if (SIGN_IN.test(message) || status === 401 || status === 403) {
+    // A known status decides first, whatever the text says: a 400 that names a "rate_limit" parameter is a bad request.
+    // The one other status that may wait is a 403 in a usage limit's own shape (the reset time is checked below).
+    const usageShape = USAGE_SHAPE.test(message);
+
+    if (status !== undefined && !statusWaits(status) && !(status === 403 && usageShape)) {
+        return { type: "other", why: `HTTP ${status}` };
+    }
+
+    if ((SIGN_IN.test(message) && !(status === 403 && usageShape)) || status === 401) {
         return { type: "other", why: "sign-in or permission" };
     }
 
