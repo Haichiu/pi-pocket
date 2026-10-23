@@ -9,6 +9,10 @@ Pi Durable owns the lasting state of conversations: conversations, entries, task
 - At startup, `#recover` reads each conversation's run, agent, chat, subagents, and who Pi works for in it.
 - After that, every commit goes through `#committed`, which keeps the memory up to date.
 
+Pi Durable 1.4.0 migrates SQLite storage to schema version 2 when it opens. Older Durable versions cannot open that database. Back up the complete data folder with the server stopped before upgrading to Pi Pocket 0.21.0.
+
+Scheduled messages, PR watches, repository watches, and PiP reports held while PiP is off use durable `sleepUntil()` checkpoints. A sleeping task holds no invocation and resumes at its saved phase when the harness clock reaches its deadline. The task graph includes these tasks with status `sleeping`.
+
 Some state lives in this process alone, and a restart forgets it. For example:
 
 - who is connected, typing, or away;
@@ -38,6 +42,8 @@ Some state lives in this process alone, and a restart forgets it. For example:
 - **The app's lifecycle:** `open` and `close`.
 
 The harness, models, and settings exist only once `#open` has set them up, after the parts are made. So a part made with the app must not read them in its constructor; it reads them when it is called.
+
+The native extension loader registers one scoped resolve hook for drop-in import graphs. Its compatibility namespace re-exports Pi Durable and supplies a delta-only checkpoint predicate for older document definitions. Built-in modules and core imports keep the real package; existing exports retain their identities.
 
 Extensions never see `PocketApp`. They get `PocketHost` (`host.ts`), whose functions call into the app lazily, and `web`, through which they add routes and a browser module to the app. `ExtensionWebs` (`extension-web.ts`) keeps what each module's version added, which the loader commits once the module installed and removes with it, running its cleanups. The HTTP layer parses a request, checks it, calls a part, and writes the answer; it holds no state of its own beyond invites and the event streams' pollers.
 

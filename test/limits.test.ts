@@ -89,6 +89,20 @@ test("a person's problem, a refused request, or a plan limit with no time never 
     assert.equal(ask("409 Conflict", 409, { "retry-after": "5" }).type, "limit");
 });
 
+test("a ChatGPT Business admin cap never waits, even with a retry time", () => {
+    const message = "subscription_sharing_workplace_individual_usage_limit_exceeded";
+
+    for (const status of [undefined, 429]) {
+        assert.equal(ask(message, status, { "retry-after": "60" }).type, "other");
+        assert.equal(
+            ask(`${message}: ChatGPT workspace's usage limit`, status, {
+                "retry-after": "60",
+            }).type,
+            "other",
+        );
+    }
+});
+
 test("only limit headers are kept from a response, never a key or a token", () => {
     const kept = responseFacts(
         429,

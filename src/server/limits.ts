@@ -383,6 +383,11 @@ export function classify(input: LimitInput): Classified {
         return { type: "other", why: "billing" };
     }
 
+    // ChatGPT Business caps require the workspace admin, even if a 429 also carries a retry time.
+    if (/subscription_sharing_workplace_individual_usage_limit_exceeded/i.test(message)) {
+        return { type: "other", why: "workspace usage limit" };
+    }
+
     // With no status (Google, Vertex, Bedrock), a refusal in the text is one, unless the text also names a rate limit
     // or an overload: "contents exceed 500 tokens" holds a number that looks like a 5xx.
     if (status === undefined && REFUSED.test(message) && !LOAD.test(message)) {
