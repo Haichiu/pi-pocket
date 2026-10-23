@@ -379,7 +379,7 @@ menu(spec: MenuSpec): Added<MenuSpec>;
 
 Since 0.14.0 · Stable
 
-Adds a row in the App group of the menu. See [`MenuSpec`](#menuspec).
+Adds a row in the menu's App group by default. `group: "session"` puts it in the Session group, shown only when a session is open. The `group` field is experimental since 0.21.0. See [`MenuSpec`](#menuspec).
 
 ### `launcher`
 
@@ -710,16 +710,18 @@ type MenuSpec = Action & {
     id: string;
     label: string;
     hint?: string;
+    group?: "app" | "session";
 };
 ```
 
 Since 0.14.0 · Stable
 
-A row in the App group of the menu.
+A row in the menu. It goes in the App group by default.
 
 - `id`: the row's id in the module.
 - `label`: the row's words.
 - `hint`: short words on the right of the row.
+- `group` (since 0.21.0 · experimental): `"app"` (the default) shows the row in the App group, including without a session. `"session"` shows it in the Session group only when a session is open. Older apps ignore the field and use the App group.
 
 ### `LauncherSpec`
 
