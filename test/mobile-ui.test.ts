@@ -796,11 +796,12 @@ test("back to the list slides it in whole, and its rows do not rise in again", r
     await page.evaluate(`
         window.listRoutes = [];
         window.listRouteObserver = new MutationObserver((records) => {
-            window.listRoutes.push(document.documentElement.dataset.route,
-                ...records.map((record) => record.oldValue));
+            window.listRoutes.push(...records.flatMap((record) =>
+                [record.target.dataset.route, record.oldValue]));
         });
+        // The route mark belongs to the pane, not the root, after the opening-session optimization.
         window.listRouteObserver.observe(document.documentElement, {
-            attributes: true, attributeFilter: ["data-route"], attributeOldValue: true,
+            attributes: true, subtree: true, attributeFilter: ["data-route"], attributeOldValue: true,
         });
     `);
     await back();
