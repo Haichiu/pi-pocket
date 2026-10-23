@@ -228,8 +228,8 @@ test("a reset too far away refuses at once, and the refusal survives a restart",
     second.close();
 });
 
-test("a restart after the deadline refuses and does not wait again", async () => {
-    // A request waits 15 minutes at a gate (one hour allowed), then the server stops and is back 70 minutes later.
+test("a gate nobody waits at, past its deadline, lets one request go as canary; a second limit failure gives up", async () => {
+    // A request waits 15 minutes at a gate (one hour allowed) and is stopped; a new request comes 70 minutes later.
     const clock = { now: Date.now() };
     const options = {
         file: join(mkdtempSync(join(tmpdir(), "limit-gate-")), "provider-limits.json"),
@@ -238,23 +238,25 @@ test("a restart after the deadline refuses and does not wait again", async () =>
         random: () => 0.5,
         tuning: { ...TUNING, backoffMs: [15 * 60_000] },
     };
-    const before = gate(options);
+    const stop = new AbortController();
+    const g = gate(options);
     const rt = fake([], overloaded);
 
-    before.install(rt.models);
-    void ask(rt);
-    await until(() => before.gates().length === 1);
-    before.close();
+    g.install(rt.models);
+
+    const stopped = ask(rt, "m", "p", { signal: stop.signal });
+
+    await until(() => g.gates().length === 1);
+    stop.abort();
+    assert.equal((await stopped).stopReason, "aborted");
     clock.now += 70 * 60_000;
 
-    const restarted = gate(options);
-    const refused = fake([], { ok: true });
-
-    restarted.install(refused.models);
-    assert.equal(restarted.gates()[0]?.refusing, true);
-    assert.match((await ask(refused)).errorMessage!, /Not waiting/);
-    assert.equal(refused.calls.length, 0);
-    restarted.close();
+    // The limit may have cleared: one request goes, with no refusal first. It meets the limit again: now it gives up.
+    assert.match((await ask(rt)).errorMessage!, /Not waiting/);
+    assert.equal(rt.calls.length, 2);
+    assert.match((await ask(rt)).errorMessage!, /Not waiting/);
+    assert.equal(rt.calls.length, 2, "the refusal that follows sends nothing");
+    g.close();
 });
 
 test("a missing or damaged file means no limit is known", () => {
