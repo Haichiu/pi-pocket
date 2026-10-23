@@ -857,3 +857,76 @@ test("a request keeps its deadline across scopes", async () => {
     assert.match(result.errorMessage!, /Not waiting/);
     assert.ok(rt.calls.at(-1)!.at - started <= 60 + 20, "no request after the deadline");
 });
+
+test("a refusal survives a restart: the same limit sends no request until it ends", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "limit-gate-"));
+    const file = join(dir, "provider-limits.json");
+    const tuning = { ...TUNING, refuseMs: 700 };
+    const first = gate({ file, hours: () => 1, tuning });
+    const rt = runtime([{ fail: "429 rate_limit_error retryDelay: 604800s" }]);
+
+    first.g.install(rt.models);
+
+    const refused = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.match(refused.result.errorMessage!, /Not waiting/);
+
+    const saved = JSON.parse(readFileSync(file, "utf8")) as {
+        gates: { state?: string; until: number }[];
+    };
+
+    assert.equal(saved.gates.length, 1);
+    assert.equal(saved.gates[0]!.state, "refusing");
+    first.g.close();
+
+    // A new process: the refusal is still on, and the same limit sends nothing until it ends.
+    const second = gate({ file, hours: () => 1, tuning });
+    const rt2 = runtime([], { ok: "yes" });
+
+    second.g.install(rt2.models);
+    assert.equal(second.g.gates().length, 1);
+    assert.equal(second.g.gates()[0]!.refusing, true);
+
+    const again = await drain(rt2.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(again.result.stopReason, "error");
+    assert.match(again.result.errorMessage!, /Not waiting/);
+    assert.equal(rt2.calls.length, 0);
+
+    // When it ends, a request goes.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    assert.deepEqual(second.g.gates(), []);
+
+    const after = await drain(rt2.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(after.result.stopReason, "stop");
+    assert.equal(rt2.calls.length, 1);
+    second.g.close();
+});
+
+test("a refusal that ended while the server was down is not restored", () => {
+    const dir = mkdtempSync(join(tmpdir(), "limit-gate-"));
+    const file = join(dir, "provider-limits.json");
+
+    writeFileSync(
+        file,
+        JSON.stringify({
+            version: 1,
+            gates: [
+                {
+                    key: "p",
+                    scope: "account",
+                    provider: "p",
+                    kind: "reset",
+                    since: Date.now() - 10_000,
+                    until: Date.now() - 1_000,
+                    reason: "r",
+                    tries: 1,
+                    state: "refusing",
+                    refusal: "r Not waiting: x.",
+                },
+            ],
+        }),
+    );
+    assert.deepEqual(gate({ file }).g.gates(), []);
+});

@@ -99,6 +99,8 @@ export type WaitView = {
     tries: number;
     /** The canary is out now. */
     probing: boolean;
+    /** The gate gave up: its requests fail at once, until `until`. */
+    refusing?: true;
 };
 
 type Waiter = {
@@ -995,6 +997,7 @@ export class LimitGate {
             reason: gate.reason,
             tries: gate.tries,
             probing: gate.state === "probing",
+            ...(gate.state === "refusing" ? { refusing: true as const } : {}),
         };
     }
 
@@ -1007,21 +1010,22 @@ export class LimitGate {
             return;
         }
 
-        const gates = [...this.#gates.values()]
-            .filter((gate) => gate.state !== "refusing")
-            .map((gate) => ({
-                key: gate.key,
-                scope: gate.scope,
-                provider: gate.provider,
-                modelId: gate.modelId,
-                kind: gate.kind,
-                since: gate.since,
-                until: gate.until,
-                resetAt: gate.resetAt,
-                source: gate.source,
-                reason: gate.reason,
-                tries: gate.tries,
-            }));
+        // A refusal is kept with its end (`until`), so a restart does not give the same limit a new wait.
+        const gates = [...this.#gates.values()].map((gate) => ({
+            state: gate.state === "refusing" ? "refusing" : "waiting",
+            refusal: gate.refusal,
+            key: gate.key,
+            scope: gate.scope,
+            provider: gate.provider,
+            modelId: gate.modelId,
+            kind: gate.kind,
+            since: gate.since,
+            until: gate.until,
+            resetAt: gate.resetAt,
+            source: gate.source,
+            reason: gate.reason,
+            tries: gate.tries,
+        }));
 
         try {
             writeFileSync(`${file}.tmp`, JSON.stringify({ version: 1, gates }), { mode: 0o600 });
@@ -1102,8 +1106,14 @@ export class LimitGate {
         }
 
         const source = each.source === "header" || each.source === "body" || each.source === "text";
+        const refusing = each.state === "refusing";
 
-        return {
+        // A refusal that ended while the server was down holds nothing.
+        if (refusing && until <= now) {
+            return undefined;
+        }
+
+        const gate: Gate = {
             key,
             scope: each.scope,
             provider,
@@ -1115,8 +1125,16 @@ export class LimitGate {
             ...(source ? { source: each.source as Source } : {}),
             reason: text(each.reason) ?? "",
             tries,
-            state: "waiting",
+            state: refusing ? "refusing" : "waiting",
             waiters: new Set(),
         };
+
+        if (refusing) {
+            gate.refusal = text(each.refusal, 700) ?? gate.reason;
+            gate.timer = setTimeout(() => this.#drop(gate), until - now);
+            gate.timer.unref();
+        }
+
+        return gate;
     }
 }
