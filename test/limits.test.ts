@@ -45,6 +45,29 @@ test("what clears with time waits, for the account or the model, until the time 
         ["account", "account"],
     );
     assert.equal((chatgpt as { resetAt: number }).resetAt, now + 95 * 60_000);
+
+    // Named windows (tested against real limits in PR #128): a rejected 5-hour window waits for its reset; a rejected
+    // 7-day window, or a Codex window of over 300 minutes at 100 percent, is days away and does not wait.
+    const reset = String(now / 1000 + 4 * 3600);
+    const five = ask("429", 429, {
+        "anthropic-ratelimit-unified-5h-status": "rejected",
+        "anthropic-ratelimit-unified-5h-reset": reset,
+    });
+    const seven = ask("429", 429, {
+        "anthropic-ratelimit-unified-7d-status": "rejected",
+        "anthropic-ratelimit-unified-7d-reset": String(now / 1000 + 3 * 86400),
+    });
+    const weekly = ask("429", 429, {
+        "x-codex-secondary-used-percent": "100",
+        "x-codex-secondary-window-minutes": "10080",
+        "x-codex-secondary-reset-after-seconds": "86400",
+    });
+
+    assert.equal((five as { resetAt: number; long?: true }).resetAt, now + 4 * 3_600_000);
+    assert.deepEqual(
+        [five, seven, weekly].map((each) => each.type === "limit" && each.long === true),
+        [false, true, true],
+    );
 });
 
 test("a person's problem, a refused request, or a plan limit with no time never waits", () => {
