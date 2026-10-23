@@ -31,6 +31,17 @@ import {
 import { isContextOverflow } from "@earendil-works/pi-ai/utils/overflow";
 import { classify, type ResponseFacts, responseFacts, type Scope, type Source } from "./limits.ts";
 
+/** The adapters that send their requests through `options.fetch`, so the status and headers of a failure can be seen. */
+const RECORDS_FETCH = new Set([
+    "anthropic-messages",
+    "openai-completions",
+    "openai-responses",
+    "azure-openai-responses",
+    "openai-codex-responses",
+    "mistral-conversations",
+    "pi-messages",
+]);
+
 /** A request made with this in its options never waits: it fails as it would without the gate (titles, summaries). */
 export const NO_WAIT = Symbol("pocket.noWait");
 
@@ -487,7 +498,12 @@ export class LimitGate {
             return response;
         };
 
-        const stream = underlying(model, context, { ...options, fetch: recording });
+        // Only the adapters that take a fetch get ours: the Google ones refuse any other than the global one.
+        const stream = underlying(
+            model,
+            context,
+            RECORDS_FETCH.has(model.api) ? { ...options, fetch: recording } : options,
+        );
         const held: AssistantMessageEvent[] = [];
         let flowing = false;
         let terminal: AssistantMessage | undefined;

@@ -24,7 +24,7 @@ const TUNING: Partial<LimitTuning> = {
 };
 
 const model = (id = "m1", provider = "prov") =>
-    ({ id, provider, api: "x" }) as unknown as Model<Api>;
+    ({ id, provider, api: "anthropic-messages" }) as unknown as Model<Api>;
 
 const usage = {
     input: 0,
@@ -43,7 +43,7 @@ const message = (
     ({
         role: "assistant",
         content: text === undefined ? [] : [{ type: "text", text }],
-        api: "x",
+        api: "anthropic-messages",
         provider: m.provider,
         model: m.id,
         usage,
@@ -570,4 +570,31 @@ test("a wait that is long is told once, to the conversation", async () => {
     g.install(rt.models);
     await drain(rt.models.streamSimple(model(), { messages: [] } as never, { sessionId: "s" }));
     assert.deepEqual(told, [12]);
+});
+
+test("an adapter that refuses a custom fetch gets none", async () => {
+    const { g } = gate();
+    const seen: unknown[] = [];
+    const models = {
+        streamSimple(m: Model<Api>, _context: unknown, options?: SimpleStreamOptions) {
+            const stream = createAssistantMessageEventStream();
+            const done = message(m, {}, "ok");
+
+            seen.push(options?.fetch);
+            queueMicrotask(() => {
+                stream.push({ type: "done", reason: "stop", message: done });
+                stream.end(done);
+            });
+
+            return stream;
+        },
+    };
+
+    g.install(models);
+    await drain(
+        models.streamSimple({ ...model(), api: "google-generative-ai" } as never, {} as never),
+    );
+    await drain(models.streamSimple(model(), {} as never));
+    assert.equal(seen[0], undefined);
+    assert.equal(typeof seen[1], "function");
 });
