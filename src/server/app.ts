@@ -2791,8 +2791,11 @@ export class PocketApp {
 
         this.config.limitWaitHours = hours;
 
+        // Off: the runs that wait go on at once. Another time: each wait is cut to the new longest.
         if (hours === 0) {
             this.limits.releaseAll();
+        } else {
+            this.limits.reconsider();
         }
 
         await this.#refreshClients();

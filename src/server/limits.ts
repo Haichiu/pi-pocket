@@ -76,11 +76,14 @@ const BILLING =
 
 /** A request the provider refuses for what it says, not for load. */
 const REFUSED =
-    /\b400\b|\b404\b|invalid[ _-]request|not[ _-]found|content[ _-]filter|does not exist|unsupported/i;
+    /\b400\b|\b404\b|invalid[ _-](?:request|argument)|not[ _-]found|content[ _-]filter|does not exist|unsupported/i;
 
 /** Limits of an account's plan: the sign-in, not the model. They clear at a reset, which only a time can tell. */
 const USAGE =
     /GoUsageLimitError|FreeUsageLimitError|Monthly usage limit reached|usage_limit_reached|subscription_sharing_usage_limit_exceeded|usage limit|available balance/i;
+
+/** Words that say the provider is loaded or rate limiting, whatever else the text holds. */
+const LOAD = /overloaded|rate[ _.-]?limit|too many requests|resource[ _-]?exhausted/i;
 
 /** Load and rate: tried again, these clear soon. */
 const TRANSIENT =
@@ -349,6 +352,12 @@ export function classify(input: LimitInput): Classified {
 
     if (BILLING.test(message) || status === 402) {
         return { type: "other", why: "billing" };
+    }
+
+    // With no status (Google, Vertex, Bedrock), a refusal in the text is one, unless the text also names a rate limit
+    // or an overload: "contents exceed 500 tokens" holds a number that looks like a 5xx.
+    if (status === undefined && REFUSED.test(message) && !LOAD.test(message)) {
+        return { type: "other", why: "refused" };
     }
 
     const headers = facts?.headers ?? {};

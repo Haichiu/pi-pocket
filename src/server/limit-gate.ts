@@ -67,6 +67,8 @@ export type LimitTuning = {
     maxTries: number;
     /** A wait this long (or longer) is told to the people in the session: a push. */
     longWaitMs: number;
+    /** A canary out this long with no content no longer holds the others: the next waiter may go too. */
+    canaryStallMs: number;
 };
 
 export const DEFAULT_TUNING: LimitTuning = {
@@ -78,6 +80,7 @@ export const DEFAULT_TUNING: LimitTuning = {
     refuseMs: 5 * 60_000,
     maxTries: 40,
     longWaitMs: 10 * 60_000,
+    canaryStallMs: 2 * 60_000,
 };
 
 /** What a gate shows to the people whose runs wait at it. */
@@ -140,6 +143,8 @@ type Gate = {
     /** What a request meeting a refusing gate fails with. */
     refusal?: string;
     canary?: Waiter;
+    /** When the canary went. */
+    canarySince?: number;
     waiters: Set<Waiter>;
     timer?: NodeJS.Timeout;
 };
@@ -189,6 +194,10 @@ function isAborted(signal: AbortSignal | undefined): boolean {
 
 /** A span as people read it: `2 h 10 min`, `45 s`. */
 export function span(ms: number): string {
+    if (!Number.isFinite(ms) || ms > 1e12) {
+        return "a very long time";
+    }
+
     const seconds = Math.max(0, Math.round(ms / 1000));
 
     if (seconds < 90) {
@@ -213,7 +222,11 @@ export function span(ms: number): string {
     return `${days} d ${hours % 24} h`;
 }
 
-const when = (at: number) => `${new Date(at).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+/** A moment as text, in brackets, or nothing when it is not one a date can hold (a provider's huge number). */
+const when = (at: number) =>
+    Number.isFinite(at) && Math.abs(at) <= 8.64e15
+        ? ` (${new Date(at).toISOString().slice(0, 16).replace("T", " ")} UTC)`
+        : "";
 
 function failure(
     model: Model<Api>,
@@ -348,6 +361,33 @@ export class LimitGate {
     releaseAll(): void {
         for (const gate of [...this.#gates.values()]) {
             this.#open(gate, false);
+        }
+    }
+
+    /**
+     * The owner changed how long runs wait: each waiting gate's time is cut to its new deadline, and one past it gives up.
+     */
+    reconsider(): void {
+        const now = this.#now();
+
+        for (const gate of [...this.#gates.values()]) {
+            const deadline = this.#deadline(gate.kind, gate.since);
+
+            if (gate.state === "refusing") {
+                continue;
+            }
+
+            if (now >= deadline) {
+                this.#giveUp(
+                    gate,
+                    `${gate.reason} Not waiting: it did not clear in ${span(now - gate.since)}.`,
+                );
+            } else if (gate.until > deadline) {
+                gate.until = deadline;
+                this.#poke(gate);
+                this.#save();
+                this.#deps.changed();
+            }
         }
     }
 
@@ -760,7 +800,7 @@ export class LimitGate {
             }
 
             if (until > deadline) {
-                why = `it resets in ${span(verdict.resetAt - now)} (${when(verdict.resetAt)}), and Pi Pocket waits at most ${span(maxReset)}`;
+                why = `it resets in ${span(verdict.resetAt - now)}${when(verdict.resetAt)}, and Pi Pocket waits at most ${span(maxReset)}`;
             }
         } else {
             const total = Math.min(tuning.maxBackoffMs, maxReset);
@@ -919,16 +959,20 @@ export class LimitGate {
                     continue;
                 }
 
-                if (gate.canary === undefined) {
+                // Free, or out so long with no content that it no longer holds the others: this one goes.
+                const stalled = (gate.canarySince ?? 0) + this.#tuning.canaryStallMs - this.#now();
+
+                if (gate.canary === undefined || stalled <= 0) {
                     gate.canary = waiter;
+                    gate.canarySince = this.#now();
                     gate.state = "probing";
                     this.#deps.changed();
 
                     return (turn = "canary");
                 }
 
-                // Someone else is finding out: look again when that ends (or after a while, if it hangs).
-                await this.#nap(30_000, waiter);
+                // Someone else is finding out: look again when that ends, or when it has been out too long.
+                await this.#nap(Math.min(30_000, stalled), waiter);
             }
         } finally {
             // The canary stays in the gate while its request is out: people see it probe.
@@ -948,7 +992,8 @@ export class LimitGate {
                 resolve();
             };
 
-            const timer = setTimeout(done, ms);
+            // A timer holds at most 2^31 - 1 ms: longer waits come round again (the callers look at the clock).
+            const timer = setTimeout(done, Math.min(ms, 2 ** 31 - 1));
 
             timer.unref();
             waiter.poke = done;
@@ -1119,7 +1164,9 @@ export class LimitGate {
             // Waiting is off, or the file is from long ago (or from a clock that was wrong): it says nothing now.
             this.#deps.hours() <= 0 ||
             since > now + 60_000 ||
-            since < now - 7 * 86_400_000
+            since < now - 7 * 86_400_000 ||
+            // No wait lasts more than a day: a time past that is a damaged or hostile file.
+            until > since + 25 * 3_600_000
         ) {
             return undefined;
         }
