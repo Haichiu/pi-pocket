@@ -145,9 +145,15 @@ type Gate = {
     canary?: Waiter;
     /** When the canary went. */
     canarySince?: number;
+    /** Sent by a person (Retry now), and when: a try each 30 seconds at most, and a failed one counts toward no cap. */
+    manual?: boolean;
+    manualAt?: number;
     waiters: Set<Waiter>;
     timer?: NodeJS.Timeout;
 };
+
+/** The least time between two manual tries of one gate. */
+const MANUAL_GAP_MS = 30_000;
 
 /** What the app gives the gate. */
 export type GateDeps = {
@@ -332,12 +338,23 @@ export class LimitGate {
 
             for (const waiter of gate.waiters) {
                 if (waiter.conversationId === conversationId) {
-                    if (gate.state === "waiting") {
-                        gate.until = this.#now();
-                        this.#save();
+                    const now = this.#now();
+
+                    // The gate is shared by every session of the account, and anyone who may steer one session can press
+                    // this: one manual try each 30 seconds, and none while a canary is out.
+                    if (
+                        gate.state !== "waiting" ||
+                        now - (gate.manualAt ?? -Infinity) < MANUAL_GAP_MS
+                    ) {
+                        return false;
                     }
 
+                    gate.until = now;
+                    gate.manualAt = now;
+                    // Its failure is not the limit's: it counts toward no cap, so pressing cannot make the gate give up.
+                    gate.manual = true;
                     this.#poke(gate);
+                    this.#save();
                     this.#deps.changed();
 
                     return true;
@@ -720,7 +737,6 @@ export class LimitGate {
         const now = this.#now();
 
         waiter.since ??= now;
-        waiter.tries++;
 
         const key =
             verdict.scope === "account"
@@ -733,6 +749,17 @@ export class LimitGate {
         // to the new one. It must not stay probing with a canary that is no longer there.
         if (owned !== undefined && owned.key !== key) {
             this.#open(owned, true);
+        }
+
+        // A try a person sent (Retry now) counts toward no cap: pressing it cannot make the shared gate give up.
+        const manual = owned?.manual === true;
+
+        if (!manual) {
+            waiter.tries++;
+        }
+
+        if (owned !== undefined) {
+            delete owned.manual;
         }
 
         let gate = this.#gates.get(key);
@@ -788,7 +815,10 @@ export class LimitGate {
             this.#gates.set(key, gate);
         }
 
-        gate.tries++;
+        if (!manual) {
+            gate.tries++;
+        }
+
         gate.since = Math.min(gate.since, waiter.since);
         gate.reason = verdict.reason;
         gate.canary = undefined;

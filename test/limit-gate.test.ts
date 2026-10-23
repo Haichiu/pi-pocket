@@ -205,6 +205,26 @@ test("a weekly window found late, behind a gate that waits hours, refuses at onc
     g.close();
 });
 
+test("Retry now is one try each 30 seconds, and pressing it cannot make a shared gate give up", async () => {
+    const g = gate({
+        tuning: { ...TUNING, backoffMs: [60_000], maxTries: 1 },
+        conversationOf: () => 7,
+    });
+    const rt = fake([overloaded, overloaded]);
+
+    g.install(rt.models);
+    void ask(rt, "m", "p", { sessionId: "s" });
+    await until(() => g.waitFor(7) !== undefined);
+    assert.equal(g.retryNow(7), true);
+    assert.equal(g.retryNow(7), false, "a second press within 30 seconds does nothing");
+    await until(() => rt.calls.length === 2);
+    await sleep(40);
+    // The manual try failed again: it counts toward no cap (maxTries is 1), so the gate still waits.
+    assert.equal(g.gates()[0]?.refusing, undefined);
+    assert.ok(g.waitFor(7));
+    g.close();
+});
+
 test("a canary whose failure moves the scope leaves no gate probing", async () => {
     const g = gate();
     const rt = fake([overloaded, { fail: "429 usage limit. Try again in 0s" }], { ok: true });
