@@ -804,7 +804,9 @@ export class LimitGate {
                 gate.source = verdict.source;
             }
 
-            if (until > deadline) {
+            if (verdict.long) {
+                why = `it resets in ${span(verdict.resetAt - now)}${when(verdict.resetAt)}, a limit of days that Pi Pocket does not wait for`;
+            } else if (until > deadline) {
                 why = `it resets in ${span(verdict.resetAt - now)}${when(verdict.resetAt)}, and Pi Pocket waits at most ${span(maxReset)}`;
             }
         } else {

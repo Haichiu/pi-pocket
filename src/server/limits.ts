@@ -51,6 +51,8 @@ export type Classified =
           resetAt?: number;
           source?: Source;
           backoff: boolean;
+          /** A window of days (Claude's 7-day, a Codex window over 300 minutes): not waited for, failed with its reset. */
+          long?: true;
           reason: string;
       };
 
@@ -206,10 +208,28 @@ function retryAfter(headers: Record<string, string>, now: number): number | unde
 function fromHeaders(
     headers: Record<string, string>,
     now: number,
-): { resetAt?: number; account: boolean; model: boolean } {
+): { resetAt?: number; account: boolean; model: boolean; long?: true } {
     // Claude subscription: windows that cover the sign-in. A claim for one model's cap (seven_day_opus) is the model's.
     const unified = headers["anthropic-ratelimit-unified-status"];
     const claim = headers["anthropic-ratelimit-unified-representative-claim"] ?? "";
+
+    // The windows by name: a rejected 5-hour window waits for its reset; a rejected 7-day window is days away.
+    const week = headers["anthropic-ratelimit-unified-7d-status"] === "rejected";
+    const hours5 = headers["anthropic-ratelimit-unified-5h-status"] === "rejected";
+
+    if (week || hours5) {
+        const named = headers[`anthropic-ratelimit-unified-${week ? "7d" : "5h"}-reset`];
+        const reset = moment(named) ?? moment(headers["anthropic-ratelimit-unified-reset"]);
+
+        if (reset !== undefined) {
+            return {
+                resetAt: reset,
+                account: !/opus|sonnet|haiku/i.test(claim),
+                model: /opus|sonnet|haiku/i.test(claim),
+                ...(week ? { long: true as const } : {}),
+            };
+        }
+    }
 
     if (unified !== undefined || headers["anthropic-ratelimit-unified-reset"] !== undefined) {
         const rejected = unified === undefined || unified === "rejected";
@@ -224,8 +244,10 @@ function fromHeaders(
         }
     }
 
-    // ChatGPT sign-in (Codex): a window is full at 100 percent; the later of two full windows decides.
+    // ChatGPT sign-in (Codex): a window is full at 100 percent; the later of two full windows decides, and a full
+    // window of more than 300 minutes is a weekly limit.
     const codex: number[] = [];
+    let long = false;
 
     for (const window of ["primary", "secondary"]) {
         const used = Number(headers[`x-codex-${window}-used-percent`]);
@@ -233,6 +255,8 @@ function fromHeaders(
         const after = Number(headers[`x-codex-${window}-reset-after-seconds`]);
 
         if (used >= 100) {
+            long ||= Number(headers[`x-codex-${window}-window-minutes`]) > 300;
+
             if (at !== undefined) {
                 codex.push(at);
             } else if (Number.isFinite(after)) {
@@ -242,7 +266,12 @@ function fromHeaders(
     }
 
     if (codex.length > 0) {
-        return { resetAt: Math.max(...codex), account: true, model: false };
+        return {
+            resetAt: Math.max(...codex),
+            account: true,
+            model: false,
+            ...(long ? { long: true as const } : {}),
+        };
     }
 
     const wait = retryAfter(headers, now);
@@ -400,6 +429,7 @@ export function classify(input: LimitInput): Classified {
             resetAt: Math.max(found, now),
             source: source ?? (/"?resets_(?:at|in_seconds)"?/i.test(message) ? "body" : "text"),
             backoff: false,
+            ...(fromHeader.long ? { long: true as const } : {}),
             reason,
         };
     }
