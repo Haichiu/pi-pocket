@@ -40,6 +40,8 @@ Pi Durable 1.4.0 automatically migrates `pocket.sqlite` to schema version 2. Pi 
 
 Document definitions should name `checkpointWhen` in every `defineDoc` or `defineDocFamily` call. Pi Pocket keeps older drop-ins working by supplying `checkpointWhen: () => false` when it is missing, and logs the module and document kind. Explicit policies stay unchanged. Extensions that use `TaskRuntime.sleep()` must move to durable `sleepUntil()` checkpoints.
 
+Pi Pocket turns off Pi Durable 1.4's task crash-loop guard (`restartLimit: Infinity`) so repeated unclean stops do not park long waits.
+
 ## Docker and Podman
 
 A container image and a Compose file are included. Extensions, themes, Pi's sign-ins, the database, and the workspace are bind-mounted from the host, so they survive rebuilds and stay editable outside the container.

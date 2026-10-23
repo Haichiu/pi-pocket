@@ -1083,6 +1083,8 @@ export class PocketApp {
         const stream = () => this.streamSettings();
 
         return {
+            // A phase can wait for hours without changing state; repeated process kills must not park it.
+            restartLimit: Infinity,
             // Every installed extension, in install order, but PiP's: its tools and prompt are for its conversation only,
             // which selects it by name (`pip.ts`).
             get extensions() {
