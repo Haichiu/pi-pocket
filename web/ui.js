@@ -900,6 +900,50 @@ export function formatWhen(ms) {
     return `${day} ${time}`;
 }
 
+/** The minute now, for what shows a time ago: a memo that keys on it draws again as the minute turns (`useMinute`). */
+const minuteNow = () => Math.floor(Date.now() / 60_000);
+
+/** Listeners to the minute's turn, and its timer while any listen. */
+const minuteListeners = new Set();
+let minuteTimer = 0;
+
+function tickMinute() {
+    minuteTimer = setTimeout(tickMinute, 60_000 - (Date.now() % 60_000));
+
+    for (const listener of minuteListeners) {
+        listener(minuteNow());
+    }
+}
+
+/**
+ * The minute now, which draws the component again as it turns: memoized rows that show "5m" would otherwise keep it.
+ * One timer for every component that uses it.
+ */
+export function useMinute() {
+    const [minute, setMinute] = useState(minuteNow);
+
+    useEffect(() => {
+        minuteListeners.add(setMinute);
+
+        if (minuteListeners.size === 1) {
+            minuteTimer = setTimeout(tickMinute, 60_000 - (Date.now() % 60_000));
+        }
+
+        // A minute that turned before this effect ran.
+        setMinute(minuteNow());
+
+        return () => {
+            minuteListeners.delete(setMinute);
+
+            if (minuteListeners.size === 0) {
+                clearTimeout(minuteTimer);
+            }
+        };
+    }, []);
+
+    return minute;
+}
+
 export function timeAgo(ms) {
     const seconds = Math.max(0, (Date.now() - ms) / 1000);
 
@@ -1263,11 +1307,13 @@ export function usePresence(value, ms = 200) {
 }
 
 /**
- * Where a sliding indicator goes: the offset and size of the element matching `selector` inside `ref`, measured after
- * every render. null when there is none, or it is in a folded group. `instant` is true the first time it shows, so it
- * appears in place instead of sliding in from the top.
+ * Where a sliding indicator goes: the offset and size of the element matching `selector` inside `ref`. null when there
+ * is none, or it is in a folded group. `instant` is true the first time it shows, so it appears in place instead of
+ * sliding in from the top. `key` says which element is selected: it is measured again when `key` changes, and when the
+ * list resizes or settles, not after every render. Measured after every render, each copy of the list laid the page out
+ * early, and Back to the list on a phone froze the longer for it.
  */
-export function useSlide(ref, selector, axis = "y") {
+export function useSlide(ref, selector, axis = "y", key = undefined) {
     const [box, setBox] = useState(null);
     const hidden = useRef(true);
 
@@ -1283,7 +1329,7 @@ export function useSlide(ref, selector, axis = "y") {
         setBox((box) => (next?.at === box?.at && next?.size === box?.size ? box : next));
     };
 
-    useLayoutEffect(measure);
+    useLayoutEffect(measure, [key]);
     // Rows move without a render while a group folds, or the window resizes: measure again when they settle.
     useEffect(() => {
         const host = ref.current;
@@ -1293,8 +1339,11 @@ export function useSlide(ref, selector, axis = "y") {
         }
 
         const settle = (event) => event.target !== host && measure();
+        // A theme's stylesheets can move the element without resizing the list.
+        const again = () => measure();
 
         host.addEventListener("transitionend", settle);
+        document.addEventListener("pocket:theme", again);
         const observer =
             typeof ResizeObserver === "function" ? new ResizeObserver(() => measure()) : null;
 
@@ -1302,6 +1351,7 @@ export function useSlide(ref, selector, axis = "y") {
 
         return () => {
             host.removeEventListener("transitionend", settle);
+            document.removeEventListener("pocket:theme", again);
             observer?.disconnect();
         };
     }, [ref.current]);
@@ -1429,38 +1479,45 @@ export class Boundary extends Component {
     }
 }
 
-/** The parts of the store a streaming answer changes several times a second: the open conversation's, and PiP's. */
-const VIEWS = new Set(["view", "pipView"]);
-
 /**
- * Whether the store changed between two states only in the views (`VIEWS`). Nothing changed at all is no: `store.set({})`
- * draws everything again.
+ * Whether the store changed in none of `keys` between two states. A change to nothing at all is a change:
+ * `store.set({})` draws everything again (a media query that changed, say).
  */
-function onlyViews(before, after) {
-    let views = false;
+function quietFor(keys, before, after) {
+    if (before === after) {
+        return false;
+    }
 
-    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    let changed = false;
+
+    for (const key in after) {
         if (before[key] !== after[key]) {
-            if (!VIEWS.has(key)) {
+            if (keys.has(key)) {
                 return false;
             }
 
-            views = true;
+            changed = true;
         }
     }
 
-    return views;
+    for (const key in before) {
+        if (!(key in after)) {
+            return false;
+        }
+    }
+
+    return changed;
 }
 
 const sameProps = (a, b) =>
     Object.keys(a).length === Object.keys(b).length &&
     Object.keys(a).every((key) => Object.is(a[key], b[key]));
 
-class ApartFromViews extends Component {
+class DrawnFor extends Component {
     shouldComponentUpdate(next) {
         return !(
             next.component === this.props.component &&
-            onlyViews(this.props.state, next.state) &&
+            quietFor(next.keys, this.props.state, next.state) &&
             sameProps(this.props.props, next.props)
         );
     }
@@ -1471,12 +1528,47 @@ class ApartFromViews extends Component {
 }
 
 /**
- * `component`, drawn again on every change to the store but one that changes only the views (`VIEWS`), as an answer
- * streams: for big parts that read neither, such as the session list, which stays drawn off-screen on phones. Its own
- * state draws it again as usual.
+ * `component`, drawn again only when the store changes in one of `keys`, its props change, or `store.set({})` asks
+ * everything to draw again: for big parts that read little of the store, such as the session list. `keys` must name
+ * every key of the store it reads as it draws, and every key the functions it calls read (`prefs()` reads
+ * `appearance`, `canSteer()` reads `me`): a key left out shows stale data. What it reads only in an event handler
+ * does not count. Its own state draws it again as usual.
  */
-export function apartFromViews(component) {
-    const Wrapped = (props) => h(ApartFromViews, { component, props, state: store.state });
+export function drawnFor(keys, component) {
+    const set = new Set(keys);
+    const Wrapped = (props) => h(DrawnFor, { component, props, keys: set, state: store.state });
+
+    Wrapped.displayName = component.name;
+
+    return Wrapped;
+}
+
+class Memo extends Component {
+    shouldComponentUpdate(next) {
+        const { ignored } = next;
+        const before = this.props.props;
+        const after = next.props;
+        const keys = Object.keys(after).filter((key) => !ignored.includes(key));
+
+        return (
+            next.component !== this.props.component ||
+            Object.keys(before).length !== Object.keys(after).length ||
+            keys.some((key) => !Object.is(before[key], after[key]))
+        );
+    }
+
+    render({ component, props }) {
+        return h(component, props);
+    }
+}
+
+/**
+ * `component`, drawn again only when its props change (each compared with `Object.is`) or its own state does. It must
+ * read nothing else as it draws, such as `store.state`: what it needs comes as props. `ignored` names props it reads
+ * only as it mounts, whose change alone does not draw it again.
+ */
+export function memo(component, ignored = []) {
+    const Wrapped = (props) => h(Memo, { component, props, ignored });
 
     Wrapped.displayName = component.name;
 
@@ -1485,6 +1577,20 @@ export function apartFromViews(component) {
 
 /** Phones: sheets from the bottom edge, which drag back down to close, and menus that a swipe closes. */
 export const BOTTOM_SHEETS = matchMedia("(max-width: 699px)");
+
+/**
+ * Wide screens, where the sidebar and the home screen's splash show (style.css's 960px). Narrower, the app does not
+ * draw them at all: hidden, they cost a phone the list's whole draw again.
+ */
+export const WIDE = matchMedia("(min-width: 960px)");
+
+/** No pointer that hovers (a touch screen): what only hovering shows, such as a row's buttons, is not drawn. */
+export const NO_HOVER = matchMedia("(hover: none)");
+
+// Either changing (a window resized, a mouse plugged in) draws the app again, with or without them.
+for (const query of [WIDE, NO_HOVER]) {
+    query.addEventListener("change", () => store.set({}));
+}
 
 /** The sheet host supplies a back action only when another sheet is under this one. */
 export const SheetBack = createContext(null);

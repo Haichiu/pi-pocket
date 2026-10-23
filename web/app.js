@@ -69,6 +69,7 @@ import {
     shortPath,
     useEdge,
     usePresence,
+    WIDE,
 } from "./ui.js";
 import { toggleDictation } from "./voice.js";
 
@@ -200,20 +201,19 @@ function Topbar() {
         .pop();
     const branch = headLabel(view.branch) || conversation?.worktree?.branch;
     const { sessions, conversationId } = store.state;
-    // Both read every session: again only when the list changes, not on each word Pi streams.
-    const listed = useMemo(
-        () => sessions.find((session) => session.id === conversationId)?.title,
+    // The top bar draws with each update of the conversation, as an answer streams: the session list is looked
+    // through again only when it changes.
+    const { listed, waiting } = useMemo(
+        () => ({
+            listed: sessions.find((session) => session.id === conversationId)?.title,
+            // Other sessions waiting for an approval, counted on the way back to them.
+            waiting: sessions.filter(
+                (session) => session.waiting && !session.archived && session.id !== conversationId,
+            ).length,
+        }),
         [sessions, conversationId],
     );
     const title = conversation?.title ?? listed ?? (store.state.missing ? "Not found" : "Loading…");
-    // Other sessions waiting for an approval, counted on the way back to them.
-    const waiting = useMemo(
-        () =>
-            sessions.filter(
-                (session) => session.waiting && !session.archived && session.id !== conversationId,
-            ).length,
-        [sessions, conversationId],
-    );
     // How far down it reaches: PiP's window on a short wide screen stops below its buttons.
     const edge = useEdge("--topbar-h", (rect) => rect.bottom);
 
@@ -488,6 +488,9 @@ function App() {
 
     const inConversation = state.conversationId !== null;
     const rail = prefs().sidebar === "rail";
+    // The sidebar and the splash show only on wide screens (style.css): narrower, they are not drawn at all. A phone
+    // drew the sidebar's session list beside its own, hidden, on each change and each Back.
+    const sidebar = WIDE.matches;
     // The subagents board, or an extension's page, takes the conversation's place, and the panels beside it give it
     // their room.
     const board = state.board;
@@ -510,11 +513,14 @@ function App() {
         data-part="app"
     >
         <aside class="sidebar window" data-part="sidebar">
-            <div class="sidebar-clip">
-                <${RailNav} foldable=${true} folded=${rail} />
-                ${!rail && html`<${SessionList} />`}
-            </div>
-            ${!rail && html`<${ResizeHandle} />`}
+            ${
+                sidebar &&
+                html`<div class="sidebar-clip">
+                        <${RailNav} foldable=${true} folded=${rail} />
+                        ${!rail && html`<${SessionList} />`}
+                    </div>
+                    ${!rail && html`<${ResizeHandle} />`}`
+            }
         </aside>
         <div class=${`pane window ${placed ? "boarded" : ""}`} data-part="pane">
             ${
@@ -540,7 +546,7 @@ function App() {
                           <${RailNav} />
                           <${SessionList} />
                       </div>
-                      <${Splash} />`
+                      ${sidebar && html`<${Splash} />`}`
             }
         </div>
         ${
@@ -614,7 +620,7 @@ document.addEventListener("focusin", focusWindow, true);
 const typingIn = (target) =>
     target instanceof HTMLElement &&
     (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
-const wide = () => matchMedia("(min-width: 960px)").matches;
+const wide = () => WIDE.matches;
 
 /** Go to the session `by` places away in workspace order, wrapping around. */
 function step(by) {

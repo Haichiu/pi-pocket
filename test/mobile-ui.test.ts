@@ -616,6 +616,8 @@ test(
     real,
     async () => {
         await fresh();
+        // Wide, where the sidebar's list shows beside the session: a phone in a session draws no list at all.
+        await page.setViewport(VIEWPORTS.desktop);
         await goTo(first);
         await reach({ path: `/s/${first}` }, "the session");
         await until(
@@ -629,7 +631,8 @@ test(
             kept: boolean;
             text: string;
             quiet: number;
-            listed: number;
+            same: number;
+            listed: string[];
             image: string | null;
         }>(`
         const { h, options, render } = await import("preact");
@@ -642,33 +645,368 @@ test(
         const first = box.querySelector("p");
 
         render(h(Markdown, { text: "First block.\\n\\n![x](a.png)\\n\\nSecond, longer", cache: false }), box);
-        let rows = 0;
+        let rows = [];
         const diffed = options.diffed;
 
         let quiet;
+        let same;
 
         options.diffed = (vnode) => {
-            rows += vnode.type?.name === "SessionRow" ? 1 : 0;
+            if (vnode.type?.name === "SessionRow") {
+                rows.push(vnode.props.session.title ?? "");
+            }
+
             diffed?.(vnode);
         };
 
         try {
             store.set((state) => ({ view: { ...state.view } }));
             await settle();
-            quiet = rows;
+            quiet = rows.length;
+            // The same sessions in a new list: no row has anything new to show.
             store.set((state) => ({ sessions: [...state.sessions] }));
+            await settle();
+            same = rows.length - quiet;
+            rows = [];
+            // One session renamed: its row, and no other.
+            store.set((state) => ({
+                sessions: state.sessions.map((session) =>
+                    session.id === ${Number(first)} ? { ...session, title: "Renamed here" } : session,
+                ),
+            }));
             await settle();
         } finally {
             options.diffed = diffed;
         }
 
-        return JSON.stringify({ kept: box.querySelector("p") === first, text: box.textContent, quiet, listed: rows, image: box.querySelector("img")?.getAttribute("src") ?? null });
+        return JSON.stringify({ kept: box.querySelector("p") === first, text: box.textContent, quiet, same, listed: rows, image: box.querySelector("img")?.getAttribute("src") ?? null });
     `);
 
         assert.ok(drawn.kept, "the first block stays as it was drawn");
         assert.match(drawn.text, /Second, longer/, "the last block grows");
         assert.match(drawn.image ?? "", /^\/api\//, "an image path points at the server");
         assert.equal(drawn.quiet, 0, "a new view leaves the session list alone");
-        assert.ok(drawn.listed > 0, "a new session list draws it");
+        assert.equal(drawn.same, 0, "the same sessions again draw no row");
+        assert.deepEqual(drawn.listed, ["Renamed here"], "a changed session draws its row alone");
     },
 );
+
+test(
+    "a reconnect that brings the same data keeps it, and draws and themes nothing",
+    real,
+    async () => {
+        await fresh();
+        const after = await inPage<{
+            same: Record<string, boolean>;
+            rows: number;
+            root: number;
+            offset: boolean;
+        }>(`
+        const { options } = await import("preact");
+        const { connect, serverClockOffset, store } = await import("/store.js");
+        const settle = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
+        // Not users: the server tells everyone when this person was last here, which a reconnect changes.
+        const keys = ["me", "models", "guard", "server", "themeList", "folderFavorites", "sessions", "moving"];
+        const before = Object.fromEntries(keys.map((key) => [key, store.state[key]]));
+        const me = store.state.me.id;
+        const people = store.state.users;
+        const offset = serverClockOffset();
+        let rows = 0;
+        let root = 0;
+        const diffed = options.diffed;
+        // The theme put on again sets the page root's attributes again.
+        const watch = new MutationObserver((records) => (root += records.length));
+
+        options.diffed = (vnode) => {
+            rows += vnode.type?.name === "SessionRow" ? 1 : 0;
+            diffed?.(vnode);
+        };
+        watch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-mode", "data-colors"] });
+
+        try {
+            const stream = store.state.streamId;
+
+            const Source = window.EventSource;
+            let received;
+            const listed = new Promise((resolve) => (received = resolve));
+
+            // Even an unchanged list must arrive before we check identity and draw counts.
+            window.EventSource = class extends Source {
+                constructor(url) {
+                    super(url);
+                    this.addEventListener("sessions", received, { once: true });
+                }
+            };
+
+            try {
+                connect();
+                await listed;
+            } finally {
+                window.EventSource = Source;
+            }
+
+            if (store.state.streamId === stream) {
+                throw new Error("the reconnect did not receive a new stream");
+            }
+
+            // Flush the store's handler and its render, after the observer's sessions listener.
+            await settle();
+        } finally {
+            options.diffed = diffed;
+            watch.disconnect();
+        }
+
+        return JSON.stringify({
+            same: Object.fromEntries([
+                ...keys.map((key) => [key, store.state[key] === before[key]]),
+                // Each person who did not change keeps their object; this person's last visit moved.
+                ...people
+                    .filter((person) => person.id !== me)
+                    .map((person) => ["user " + person.name, store.state.users.includes(person)]),
+            ]),
+            rows,
+            root,
+            offset: typeof serverClockOffset() === "number" && Math.abs(serverClockOffset() - offset) < 60_000,
+        });
+    `);
+
+        assert.deepEqual(
+            Object.entries(after.same).filter(([, same]) => !same),
+            [],
+            "every equal value keeps its identity",
+        );
+        assert.equal(after.rows, 0, "no session row draws again");
+        assert.equal(after.root, 0, "the theme is not put on again");
+        assert.ok(after.offset, "the server's clock is still known");
+    },
+);
+
+test("back to the list slides it in whole, and its rows do not rise in again", real, async () => {
+    await fresh();
+    // Rows new to the page rise in once.
+    assert.ok(
+        await inPage<boolean>(
+            `return JSON.stringify([...document.querySelectorAll(".home-list .session-row")]
+                .some((row) => getComputedStyle(row).animationName === "rise-in"))`,
+        ),
+        "rows rise in when the page first shows them",
+    );
+    await tap(row(first));
+    await reach({ path: `/s/${first}` }, "the session");
+    await page.evaluate(`
+        window.listRoutes = [];
+        window.listRouteObserver = new MutationObserver((records) => {
+            window.listRoutes.push(document.documentElement.dataset.route,
+                ...records.map((record) => record.oldValue));
+        });
+        window.listRouteObserver.observe(document.documentElement, {
+            attributes: true, attributeFilter: ["data-route"], attributeOldValue: true,
+        });
+    `);
+    await back();
+    await reach({ path: "/" }, "back to the list");
+    const shown = await inPage<{
+        rows: number;
+        arriving: number;
+        rowAnimations: number;
+        slide: boolean;
+    }>(`
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const rows = [...document.querySelectorAll(".home-list .session-row")];
+
+        window.listRouteObserver.disconnect();
+
+        return JSON.stringify({
+            rows: rows.length,
+            arriving: rows.filter((each) => each.classList.contains("arriving")).length,
+            rowAnimations: rows.flatMap((each) => each.getAnimations()).length,
+            slide: window.listRoutes.includes("back"),
+        });
+    `);
+
+    assert.ok(shown.rows > 0, "the list shows its rows");
+    assert.equal(shown.arriving, 0, "no row rises in again");
+    assert.equal(shown.rowAnimations, 0, "no row animates");
+    assert.ok(shown.slide, "the list slides in from the left");
+});
+
+test("a phone draws no sidebar, no splash, and no row buttons it would hide", real, async () => {
+    await fresh();
+    const phone = await inPage<Record<string, number>>(`
+        return JSON.stringify({
+            width: innerWidth,
+            sidebarLists: document.querySelectorAll(".sidebar .sessions, .sidebar .rail").length,
+            homeLists: document.querySelectorAll(".home-list .sessions").length,
+            splash: document.querySelectorAll(".splash").length,
+            rowButtons: document.querySelectorAll(".session-actions").length,
+        });
+    `);
+
+    assert.deepEqual(phone, {
+        width: 390,
+        sidebarLists: 0,
+        homeLists: 1,
+        splash: 0,
+        rowButtons: 0,
+    });
+
+    // Widened, the sidebar and the splash come back at once.
+    await page.setViewport(VIEWPORTS.desktop);
+    await until(
+        () =>
+            inPage<boolean>(`
+                return JSON.stringify(document.querySelector(".sidebar .sessions") !== null &&
+                    document.querySelector(".splash") !== null);
+            `),
+        "the sidebar's list and the splash, on a wide screen",
+    );
+});
+
+test(
+    "replayed data keeps equal items but applies changed facts and a fresh clock",
+    real,
+    async () => {
+        await fresh();
+        const result = await inPage<Record<string, boolean>>(`
+        const { connect, serverClockOffset, store } = await import("/store.js");
+        const Source = window.EventSource;
+        let source;
+
+        window.EventSource = class extends EventTarget {
+            constructor() { super(); source = this; }
+            close() {}
+        };
+        connect();
+        const send = (name, data) => source.dispatchEvent(new MessageEvent(name, {
+            data: JSON.stringify(data),
+        }));
+        const before = store.state;
+        let changes = 0;
+        const stop = store.subscribe(() => changes++);
+        const hello = {
+            user: before.me, users: before.users, models: before.models, guard: before.guard,
+            server: { ...before.server, now: Date.now() + 120_000 },
+            themes: before.themeList, folderFavorites: before.folderFavorites,
+        };
+        let result;
+
+        try {
+            send("hello", hello);
+            send("sessions", before.sessions);
+            send("users", before.users);
+            const equalIsQuiet = changes === 0;
+            const clockIsFresh = Math.abs(serverClockOffset() - 120_000) < 1000;
+            const serverIsKept = store.state.server === before.server;
+            const changed = before.sessions.map((session) => session.id === ${Number(first)}
+                ? { ...session, title: "A changed server title" } : session).reverse();
+
+            send("sessions", changed);
+            const list = store.state.sessions;
+            const changedSession = list.find((session) => session.id === ${Number(first)});
+            const changedIsNew = changedSession !== before.sessions.find((session) => session.id === ${Number(first)}) &&
+                changedSession.title === "A changed server title";
+            const othersAreKept = list.filter((session) => session.id !== ${Number(first)})
+                .every((session) => before.sessions.includes(session));
+            const orderIsNew = list.every((session, index) => session.id === changed[index].id);
+            const count = changes;
+
+            send("sessions", changed);
+            const replayIsQuiet = store.state.sessions === list && changes === count;
+
+            send("hello", { ...hello, user: { ...hello.user, name: "A changed person" },
+                server: { ...hello.server, home: "/a/changed/home" } });
+            send("pip", { id: 999, busy: false, endedAt: 1 });
+            const pip = store.state.pip;
+            const pipChanges = changes;
+
+            send("pip", { id: 999, busy: false, endedAt: 1 });
+            const pipIsKept = store.state.pip === pip && changes === pipChanges;
+
+            send("pip", { id: 999, busy: true, endedAt: 1 });
+            result = {
+                equalIsQuiet, clockIsFresh, serverIsKept, changedIsNew, othersAreKept,
+                orderIsNew, replayIsQuiet, pipIsKept,
+                factsAreFresh: store.state.me.name === "A changed person" &&
+                    store.state.server.home === "/a/changed/home",
+                pipIsFresh: store.state.pip !== pip && store.state.pip.busy,
+            };
+        } finally {
+            stop();
+            window.EventSource = Source;
+            connect();
+        }
+
+        return JSON.stringify(result);
+    `);
+
+        assert.deepEqual(
+            Object.entries(result).filter(([, passed]) => !passed),
+            [],
+            "equal events are quiet, but changed values, order, PiP, and clock still update",
+        );
+    },
+);
+
+test("the list and rail read only their declared store dependencies", real, async () => {
+    await fresh();
+    const reads = await inPage<Record<string, { observed: string[]; declared: string[] }>>(`
+        const { h, options, render } = await import("preact");
+        const { SessionList, RailNav } = await import("/sessions.js");
+        const { store } = await import("/store.js");
+        const state = store.state;
+        const result = {};
+        const box = document.createElement("div");
+        const diffed = options.diffed;
+        const features = { ...state, server: { ...state.server, collab: 2, peeks: true, pip: true },
+            pip: { id: 999, busy: false, endedAt: 1 } };
+
+        document.body.append(box);
+
+        try {
+            // This observes these branches, not every possible extension or interaction state.
+            for (const [name, component, props, data] of [
+                ["list", SessionList, {}, state],
+                ["list-features", SessionList, { compact: true }, features],
+                ["rail-folded", RailNav, { foldable: true, folded: true }, features],
+                ["rail-open", RailNav, { foldable: true, folded: false }, features],
+            ]) {
+                const keys = new Set();
+                let declared = [];
+
+                options.diffed = (vnode) => {
+                    if (vnode.type?.name === "DrawnFor") {
+                        declared = [...vnode.props.keys];
+                    }
+                    diffed?.(vnode);
+                };
+                store.state = new Proxy(data, { get(target, key) {
+                    if (typeof key === "string") { keys.add(key); }
+                    return target[key];
+                } });
+                render(h(component, props), box);
+                result[name] = { observed: [...keys].sort(), declared };
+                store.state = state;
+                render(null, box);
+            }
+        } finally {
+            options.diffed = diffed;
+            store.state = state;
+            render(null, box);
+            box.remove();
+        }
+
+        return JSON.stringify(result);
+    `);
+
+    assert.equal(Object.keys(reads).length, 4, "all audit cases ran");
+
+    for (const [name, { observed, declared }] of Object.entries(reads)) {
+        assert.ok(declared.length > 0, "the audit captured the wrapper's actual dependencies");
+        assert.deepEqual(
+            observed.filter((key) => !declared.includes(key)),
+            [],
+            `${name} must invalidate every store key it reads`,
+        );
+        assert.ok(observed.includes("sessions"), "the audit observed a real draw");
+    }
+});

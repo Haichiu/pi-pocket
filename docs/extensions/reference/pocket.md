@@ -469,7 +469,7 @@ sessionChips(spec: SessionChipsSpec): Added<SessionChipsSpec>;
 
 Since 0.20.0 · Experimental
 
-Adds chips under the titles of rows in the session list, such as tags. The list calls `chips` for each row each time it draws. See [`SessionChipsSpec`](#sessionchipsspec) and [`SessionChip`](#sessionchip). A row with chips is taller. The space beside them opens the session, as the row does.
+Adds chips under the titles of rows in the session list, such as tags. Each row calls `chips` when it draws. Unchanged rows can skip a draw. See [`SessionChipsSpec`](#sessionchipsspec) and [`SessionChip`](#sessionchip). A row with chips is taller. The space beside them opens the session, as the row does.
 
 ### `sessionAction`
 
@@ -957,7 +957,7 @@ interface SessionChipsSpec {
 Since 0.20.0 · Experimental
 
 - `id`: the chips' id in the module.
-- `chips`: the chips for a session. Up to 6 show for each module. The list calls it for each row each time it draws, so keep it fast, and do not call `pocket` in it. Read what it needs from the module's own state. When that state changes, give `update` a new function, so the list draws again: `added.update({ chips: (session) => chipsOf(session) })`.
+- `chips`: the chips for a session. Up to 6 show for each module. The row calls it when it draws, so keep it fast, and do not call `pocket` in it. Unchanged rows can skip a draw. Read what it needs from the module's own state. When that state changes, give `update` a new function, so the list draws again: `added.update({ chips: (session) => chipsOf(session) })`.
 
 A `chips` that throws stops its module in that browser, as a failed module stops.
 
@@ -1000,7 +1000,7 @@ Since 0.20.0 · Experimental
 
 A filter button. `title`, `icon`, `iconPath`, and `badge` are as for a rail button. It does one thing when tapped, as an [`Action`](#action) does.
 
-- `match`: whether the list keeps a session. Only `true` keeps it. While it is a function, the filter is on. Null or no `match` turns it off. The list calls it for each session each time it draws, so keep it fast, and do not call `pocket` in it. A `match` that throws stops its module in that browser, and the list then shows the sessions again.
+- `match`: whether the list keeps a session. Only `true` keeps it. While it is a function, the filter is on. Null or no `match` turns it off. The list can reuse the result until its sessions, grouping, search, or extensions change. Keep it fast, and do not call `pocket` in it. When the module's filter state changes, give `update` a new function: `added.update({ match: (session) => matches(session) })`. A `match` that throws stops its module in that browser, and the list then shows the sessions again.
 
 - `started`: runs when a person starts a session with **New** in the session list's head while the filter is on. It gets the new session's id, so the module can make the session meet the filter, as Session tags gives it the chosen tags. Other ways to start a session (the launcher, Alt+N, the rail) do not run it. When it throws or rejects, a notice says so.
 

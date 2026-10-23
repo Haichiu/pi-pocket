@@ -111,6 +111,10 @@ before(async () => {
         dataDir: mkdtempSync(join(root, "session-list-ui-")),
         load: async () => undefined,
         save: () => {},
+        // A mouse, whatever this machine has: rows draw their buttons only where a pointer can hover.
+        args: [
+            "--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4",
+        ],
     });
     page = await browsers.open(1);
     await page.setViewport({ width: 1440, height: 900, scale: 1, mobile: false });
@@ -141,6 +145,25 @@ test(
         );
     },
 );
+
+test("a chip update redraws memoized rows without changing their sessions", real, async () => {
+    await inPage(`
+        globalThis.chipSessionsBefore = (await import("/store.js")).store.state.sessions;
+        globalThis.labelsChips.update({ chips: (session) => [{ label: "updated" + session.id }] });
+        return "null";
+    `);
+    await until(async () => (await chipsOf(first))[0] === `updated${first}`, "updated chips");
+    assert.equal(
+        await inPage<boolean>(`return JSON.stringify(
+            globalThis.chipSessionsBefore === (await import("/store.js")).store.state.sessions
+        )`),
+        true,
+        "only the extension revision changed",
+    );
+    await inPage(`globalThis.labelsChips.update({ chips: (session) => [{ label: "id" + session.id,
+        title: session.title, run: () => (globalThis.chipRan = session.id) }] }); return "null"`);
+    await until(async () => (await chipsOf(first))[0] === `id${first}`, "restored chips");
+});
 
 test("an actionable chip joins the keyboard focus order and Enter runs it", real, async () => {
     await inPage(
@@ -295,7 +318,10 @@ test(
                 ),
             "the action in the bar",
         );
-        await page.click({ label: "Note" });
+        // The bar's: each row has a Note button too, where a mouse hovers.
+        await inPage(
+            `[...document.querySelectorAll(".sidebar .select-bar .button")].find((each) => each.textContent.trim() === "Note").click(); return "null"`,
+        );
         await until(
             async () => ((await value<number[]>("noted")) ?? []).length === 2,
             "the action's run",
