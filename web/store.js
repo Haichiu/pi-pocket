@@ -1259,6 +1259,8 @@ export const actions = {
     /** Undo the uncommitted changes to one file. */
     revert: (path) => api(`c/${current()}/changes/revert`, { path }),
     abort: () => api(`c/${current()}/abort`, {}),
+    /** Send the request of a run that waits for its provider's limit now, not at its time. */
+    retryLimit: (id = current()) => api(`c/${id}/limit/retry`, {}),
     chat: (text, quote) =>
         api(`c/${current()}/chat`, {
             text,

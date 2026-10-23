@@ -1,0 +1,1030 @@
+import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import {
+    type Api,
+    type AssistantMessage,
+    createAssistantMessageEventStream,
+    type Model,
+    type SimpleStreamOptions,
+} from "@earendil-works/pi-ai";
+import { LimitGate, type LimitTuning, noWait } from "../src/server/limit-gate.ts";
+
+const TUNING: Partial<LimitTuning> = {
+    minWaitMs: 5,
+    resetJitterMs: [1, 2],
+    backoffMs: [30, 60, 90],
+    maxBackoffMs: 400,
+    spacingMs: [40, 40],
+    refuseMs: 300,
+    maxTries: 6,
+    longWaitMs: 10_000,
+};
+
+const model = (id = "m1", provider = "prov") =>
+    ({ id, provider, api: "anthropic-messages" }) as unknown as Model<Api>;
+
+const usage = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+const message = (
+    m: Model<Api>,
+    over: Partial<AssistantMessage> = {},
+    text: string | undefined = undefined,
+): AssistantMessage =>
+    ({
+        role: "assistant",
+        content: text === undefined ? [] : [{ type: "text", text }],
+        api: "anthropic-messages",
+        provider: m.provider,
+        model: m.id,
+        usage,
+        stopReason: "stop",
+        timestamp: Date.now(),
+        ...over,
+    }) as AssistantMessage;
+
+/** What one request of the scripted model does. */
+type Step =
+    | { ok: string }
+    | { fail: string; headers?: Record<string, string>; status?: number }
+    | { midstream: string }
+    | { hang: true };
+
+/** A model runtime whose requests follow `steps`, in order of arrival; a step may be reused with `repeat`. */
+function runtime(steps: Step[], repeat?: Step) {
+    const calls: { model: string; at: number }[] = [];
+    const models = {
+        streamSimple(m: Model<Api>, _context: unknown, options?: SimpleStreamOptions) {
+            const stream = createAssistantMessageEventStream();
+            const step = steps.shift() ?? repeat;
+
+            calls.push({ model: m.id, at: Date.now() });
+            queueMicrotask(async () => {
+                if (step === undefined) {
+                    throw new Error("no step");
+                }
+
+                const start = message(m);
+
+                stream.push({ type: "start", partial: start });
+
+                if ("hang" in step) {
+                    await new Promise<void>((resolve) =>
+                        options?.signal?.addEventListener("abort", () => resolve(), { once: true }),
+                    );
+
+                    const aborted = message(m, { stopReason: "aborted", errorMessage: "aborted" });
+
+                    stream.push({ type: "error", reason: "aborted", error: aborted });
+                    stream.end(aborted);
+
+                    return;
+                }
+
+                if ("fail" in step) {
+                    if (step.headers !== undefined) {
+                        // The recording fetch wraps what the caller passed, as in the real adapters.
+                        await options!.fetch!("https://provider.example/v1").catch(() => {});
+                    }
+
+                    const failed = message(m, { stopReason: "error", errorMessage: step.fail });
+
+                    stream.push({ type: "error", reason: "error", error: failed });
+                    stream.end(failed);
+
+                    return;
+                }
+
+                const text = "ok" in step ? step.ok : step.midstream;
+                const partial = message(m, {}, text);
+
+                stream.push({ type: "text_start", contentIndex: 0, partial });
+
+                if ("midstream" in step) {
+                    const failed = message(
+                        m,
+                        {
+                            stopReason: "error",
+                            errorMessage: "529 overloaded_error",
+                        },
+                        text,
+                    );
+
+                    stream.push({ type: "error", reason: "error", error: failed });
+                    stream.end(failed);
+
+                    return;
+                }
+
+                const done = message(m, {}, text);
+
+                stream.push({ type: "done", reason: "stop", message: done });
+                stream.end(done);
+            });
+
+            return stream;
+        },
+    };
+
+    return { models, calls };
+}
+
+function gate(extra: Partial<ConstructorParameters<typeof LimitGate>[0]> = {}) {
+    let changes = 0;
+    const g = new LimitGate({
+        hours: () => 6,
+        epoch: () => 0,
+        conversationOf: () => undefined,
+        changed: () => {
+            changes++;
+        },
+        log: () => {},
+        tuning: TUNING,
+        ...extra,
+    });
+
+    return { g, changes: () => changes };
+}
+
+/** Collect a stream: its events' types, and its result. */
+async function drain(stream: ReturnType<ReturnType<typeof runtime>["models"]["streamSimple"]>) {
+    const types: string[] = [];
+
+    for await (const event of stream) {
+        types.push(event.type);
+    }
+
+    return { types, result: await stream.result() };
+}
+
+/** `fetch` that answers with the headers a step names: what the adapters' HTTP client would see. */
+function fetchWith(headers: Record<string, string>, status = 429): typeof fetch {
+    return async () => new Response("limit", { status, headers });
+}
+
+test("a 429 with a reset time waits, then the same stream answers", async () => {
+    const { g } = gate();
+    const rt = runtime([{ fail: "429 rate_limit_error Try again in 0 min" }, { ok: "hello" }]);
+
+    g.install(rt.models);
+
+    const started = Date.now();
+    const { types, result } = await drain(
+        rt.models.streamSimple(model(), { messages: [] } as never),
+    );
+
+    assert.equal(result.stopReason, "stop");
+    assert.equal(rt.calls.length, 2);
+    // No error event ever reached the consumer: one request, slow.
+    assert.ok(!types.includes("error"), types.join());
+    assert.ok(types.includes("done"));
+    assert.ok(Date.now() - started >= 5);
+    assert.deepEqual(g.gates(), []);
+});
+
+test("without a time it backs off, then answers", async () => {
+    const { g } = gate();
+    const rt = runtime([
+        { fail: "529 overloaded_error" },
+        { fail: "529 overloaded_error" },
+        { ok: "x" },
+    ]);
+
+    g.install(rt.models);
+
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(result.stopReason, "stop");
+    assert.equal(rt.calls.length, 3);
+    // 30 ms (±20%), then 60 ms (±20%) between the tries.
+    assert.ok(rt.calls[1]!.at - rt.calls[0]!.at >= 20);
+    assert.ok(rt.calls[2]!.at - rt.calls[1]!.at >= 45);
+});
+
+test("a failure that is not a limit goes straight on, unchanged", async () => {
+    const { g } = gate();
+    const rt = runtime([{ fail: "400 invalid_request_error: bad" }]);
+
+    g.install(rt.models);
+
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(result.stopReason, "error");
+    assert.equal(result.errorMessage, "400 invalid_request_error: bad");
+    assert.equal(rt.calls.length, 1);
+    assert.deepEqual(g.gates(), []);
+});
+
+test("a failure after content started is not replayed", async () => {
+    const { g } = gate();
+    const rt = runtime([{ midstream: "partial" }]);
+
+    g.install(rt.models);
+
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(result.stopReason, "error");
+    assert.equal(rt.calls.length, 1);
+});
+
+test("a request marked noWait fails at once", async () => {
+    const { g } = gate();
+    const rt = runtime([{ fail: "429 rate_limit_error" }, { ok: "never" }]);
+
+    g.install(rt.models);
+
+    const { result } = await drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, noWait({ maxTokens: 5 })),
+    );
+
+    assert.equal(result.stopReason, "error");
+    assert.equal(rt.calls.length, 1);
+});
+
+test("off (0 hours) passes every request through", async () => {
+    const { g } = gate({ hours: () => 0 });
+    const rt = runtime([{ fail: "429 rate_limit_error" }]);
+
+    g.install(rt.models);
+
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(result.stopReason, "error");
+    assert.equal(rt.calls.length, 1);
+});
+
+test("Stop ends a wait at once", async () => {
+    const { g } = gate({ tuning: { ...TUNING, backoffMs: [60_000] } });
+    const rt = runtime([{ fail: "529 overloaded_error" }, { ok: "never" }]);
+    const controller = new AbortController();
+
+    g.install(rt.models);
+
+    const stream = rt.models.streamSimple(model(), { messages: [] } as never, {
+        signal: controller.signal,
+    });
+
+    setTimeout(() => controller.abort(), 60);
+
+    const started = Date.now();
+    const { result } = await drain(stream);
+
+    assert.equal(result.stopReason, "aborted");
+    assert.ok(Date.now() - started < 1000);
+    assert.equal(rt.calls.length, 1);
+    // The gate stays for the others, but no one waits at it.
+    assert.equal(g.gates().length, 1);
+});
+
+test("a reset too far away fails at once and then fails fast, with no second wait", async () => {
+    const { g } = gate({ hours: () => 1 });
+    const week = "retryDelay: 604800s";
+    const rt = runtime([{ fail: `429 usage ${week}` }, { ok: "never" }, { ok: "never" }]);
+
+    g.install(rt.models);
+
+    const first = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(first.result.stopReason, "error");
+    assert.match(first.result.errorMessage!, /Not waiting: it resets in 7 d/);
+    assert.equal(rt.calls.length, 1);
+
+    // Pi Durable's own retries meet the refusing gate: no request, no wait.
+    const started = Date.now();
+
+    for (let i = 0; i < 3; i++) {
+        const again = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+        assert.equal(again.result.stopReason, "error");
+        assert.match(again.result.errorMessage!, /Not waiting/);
+    }
+
+    assert.ok(Date.now() - started < 100);
+    assert.equal(rt.calls.length, 1);
+
+    // After a while the gate lets one request try again.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    assert.deepEqual(g.gates(), []);
+});
+
+test("a limit that never clears gives up after its total wait", async () => {
+    const { g } = gate({ tuning: { ...TUNING, maxBackoffMs: 120, backoffMs: [40] } });
+    const rt = runtime([], { fail: "529 overloaded_error" });
+
+    g.install(rt.models);
+
+    const started = Date.now();
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage!, /Not waiting: it did not clear in/);
+    assert.ok(Date.now() - started < 1500);
+});
+
+test("ten sessions on one account send one canary, and leave one by one", async () => {
+    const { g } = gate({ tuning: { ...TUNING, backoffMs: [150], spacingMs: [30, 30] } });
+    const rt = runtime([{ fail: "429 rate_limit_error" }], { ok: "yes" });
+
+    g.install(rt.models);
+
+    // One request meets the limit and opens the gate.
+    const first = drain(rt.models.streamSimple(model("m1"), { messages: [] } as never));
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(g.gates().length, 1);
+
+    // Nine more meet the closed gate.
+    const rest = Array.from({ length: 9 }, (_, i) =>
+        drain(
+            rt.models.streamSimple(model("m1"), { messages: [] } as never, { sessionId: `s${i}` }),
+        ),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    // Nothing went out while the gate was closed.
+    assert.equal(rt.calls.length, 1);
+
+    const results = await Promise.all([first, ...rest]);
+
+    assert.ok(results.every((each) => each.result.stopReason === "stop"));
+    assert.equal(rt.calls.length, 11);
+
+    // The first call failed; the next one after it was the canary alone; the others followed spaced out.
+    const times = rt.calls.slice(1).map((call) => call.at);
+    const canaryAt = times[0]!;
+    const later = times.slice(1);
+
+    assert.equal(later.length, 9);
+    assert.ok(
+        later.every((at, i) => at >= canaryAt + 20 * (i + 1) - 5),
+        `released together: ${later.map((at) => at - canaryAt).join(",")}`,
+    );
+    assert.deepEqual(g.gates(), []);
+});
+
+test("a limit that covers the account holds every model of the provider; a model's own does not", async () => {
+    const { g } = gate({ tuning: { ...TUNING, backoffMs: [120] } });
+    const account = {
+        "anthropic-ratelimit-unified-status": "rejected",
+        "anthropic-ratelimit-unified-reset": String(Math.floor((Date.now() + 120) / 1000) + 1),
+        "anthropic-ratelimit-unified-representative-claim": "five_hour",
+    };
+    const rt = runtime([{ fail: "429 rate_limit_error", headers: account }], { ok: "yes" });
+
+    g.install(rt.models);
+
+    const a = drain(
+        rt.models.streamSimple(model("opus", "anthropic"), { messages: [] } as never, {
+            fetch: fetchWith(account),
+        }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const [view] = g.gates();
+
+    assert.equal(view?.scope, "account");
+    assert.equal(view?.kind, "reset");
+    assert.equal(view?.modelId, undefined);
+
+    // Another model of the provider meets the same gate: it waits.
+    const b = drain(rt.models.streamSimple(model("haiku", "anthropic"), { messages: [] } as never));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(rt.calls.length, 1);
+
+    // Another provider is not held.
+    const other = await drain(
+        rt.models.streamSimple(model("x", "openai"), { messages: [] } as never),
+    );
+
+    assert.equal(other.result.stopReason, "stop");
+
+    const [ra, rb] = await Promise.all([a, b]);
+
+    assert.equal(ra.result.stopReason, "stop");
+    assert.equal(rb.result.stopReason, "stop");
+});
+
+test("a per-model limit holds only that model", async () => {
+    const { g } = gate({ tuning: { ...TUNING, backoffMs: [200] } });
+    const rt = runtime([{ fail: "529 overloaded_error" }], { ok: "yes" });
+
+    g.install(rt.models);
+
+    const a = drain(rt.models.streamSimple(model("m1"), { messages: [] } as never));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(g.gates()[0]?.scope, "model");
+
+    const other = await drain(rt.models.streamSimple(model("m2"), { messages: [] } as never));
+
+    assert.equal(other.result.stopReason, "stop");
+    assert.equal((await a).result.stopReason, "stop");
+});
+
+test("Retry now sends the canary at once", async () => {
+    const found = new Map<string, number>([["s1", 7]]);
+    const { g } = gate({
+        tuning: { ...TUNING, backoffMs: [60_000] },
+        conversationOf: (sessionId) => found.get(sessionId),
+    });
+    const rt = runtime([{ fail: "529 overloaded_error" }], { ok: "yes" });
+
+    g.install(rt.models);
+
+    const stream = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { sessionId: "s1" }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(g.waitFor(7)?.kind, "backoff");
+    assert.equal(g.waitFor(8), undefined);
+    assert.equal(g.retryNow(8), false);
+    assert.equal(g.retryNow(7), true);
+
+    const started = Date.now();
+    const { result } = await stream;
+
+    assert.equal(result.stopReason, "stop");
+    assert.ok(Date.now() - started < 1000);
+});
+
+test("a canary that fails for another reason frees the next waiter, and a stopped canary too", async () => {
+    const { g } = gate({ tuning: { ...TUNING, backoffMs: [60] } });
+    const rt = runtime([{ fail: "529 overloaded_error" }, { fail: "400 invalid_request_error" }], {
+        ok: "yes",
+    });
+
+    g.install(rt.models);
+
+    const a = drain(rt.models.streamSimple(model(), { messages: [] } as never));
+    const b = drain(rt.models.streamSimple(model(), { messages: [] } as never));
+    const [ra, rb] = await Promise.all([a, b]);
+    const stops = [ra.result.stopReason, rb.result.stopReason].sort();
+
+    // One got the 400 (a canary's failure for another reason), the other went on and answered.
+    assert.deepEqual(stops, ["error", "stop"]);
+});
+
+test("a sign-in change lets the waiters go at once", async () => {
+    let epoch = 0;
+    const { g } = gate({ tuning: { ...TUNING, backoffMs: [60_000] }, epoch: () => epoch });
+    const rt = runtime([{ fail: "529 overloaded_error" }], { ok: "yes" });
+
+    g.install(rt.models);
+
+    const stream = drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    epoch = 1;
+    g.reset("prov");
+
+    const started = Date.now();
+
+    assert.equal((await stream).result.stopReason, "stop");
+    assert.ok(Date.now() - started < 1000);
+});
+
+test("gates are kept in a file, and a restart reads them", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "limit-gate-"));
+    const file = join(dir, "provider-limits.json");
+    const first = gate({ file, tuning: { ...TUNING, backoffMs: [250] } });
+    const rt = runtime([{ fail: "529 overloaded_error" }], { ok: "yes" });
+
+    first.g.install(rt.models);
+
+    const stream = drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const saved = JSON.parse(readFileSync(file, "utf8")) as { gates: { key: string }[] };
+
+    assert.equal(saved.gates.length, 1);
+    assert.ok(JSON.stringify(saved).indexOf("Bearer") === -1);
+
+    // A new process: the gate is known, and its first request waits instead of going out.
+    const second = gate({ file, tuning: { ...TUNING, backoffMs: [250] } });
+    const rt2 = runtime([], { ok: "yes" });
+
+    second.g.install(rt2.models);
+    assert.equal(second.g.gates().length, 1);
+
+    const again = drain(rt2.models.streamSimple(model(), { messages: [] } as never));
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(rt2.calls.length, 0);
+    assert.equal((await again).result.stopReason, "stop");
+    await stream;
+    first.g.close();
+    second.g.close();
+});
+
+test("a missing, empty, or damaged file means no limit is known", () => {
+    const dir = mkdtempSync(join(tmpdir(), "limit-gate-"));
+    const file = join(dir, "provider-limits.json");
+
+    assert.equal(gate({ file }).g.gates().length, 0);
+
+    for (const text of [
+        "",
+        "{",
+        "null",
+        "[]",
+        '{"version":2,"gates":[]}',
+        '{"version":1,"gates":"x"}',
+        '{"version":1,"gates":[null,1,"a",{"key":3}]}',
+        `{"version":1,"gates":[{"key":"a","scope":"x","provider":"p","kind":"reset","since":1,"until":${Date.now() + 1000},"tries":1}]}`,
+        `{"version":1,"gates":[{"key":"a","scope":"model","provider":"p","kind":"reset","since":1,"until":1,"tries":1}]}`,
+    ]) {
+        writeFileSync(file, text);
+        assert.equal(gate({ file }).g.gates().length, 0, text);
+    }
+
+    // A good entry is read.
+    writeFileSync(
+        file,
+        `{"version":1,"gates":[{"key":"p","scope":"account","provider":"p","kind":"reset","since":${Date.now() - 1000},"until":${Date.now() + 5000},"tries":1,"reason":"r"}]}`,
+    );
+    assert.equal(gate({ file }).g.gates().length, 1);
+});
+
+test("a wait that is long is told once, to the conversation", async () => {
+    const told: number[] = [];
+    const { g } = gate({
+        tuning: { ...TUNING, backoffMs: [200], longWaitMs: 100 },
+        conversationOf: () => 12,
+        started: (id) => told.push(id),
+    });
+    const rt = runtime([{ fail: "529 overloaded_error" }], { ok: "yes" });
+
+    g.install(rt.models);
+    await drain(rt.models.streamSimple(model(), { messages: [] } as never, { sessionId: "s" }));
+    assert.deepEqual(told, [12]);
+});
+
+test("an adapter that refuses a custom fetch gets none", async () => {
+    const { g } = gate();
+    const seen: unknown[] = [];
+    const models = {
+        streamSimple(m: Model<Api>, _context: unknown, options?: SimpleStreamOptions) {
+            const stream = createAssistantMessageEventStream();
+            const done = message(m, {}, "ok");
+
+            seen.push(options?.fetch);
+            queueMicrotask(() => {
+                stream.push({ type: "done", reason: "stop", message: done });
+                stream.end(done);
+            });
+
+            return stream;
+        },
+    };
+
+    g.install(models);
+    await drain(
+        models.streamSimple({ ...model(), api: "google-generative-ai" } as never, {} as never),
+    );
+    await drain(models.streamSimple(model(), {} as never));
+    assert.equal(seen[0], undefined);
+    assert.equal(typeof seen[1], "function");
+});
+
+test("the longest wait is one deadline for the whole wait: known resets one after another do not start it again", async () => {
+    // 60 ms of waiting at most; the provider gives a reset 25 ms away each time.
+    const { g } = gate({
+        hours: () => 60 / 3_600_000,
+        tuning: { ...TUNING, resetJitterMs: [0, 0], maxTries: 40 },
+    });
+    const rt = runtime([], { fail: "429 rate_limit_error retryDelay: 25ms" });
+
+    g.install(rt.models);
+
+    const started = Date.now();
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+    const last = rt.calls.at(-1)!.at - started;
+
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage!, /Not waiting/);
+    // No request goes out after the deadline (the third would be at 75 ms).
+    assert.ok(last <= 60 + 15, `the last request was at ${last} ms`);
+    assert.ok(rt.calls.length <= 3, `${rt.calls.length} requests`);
+});
+
+test("a backoff delay is cut to the deadline, so no request goes out after it", async () => {
+    const { g } = gate({
+        tuning: { ...TUNING, backoffMs: [40], maxBackoffMs: 60, maxTries: 40 },
+        random: () => 0.5,
+    });
+    const rt = runtime([], { fail: "529 overloaded_error" });
+
+    g.install(rt.models);
+
+    const started = Date.now();
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+    const last = rt.calls.at(-1)!.at - started;
+
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage!, /Not waiting/);
+    // Requests at 0 and 40 ms; the next would be at 80, past 60: the delay is cut to 60, and that request is the last.
+    assert.ok(last <= 60 + 15, `the last request was at ${last} ms`);
+});
+
+test("a canary whose failure moves the scope leaves no gate probing, and the next request goes", async () => {
+    const { g } = gate();
+    // An overload (the model's gate), then a usage limit with a reset now (the account's), then an answer.
+    const rt = runtime(
+        [{ fail: "529 overloaded_error" }, { fail: "429 usage limit. Try again in 0s" }],
+        { ok: "yes" },
+    );
+
+    g.install(rt.models);
+
+    const first = await drain(rt.models.streamSimple(model("m", "p"), { messages: [] } as never));
+
+    assert.equal(first.result.stopReason, "stop");
+    assert.equal(rt.calls.length, 3);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepEqual(
+        g.gates().map((each) => [each.key, each.probing]),
+        [],
+        "no gate is left, least of all one probing with no canary",
+    );
+
+    // The next request is not held by a gate that nobody can finish.
+    const started = Date.now();
+    const next = await drain(rt.models.streamSimple(model("m", "p"), { messages: [] } as never));
+
+    assert.equal(next.result.stopReason, "stop");
+    assert.ok(Date.now() - started < 300);
+    assert.equal(rt.calls.length, 4);
+});
+
+test("a gate never stays probing after its canary's request ends, however it ends", async () => {
+    const { g } = gate({ tuning: { ...TUNING, backoffMs: [30] } });
+    const rt = runtime([{ fail: "529 overloaded_error" }], { hang: true });
+    const stop = new AbortController();
+
+    g.install(rt.models);
+
+    // One request closes the gate; it is stopped while its canary is out.
+    const run = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+
+    await until(() => g.gates()[0]?.probing === true);
+    stop.abort();
+    await run;
+    assert.equal(g.gates()[0]?.probing, false);
+});
+
+async function until(check: () => boolean, ms = 2000): Promise<void> {
+    const started = Date.now();
+
+    while (!check()) {
+        if (Date.now() - started > ms) {
+            throw new Error("timed out");
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+}
+
+/** A runtime whose requests end when the test says so: `calls[i].end(error)` fails one, `end()` answers it. */
+function manual() {
+    const calls: { end: (error?: string) => void }[] = [];
+    const models = {
+        streamSimple(m: Model<Api>, _context: unknown, options?: SimpleStreamOptions) {
+            const stream = createAssistantMessageEventStream();
+
+            calls.push({
+                end(error) {
+                    const done = message(
+                        m,
+                        error === undefined ? {} : { stopReason: "error", errorMessage: error },
+                        error === undefined ? "ok" : undefined,
+                    );
+
+                    stream.push(
+                        error === undefined
+                            ? { type: "done", reason: "stop", message: done }
+                            : { type: "error", reason: "error", error: done },
+                    );
+                    stream.end(done);
+                },
+            });
+            options?.signal?.addEventListener(
+                "abort",
+                () => {
+                    const aborted = message(m, { stopReason: "aborted", errorMessage: "aborted" });
+
+                    stream.push({ type: "error", reason: "aborted", error: aborted });
+                    stream.end(aborted);
+                },
+                { once: true },
+            );
+
+            return stream;
+        },
+    };
+
+    return { calls, models };
+}
+
+test("a request sent before the gate closed, failing late, does not start a second canary", async () => {
+    const { g } = gate({ tuning: { ...TUNING, backoffMs: [30, 40] } });
+    const rt = manual();
+    const stop = new AbortController();
+
+    g.install(rt.models);
+
+    // Two requests are out; the first fails and closes the gate, then is its canary (the third request).
+    const a = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+    const b = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+
+    rt.calls[0]!.end("529 overloaded_error");
+    await until(() => rt.calls.length === 3 && g.gates()[0]?.probing === true);
+
+    // The second, which was out before the gate, fails now: that says nothing about the canary.
+    rt.calls[1]!.end("529 overloaded_error");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(rt.calls.length, 3, "no second canary");
+    assert.equal(g.gates()[0]?.probing, true, "the canary is still the one out");
+
+    // The canary answers: the gate opens, and the second request goes.
+    rt.calls[2]!.end();
+    await until(() => rt.calls.length === 4);
+    rt.calls[3]!.end();
+
+    const [ra, rb] = await Promise.all([a, b]);
+
+    assert.equal(ra.result.stopReason, "stop");
+    assert.equal(rb.result.stopReason, "stop");
+    assert.deepEqual(g.gates(), []);
+});
+
+test("a late failure can only move the time on, not back", async () => {
+    const { g } = gate({ tuning: { ...TUNING, backoffMs: [60_000] } });
+    const rt = manual();
+    const stop = new AbortController();
+
+    g.install(rt.models);
+
+    const near = Date.now() + 10_000;
+    const far = Date.now() + 20_000;
+    const a = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+    const b = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+    const c = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+
+    rt.calls[0]!.end(`429 rate_limit_error retryDelay: 10s`);
+    await until(() => g.gates()[0]?.kind === "reset");
+    const first = g.gates()[0]!.until;
+
+    assert.ok(first >= near - 200 && first < near + 1000);
+    // A later reset moves it on; an earlier one does not move it back.
+    rt.calls[1]!.end(`429 rate_limit_error retryDelay: 20s`);
+    await until(() => g.gates()[0]!.until > first + 5_000);
+    assert.ok(g.gates()[0]!.until >= far - 200);
+
+    const later = g.gates()[0]!.until;
+
+    rt.calls[2]!.end(`429 rate_limit_error retryDelay: 1s`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(g.gates()[0]!.until, later);
+    assert.equal(g.gates()[0]!.probing, false);
+    stop.abort();
+    await Promise.all([a, b, c]);
+});
+
+test("a request keeps its deadline and its tries across scopes: alternating limits do not start the wait again", async () => {
+    const { g } = gate({
+        random: () => 0.5,
+        tuning: { ...TUNING, backoffMs: [20], resetJitterMs: [0, 0], maxTries: 3 },
+    });
+    // An overload (the model's), then a usage limit (the account's), and so on: each failure moves the scope.
+    const rt = runtime(
+        Array.from({ length: 30 }, (_, i) => ({
+            fail: i % 2 === 0 ? "529 overloaded_error" : "429 usage limit. Try again in 20ms",
+        })),
+    );
+
+    g.install(rt.models);
+
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage!, /Not waiting: it did not clear after 3 tries/);
+    assert.equal(rt.calls.length, 4, "the fourth failure is past three tries");
+});
+
+test("a request keeps its deadline across scopes", async () => {
+    const { g } = gate({
+        hours: () => 60 / 3_600_000,
+        random: () => 0.5,
+        tuning: { ...TUNING, backoffMs: [25], resetJitterMs: [0, 0], maxTries: 40 },
+    });
+    const rt = runtime(
+        Array.from({ length: 60 }, (_, i) => ({
+            fail: i % 2 === 0 ? "529 overloaded_error" : "429 usage limit. Try again in 25ms",
+        })),
+    );
+
+    g.install(rt.models);
+
+    const started = Date.now();
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage!, /Not waiting/);
+    assert.ok(rt.calls.at(-1)!.at - started <= 60 + 20, "no request after the deadline");
+});
+
+test("a refusal survives a restart: the same limit sends no request until it ends", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "limit-gate-"));
+    const file = join(dir, "provider-limits.json");
+    const tuning = { ...TUNING, refuseMs: 700 };
+    const first = gate({ file, hours: () => 1, tuning });
+    const rt = runtime([{ fail: "429 rate_limit_error retryDelay: 604800s" }]);
+
+    first.g.install(rt.models);
+
+    const refused = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.match(refused.result.errorMessage!, /Not waiting/);
+
+    const saved = JSON.parse(readFileSync(file, "utf8")) as {
+        gates: { state?: string; until: number }[];
+    };
+
+    assert.equal(saved.gates.length, 1);
+    assert.equal(saved.gates[0]!.state, "refusing");
+    first.g.close();
+
+    // A new process: the refusal is still on, and the same limit sends nothing until it ends.
+    const second = gate({ file, hours: () => 1, tuning });
+    const rt2 = runtime([], { ok: "yes" });
+
+    second.g.install(rt2.models);
+    assert.equal(second.g.gates().length, 1);
+    assert.equal(second.g.gates()[0]!.refusing, true);
+
+    const again = await drain(rt2.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(again.result.stopReason, "error");
+    assert.match(again.result.errorMessage!, /Not waiting/);
+    assert.equal(rt2.calls.length, 0);
+
+    // When it ends, a request goes.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    assert.deepEqual(second.g.gates(), []);
+
+    const after = await drain(rt2.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(after.result.stopReason, "stop");
+    assert.equal(rt2.calls.length, 1);
+    second.g.close();
+});
+
+test("a refusal that ended while the server was down is not restored", () => {
+    const dir = mkdtempSync(join(tmpdir(), "limit-gate-"));
+    const file = join(dir, "provider-limits.json");
+
+    writeFileSync(
+        file,
+        JSON.stringify({
+            version: 1,
+            gates: [
+                {
+                    key: "p",
+                    scope: "account",
+                    provider: "p",
+                    kind: "reset",
+                    since: Date.now() - 10_000,
+                    until: Date.now() - 1_000,
+                    reason: "r",
+                    tries: 1,
+                    state: "refusing",
+                    refusal: "r Not waiting: x.",
+                },
+            ],
+        }),
+    );
+    assert.deepEqual(gate({ file }).g.gates(), []);
+});
+
+/** A gate that waits 15 minutes, written to `file` and left by a request that was stopped, as a restart would. */
+async function leftBehind(file: string, clock: { now: number }, hours: number) {
+    const first = gate({
+        file,
+        hours: () => hours,
+        now: () => clock.now,
+        random: () => 0.5,
+        tuning: {
+            ...TUNING,
+            backoffMs: [15 * 60_000],
+            minWaitMs: 1,
+            maxBackoffMs: 100 * 3_600_000,
+        },
+    });
+    const rt = runtime([], { fail: "529 overloaded_error" });
+    const stop = new AbortController();
+
+    first.g.install(rt.models);
+
+    const run = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+
+    await until(() => first.g.gates().length === 1);
+    stop.abort();
+    await run;
+    first.g.close();
+
+    return first.g.gates()[0]!;
+}
+
+test("a restart after the deadline gives the unfinished wait no new wait: it refuses", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "limit-gate-")), "provider-limits.json");
+    const clock = { now: Date.now() };
+    const original = await leftBehind(file, clock, 1);
+
+    // The server comes back 70 minutes later: the one hour is over.
+    clock.now += 70 * 60_000;
+
+    const second = gate({
+        file,
+        hours: () => 1,
+        now: () => clock.now,
+        tuning: { ...TUNING, refuseMs: 5000, maxBackoffMs: 100 * 3_600_000 },
+    });
+    const rt2 = runtime([], { ok: "yes" });
+
+    second.g.install(rt2.models);
+
+    const [view] = second.g.gates();
+
+    assert.equal(view?.refusing, true);
+    assert.equal(view?.since, original.since, "the first time is kept");
+
+    const result = (await drain(rt2.models.streamSimple(model(), { messages: [] } as never)))
+        .result;
+
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage!, /Not waiting/);
+    assert.equal(rt2.calls.length, 0);
+    second.g.close();
+});
+
+test("a restart before the deadline keeps the wait and its first time, and the next try goes at once", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "limit-gate-")), "provider-limits.json");
+    const clock = { now: Date.now() };
+    const original = await leftBehind(file, clock, 3);
+
+    // Back 40 minutes later: the retry time (15 minutes) is long past, the three hours are not.
+    clock.now += 40 * 60_000;
+
+    const second = gate({
+        file,
+        hours: () => 3,
+        now: () => clock.now,
+        tuning: { ...TUNING, maxBackoffMs: 100 * 3_600_000 },
+    });
+    const rt2 = runtime([], { ok: "yes" });
+
+    second.g.install(rt2.models);
+
+    const [view] = second.g.gates();
+
+    assert.equal(view?.refusing, undefined);
+    assert.equal(view?.since, original.since);
+    assert.equal(view?.until, original.until);
+
+    const started = Date.now();
+    const result = (await drain(rt2.models.streamSimple(model(), { messages: [] } as never)))
+        .result;
+
+    assert.equal(result.stopReason, "stop");
+    assert.ok(Date.now() - started < 500);
+    assert.equal(rt2.calls.length, 1);
+    assert.deepEqual(second.g.gates(), []);
+    second.g.close();
+});
