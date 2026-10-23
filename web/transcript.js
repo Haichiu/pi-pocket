@@ -453,11 +453,17 @@ const isArtifactCall = (name) => name === "artifact" || name === INLINE_TOOL;
 /** What a step's mark says, by how the call went; a call still running shows a spinner instead. */
 const MARKS = { done: "✓", error: "×", denied: "×", stopped: "–", approval: "!" };
 
+/**
+ * The waiting and running calls' statuses as the mark's own look names: `approval` and `running` are also the card
+ * classes in `style.css`, whose padding, border, and layout must not sit on the mark.
+ */
+const MARK_LOOKS = { approval: "asking", running: "spinning" };
+
 /** A step's mark: a small circle that says how it went. A thought is ✦, and a subagent's call ⑂ unless it failed. */
 function StepMark({ status, kind }) {
     const agent = kind === "agent" && (status === "done" || status === "running");
     const spinning = kind !== "thought" && !agent && status === "running";
-    const look = kind === "thought" ? "thought" : agent ? "agent" : status;
+    const look = kind === "thought" ? "thought" : agent ? "agent" : (MARK_LOOKS[status] ?? status);
     const mark = kind === "thought" ? "✦" : agent ? "⑂" : MARKS[status];
 
     return html`<span
