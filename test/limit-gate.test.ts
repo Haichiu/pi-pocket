@@ -698,3 +698,119 @@ async function until(check: () => boolean, ms = 2000): Promise<void> {
         await new Promise((resolve) => setTimeout(resolve, 2));
     }
 }
+
+/** A runtime whose requests end when the test says so: `calls[i].end(error)` fails one, `end()` answers it. */
+function manual() {
+    const calls: { end: (error?: string) => void }[] = [];
+    const models = {
+        streamSimple(m: Model<Api>, _context: unknown, options?: SimpleStreamOptions) {
+            const stream = createAssistantMessageEventStream();
+
+            calls.push({
+                end(error) {
+                    const done = message(
+                        m,
+                        error === undefined ? {} : { stopReason: "error", errorMessage: error },
+                        error === undefined ? "ok" : undefined,
+                    );
+
+                    stream.push(
+                        error === undefined
+                            ? { type: "done", reason: "stop", message: done }
+                            : { type: "error", reason: "error", error: done },
+                    );
+                    stream.end(done);
+                },
+            });
+            options?.signal?.addEventListener(
+                "abort",
+                () => {
+                    const aborted = message(m, { stopReason: "aborted", errorMessage: "aborted" });
+
+                    stream.push({ type: "error", reason: "aborted", error: aborted });
+                    stream.end(aborted);
+                },
+                { once: true },
+            );
+
+            return stream;
+        },
+    };
+
+    return { calls, models };
+}
+
+test("a request sent before the gate closed, failing late, does not start a second canary", async () => {
+    const { g } = gate({ tuning: { ...TUNING, backoffMs: [30, 40] } });
+    const rt = manual();
+    const stop = new AbortController();
+
+    g.install(rt.models);
+
+    // Two requests are out; the first fails and closes the gate, then is its canary (the third request).
+    const a = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+    const b = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+
+    rt.calls[0]!.end("529 overloaded_error");
+    await until(() => rt.calls.length === 3 && g.gates()[0]?.probing === true);
+
+    // The second, which was out before the gate, fails now: that says nothing about the canary.
+    rt.calls[1]!.end("529 overloaded_error");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(rt.calls.length, 3, "no second canary");
+    assert.equal(g.gates()[0]?.probing, true, "the canary is still the one out");
+
+    // The canary answers: the gate opens, and the second request goes.
+    rt.calls[2]!.end();
+    await until(() => rt.calls.length === 4);
+    rt.calls[3]!.end();
+
+    const [ra, rb] = await Promise.all([a, b]);
+
+    assert.equal(ra.result.stopReason, "stop");
+    assert.equal(rb.result.stopReason, "stop");
+    assert.deepEqual(g.gates(), []);
+});
+
+test("a late failure can only move the time on, not back", async () => {
+    const { g } = gate({ tuning: { ...TUNING, backoffMs: [60_000] } });
+    const rt = manual();
+    const stop = new AbortController();
+
+    g.install(rt.models);
+
+    const near = Date.now() + 10_000;
+    const far = Date.now() + 20_000;
+    const a = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+    const b = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+    const c = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+
+    rt.calls[0]!.end(`429 rate_limit_error retryDelay: 10s`);
+    await until(() => g.gates()[0]?.kind === "reset");
+    const first = g.gates()[0]!.until;
+
+    assert.ok(first >= near - 200 && first < near + 1000);
+    // A later reset moves it on; an earlier one does not move it back.
+    rt.calls[1]!.end(`429 rate_limit_error retryDelay: 20s`);
+    await until(() => g.gates()[0]!.until > first + 5_000);
+    assert.ok(g.gates()[0]!.until >= far - 200);
+
+    const later = g.gates()[0]!.until;
+
+    rt.calls[2]!.end(`429 rate_limit_error retryDelay: 1s`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(g.gates()[0]!.until, later);
+    assert.equal(g.gates()[0]!.probing, false);
+    stop.abort();
+    await Promise.all([a, b, c]);
+});

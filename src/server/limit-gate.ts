@@ -655,6 +655,30 @@ export class LimitGate {
 
         let gate = this.#gates.get(key);
 
+        // A failure of a request that was out before the gate closed (or before this canary went) says nothing about
+        // the canary: it must not free the canary or move the state. It can only move the time on, when its reset is
+        // later, and only to a time within the deadline.
+        if (gate !== undefined && gate !== owned) {
+            if (gate.state !== "refusing" && verdict.resetAt !== undefined) {
+                const jitter =
+                    tuning.resetJitterMs[0] +
+                    this.#random() * (tuning.resetJitterMs[1] - tuning.resetJitterMs[0]);
+                const later = Math.max(verdict.resetAt + jitter, now + tuning.minWaitMs);
+
+                if (later > gate.until && later <= gate.since + this.#deps.hours() * 3_600_000) {
+                    gate.until = later;
+                    gate.kind = "reset";
+                    gate.resetAt = verdict.resetAt;
+                    gate.reason = verdict.reason;
+                    this.#poke(gate);
+                    this.#save();
+                    this.#deps.changed();
+                }
+            }
+
+            return gate;
+        }
+
         if (gate === undefined) {
             gate = {
                 key,
