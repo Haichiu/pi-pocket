@@ -7,6 +7,7 @@ import {
     openApp,
     owner,
     root,
+    say,
     scriptedModel,
     until,
 } from "./helpers.ts";
@@ -195,4 +196,22 @@ test("only the owner sets the longest wait, and turning it off lets a waiting ru
     await app.setLimitWaitHours(owner(app), 0);
     await until(async () => (await lastStop(app, id)) === "error", "the failure");
     assert.equal(state.calls, 2);
+});
+
+test("an idle session's manual compaction waits for a limit too, with a view and Retry now", async () => {
+    const { state, model } = limited();
+    const app = await open(model);
+    const id = await newSession(app);
+
+    app.settings.getCompactionSettings = () =>
+        ({ enabled: true, reserveTokens: 16384, keepRecentTokens: 50 }) as never;
+    state.limited = false;
+    await say(app, id, "first message ".repeat(100));
+    await say(app, id, "second message ".repeat(100));
+    state.limited = true;
+    await app.commands.compact(id, owner(app), undefined);
+    await until(() => waits(app, id) !== undefined, "the compaction to wait");
+    state.limited = false;
+    assert.equal(await app.commands.retryLimit(id, owner(app)), true);
+    await until(() => waits(app, id) === undefined, "the compaction to go on");
 });

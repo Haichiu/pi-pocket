@@ -175,6 +175,59 @@ test("the gate opens at the canary's first content, not when its whole stream en
     assert.deepEqual(await stops(a, b), ["stop", "stop"]);
 });
 
+test("a weekly window found late, behind a gate that waits hours, refuses at once", async () => {
+    const g = gate({ hours: () => 6 });
+    const rt = fake(Array(2).fill({ fail: "429 rate_limit_error", headers: {} }));
+    const window = (name: string, seconds: number) => ({
+        fetch: async () =>
+            new Response("x", {
+                status: 429,
+                headers: {
+                    [`anthropic-ratelimit-unified-${name}-status`]: "rejected",
+                    [`anthropic-ratelimit-unified-${name}-reset`]: String(
+                        Math.floor(Date.now() / 1000) + seconds,
+                    ),
+                },
+            }),
+    });
+
+    g.install(rt.models);
+
+    // The first closes the account's gate for 5 hours; the second, out before it, finds the 7-day window.
+    const both = Promise.all([
+        ask(rt, "m", "p", window("5h", 5 * 3600)),
+        ask(rt, "m", "p", window("7d", 3 * 86400)),
+    ]);
+    const results = await Promise.race([both, sleep(500).then(() => undefined)]);
+
+    assert.ok(results, "nobody waits hours for a window of days");
+    assert.match(results[1].errorMessage!, /a limit of days/);
+    g.close();
+});
+
+test("Retry now is one try each 30 seconds, and pressing it cannot make a shared gate give up", async () => {
+    const g = gate({
+        tuning: { ...TUNING, backoffMs: [60_000], maxTries: 1 },
+        conversationOf: () => 7,
+    });
+    const rt = fake([{ fail: "429 usage limit. Try again in 1h" }, overloaded]);
+
+    g.install(rt.models);
+    void ask(rt, "m", "p", { sessionId: "s" });
+    await until(() => g.waitFor(7) !== undefined);
+    assert.equal(g.retryNow(7), true);
+    assert.equal(g.retryNow(7), false, "a second press within 30 seconds does nothing");
+    await until(() => rt.calls.length === 2);
+    await sleep(40);
+    // The manual try failed in another scope (an overload, the model's): it counts toward no cap (maxTries is 1), the
+    // gate it makes has a real time, and no third request goes at once.
+    assert.equal(g.gates()[0]?.refusing, undefined);
+    assert.ok(g.waitFor(7));
+    assert.ok(g.gates().every((each) => Number.isFinite(each.until)));
+    assert.equal(rt.calls.length, 2);
+    g.close();
+});
+
 test("a canary whose failure moves the scope leaves no gate probing", async () => {
     const g = gate();
     const rt = fake([overloaded, { fail: "429 usage limit. Try again in 0s" }], { ok: true });

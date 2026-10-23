@@ -822,6 +822,11 @@ export class PocketApp {
                     this.#busy.add(id);
                 }
 
+                // A compaction that resumes asks the model too: it may wait for a limit.
+                if ((live?.compactions?.length ?? 0) > 0) {
+                    this.#compacting.add(id);
+                }
+
                 const agent = await this.harness.snapshot(AgentDoc, id, context);
 
                 if (agent !== undefined) {
@@ -944,6 +949,13 @@ export class PocketApp {
 
         if (kind === "pi.live" && id !== undefined) {
             const busy = (change.value as LiveState | null)?.run !== undefined;
+
+            // A compaction asks the model too (an idle session's manual one has no run): it may wait for a limit.
+            if (((change.value as LiveState | null)?.compactions?.length ?? 0) > 0) {
+                this.#compacting.add(id);
+            } else {
+                this.#compacting.delete(id);
+            }
 
             if (busy !== this.#busy.has(id)) {
                 if (busy) {
@@ -1163,9 +1175,12 @@ export class PocketApp {
         }
     }
 
-    /** The conversation whose generation sends requests under a provider session id: a busy one, as only those wait. */
+    /** Conversations with a compaction going: its request may wait for a limit too. */
+    readonly #compacting = new Set<ConversationId>();
+
+    /** The conversation whose generation or compaction sends requests under a provider session id: only those wait. */
     async #conversationOfSession(sessionId: string): Promise<number | undefined> {
-        for (const id of this.#busy) {
+        for (const id of new Set([...this.#busy, ...this.#compacting])) {
             const mine = await this.harness
                 .snapshot(ProviderDoc, id, context)
                 .catch(() => undefined);

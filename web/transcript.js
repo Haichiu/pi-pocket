@@ -2554,7 +2554,7 @@ function LiveLine({ live, approvals, start, entries, conversationId }) {
         ${
             limit &&
             !waiting &&
-            html`<span class="live-why" title=${`The provider said: ${limit.reason}`}>
+            html`<span class="live-why" title=${limit.reason}>
                 ${limit.reason}
             </span>`
         }
@@ -2567,7 +2567,13 @@ function LiveLine({ live, approvals, start, entries, conversationId }) {
                 class="live-retry"
                 data-part="live-retry"
                 title="Send the request now. Stop ends the wait."
-                onClick=${() => attempt(() => actions.retryLimit(conversationId))}
+                onClick=${() =>
+                    attempt(async () => {
+                        // The gate takes one try each 30 seconds: a press it ignores says so.
+                        if ((await actions.retryLimit(conversationId))?.ok === false) {
+                            notify("info", "Already trying: wait a moment.");
+                        }
+                    })}
             >Retry now</button>`
         }
         ${

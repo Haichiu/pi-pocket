@@ -140,14 +140,21 @@ type Gate = {
     reason: string;
     tries: number;
     state: "waiting" | "probing" | "refusing";
-    /** What a request meeting a refusing gate fails with. */
+    /** What a request meeting a refusing gate fails with, and its second part (the reason it gave up). */
     refusal?: string;
+    refusalWhy?: string;
     canary?: Waiter;
     /** When the canary went. */
     canarySince?: number;
+    /** Sent by a person (Retry now), and when: a try each 30 seconds at most, and a failed one counts toward no cap. */
+    manual?: boolean;
+    manualAt?: number;
     waiters: Set<Waiter>;
     timer?: NodeJS.Timeout;
 };
+
+/** The least time between two manual tries of one gate. */
+const MANUAL_GAP_MS = 30_000;
 
 /** What the app gives the gate. */
 export type GateDeps = {
@@ -190,6 +197,29 @@ const ZERO_USAGE = {
 /** Whether a stop signal fired (a function, so that a check after an await is not narrowed away). */
 function isAborted(signal: AbortSignal | undefined): boolean {
     return signal?.aborted === true;
+}
+
+/**
+ * What a gate tells everyone who waits at it, and the tabs and pushes: fixed wording by kind, never the provider's own
+ * text, which can hold ids of another person's organisation.
+ */
+function describeLimit(verdict: { scope: Scope; reason: string }, provider: string): string {
+    const names: Record<string, string> = {
+        anthropic: "Claude",
+        "openai-codex": "ChatGPT",
+        openai: "OpenAI",
+        "opencode-go": "OpenCode Go",
+        openrouter: "OpenRouter",
+    };
+    const name = names[provider] ?? provider;
+
+    if (verdict.scope === "account") {
+        return `${name}'s usage limit`;
+    }
+
+    return /overload|unavailable|busy|\b5\d\d\b/i.test(verdict.reason)
+        ? `${name} is overloaded`
+        : `${name}'s rate limit`;
 }
 
 /** A span as people read it: `2 h 10 min`, `45 s`. */
@@ -251,8 +281,6 @@ export class LimitGate {
     readonly #deps: GateDeps;
     readonly #tuning: LimitTuning;
     readonly #gates = new Map<string, Gate>();
-    /** The conversation of each provider session id found so far. */
-    readonly #conversations = new Map<string, number>();
     readonly #now: () => number;
     readonly #random: () => number;
 
@@ -332,12 +360,23 @@ export class LimitGate {
 
             for (const waiter of gate.waiters) {
                 if (waiter.conversationId === conversationId) {
-                    if (gate.state === "waiting") {
-                        gate.until = this.#now();
-                        this.#save();
+                    const now = this.#now();
+
+                    // The gate is shared by every session of the account, and anyone who may steer one session can press
+                    // this: one manual try each 30 seconds, and none while a canary is out.
+                    if (
+                        gate.state !== "waiting" ||
+                        now - (gate.manualAt ?? -Infinity) < MANUAL_GAP_MS
+                    ) {
+                        return false;
                     }
 
+                    gate.until = now;
+                    gate.manualAt = now;
+                    // Its failure is not the limit's: it counts toward no cap, so pressing cannot make the gate give up.
+                    gate.manual = true;
                     this.#poke(gate);
+                    this.#save();
                     this.#deps.changed();
 
                     return true;
@@ -383,10 +422,7 @@ export class LimitGate {
                     continue;
                 }
 
-                this.#giveUp(
-                    gate,
-                    `${gate.reason} Not waiting: it did not clear in ${span(now - gate.since)}.`,
-                );
+                this.#giveUp(gate, `it did not clear in ${span(now - gate.since)}`);
             } else if (gate.until > deadline) {
                 gate.until = deadline;
                 this.#poke(gate);
@@ -535,7 +571,7 @@ export class LimitGate {
 
                 if (gated.state === "refusing") {
                     // Gave up: this request fails with what the gate says.
-                    this.#flush(attempt, out, gated.refusal);
+                    this.#flush(attempt, out, `${verdict.reason} ${gated.refusalWhy}`);
 
                     return;
                 }
@@ -720,7 +756,6 @@ export class LimitGate {
         const now = this.#now();
 
         waiter.since ??= now;
-        waiter.tries++;
 
         const key =
             verdict.scope === "account"
@@ -735,6 +770,17 @@ export class LimitGate {
             this.#open(owned, true);
         }
 
+        // A try a person sent (Retry now) counts toward no cap: pressing it cannot make the shared gate give up.
+        const manual = owned?.manual === true;
+
+        if (!manual) {
+            waiter.tries++;
+        }
+
+        if (owned !== undefined) {
+            delete owned.manual;
+        }
+
         let gate = this.#gates.get(key);
 
         // A failure of a request that was out before the gate closed (or before this canary went) says nothing about
@@ -746,12 +792,21 @@ export class LimitGate {
                     tuning.resetJitterMs[0] +
                     this.#random() * (tuning.resetJitterMs[1] - tuning.resetJitterMs[0]);
                 const later = Math.max(verdict.resetAt + jitter, now + tuning.minWaitMs);
+                const far = this.#tooFar(verdict, gate.since, later, now);
 
-                if (later > gate.until && later <= gate.since + this.#deps.hours() * 3_600_000) {
+                // A window of days, or a reset past the longest wait: the account is blocked for good, whoever found it
+                // first. The gate refuses now, and its waiters fail with the reset.
+                if (far !== undefined) {
+                    this.#giveUp(gate, far);
+
+                    return gate;
+                }
+
+                if (later > gate.until) {
                     gate.until = later;
                     gate.kind = "reset";
                     gate.resetAt = verdict.resetAt;
-                    gate.reason = verdict.reason;
+                    gate.reason = describeLimit(verdict, model.provider);
                     this.#poke(gate);
                     this.#save();
                     this.#deps.changed();
@@ -771,17 +826,22 @@ export class LimitGate {
                 // The wait is the request's as well as the gate's: a gate made as the scope moves takes the earlier time.
                 since: Math.min(now, waiter.since, owned?.since ?? now),
                 until: now,
-                reason: verdict.reason,
+                reason: describeLimit(verdict, model.provider),
                 tries: 0,
                 state: "waiting",
                 waiters: new Set(),
             };
             this.#gates.set(key, gate);
+            // The provider's own text can hold ids of someone else's organisation: only the owner's log has it.
+            this.#deps.log(`Limit at ${key}: ${verdict.reason}`);
         }
 
-        gate.tries++;
+        if (!manual) {
+            gate.tries++;
+        }
+
         gate.since = Math.min(gate.since, waiter.since);
-        gate.reason = verdict.reason;
+        gate.reason = describeLimit(verdict, model.provider);
         gate.canary = undefined;
 
         // One deadline for the whole wait, from when the gate closed: a reset after it, or a backoff that comes to it,
@@ -791,7 +851,6 @@ export class LimitGate {
         let why: string | undefined;
 
         if (verdict.resetAt !== undefined) {
-            const deadline = gate.since + maxReset;
             const jitter =
                 tuning.resetJitterMs[0] +
                 this.#random() * (tuning.resetJitterMs[1] - tuning.resetJitterMs[0]);
@@ -804,15 +863,12 @@ export class LimitGate {
                 gate.source = verdict.source;
             }
 
-            if (verdict.long) {
-                why = `it resets in ${span(verdict.resetAt - now)}${when(verdict.resetAt)}, a limit of days that Pi Pocket does not wait for`;
-            } else if (until > deadline) {
-                why = `it resets in ${span(verdict.resetAt - now)}${when(verdict.resetAt)}, and Pi Pocket waits at most ${span(maxReset)}`;
-            }
+            why = this.#tooFar(verdict, gate.since, until, now);
         } else {
             const total = Math.min(tuning.maxBackoffMs, maxReset);
             const deadline = gate.since + total;
-            const step = Math.min(gate.tries - 1, tuning.backoffMs.length - 1);
+            // No tries are counted yet when a manual try moved the scope: the first delay.
+            const step = Math.max(0, Math.min(gate.tries - 1, tuning.backoffMs.length - 1));
             const delay = tuning.backoffMs[step]! * (0.8 + this.#random() * 0.4);
 
             // The last try is at the deadline, not after it.
@@ -831,12 +887,13 @@ export class LimitGate {
         }
 
         if (why !== undefined) {
-            this.#giveUp(gate, `${verdict.reason} Not waiting: ${why}.`);
+            this.#giveUp(gate, why);
 
             return gate;
         }
 
-        gate.until = until;
+        // Always a time: a number that is not one would end every nap at once.
+        gate.until = Number.isFinite(until) ? until : now + tuning.minWaitMs;
         gate.state = "waiting";
         this.#poke(gate);
         this.#save();
@@ -845,17 +902,46 @@ export class LimitGate {
         return gate;
     }
 
-    /** A gate that will not wait: its requests fail at once, with `text`, for a few minutes. */
-    #giveUp(gate: Gate, text: string): void {
+    /**
+     * Why a limit's reset is not waited for, if it is not: a window of days, or after the owner's longest wait, counted
+     * from when the gate closed (`since`). Undefined: it can be waited for.
+     */
+    #tooFar(
+        verdict: Extract<ReturnType<typeof classify>, { type: "limit" }>,
+        since: number,
+        until: number,
+        now: number,
+    ): string | undefined {
+        if (verdict.resetAt === undefined) {
+            return undefined;
+        }
+
+        const maxReset = this.#deps.hours() * 3_600_000;
+        const resets = `it resets in ${span(verdict.resetAt - now)}${when(verdict.resetAt)}`;
+
+        if (verdict.long) {
+            return `${resets}, a limit of days that Pi Pocket does not wait for`;
+        }
+
+        return until > since + maxReset
+            ? `${resets}, and Pi Pocket waits at most ${span(maxReset)}`
+            : undefined;
+    }
+
+    /**
+     * A gate that will not wait: its requests fail at once, with `why`, for a few minutes. What the others are told is
+     * the gate's fixed wording, never the provider's own text (`#run` gives the request that met it its own).
+     */
+    #giveUp(gate: Gate, why: string): void {
         gate.state = "refusing";
-        gate.refusal = text;
+        gate.refusalWhy = `Not waiting: ${why}.`;
+        gate.refusal = `${gate.reason}. ${gate.refusalWhy}`;
         gate.canary = undefined;
         gate.until = this.#now() + this.#tuning.refuseMs;
         clearTimeout(gate.timer);
         gate.timer = setTimeout(() => this.#drop(gate), this.#tuning.refuseMs);
         gate.timer.unref();
-        this.#deps.log(`Limit at ${gate.key}: ${text}`);
-
+        this.#deps.log(`Limit at ${gate.key}: ${gate.refusal}`);
         this.#poke(gate);
         this.#save();
         this.#deps.changed();
@@ -884,6 +970,8 @@ export class LimitGate {
     #free(gate: Gate, waiter: Waiter): void {
         if (gate.canary === waiter) {
             gate.canary = undefined;
+            // The manual try it was ended some other way: the next, automatic one is not manual.
+            delete gate.manual;
 
             // A gate that is gone has let its waiters go: waking them now would end their spacing.
             if (this.#gates.get(gate.key) !== gate) {
@@ -1037,16 +1125,12 @@ export class LimitGate {
 
         waiter.told = true;
 
-        const known = this.#conversations.get(waiter.sessionId);
-        const found = known ?? this.#deps.conversationOf(waiter.sessionId);
-
-        void Promise.resolve(found).then(
+        void Promise.resolve(this.#deps.conversationOf(waiter.sessionId)).then(
             (conversationId) => {
                 if (conversationId === undefined) {
                     return;
                 }
 
-                this.#conversations.set(waiter.sessionId!, conversationId);
                 waiter.conversationId = conversationId;
                 this.#deps.changed();
 
