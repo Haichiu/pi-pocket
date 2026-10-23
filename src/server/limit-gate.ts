@@ -112,6 +112,12 @@ type Waiter = {
     /** Ends the waiter's nap now. */
     poke?: () => void;
     told: boolean;
+    /**
+     * When this request first met a limit, and how many limit failures it has had since: kept across every gate it
+     * moves through, so a limit that changes scope does not start its wait again.
+     */
+    since?: number;
+    tries: number;
     /** The gate this request is in the set of. */
     at?: Gate | undefined;
 };
@@ -390,6 +396,7 @@ export class LimitGate {
             modelId: model.id,
             signal,
             told: false,
+            tries: 0,
         };
 
         const end = (message: AssistantMessage) => {
@@ -640,6 +647,10 @@ export class LimitGate {
     ): Gate {
         const tuning = this.#tuning;
         const now = this.#now();
+
+        waiter.since ??= now;
+        waiter.tries++;
+
         const key =
             verdict.scope === "account"
                 ? this.#accountKey(model.provider)
@@ -686,7 +697,8 @@ export class LimitGate {
                 provider: model.provider,
                 ...(verdict.scope === "model" ? { modelId: model.id } : {}),
                 kind: "backoff",
-                since: now,
+                // The wait is the request's as well as the gate's: a gate made as the scope moves takes the earlier time.
+                since: Math.min(now, waiter.since, owned?.since ?? now),
                 until: now,
                 reason: verdict.reason,
                 tries: 0,
@@ -697,6 +709,7 @@ export class LimitGate {
         }
 
         gate.tries++;
+        gate.since = Math.min(gate.since, waiter.since);
         gate.reason = verdict.reason;
         gate.canary = undefined;
 
@@ -740,7 +753,7 @@ export class LimitGate {
             }
         }
 
-        if (why === undefined && gate.tries > tuning.maxTries) {
+        if (why === undefined && Math.max(gate.tries, waiter.tries) > tuning.maxTries) {
             why = `it did not clear after ${tuning.maxTries} tries`;
         }
 

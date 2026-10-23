@@ -814,3 +814,46 @@ test("a late failure can only move the time on, not back", async () => {
     stop.abort();
     await Promise.all([a, b, c]);
 });
+
+test("a request keeps its deadline and its tries across scopes: alternating limits do not start the wait again", async () => {
+    const { g } = gate({
+        random: () => 0.5,
+        tuning: { ...TUNING, backoffMs: [20], resetJitterMs: [0, 0], maxTries: 3 },
+    });
+    // An overload (the model's), then a usage limit (the account's), and so on: each failure moves the scope.
+    const rt = runtime(
+        Array.from({ length: 30 }, (_, i) => ({
+            fail: i % 2 === 0 ? "529 overloaded_error" : "429 usage limit. Try again in 20ms",
+        })),
+    );
+
+    g.install(rt.models);
+
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage!, /Not waiting: it did not clear after 3 tries/);
+    assert.equal(rt.calls.length, 4, "the fourth failure is past three tries");
+});
+
+test("a request keeps its deadline across scopes", async () => {
+    const { g } = gate({
+        hours: () => 60 / 3_600_000,
+        random: () => 0.5,
+        tuning: { ...TUNING, backoffMs: [25], resetJitterMs: [0, 0], maxTries: 40 },
+    });
+    const rt = runtime(
+        Array.from({ length: 60 }, (_, i) => ({
+            fail: i % 2 === 0 ? "529 overloaded_error" : "429 usage limit. Try again in 25ms",
+        })),
+    );
+
+    g.install(rt.models);
+
+    const started = Date.now();
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage!, /Not waiting/);
+    assert.ok(rt.calls.at(-1)!.at - started <= 60 + 20, "no request after the deadline");
+});
