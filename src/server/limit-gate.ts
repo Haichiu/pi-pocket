@@ -67,6 +67,8 @@ export type LimitTuning = {
     maxTries: number;
     /** A wait this long (or longer) is told to the people in the session: a push. */
     longWaitMs: number;
+    /** A canary out this long with no content no longer holds the others: the next waiter may go too. */
+    canaryStallMs: number;
 };
 
 export const DEFAULT_TUNING: LimitTuning = {
@@ -78,6 +80,7 @@ export const DEFAULT_TUNING: LimitTuning = {
     refuseMs: 5 * 60_000,
     maxTries: 40,
     longWaitMs: 10 * 60_000,
+    canaryStallMs: 2 * 60_000,
 };
 
 /** What a gate shows to the people whose runs wait at it. */
@@ -140,6 +143,8 @@ type Gate = {
     /** What a request meeting a refusing gate fails with. */
     refusal?: string;
     canary?: Waiter;
+    /** When the canary went. */
+    canarySince?: number;
     waiters: Set<Waiter>;
     timer?: NodeJS.Timeout;
 };
@@ -189,6 +194,10 @@ function isAborted(signal: AbortSignal | undefined): boolean {
 
 /** A span as people read it: `2 h 10 min`, `45 s`. */
 export function span(ms: number): string {
+    if (!Number.isFinite(ms) || ms > 1e12) {
+        return "a very long time";
+    }
+
     const seconds = Math.max(0, Math.round(ms / 1000));
 
     if (seconds < 90) {
@@ -213,7 +222,11 @@ export function span(ms: number): string {
     return `${days} d ${hours % 24} h`;
 }
 
-const when = (at: number) => `${new Date(at).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+/** A moment as text, in brackets, or nothing when it is not one a date can hold (a provider's huge number). */
+const when = (at: number) =>
+    Number.isFinite(at) && Math.abs(at) <= 8.64e15
+        ? ` (${new Date(at).toISOString().slice(0, 16).replace("T", " ")} UTC)`
+        : "";
 
 function failure(
     model: Model<Api>,
@@ -351,6 +364,38 @@ export class LimitGate {
         }
     }
 
+    /**
+     * The owner changed how long runs wait: each waiting gate's time is cut to its new deadline, and one past it gives up.
+     */
+    reconsider(): void {
+        const now = this.#now();
+
+        for (const gate of [...this.#gates.values()]) {
+            const deadline = this.#deadline(gate.kind, gate.since);
+
+            if (gate.state === "refusing") {
+                continue;
+            }
+
+            if (now >= deadline) {
+                // Nobody waits at it (a stopped wait, or a restart): it stays, and `#closed` lets one canary go.
+                if (gate.waiters.size === 0) {
+                    continue;
+                }
+
+                this.#giveUp(
+                    gate,
+                    `${gate.reason} Not waiting: it did not clear in ${span(now - gate.since)}.`,
+                );
+            } else if (gate.until > deadline) {
+                gate.until = deadline;
+                this.#poke(gate);
+                this.#save();
+                this.#deps.changed();
+            }
+        }
+    }
+
     /** The gates now, for tests and the owner's log. */
     gates(): WaitView[] {
         return [...this.#gates.values()].map((gate) => this.#view(gate));
@@ -438,15 +483,24 @@ export class LimitGate {
                 }
 
                 const epoch = this.#deps.epoch(model.provider);
-                const attempt = await this.#attempt(underlying, model, context, options, out);
+                // The canary's first content opens its gate, while the answer still streams: the others need not wait for
+                // the end of a long one.
+                const attempt = await this.#attempt(
+                    underlying,
+                    model,
+                    context,
+                    options,
+                    out,
+                    () => {
+                        if (canary !== undefined) {
+                            this.#open(canary, true);
+                        }
+                    },
+                );
 
-                // However the attempt ended, the gate its request held as canary is settled below or by `#leave`:
-                // none stays probing with a canary that cannot finish it.
+                // However the attempt ended, the gate its request held as canary is settled by now or by `#leave`: none
+                // stays probing with a canary that cannot finish it.
                 if (attempt.type === "done") {
-                    if (canary !== undefined && attempt.content) {
-                        this.#open(canary, true);
-                    }
-
                     this.#leave(waiter);
 
                     return;
@@ -502,6 +556,7 @@ export class LimitGate {
         context: TranscriptContext,
         options: SimpleStreamOptions | undefined,
         out: AssistantMessageEventStream,
+        onContent: () => void,
     ): Promise<
         | { type: "done"; content: boolean }
         | {
@@ -543,7 +598,11 @@ export class LimitGate {
                     }
                 } else if (event.type === "done") {
                     terminal = event.message;
-                    flowing = true;
+
+                    if (!flowing) {
+                        flowing = true;
+                        onContent();
+                    }
 
                     for (const earlier of held.splice(0)) {
                         out.push(earlier);
@@ -556,6 +615,7 @@ export class LimitGate {
                     held.push(event);
                 } else {
                     flowing = true;
+                    onContent();
 
                     for (const earlier of held.splice(0)) {
                         out.push(earlier);
@@ -629,17 +689,15 @@ export class LimitGate {
                 continue;
             }
 
-            // A gate nobody waits at (one kept from before a restart that no request met), past its deadline: it does not
-            // start a new wait, it refuses, as a wait that ran out does.
+            // A gate nobody waits at, past its deadline (stopped waits, or one kept from before a restart): the limit may
+            // have cleared long ago, so it does not refuse. It lets one request go as canary now, and keeps its first
+            // time: a canary that meets the limit again finds the deadline passed and gives up, so it is no new wait.
             if (
                 gate.waiters.size === 0 &&
                 gate.state === "waiting" &&
                 this.#now() >= this.#deadline(gate.kind, gate.since)
             ) {
-                this.#giveUp(
-                    gate,
-                    `${gate.reason} Not waiting: it did not clear in ${span(this.#now() - gate.since)}.`,
-                );
+                gate.until = Math.min(gate.until, this.#now());
             }
 
             return gate;
@@ -747,7 +805,7 @@ export class LimitGate {
             }
 
             if (until > deadline) {
-                why = `it resets in ${span(verdict.resetAt - now)} (${when(verdict.resetAt)}), and Pi Pocket waits at most ${span(maxReset)}`;
+                why = `it resets in ${span(verdict.resetAt - now)}${when(verdict.resetAt)}, and Pi Pocket waits at most ${span(maxReset)}`;
             }
         } else {
             const total = Math.min(tuning.maxBackoffMs, maxReset);
@@ -786,7 +844,7 @@ export class LimitGate {
     }
 
     /** A gate that will not wait: its requests fail at once, with `text`, for a few minutes. */
-    #giveUp(gate: Gate, text: string, announce = true): void {
+    #giveUp(gate: Gate, text: string): void {
         gate.state = "refusing";
         gate.refusal = text;
         gate.canary = undefined;
@@ -796,12 +854,9 @@ export class LimitGate {
         gate.timer.unref();
         this.#deps.log(`Limit at ${gate.key}: ${text}`);
 
-        // As the file is read, the gate is not in the map yet, and nothing waits at it: nothing to save or tell.
-        if (announce) {
-            this.#poke(gate);
-            this.#save();
-            this.#deps.changed();
-        }
+        this.#poke(gate);
+        this.#save();
+        this.#deps.changed();
     }
 
     /** The canary got content, or a sign-in changed: the gate goes, and its waiters leave one by one. */
@@ -909,16 +964,20 @@ export class LimitGate {
                     continue;
                 }
 
-                if (gate.canary === undefined) {
+                // Free, or out so long with no content that it no longer holds the others: this one goes.
+                const stalled = (gate.canarySince ?? 0) + this.#tuning.canaryStallMs - this.#now();
+
+                if (gate.canary === undefined || stalled <= 0) {
                     gate.canary = waiter;
+                    gate.canarySince = this.#now();
                     gate.state = "probing";
                     this.#deps.changed();
 
                     return (turn = "canary");
                 }
 
-                // Someone else is finding out: look again when that ends (or after a while, if it hangs).
-                await this.#nap(30_000, waiter);
+                // Someone else is finding out: look again when that ends, or when it has been out too long.
+                await this.#nap(Math.min(30_000, stalled), waiter);
             }
         } finally {
             // The canary stays in the gate while its request is out: people see it probe.
@@ -938,7 +997,8 @@ export class LimitGate {
                 resolve();
             };
 
-            const timer = setTimeout(done, ms);
+            // A timer holds at most 2^31 - 1 ms: longer waits come round again (the callers look at the clock).
+            const timer = setTimeout(done, Math.min(ms, 2 ** 31 - 1));
 
             timer.unref();
             waiter.poke = done;
@@ -1109,7 +1169,9 @@ export class LimitGate {
             // Waiting is off, or the file is from long ago (or from a clock that was wrong): it says nothing now.
             this.#deps.hours() <= 0 ||
             since > now + 60_000 ||
-            since < now - 7 * 86_400_000
+            since < now - 7 * 86_400_000 ||
+            // No wait lasts more than a day: a time past that is a damaged or hostile file.
+            until > since + 25 * 3_600_000
         ) {
             return undefined;
         }
@@ -1151,14 +1213,9 @@ export class LimitGate {
             gate.timer = setTimeout(() => this.#drop(gate), until - now);
             gate.timer.unref();
         } else if (now >= this.#deadline(gate.kind, gate.since)) {
-            // The wait ran out while the server was down: it keeps its first time, and refuses for the usual while,
-            // rather than starting a new wait. A gate whose retry time passed but whose deadline did not stays: its
-            // next try goes now.
-            this.#giveUp(
-                gate,
-                `${gate.reason} Not waiting: it did not clear in ${span(now - gate.since)}.`,
-                false,
-            );
+            // The wait ran out while the server was down: the limit may have cleared. One request goes as canary at
+            // once, and the first time is kept, so a canary that meets the limit again gives up (see `#closed`).
+            gate.until = Math.min(gate.until, now);
         }
 
         return gate;

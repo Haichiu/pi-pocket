@@ -34,24 +34,24 @@ type Step = { fail: string; headers?: Record<string, string> } | { ok: true };
 
 /** A model runtime. A request follows the next step (or `repeat`); with none, the test ends it: `end("529")`, `end()`. */
 function fake(steps: Step[] = [], repeat?: Step) {
-    const calls: { at: number; fetch?: unknown; end: (error?: string) => void }[] = [];
+    const calls: { at: number; fetch?: unknown; end: (e?: string) => void; content: () => void }[] =
+        [];
     const models = {
         streamSimple(m: Model<Api>, _context: unknown, options?: SimpleStreamOptions) {
             const stream = createAssistantMessageEventStream();
 
-            const end = (error?: string) => {
-                const message = {
-                    ...{
-                        role: "assistant",
-                        api: "anthropic-messages",
-                        provider: m.provider,
-                        model: m.id,
-                    },
-                    ...{ usage: { input: 0, output: 0, cacheRead: 0 }, timestamp: Date.now() },
+            const reply = (error?: string) =>
+                ({
+                    ...{ role: "assistant", api: "anthropic-messages", provider: m.provider },
+                    ...{ model: m.id, usage: { input: 0, output: 0, cacheRead: 0 } },
+                    ...{ timestamp: Date.now() },
                     ...(error === undefined
                         ? { content: [{ type: "text", text: "ok" }], stopReason: "stop" }
                         : { content: [], stopReason: "error", errorMessage: error }),
-                } as never;
+                }) as never;
+
+            const end = (error?: string) => {
+                const message = reply(error);
 
                 stream.push(
                     error === undefined
@@ -63,7 +63,10 @@ function fake(steps: Step[] = [], repeat?: Step) {
 
             const step = steps.shift() ?? repeat;
 
-            calls.push({ at: Date.now(), fetch: options?.fetch, end });
+            const content = () =>
+                stream.push({ type: "text_start", contentIndex: 0, partial: reply() });
+
+            calls.push({ at: Date.now(), fetch: options?.fetch, end, content });
 
             if (step !== undefined) {
                 queueMicrotask(async () => {
@@ -151,6 +154,27 @@ test("a limit that covers the account holds every model of the provider, with on
     assert.deepEqual(await stops(a, b), ["stop", "stop"]);
 });
 
+test("the gate opens at the canary's first content, not when its whole stream ends", async () => {
+    const g = gate();
+    const rt = fake();
+
+    g.install(rt.models);
+
+    const a = ask(rt);
+
+    rt.calls[0]!.end("529 overloaded_error");
+    await sleep(10);
+
+    const b = ask(rt);
+
+    await until(() => rt.calls.length === 2);
+    rt.calls[1]!.content();
+    await until(() => rt.calls.length === 3);
+    rt.calls[1]!.end();
+    rt.calls[2]!.end();
+    assert.deepEqual(await stops(a, b), ["stop", "stop"]);
+});
+
 test("a canary whose failure moves the scope leaves no gate probing", async () => {
     const g = gate();
     const rt = fake([overloaded, { fail: "429 usage limit. Try again in 0s" }], { ok: true });
@@ -228,8 +252,8 @@ test("a reset too far away refuses at once, and the refusal survives a restart",
     second.close();
 });
 
-test("a restart after the deadline refuses and does not wait again", async () => {
-    // A request waits 15 minutes at a gate (one hour allowed), then the server stops and is back 70 minutes later.
+test("a gate nobody waits at, past its deadline, lets one request go as canary; a second limit failure gives up", async () => {
+    // A request waits 15 minutes at a gate (one hour allowed) and is stopped; a new request comes 70 minutes later.
     const clock = { now: Date.now() };
     const options = {
         file: join(mkdtempSync(join(tmpdir(), "limit-gate-")), "provider-limits.json"),
@@ -238,23 +262,25 @@ test("a restart after the deadline refuses and does not wait again", async () =>
         random: () => 0.5,
         tuning: { ...TUNING, backoffMs: [15 * 60_000] },
     };
-    const before = gate(options);
+    const stop = new AbortController();
+    const g = gate(options);
     const rt = fake([], overloaded);
 
-    before.install(rt.models);
-    void ask(rt);
-    await until(() => before.gates().length === 1);
-    before.close();
+    g.install(rt.models);
+
+    const stopped = ask(rt, "m", "p", { signal: stop.signal });
+
+    await until(() => g.gates().length === 1);
+    stop.abort();
+    assert.equal((await stopped).stopReason, "aborted");
     clock.now += 70 * 60_000;
 
-    const restarted = gate(options);
-    const refused = fake([], { ok: true });
-
-    restarted.install(refused.models);
-    assert.equal(restarted.gates()[0]?.refusing, true);
-    assert.match((await ask(refused)).errorMessage!, /Not waiting/);
-    assert.equal(refused.calls.length, 0);
-    restarted.close();
+    // The limit may have cleared: one request goes, with no refusal first. It meets the limit again: now it gives up.
+    assert.match((await ask(rt)).errorMessage!, /Not waiting/);
+    assert.equal(rt.calls.length, 2);
+    assert.match((await ask(rt)).errorMessage!, /Not waiting/);
+    assert.equal(rt.calls.length, 2, "the refusal that follows sends nothing");
+    g.close();
 });
 
 test("a missing or damaged file means no limit is known", () => {

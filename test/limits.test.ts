@@ -56,6 +56,8 @@ test("a person's problem, a refused request, or a plan limit with no time never 
         ["400 invalid_request_error: unsupported parameter 'rate_limit'", 400],
         // A plain 409 does not wait.
         ["409 Conflict: resource already exists", 409],
+        // With no status (Google), a refusal whose text holds a number that looks like a 5xx.
+        ["400 INVALID_ARGUMENT: contents exceed 500 tokens", undefined],
     ] as const) {
         assert.equal(ask(text, status).type, "other", text);
     }
