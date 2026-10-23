@@ -553,7 +553,7 @@ test("a missing, empty, or damaged file means no limit is known", () => {
     // A good entry is read.
     writeFileSync(
         file,
-        `{"version":1,"gates":[{"key":"p","scope":"account","provider":"p","kind":"reset","since":1,"until":${Date.now() + 5000},"tries":1,"reason":"r"}]}`,
+        `{"version":1,"gates":[{"key":"p","scope":"account","provider":"p","kind":"reset","since":${Date.now() - 1000},"until":${Date.now() + 5000},"tries":1,"reason":"r"}]}`,
     );
     assert.equal(gate({ file }).g.gates().length, 1);
 });
@@ -929,4 +929,102 @@ test("a refusal that ended while the server was down is not restored", () => {
         }),
     );
     assert.deepEqual(gate({ file }).g.gates(), []);
+});
+
+/** A gate that waits 15 minutes, written to `file` and left by a request that was stopped, as a restart would. */
+async function leftBehind(file: string, clock: { now: number }, hours: number) {
+    const first = gate({
+        file,
+        hours: () => hours,
+        now: () => clock.now,
+        random: () => 0.5,
+        tuning: {
+            ...TUNING,
+            backoffMs: [15 * 60_000],
+            minWaitMs: 1,
+            maxBackoffMs: 100 * 3_600_000,
+        },
+    });
+    const rt = runtime([], { fail: "529 overloaded_error" });
+    const stop = new AbortController();
+
+    first.g.install(rt.models);
+
+    const run = drain(
+        rt.models.streamSimple(model(), { messages: [] } as never, { signal: stop.signal }),
+    );
+
+    await until(() => first.g.gates().length === 1);
+    stop.abort();
+    await run;
+    first.g.close();
+
+    return first.g.gates()[0]!;
+}
+
+test("a restart after the deadline gives the unfinished wait no new wait: it refuses", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "limit-gate-")), "provider-limits.json");
+    const clock = { now: Date.now() };
+    const original = await leftBehind(file, clock, 1);
+
+    // The server comes back 70 minutes later: the one hour is over.
+    clock.now += 70 * 60_000;
+
+    const second = gate({
+        file,
+        hours: () => 1,
+        now: () => clock.now,
+        tuning: { ...TUNING, refuseMs: 5000, maxBackoffMs: 100 * 3_600_000 },
+    });
+    const rt2 = runtime([], { ok: "yes" });
+
+    second.g.install(rt2.models);
+
+    const [view] = second.g.gates();
+
+    assert.equal(view?.refusing, true);
+    assert.equal(view?.since, original.since, "the first time is kept");
+
+    const result = (await drain(rt2.models.streamSimple(model(), { messages: [] } as never)))
+        .result;
+
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage!, /Not waiting/);
+    assert.equal(rt2.calls.length, 0);
+    second.g.close();
+});
+
+test("a restart before the deadline keeps the wait and its first time, and the next try goes at once", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "limit-gate-")), "provider-limits.json");
+    const clock = { now: Date.now() };
+    const original = await leftBehind(file, clock, 3);
+
+    // Back 40 minutes later: the retry time (15 minutes) is long past, the three hours are not.
+    clock.now += 40 * 60_000;
+
+    const second = gate({
+        file,
+        hours: () => 3,
+        now: () => clock.now,
+        tuning: { ...TUNING, maxBackoffMs: 100 * 3_600_000 },
+    });
+    const rt2 = runtime([], { ok: "yes" });
+
+    second.g.install(rt2.models);
+
+    const [view] = second.g.gates();
+
+    assert.equal(view?.refusing, undefined);
+    assert.equal(view?.since, original.since);
+    assert.equal(view?.until, original.until);
+
+    const started = Date.now();
+    const result = (await drain(rt2.models.streamSimple(model(), { messages: [] } as never)))
+        .result;
+
+    assert.equal(result.stopReason, "stop");
+    assert.ok(Date.now() - started < 500);
+    assert.equal(rt2.calls.length, 1);
+    assert.deepEqual(second.g.gates(), []);
+    second.g.close();
 });

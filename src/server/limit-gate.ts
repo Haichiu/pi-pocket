@@ -609,6 +609,15 @@ export class LimitGate {
         return `${provider}/${modelId}`;
     }
 
+    /** When a wait that began at `since` must end: the owner's maximum for a known reset, less for load with no time. */
+    #deadline(kind: "reset" | "backoff", since: number): number {
+        const maxReset = this.#deps.hours() * 3_600_000;
+
+        return (
+            since + (kind === "reset" ? maxReset : Math.min(this.#tuning.maxBackoffMs, maxReset))
+        );
+    }
+
     /** The closed gate a request for this model meets: its account's first, then its model's. */
     #closed(model: Model<Api>): Gate | undefined {
         const keys = [this.#accountKey(model.provider), this.#modelKey(model.provider, model.id)];
@@ -620,15 +629,17 @@ export class LimitGate {
                 continue;
             }
 
-            // A gate nobody waits at, long past its time (one kept from before a restart that no request met): gone.
+            // A gate nobody waits at (one kept from before a restart that no request met), past its deadline: it does not
+            // start a new wait, it refuses, as a wait that ran out does.
             if (
                 gate.waiters.size === 0 &&
-                gate.state !== "probing" &&
-                this.#now() > gate.until + 3_600_000
+                gate.state === "waiting" &&
+                this.#now() >= this.#deadline(gate.kind, gate.since)
             ) {
-                this.#drop(gate);
-
-                continue;
+                this.#giveUp(
+                    gate,
+                    `${gate.reason} Not waiting: it did not clear in ${span(this.#now() - gate.since)}.`,
+                );
             }
 
             return gate;
@@ -775,7 +786,7 @@ export class LimitGate {
     }
 
     /** A gate that will not wait: its requests fail at once, with `text`, for a few minutes. */
-    #giveUp(gate: Gate, text: string): void {
+    #giveUp(gate: Gate, text: string, announce = true): void {
         gate.state = "refusing";
         gate.refusal = text;
         gate.canary = undefined;
@@ -784,9 +795,13 @@ export class LimitGate {
         gate.timer = setTimeout(() => this.#drop(gate), this.#tuning.refuseMs);
         gate.timer.unref();
         this.#deps.log(`Limit at ${gate.key}: ${text}`);
-        this.#poke(gate);
-        this.#save();
-        this.#deps.changed();
+
+        // As the file is read, the gate is not in the map yet, and nothing waits at it: nothing to save or tell.
+        if (announce) {
+            this.#poke(gate);
+            this.#save();
+            this.#deps.changed();
+        }
     }
 
     /** The canary got content, or a sign-in changed: the gate goes, and its waiters leave one by one. */
@@ -1091,8 +1106,10 @@ export class LimitGate {
             tries === undefined ||
             (each.scope !== "account" && each.scope !== "model") ||
             (each.kind !== "reset" && each.kind !== "backoff") ||
-            // A gate whose time passed long ago says nothing now.
-            until < now - 10 * 60_000
+            // Waiting is off, or the file is from long ago (or from a clock that was wrong): it says nothing now.
+            this.#deps.hours() <= 0 ||
+            since > now + 60_000 ||
+            since < now - 7 * 86_400_000
         ) {
             return undefined;
         }
@@ -1133,6 +1150,15 @@ export class LimitGate {
             gate.refusal = text(each.refusal, 700) ?? gate.reason;
             gate.timer = setTimeout(() => this.#drop(gate), until - now);
             gate.timer.unref();
+        } else if (now >= this.#deadline(gate.kind, gate.since)) {
+            // The wait ran out while the server was down: it keeps its first time, and refuses for the usual while,
+            // rather than starting a new wait. A gate whose retry time passed but whose deadline did not stays: its
+            // next try goes now.
+            this.#giveUp(
+                gate,
+                `${gate.reason} Not waiting: it did not clear in ${span(now - gate.since)}.`,
+                false,
+            );
         }
 
         return gate;
