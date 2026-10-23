@@ -33,6 +33,7 @@ import {
     type HarnessSettings,
     LiveDoc,
     type LiveState,
+    ProviderDoc,
     type Registry,
     type Storage,
     UsageDoc,
@@ -96,6 +97,7 @@ import { snippet } from "./projection.ts";
 import { loadPromptTemplates, type PromptTemplate, type SkillCommand } from "./prompts.ts";
 import { BASE_THEME, Themes } from "./themes.ts";
 import { THEME_ID } from "./themes/format.ts";
+import { LimitGate, type LimitTuning } from "./limit-gate.ts";
 import { measureModelStreams } from "./timing.ts";
 import { Providers } from "./providers.ts";
 import { PushStore } from "./push.ts";
@@ -246,6 +248,8 @@ export interface OpenOptions {
     log?: (line: string) => void;
     /** Tests register scripted providers here. */
     configureModels?: (models: ModelRuntime) => void;
+    /** Tests shorten the limit gate's waits (`limit-gate.ts`). */
+    limits?: Partial<LimitTuning>;
     /** The clock durable work runs by, such as scheduled messages. Tests move it ahead. */
     now?: () => number;
     /** The browser to run for the Browser panel and tool; null for none. Undefined finds one on this machine. */
@@ -276,6 +280,8 @@ export class PocketApp {
     readonly collab = new Collab(this);
     readonly alerts = new Alerts(this);
     readonly providers = new Providers(this);
+    /** Model requests that hit a limit wait for it to clear, then go on (`limit-gate.ts`). */
+    readonly limits: LimitGate;
     readonly schedules = new Schedules(this);
     readonly goals = new Goals(this);
     readonly shell = new Shell(this);
@@ -368,6 +374,15 @@ export class PocketApp {
         this.config = new ConfigStore(options.dataDir);
         this.#lockFile = join(options.dataDir, "harness.lock");
         this.#log = options.log ?? ((line) => console.log(line));
+        this.limits = new LimitGate({
+            hours: () => this.config.limitWaitHours,
+            epoch: (provider) => this.providers.signInEpoch(provider),
+            conversationOf: (sessionId) => this.#conversationOfSession(sessionId),
+            changed: () => this.#limitsChanged(),
+            log: (line) => this.#log(line),
+            file: join(options.dataDir, "provider-limits.json"),
+            ...(options.limits === undefined ? {} : { tuning: options.limits }),
+        });
         this.browsers = new Browsers({
             dataDir: options.dataDir,
             ...(options.browser === undefined ? {} : { executable: options.browser }),
@@ -596,6 +611,8 @@ export class PocketApp {
         this.providers.modelRefresh.watch(this.models);
         this.#configureModels?.(this.models);
         measureModelStreams(this.models);
+        // Outside the timing wrapper: each attempt is timed on its own, not the wait before it.
+        this.limits.install(this.models);
         await this.models.getAvailable().catch(() => []);
 
         const registry = createRegistry();
@@ -1127,6 +1144,42 @@ export class PocketApp {
             if (client.user.role === "owner") {
                 client.send("notice", { level, message });
             }
+        }
+    }
+
+    /** The conversation whose generation sends requests under a provider session id: a busy one, as only those wait. */
+    async #conversationOfSession(sessionId: string): Promise<number | undefined> {
+        for (const id of this.#busy) {
+            const mine = await this.harness
+                .snapshot(ProviderDoc, id, context)
+                .catch(() => undefined);
+
+            if (mine?.sessionId === sessionId) {
+                return Number(id);
+            }
+        }
+
+        return undefined;
+    }
+
+    /** Conversations that were in a wait for a limit, or are now: their views and the session list show the change. */
+    #limitWaiting = new Set<number>();
+
+    #limitsChanged(): void {
+        const now = new Set(this.limits.waits().map((wait) => wait.conversationId));
+        const changed = new Set([...this.#limitWaiting, ...now]);
+
+        this.#limitWaiting = now;
+
+        for (const id of changed) {
+            void this.#rooms.get(id as unknown as ConversationId)?.then(
+                (room) => room.schedule(),
+                () => {},
+            );
+        }
+
+        if (changed.size > 0) {
+            this.#scheduleSessions();
         }
     }
 
@@ -3013,6 +3066,7 @@ export class PocketApp {
             this.alerts.close();
             this.themes.close();
             this.spend.close();
+            this.limits.close();
             this.#unsubscribeCommits?.();
             this.#unsubscribeApprovals?.();
             this.#unsubscribeBrowsers?.();
