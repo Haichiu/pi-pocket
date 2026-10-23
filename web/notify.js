@@ -105,6 +105,11 @@ const KINDS = [
         "Approvals",
         "when Lancet Guard asks before a command; allow or deny it from the notification",
     ],
+    [
+        "limit",
+        "Waiting for a limit",
+        "when a run waits more than ten minutes for a provider's limit to clear",
+    ],
     ["mention", "Mentions", "when someone writes @your name in a chat"],
     ["chat", "Chat messages", "in sessions you take part in"],
 ];

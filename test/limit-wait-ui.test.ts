@@ -157,3 +157,38 @@ test(
         await until(async () => (await line()).state === "", "the line to go");
     },
 );
+
+test(
+    "the Providers sheet has the owner's setting for how long to wait, and a tap changes it",
+    real,
+    async () => {
+        await page.navigate(`${base}/s/${open}`);
+        await until(
+            async () =>
+                (await inPage<boolean>(
+                    `return JSON.stringify((await import("/store.js")).store.state.server?.limitWaitHours === 6)`,
+                )) === true,
+            "the server's setting",
+            20_000,
+        );
+        await page.evaluate(`(await import("/store.js")).openSheet({ type: "providers" })`);
+        await until(
+            async () =>
+                (await inPage<boolean>(
+                    `return JSON.stringify(document.querySelector(".limit-wait") !== null)`,
+                )) === true,
+            "the setting in the sheet",
+            20_000,
+        );
+
+        const on = () =>
+            inPage<string>(
+                `return JSON.stringify(document.querySelector('.limit-wait .segmented button.on')?.textContent.trim() ?? "")`,
+            );
+
+        assert.equal(await on(), "6 hours");
+        await page.click({ selector: ".limit-wait .segmented button:nth-child(2)" });
+        await until(async () => (await on()) === "1 hour", "the choice to show");
+        assert.equal(app.config.limitWaitHours, 1);
+    },
+);

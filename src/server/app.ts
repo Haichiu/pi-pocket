@@ -142,6 +142,8 @@ const BROWSER_EXTENSION = "pocket-browser";
 const PIP_FILE = "pip.ts";
 /** The extension module with the subagent tool, rebuilt when the models subagents may use change. */
 const SUBAGENTS_FILE = "subagents.ts";
+/** The hours a run may wait for a provider's limit, as the owner may choose them (0: not at all). */
+const LIMIT_WAIT_CHOICES = [0, 1, 6, 12, 24];
 /** The most models the owner may allow subagents. */
 const MAX_SUBAGENT_MODELS = 50;
 
@@ -379,6 +381,7 @@ export class PocketApp {
             epoch: (provider) => this.providers.signInEpoch(provider),
             conversationOf: (sessionId) => this.#conversationOfSession(sessionId),
             changed: () => this.#limitsChanged(),
+            started: (conversationId, view) => this.alerts.limitWait(conversationId, view),
             log: (line) => this.#log(line),
             file: join(options.dataDir, "provider-limits.json"),
             ...(options.limits === undefined ? {} : { tuning: options.limits }),
@@ -1959,6 +1962,8 @@ export class PocketApp {
                 pip: this.pip.available(user),
                 // Tokens of context above which PiP compacts itself once idle; 0: only as sessions do.
                 pipCompactAt: this.pipCompaction.compactAt,
+                // The most hours a run waits for a provider's limit to clear; 0: it does not wait (`limit-gate.ts`).
+                limitWaitHours: this.config.limitWaitHours,
             },
             // Read after the guard's wait, so a connecting device does not replace a live update with an older list.
             folderFavorites: await this.folderFavorites.list(user),
@@ -2751,6 +2756,35 @@ export class PocketApp {
                 ? `${user.name} made approvals need someone other than who asked.`
                 : `${user.name} let anyone who can steer allow risky calls.`,
         );
+    }
+
+    /**
+     * The owner chooses how many hours a run waits for a provider's limit to clear, at most; 0 turns waiting off, and
+     * runs that wait now go on at once.
+     */
+    async setLimitWaitHours(user: User, hours: unknown): Promise<void> {
+        if (user.role !== "owner") {
+            throw new HttpError(403, "Only the owner can do that");
+        }
+
+        if (typeof hours !== "number" || !LIMIT_WAIT_CHOICES.includes(hours)) {
+            throw new HttpError(
+                400,
+                `limitWaitHours must be one of ${LIMIT_WAIT_CHOICES.join(", ")}`,
+            );
+        }
+
+        if (hours === this.config.limitWaitHours) {
+            return;
+        }
+
+        this.config.limitWaitHours = hours;
+
+        if (hours === 0) {
+            this.limits.releaseAll();
+        }
+
+        await this.#refreshClients();
     }
 
     /** The owner chooses when PiP compacts itself: above so many tokens of context once idle, or (0) as sessions do. */

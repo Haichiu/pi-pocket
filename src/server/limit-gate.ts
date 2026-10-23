@@ -333,6 +333,13 @@ export class LimitGate {
         }
     }
 
+    /** Waiting was turned off: every gate goes, and what waited at it goes on at once. */
+    releaseAll(): void {
+        for (const gate of [...this.#gates.values()]) {
+            this.#open(gate, false);
+        }
+    }
+
     /** The gates now, for tests and the owner's log. */
     gates(): WaitView[] {
         return [...this.#gates.values()].map((gate) => this.#view(gate));

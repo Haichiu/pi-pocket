@@ -7048,6 +7048,24 @@ button.session-chip {
     margin: 0.35rem 0 0;
 }
 
+/* The owner's choice of how long a run waits for a provider's limit to clear. */
+.limit-wait {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.6rem 0 0.8rem;
+    margin-bottom: 0.4rem;
+    border-bottom: 1px solid var(--line);
+}
+
+.limit-wait p {
+    margin: 0;
+}
+
+.limit-wait .segmented {
+    flex-wrap: wrap;
+}
+
 /* The owner's choice of models for subagents, above the providers. */
 .subagent-models {
     display: flex;

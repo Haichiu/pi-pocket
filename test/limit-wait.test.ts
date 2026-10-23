@@ -487,3 +487,81 @@ test("a subagent's wait shows on the subagents board and in its session's list, 
     );
     assert.equal(entry()?.failed, undefined);
 });
+
+test("the owner sets how long a run waits; turning it off lets waiting runs go on at once", async () => {
+    const state = {
+        limited: true,
+        text: "529 overloaded_error",
+        calls: 0,
+        answered: [] as string[],
+    };
+    const app = await open(limitedModel(state), undefined, { ...TUNING, backoffMs: [60_000] });
+    const guest = app.config.addUser("Gil", "guest").user;
+    const id = await newSession(app);
+
+    assert.equal(app.config.limitWaitHours, 6);
+    await assert.rejects(app.setLimitWaitHours(guest, 1), { status: 403 });
+    await assert.rejects(app.setLimitWaitHours(owner(app), 7), { status: 400 });
+    await assert.rejects(app.setLimitWaitHours(owner(app), "6"), { status: 400 });
+    await send(app, id, "hello");
+    await until(() => app.limits.waitFor(Number(id)) !== undefined, "the run to wait");
+
+    await app.setLimitWaitHours(owner(app), 0);
+    assert.equal(app.config.limitWaitHours, 0);
+    // The run that waited goes on at once: its request goes out, and the limit, with no gate, fails it as before.
+    await until(async () => (await lastAssistant(app, id))?.stopReason === "error", "the failure");
+    assert.equal(app.limits.waitFor(Number(id)), undefined);
+    assert.equal(state.calls, 2);
+    await app.setLimitWaitHours(owner(app), 12);
+    assert.equal(app.config.limitWaitHours, 12);
+});
+
+test("a wait of more than ten minutes is pushed once, unless the person turned that kind off", async () => {
+    const state = {
+        limited: true,
+        text: "529 overloaded_error",
+        calls: 0,
+        answered: [] as string[],
+    };
+    const app = await open(limitedModel(state), undefined, {
+        ...TUNING,
+        backoffMs: [60_000],
+        longWaitMs: 30_000,
+    });
+    const store = app.pushStore!;
+    const sent: { userId: string; title: string; body: string }[] = [];
+
+    store.notify = async (userId: string, message: { title: string; body: string }) => {
+        sent.push({ userId, title: message.title, body: message.body });
+
+        return 1;
+    };
+
+    store.subscriptions = (() => [{}]) as never;
+
+    const first = await newSession(app);
+
+    await send(app, first, "hello");
+    await until(
+        () => sent.some((each) => each.title.startsWith("Waiting for a usage limit")),
+        "a push",
+    );
+
+    const one = sent.find((each) => each.title.startsWith("Waiting for a usage limit"))!;
+
+    assert.equal(one.userId, owner(app).id);
+    assert.match(one.body, /overloaded/);
+    assert.match(one.body, /tries again in/);
+
+    // Turned off: no push for the next one.
+    store.setPrefs(owner(app).id, { limit: false });
+    sent.length = 0;
+
+    const second = await newSession(app);
+
+    await send(app, second, "again");
+    await until(() => app.limits.waitFor(Number(second)) !== undefined, "the second wait");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(sent.filter((each) => each.title.startsWith("Waiting")).length, 0);
+    assert.equal(store.prefs(owner(app).id).limit, false);
+});
