@@ -155,7 +155,7 @@ export class Alerts {
             const message: PushMessage = {
                 title: `Waiting for a usage limit · ${who}${title}`,
                 body: snippet(
-                    `${view.provider} says: ${view.reason}. Pi tries again in ${span(view.until - Date.now())} and goes on by itself. Open the session to try now or stop.`,
+                    `${view.reason}. Pi tries again in ${span(view.until - Date.now())} and goes on by itself. Open the session to try now or stop.`,
                     400,
                 ),
                 url: app.sessionMeta(root)?.pip === undefined ? `/s/${String(root)}` : "/?pip=1",

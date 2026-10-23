@@ -140,8 +140,9 @@ type Gate = {
     reason: string;
     tries: number;
     state: "waiting" | "probing" | "refusing";
-    /** What a request meeting a refusing gate fails with. */
+    /** What a request meeting a refusing gate fails with, and its second part (the reason it gave up). */
     refusal?: string;
+    refusalWhy?: string;
     canary?: Waiter;
     /** When the canary went. */
     canarySince?: number;
@@ -196,6 +197,29 @@ const ZERO_USAGE = {
 /** Whether a stop signal fired (a function, so that a check after an await is not narrowed away). */
 function isAborted(signal: AbortSignal | undefined): boolean {
     return signal?.aborted === true;
+}
+
+/**
+ * What a gate tells everyone who waits at it, and the tabs and pushes: fixed wording by kind, never the provider's own
+ * text, which can hold ids of another person's organisation.
+ */
+function describeLimit(verdict: { scope: Scope; reason: string }, provider: string): string {
+    const names: Record<string, string> = {
+        anthropic: "Claude",
+        "openai-codex": "ChatGPT",
+        openai: "OpenAI",
+        "opencode-go": "OpenCode Go",
+        openrouter: "OpenRouter",
+    };
+    const name = names[provider] ?? provider;
+
+    if (verdict.scope === "account") {
+        return `${name}'s usage limit`;
+    }
+
+    return /overload|unavailable|busy|\b5\d\d\b/i.test(verdict.reason)
+        ? `${name} is overloaded`
+        : `${name}'s rate limit`;
 }
 
 /** A span as people read it: `2 h 10 min`, `45 s`. */
@@ -257,8 +281,6 @@ export class LimitGate {
     readonly #deps: GateDeps;
     readonly #tuning: LimitTuning;
     readonly #gates = new Map<string, Gate>();
-    /** The conversation of each provider session id found so far. */
-    readonly #conversations = new Map<string, number>();
     readonly #now: () => number;
     readonly #random: () => number;
 
@@ -400,10 +422,7 @@ export class LimitGate {
                     continue;
                 }
 
-                this.#giveUp(
-                    gate,
-                    `${gate.reason} Not waiting: it did not clear in ${span(now - gate.since)}.`,
-                );
+                this.#giveUp(gate, `it did not clear in ${span(now - gate.since)}`);
             } else if (gate.until > deadline) {
                 gate.until = deadline;
                 this.#poke(gate);
@@ -552,7 +571,7 @@ export class LimitGate {
 
                 if (gated.state === "refusing") {
                     // Gave up: this request fails with what the gate says.
-                    this.#flush(attempt, out, gated.refusal);
+                    this.#flush(attempt, out, `${verdict.reason} ${gated.refusalWhy}`);
 
                     return;
                 }
@@ -778,7 +797,7 @@ export class LimitGate {
                 // A window of days, or a reset past the longest wait: the account is blocked for good, whoever found it
                 // first. The gate refuses now, and its waiters fail with the reset.
                 if (far !== undefined) {
-                    this.#giveUp(gate, `${verdict.reason} Not waiting: ${far}.`);
+                    this.#giveUp(gate, far);
 
                     return gate;
                 }
@@ -787,7 +806,7 @@ export class LimitGate {
                     gate.until = later;
                     gate.kind = "reset";
                     gate.resetAt = verdict.resetAt;
-                    gate.reason = verdict.reason;
+                    gate.reason = describeLimit(verdict, model.provider);
                     this.#poke(gate);
                     this.#save();
                     this.#deps.changed();
@@ -807,12 +826,14 @@ export class LimitGate {
                 // The wait is the request's as well as the gate's: a gate made as the scope moves takes the earlier time.
                 since: Math.min(now, waiter.since, owned?.since ?? now),
                 until: now,
-                reason: verdict.reason,
+                reason: describeLimit(verdict, model.provider),
                 tries: 0,
                 state: "waiting",
                 waiters: new Set(),
             };
             this.#gates.set(key, gate);
+            // The provider's own text can hold ids of someone else's organisation: only the owner's log has it.
+            this.#deps.log(`Limit at ${key}: ${verdict.reason}`);
         }
 
         if (!manual) {
@@ -820,7 +841,7 @@ export class LimitGate {
         }
 
         gate.since = Math.min(gate.since, waiter.since);
-        gate.reason = verdict.reason;
+        gate.reason = describeLimit(verdict, model.provider);
         gate.canary = undefined;
 
         // One deadline for the whole wait, from when the gate closed: a reset after it, or a backoff that comes to it,
@@ -865,7 +886,7 @@ export class LimitGate {
         }
 
         if (why !== undefined) {
-            this.#giveUp(gate, `${verdict.reason} Not waiting: ${why}.`);
+            this.#giveUp(gate, why);
 
             return gate;
         }
@@ -905,17 +926,20 @@ export class LimitGate {
             : undefined;
     }
 
-    /** A gate that will not wait: its requests fail at once, with `text`, for a few minutes. */
-    #giveUp(gate: Gate, text: string): void {
+    /**
+     * A gate that will not wait: its requests fail at once, with `why`, for a few minutes. What the others are told is
+     * the gate's fixed wording, never the provider's own text (`#run` gives the request that met it its own).
+     */
+    #giveUp(gate: Gate, why: string): void {
         gate.state = "refusing";
-        gate.refusal = text;
+        gate.refusalWhy = `Not waiting: ${why}.`;
+        gate.refusal = `${gate.reason} ${gate.refusalWhy}`;
         gate.canary = undefined;
         gate.until = this.#now() + this.#tuning.refuseMs;
         clearTimeout(gate.timer);
         gate.timer = setTimeout(() => this.#drop(gate), this.#tuning.refuseMs);
         gate.timer.unref();
-        this.#deps.log(`Limit at ${gate.key}: ${text}`);
-
+        this.#deps.log(`Limit at ${gate.key}: ${gate.refusal}`);
         this.#poke(gate);
         this.#save();
         this.#deps.changed();
@@ -1097,16 +1121,12 @@ export class LimitGate {
 
         waiter.told = true;
 
-        const known = this.#conversations.get(waiter.sessionId);
-        const found = known ?? this.#deps.conversationOf(waiter.sessionId);
-
-        void Promise.resolve(found).then(
+        void Promise.resolve(this.#deps.conversationOf(waiter.sessionId)).then(
             (conversationId) => {
                 if (conversationId === undefined) {
                     return;
                 }
 
-                this.#conversations.set(waiter.sessionId!, conversationId);
                 waiter.conversationId = conversationId;
                 this.#deps.changed();
 
