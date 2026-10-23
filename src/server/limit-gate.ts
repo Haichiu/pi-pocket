@@ -867,7 +867,8 @@ export class LimitGate {
         } else {
             const total = Math.min(tuning.maxBackoffMs, maxReset);
             const deadline = gate.since + total;
-            const step = Math.min(gate.tries - 1, tuning.backoffMs.length - 1);
+            // No tries are counted yet when a manual try moved the scope: the first delay.
+            const step = Math.max(0, Math.min(gate.tries - 1, tuning.backoffMs.length - 1));
             const delay = tuning.backoffMs[step]! * (0.8 + this.#random() * 0.4);
 
             // The last try is at the deadline, not after it.
@@ -891,7 +892,8 @@ export class LimitGate {
             return gate;
         }
 
-        gate.until = until;
+        // Always a time: a number that is not one would end every nap at once.
+        gate.until = Number.isFinite(until) ? until : now + tuning.minWaitMs;
         gate.state = "waiting";
         this.#poke(gate);
         this.#save();
@@ -933,7 +935,7 @@ export class LimitGate {
     #giveUp(gate: Gate, why: string): void {
         gate.state = "refusing";
         gate.refusalWhy = `Not waiting: ${why}.`;
-        gate.refusal = `${gate.reason} ${gate.refusalWhy}`;
+        gate.refusal = `${gate.reason}. ${gate.refusalWhy}`;
         gate.canary = undefined;
         gate.until = this.#now() + this.#tuning.refuseMs;
         clearTimeout(gate.timer);
@@ -968,6 +970,8 @@ export class LimitGate {
     #free(gate: Gate, waiter: Waiter): void {
         if (gate.canary === waiter) {
             gate.canary = undefined;
+            // The manual try it was ended some other way: the next, automatic one is not manual.
+            delete gate.manual;
 
             // A gate that is gone has let its waiters go: waking them now would end their spacing.
             if (this.#gates.get(gate.key) !== gate) {

@@ -210,7 +210,7 @@ test("Retry now is one try each 30 seconds, and pressing it cannot make a shared
         tuning: { ...TUNING, backoffMs: [60_000], maxTries: 1 },
         conversationOf: () => 7,
     });
-    const rt = fake([overloaded, overloaded]);
+    const rt = fake([{ fail: "429 usage limit. Try again in 1h" }, overloaded]);
 
     g.install(rt.models);
     void ask(rt, "m", "p", { sessionId: "s" });
@@ -219,9 +219,12 @@ test("Retry now is one try each 30 seconds, and pressing it cannot make a shared
     assert.equal(g.retryNow(7), false, "a second press within 30 seconds does nothing");
     await until(() => rt.calls.length === 2);
     await sleep(40);
-    // The manual try failed again: it counts toward no cap (maxTries is 1), so the gate still waits.
+    // The manual try failed in another scope (an overload, the model's): it counts toward no cap (maxTries is 1), the
+    // gate it makes has a real time, and no third request goes at once.
     assert.equal(g.gates()[0]?.refusing, undefined);
     assert.ok(g.waitFor(7));
+    assert.ok(g.gates().every((each) => Number.isFinite(each.until)));
+    assert.equal(rt.calls.length, 2);
     g.close();
 });
 
