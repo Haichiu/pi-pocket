@@ -34,24 +34,24 @@ type Step = { fail: string; headers?: Record<string, string> } | { ok: true };
 
 /** A model runtime. A request follows the next step (or `repeat`); with none, the test ends it: `end("529")`, `end()`. */
 function fake(steps: Step[] = [], repeat?: Step) {
-    const calls: { at: number; fetch?: unknown; end: (error?: string) => void }[] = [];
+    const calls: { at: number; fetch?: unknown; end: (e?: string) => void; content: () => void }[] =
+        [];
     const models = {
         streamSimple(m: Model<Api>, _context: unknown, options?: SimpleStreamOptions) {
             const stream = createAssistantMessageEventStream();
 
-            const end = (error?: string) => {
-                const message = {
-                    ...{
-                        role: "assistant",
-                        api: "anthropic-messages",
-                        provider: m.provider,
-                        model: m.id,
-                    },
-                    ...{ usage: { input: 0, output: 0, cacheRead: 0 }, timestamp: Date.now() },
+            const reply = (error?: string) =>
+                ({
+                    ...{ role: "assistant", api: "anthropic-messages", provider: m.provider },
+                    ...{ model: m.id, usage: { input: 0, output: 0, cacheRead: 0 } },
+                    ...{ timestamp: Date.now() },
                     ...(error === undefined
                         ? { content: [{ type: "text", text: "ok" }], stopReason: "stop" }
                         : { content: [], stopReason: "error", errorMessage: error }),
-                } as never;
+                }) as never;
+
+            const end = (error?: string) => {
+                const message = reply(error);
 
                 stream.push(
                     error === undefined
@@ -63,7 +63,10 @@ function fake(steps: Step[] = [], repeat?: Step) {
 
             const step = steps.shift() ?? repeat;
 
-            calls.push({ at: Date.now(), fetch: options?.fetch, end });
+            const content = () =>
+                stream.push({ type: "text_start", contentIndex: 0, partial: reply() });
+
+            calls.push({ at: Date.now(), fetch: options?.fetch, end, content });
 
             if (step !== undefined) {
                 queueMicrotask(async () => {
@@ -148,6 +151,27 @@ test("a limit that covers the account holds every model of the provider, with on
 
     await sleep(20);
     assert.equal(rt.calls.length, 1, "the other model of the provider is held too");
+    assert.deepEqual(await stops(a, b), ["stop", "stop"]);
+});
+
+test("the gate opens at the canary's first content, not when its whole stream ends", async () => {
+    const g = gate();
+    const rt = fake();
+
+    g.install(rt.models);
+
+    const a = ask(rt);
+
+    rt.calls[0]!.end("529 overloaded_error");
+    await sleep(10);
+
+    const b = ask(rt);
+
+    await until(() => rt.calls.length === 2);
+    rt.calls[1]!.content();
+    await until(() => rt.calls.length === 3);
+    rt.calls[1]!.end();
+    rt.calls[2]!.end();
     assert.deepEqual(await stops(a, b), ["stop", "stop"]);
 });
 

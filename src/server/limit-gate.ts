@@ -438,15 +438,24 @@ export class LimitGate {
                 }
 
                 const epoch = this.#deps.epoch(model.provider);
-                const attempt = await this.#attempt(underlying, model, context, options, out);
+                // The canary's first content opens its gate, while the answer still streams: the others need not wait for
+                // the end of a long one.
+                const attempt = await this.#attempt(
+                    underlying,
+                    model,
+                    context,
+                    options,
+                    out,
+                    () => {
+                        if (canary !== undefined) {
+                            this.#open(canary, true);
+                        }
+                    },
+                );
 
-                // However the attempt ended, the gate its request held as canary is settled below or by `#leave`:
-                // none stays probing with a canary that cannot finish it.
+                // However the attempt ended, the gate its request held as canary is settled by now or by `#leave`: none
+                // stays probing with a canary that cannot finish it.
                 if (attempt.type === "done") {
-                    if (canary !== undefined && attempt.content) {
-                        this.#open(canary, true);
-                    }
-
                     this.#leave(waiter);
 
                     return;
@@ -502,6 +511,7 @@ export class LimitGate {
         context: TranscriptContext,
         options: SimpleStreamOptions | undefined,
         out: AssistantMessageEventStream,
+        onContent: () => void,
     ): Promise<
         | { type: "done"; content: boolean }
         | {
@@ -543,7 +553,11 @@ export class LimitGate {
                     }
                 } else if (event.type === "done") {
                     terminal = event.message;
-                    flowing = true;
+
+                    if (!flowing) {
+                        flowing = true;
+                        onContent();
+                    }
 
                     for (const earlier of held.splice(0)) {
                         out.push(earlier);
@@ -556,6 +570,7 @@ export class LimitGate {
                     held.push(event);
                 } else {
                     flowing = true;
+                    onContent();
 
                     for (const earlier of held.splice(0)) {
                         out.push(earlier);
