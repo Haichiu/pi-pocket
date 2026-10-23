@@ -1,6 +1,6 @@
 # Rate-limit wait (design for 0.21.0)
 
-Status: design only. No code is written. Facts were checked in this checkout (Pi Pocket 0.20.1, `@earendil-works/pi-durable` 1.3.0, `@earendil-works/pi-ai` 1.3.0). Things not checked against a live provider are marked **(verify)**.
+Status: built for 0.21.0 (see "What was built differently" at the end). Facts were checked in this checkout (Pi Pocket 0.20.1, `@earendil-works/pi-durable` 1.3.0, `@earendil-works/pi-ai` 1.3.0). Things not checked against a live provider are marked **(verify)**.
 
 The request: Pi Pocket should handle 429s and similar errors well. A run that hits a limit should wait, check smartly, and continue by itself when the provider answers again.
 
@@ -191,3 +191,13 @@ Separate commits (C17: core first, extension last):
 8. Later, upstream: pi-ai and Pi Durable requests from section 5.
 
 Checks for every commit: `npm run check`, `npm run lint`, `npm test`, `npm run format`.
+
+## What was built differently
+
+- **The gate key** for a limit that covers the account is the provider and its sign-in: `provider#epoch`, where `Providers.signInEpoch` counts sign-ins and sign-outs here. A token hash was not used, because an OAuth token changes at each renewal, and a wait of five hours would lose its gate. A limit that is not the account's (a 429, an overload, a cap for one Claude model) is held by `provider#epoch/modelId`. One account limit gives one canary.
+- **`noWait`** is a symbol-marked option (`noWait(options)` in `limit-gate.ts`), not a plain `pocketNoWait` property, so the options type stays the provider's own.
+- **The recording `fetch`** goes only to the adapters that take one (`anthropic-messages`, `openai-completions`, `openai-responses`, `azure-openai-responses`, `openai-codex-responses`, `mistral-conversations`, `pi-messages`). The Google adapters refuse a custom fetch. For the others the gate reads the error text only.
+- **A plan's usage limit with no known reset** (for example "Monthly usage limit reached") is not waited for: it is `other`, and the run fails as before. There is no time to wait until.
+- **Retry now** acts on the session's own wait and on its subagents' waits. A viewer cannot use it.
+- **`limitWaitHours`** is 0, 1, 6, 12, or 24 (default 6), set in the Providers sheet.
+- **The wait is not a Pi Durable `retry` phase.** It is a nap inside the request. If Pi Durable gets a retry decision hook, the gate can use it for the wait with no change that people can see.
