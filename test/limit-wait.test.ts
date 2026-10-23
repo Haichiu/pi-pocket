@@ -3,6 +3,7 @@
 import {
     type App,
     cleanUp,
+    fakeTab,
     modelTexts,
     openApp,
     owner,
@@ -15,7 +16,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai/providers/faux";
+import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { LimitTuning } from "../src/server/limit-gate.ts";
 
@@ -376,4 +377,113 @@ test("a wait that lasts is safe in Pi Durable: it holds the run busy, survives a
     );
     assert.ok(Date.now() - started >= until1 - started - 50, "it did not go before its time");
     assert.equal(state.calls, 2);
+});
+
+test("the wait shows in the session list, the open view, the peek, and the subagents board, and Retry now needs someone who may steer", async () => {
+    const state = {
+        limited: true,
+        text: "529 overloaded_error",
+        calls: 0,
+        answered: [] as string[],
+    };
+    const app = await open(limitedModel(state), undefined, { ...TUNING, backoffMs: [60_000] });
+    const id = await newSession(app);
+    const tab = fakeTab(id, owner(app), 5);
+
+    await app.attach(tab.client);
+    await send(app, id, "hello");
+    await until(() => app.limits.waitFor(Number(id)) !== undefined, "the run to wait");
+
+    const row = () => app.sessions(owner(app)).find((session) => session.id === Number(id));
+
+    await until(() => row()?.limited !== undefined, "the session list to say so");
+    assert.equal(row()?.limited, app.limits.waitFor(Number(id))!.until);
+    await until(
+        () =>
+            (tab.field("live") as { limit?: { kind: string; provider: string; probing: boolean } })
+                ?.limit !== undefined,
+        "the view to say so",
+    );
+
+    const live = tab.field("live") as { limit: { kind: string; provider: string; reason: string } };
+
+    assert.equal(live.limit.kind, "backoff");
+    assert.equal(live.limit.provider, "faux");
+    assert.match(live.limit.reason, /overloaded/);
+
+    const peek = (await app.openRoom(id)!)!.peek()!;
+
+    assert.ok(
+        peek.lines.some((line) => line.kind === "event" && /limit/.test(line.text ?? "")),
+        JSON.stringify(peek.lines),
+    );
+
+    // Someone who may only watch cannot send the request now; the owner can.
+    const viewer = app.config.addUser("Vee", "viewer").user;
+
+    await assert.rejects(app.commands.retryLimit(id, viewer), { status: 403 });
+    state.limited = false;
+    assert.equal(await app.commands.retryLimit(id, owner(app)), true);
+    await until(async () => (await lastAssistant(app, id))?.stopReason === "stop", "the answer");
+    await until(() => row()?.limited === undefined, "the square to clear");
+    await until(
+        () => (tab.field("live") as { limit?: unknown } | undefined)?.limit === undefined,
+        "the view to clear it",
+    );
+    // Nothing waits now: there is nothing to try again.
+    assert.equal(await app.commands.retryLimit(id, owner(app)), false);
+});
+
+test("a subagent's wait shows on the subagents board and in its session's list, and its session can send it now", async () => {
+    let limitedNow = true;
+    const model = scriptedModel((request) => {
+        const messages = (request as { messages: { role: string; content: unknown }[] }).messages;
+        const text = JSON.stringify(messages.findLast((m) => m.role === "user")?.content ?? "");
+
+        if (text.includes("work for the helper")) {
+            if (limitedNow) {
+                throw new Error("529 overloaded_error");
+            }
+
+            return fauxAssistantMessage([fauxText("helper done")]);
+        }
+
+        if (messages.at(-1)?.role === "toolResult") {
+            return fauxAssistantMessage([fauxText("started")]);
+        }
+
+        return fauxAssistantMessage(
+            [
+                fauxText("Starting a helper."),
+                fauxToolCall("subagent", {
+                    action: "spawn",
+                    name: "helper",
+                    message: "work for the helper",
+                }),
+            ],
+            { stopReason: "toolUse" },
+        );
+    });
+    const app = await open(model, undefined, { ...TUNING, backoffMs: [60_000] });
+    const id = await newSession(app);
+
+    await send(app, id, "start a helper");
+
+    const entry = () => app.subagents(owner(app)).find((agent) => agent.name === "helper");
+
+    await until(() => entry()?.limited !== undefined, "the board to show the wait", 15_000);
+    assert.equal(entry()?.busy, true);
+    assert.ok(
+        app.sessions(owner(app)).find((session) => session.id === Number(id))?.limited !==
+            undefined,
+        "the session's square says so too",
+    );
+    limitedNow = false;
+    assert.equal(await app.commands.retryLimit(id, owner(app)), true);
+    await until(
+        () => entry()?.limited === undefined && entry()?.busy === false,
+        "the helper to finish",
+        15_000,
+    );
+    assert.equal(entry()?.failed, undefined);
 });

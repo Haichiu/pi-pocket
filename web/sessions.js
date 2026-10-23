@@ -271,7 +271,7 @@ export function selectFromList(id) {
 
 /**
  * The square at the start of a session's row: its folder's color, in the shape of where the session is. The first that
- * holds wins: a call waiting for you, Pi or its subagents at work, a failed run (solid while new, drawn once seen),
+ * holds wins: a call waiting for you, a request waiting for its provider's limit to clear, Pi or its subagents at work, a failed run (solid while new, drawn once seen),
  * finished since this browser last looked or marked unread (solid), and read or never run (hollow).
  */
 function stateMark(session, working, marked, unseen = finishedUnseen(session)) {
@@ -279,6 +279,11 @@ function stateMark(session, working, marked, unseen = finishedUnseen(session)) {
 
     if (session.waiting) {
         return { shape: "waiting", label: "Waiting for approval" };
+    }
+
+    // Pi's request waits for the provider's limit to clear: working, held up, until a time or a try.
+    if (session.limited !== undefined) {
+        return { shape: "limited", label: "Waiting for a usage limit" };
     }
 
     if (session.busy || working) {
@@ -297,6 +302,7 @@ function stateMark(session, working, marked, unseen = finishedUnseen(session)) {
 /** A row's state for themes (`data-state`), by its square's shape: a documented name that stays when the squares change. */
 const ROW_STATES = {
     waiting: "waiting",
+    limited: "limited",
     working: "working",
     failed: "failed",
     fresh: "done",

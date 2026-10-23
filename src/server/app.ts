@@ -1172,10 +1172,15 @@ export class PocketApp {
         this.#limitWaiting = now;
 
         for (const id of changed) {
-            void this.#rooms.get(id as unknown as ConversationId)?.then(
-                (room) => room.schedule(),
-                () => {},
-            );
+            const conversation = id as unknown as ConversationId;
+
+            // A subagent's wait shows in its session's subagents bar too.
+            for (const room of new Set([conversation, this.rootOf(conversation)])) {
+                void this.#rooms.get(room)?.then(
+                    (open) => open.schedule(),
+                    () => {},
+                );
+            }
         }
 
         if (changed.size > 0) {
@@ -1746,6 +1751,9 @@ export class PocketApp {
         }
 
         const sessions = new Map<string, SubagentEntry[]>();
+        const limited = new Map(
+            this.limits.waits().map((wait) => [wait.conversationId, wait.view.until]),
+        );
 
         for (const [parent, { agents, reporting }] of this.#subagents) {
             const session = String(this.rootOf(parent));
@@ -1766,6 +1774,7 @@ export class PocketApp {
                         record,
                         this.#busy.has(record.conversationId),
                         reporting.has(name),
+                        limited.get(Number(record.conversationId)),
                     ),
                     ...(ask === undefined
                         ? {}
@@ -2033,6 +2042,14 @@ export class PocketApp {
         );
         const people = new Map<string, Map<string, string>>();
         const subagents = this.#subagentsBySession();
+        // The sessions in a wait for a provider's limit, their subagents' included: when the next request goes out.
+        const limited = new Map<string, number>();
+
+        for (const wait of this.limits.waits()) {
+            const session = String(this.rootOf(wait.conversationId as unknown as ConversationId));
+
+            limited.set(session, Math.min(limited.get(session) ?? Infinity, wait.view.until));
+        }
 
         for (const client of this.#clients) {
             if (client.conversationId === undefined) {
@@ -2086,6 +2103,7 @@ export class PocketApp {
                     ...linkage,
                     busy,
                     waiting: waiting.has(id),
+                    ...(limited.has(id) ? { limited: limited.get(id)! } : {}),
                     ...(endedAt === undefined ? {} : { endedAt }),
                     ...(this.#failed.has(Number(id) as unknown as ConversationId)
                         ? { failed: true }

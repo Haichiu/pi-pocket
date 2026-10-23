@@ -244,6 +244,20 @@ function span(ms) {
     return `${Math.floor(seconds / 3600)}h ${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}m`;
 }
 
+/** Who a wait for a limit is for: the provider by the name people know it by, and the model when only it waits. */
+function limitWho({ provider, modelId, scope }) {
+    const names = {
+        anthropic: "Claude",
+        "openai-codex": "ChatGPT",
+        openai: "OpenAI",
+        "opencode-go": "OpenCode Go",
+        openrouter: "OpenRouter",
+    };
+    const name = names[provider] ?? provider;
+
+    return scope === "model" && modelId ? `${name} ${modelId}'s limit` : `${name}'s limit`;
+}
+
 /** When a message was sent, from the server's time: "10:42" today, "Oct 3 10:42" before. */
 const clock = (at) => clockTime(new Date(fromServer(at)));
 
@@ -2482,6 +2496,8 @@ function LiveLine({ live, approvals, start, entries, conversationId }) {
 
     const partial = live.generation?.message?.blocks ?? [];
     const retry = live.generation?.retry;
+    // Pi's request waits for the provider's limit to clear (`limit-gate.ts`): until a time, or a try.
+    const limit = live.limit;
     const working = (live.tools ?? []).some((slot) => slot.status !== "done");
     const waiting = approvals.length > 0;
     const seconds = retry ? Math.ceil((fromServer(retry.at) - Date.now()) / 1000) : 0;
@@ -2489,6 +2505,8 @@ function LiveLine({ live, approvals, start, entries, conversationId }) {
 
     if (waiting) {
         state = canAnswer(approvals) ? "Waiting for your approval" : "Waiting for approval";
+    } else if (limit) {
+        state = `Waiting for ${limitWho(limit)}`;
     } else if (retry) {
         state = "Retrying";
     } else if ((live.compactions ?? []).length > 0) {
@@ -2523,7 +2541,35 @@ function LiveLine({ live, approvals, start, entries, conversationId }) {
         <span class="live-state" role="status">
             ${state}${retry && !waiting && seconds > 0 && html`<span aria-hidden="true"> in ${seconds}s</span>`}
         </span>
+        ${
+            limit &&
+            !waiting &&
+            html`<span class="live-limit" data-part="live-limit">
+                ${limit.probing ? "trying now" : `next try in ${span(fromServer(limit.until) - Date.now())}`}${
+                    limit.resetAt !== undefined && ` · resets ${clock(limit.resetAt)}`
+                }
+            </span>`
+        }
         ${start !== undefined && html`<span class="live-time" aria-hidden="true">${span(Date.now() - start)}</span>`}
+        ${
+            limit &&
+            !waiting &&
+            html`<span class="live-why" title=${`The provider said: ${limit.reason}`}>
+                ${limit.reason}
+            </span>`
+        }
+        ${
+            limit &&
+            !waiting &&
+            canSteer() &&
+            !limit.probing &&
+            html`<button
+                class="live-retry"
+                data-part="live-retry"
+                title="Send the request now. Stop ends the wait."
+                onClick=${() => attempt(() => actions.retryLimit(conversationId))}
+            >Retry now</button>`
+        }
         ${
             retry &&
             !waiting &&
