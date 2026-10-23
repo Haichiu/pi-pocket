@@ -746,8 +746,17 @@ export class LimitGate {
                     tuning.resetJitterMs[0] +
                     this.#random() * (tuning.resetJitterMs[1] - tuning.resetJitterMs[0]);
                 const later = Math.max(verdict.resetAt + jitter, now + tuning.minWaitMs);
+                const far = this.#tooFar(verdict, gate.since, later, now);
 
-                if (later > gate.until && later <= gate.since + this.#deps.hours() * 3_600_000) {
+                // A window of days, or a reset past the longest wait: the account is blocked for good, whoever found it
+                // first. The gate refuses now, and its waiters fail with the reset.
+                if (far !== undefined) {
+                    this.#giveUp(gate, `${verdict.reason} Not waiting: ${far}.`);
+
+                    return gate;
+                }
+
+                if (later > gate.until) {
                     gate.until = later;
                     gate.kind = "reset";
                     gate.resetAt = verdict.resetAt;
@@ -791,7 +800,6 @@ export class LimitGate {
         let why: string | undefined;
 
         if (verdict.resetAt !== undefined) {
-            const deadline = gate.since + maxReset;
             const jitter =
                 tuning.resetJitterMs[0] +
                 this.#random() * (tuning.resetJitterMs[1] - tuning.resetJitterMs[0]);
@@ -804,11 +812,7 @@ export class LimitGate {
                 gate.source = verdict.source;
             }
 
-            if (verdict.long) {
-                why = `it resets in ${span(verdict.resetAt - now)}${when(verdict.resetAt)}, a limit of days that Pi Pocket does not wait for`;
-            } else if (until > deadline) {
-                why = `it resets in ${span(verdict.resetAt - now)}${when(verdict.resetAt)}, and Pi Pocket waits at most ${span(maxReset)}`;
-            }
+            why = this.#tooFar(verdict, gate.since, until, now);
         } else {
             const total = Math.min(tuning.maxBackoffMs, maxReset);
             const deadline = gate.since + total;
@@ -843,6 +847,32 @@ export class LimitGate {
         this.#deps.changed();
 
         return gate;
+    }
+
+    /**
+     * Why a limit's reset is not waited for, if it is not: a window of days, or after the owner's longest wait, counted
+     * from when the gate closed (`since`). Undefined: it can be waited for.
+     */
+    #tooFar(
+        verdict: Extract<ReturnType<typeof classify>, { type: "limit" }>,
+        since: number,
+        until: number,
+        now: number,
+    ): string | undefined {
+        if (verdict.resetAt === undefined) {
+            return undefined;
+        }
+
+        const maxReset = this.#deps.hours() * 3_600_000;
+        const resets = `it resets in ${span(verdict.resetAt - now)}${when(verdict.resetAt)}`;
+
+        if (verdict.long) {
+            return `${resets}, a limit of days that Pi Pocket does not wait for`;
+        }
+
+        return until > since + maxReset
+            ? `${resets}, and Pi Pocket waits at most ${span(maxReset)}`
+            : undefined;
     }
 
     /** A gate that will not wait: its requests fail at once, with `text`, for a few minutes. */

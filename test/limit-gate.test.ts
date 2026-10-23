@@ -175,6 +175,36 @@ test("the gate opens at the canary's first content, not when its whole stream en
     assert.deepEqual(await stops(a, b), ["stop", "stop"]);
 });
 
+test("a weekly window found late, behind a gate that waits hours, refuses at once", async () => {
+    const g = gate({ hours: () => 6 });
+    const rt = fake(Array(2).fill({ fail: "429 rate_limit_error", headers: {} }));
+    const window = (name: string, seconds: number) => ({
+        fetch: async () =>
+            new Response("x", {
+                status: 429,
+                headers: {
+                    [`anthropic-ratelimit-unified-${name}-status`]: "rejected",
+                    [`anthropic-ratelimit-unified-${name}-reset`]: String(
+                        Math.floor(Date.now() / 1000) + seconds,
+                    ),
+                },
+            }),
+    });
+
+    g.install(rt.models);
+
+    // The first closes the account's gate for 5 hours; the second, out before it, finds the 7-day window.
+    const both = Promise.all([
+        ask(rt, "m", "p", window("5h", 5 * 3600)),
+        ask(rt, "m", "p", window("7d", 3 * 86400)),
+    ]);
+    const results = await Promise.race([both, sleep(500).then(() => undefined)]);
+
+    assert.ok(results, "nobody waits hours for a window of days");
+    assert.match(results[1].errorMessage!, /a limit of days/);
+    g.close();
+});
+
 test("a canary whose failure moves the scope leaves no gate probing", async () => {
     const g = gate();
     const rt = fake([overloaded, { fail: "429 usage limit. Try again in 0s" }], { ok: true });
