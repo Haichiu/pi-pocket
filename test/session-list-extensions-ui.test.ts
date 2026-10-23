@@ -146,6 +146,25 @@ test(
     },
 );
 
+test("a chip update redraws memoized rows without changing their sessions", real, async () => {
+    await inPage(`
+        globalThis.chipSessionsBefore = (await import("/store.js")).store.state.sessions;
+        globalThis.labelsChips.update({ chips: (session) => [{ label: "updated" + session.id }] });
+        return "null";
+    `);
+    await until(async () => (await chipsOf(first))[0] === `updated${first}`, "updated chips");
+    assert.equal(
+        await inPage<boolean>(`return JSON.stringify(
+            globalThis.chipSessionsBefore === (await import("/store.js")).store.state.sessions
+        )`),
+        true,
+        "only the extension revision changed",
+    );
+    await inPage(`globalThis.labelsChips.update({ chips: (session) => [{ label: "id" + session.id,
+        title: session.title, run: () => (globalThis.chipRan = session.id) }] }); return "null"`);
+    await until(async () => (await chipsOf(first))[0] === `id${first}`, "restored chips");
+});
+
 test("an actionable chip joins the keyboard focus order and Enter runs it", real, async () => {
     await inPage(
         `document.querySelector('.sidebar .session-row[data-id="${first}"] .session').focus(); return "null"`,

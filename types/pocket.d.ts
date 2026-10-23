@@ -1146,7 +1146,7 @@ export interface SessionChip {
 }
 
 /**
- * Chips under the titles of session rows. The list calls `chips` for each row each time it draws.
+ * Chips under the titles of session rows. Each row calls `chips` when it draws; unchanged rows can skip a draw.
  * @since 0.20.0
  * @experimental
  */
