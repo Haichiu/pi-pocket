@@ -6,7 +6,6 @@
  * What people ask of Pi lives in `commands.ts`, the people's side of a session in `collab.ts`, push notifications in
  * `alerts.ts`, provider sign-ins in `providers.ts`, and each conversation's shared live view in `room.ts`.
  */
-import { rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -344,6 +343,8 @@ export class PocketApp {
     #unsubscribeApprovals: (() => void) | undefined;
     #unsubscribeBrowsers: (() => void) | undefined;
     #lockFile: string;
+    #releaseLock: (() => void) | undefined;
+    #openingStorage: Storage | undefined;
     #closing: Promise<void> | undefined;
     readonly #log: (line: string) => void;
     readonly #configureModels: ((models: ModelRuntime) => void) | undefined;
@@ -566,13 +567,21 @@ export class PocketApp {
     static async open(options: OpenOptions): Promise<PocketApp> {
         const app = new PocketApp(options);
 
-        await app.#open();
+        try {
+            await app.#open();
+        } catch (error) {
+            if (app.#releaseLock !== undefined) {
+                await app.close();
+            }
+
+            throw error;
+        }
 
         return app;
     }
 
     async #open(): Promise<void> {
-        takeLock(this.#lockFile);
+        this.#releaseLock = takeLock(this.#lockFile);
 
         try {
             this.pushStore = new PushStore(this.dataDir);
@@ -700,6 +709,7 @@ export class PocketApp {
 
         const storage = await openNodeSqliteStorage(join(this.dataDir, "pocket.sqlite"));
 
+        this.#openingStorage = storage;
         this.harness = await Harness.open(
             storage,
             {
@@ -719,6 +729,7 @@ export class PocketApp {
             context,
         );
 
+        this.#openingStorage = undefined;
         const conversations = await this.#recover(storage);
 
         await this.spend.load(conversations);
@@ -3047,10 +3058,17 @@ export class PocketApp {
                 }),
             ]);
             clearTimeout(limit);
+            let storageClosed = false;
 
             try {
                 // Close writes no outcome: running work resumes when the next process opens the storage.
-                await this.harness?.close(context);
+                if (this.harness !== undefined) {
+                    await this.harness.close(context);
+                } else {
+                    await this.#openingStorage?.close(context);
+                }
+
+                storageClosed = true;
 
                 for (const env of this.#envs.values()) {
                     await env.cleanup(context);
@@ -3058,7 +3076,10 @@ export class PocketApp {
             } finally {
                 // After the harness: a browser call cut off by the stop resumes as interrupted, not as failed.
                 await this.browsers.closeAll({ final: true }).catch(() => {});
-                rmSync(this.#lockFile, { force: true });
+
+                if (storageClosed) {
+                    this.#releaseLock?.();
+                }
             }
         })();
 
