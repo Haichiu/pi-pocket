@@ -1448,6 +1448,25 @@ test("requests with the wrong types are refused, and nothing odd is stored", asy
     assert.equal(app.sessions().find((each) => each.id === Number(id))?.archived, undefined);
 });
 
+test("the harness disables the crash-loop guard for long task phases", async () => {
+    const { Harness } = await import("@earendil-works/pi-durable");
+    const opened = mock.method(Harness, "open");
+    let isolated: App | undefined;
+
+    try {
+        isolated = await openApp(faux, join(root, "restart-settings"));
+        const settings = opened.mock.calls[0]!.arguments[1].settings;
+
+        assert.equal(
+            (typeof settings === "function" ? settings() : settings)?.restartLimit,
+            Infinity,
+        );
+    } finally {
+        opened.mock.restore();
+        await isolated?.close();
+    }
+});
+
 test("failed harness initialization closes its opened storage before releasing the lock", async () => {
     const { Harness } = await import("@earendil-works/pi-durable");
     const dataDir = join(root, "failed-harness-initialization");
