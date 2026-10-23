@@ -16,9 +16,10 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import type { LimitTuning } from "../src/server/limit-gate.ts";
+import { LimitGate, type LimitTuning } from "../src/server/limit-gate.ts";
 
 const TUNING: Partial<LimitTuning> = {
     minWaitMs: 50,
@@ -564,4 +565,121 @@ test("a wait of more than ten minutes is pushed once, unless the person turned t
     await new Promise((resolve) => setTimeout(resolve, 200));
     assert.equal(sent.filter((each) => each.title.startsWith("Waiting")).length, 0);
     assert.equal(store.prefs(owner(app).id).limit, false);
+});
+
+test("an account limit keeps its gate through a sign-in renewal and a restart, and a new sign-in clears it", async () => {
+    const dir = join(root, "limit-account");
+    const state = {
+        limited: true,
+        text: "You have hit your ChatGPT usage limit (plus plan). Try again in ~1 min.",
+        calls: 0,
+        answered: [] as string[],
+    };
+    const model = limitedModel(state);
+    let app = await open(model, dir);
+    const id = await newSession(app);
+
+    // A sign-in or sign-out before the limit: the counter is above 0 when the file is written.
+    await app.providers.logout("faux").catch(() => {});
+    assert.ok(app.providers.signInEpoch("faux") > 0, "the counter moved");
+    await send(app, id, "hello");
+    await until(() => app.limits.waitFor(Number(id)) !== undefined, "the run to wait");
+
+    const [gate] = app.limits.gates();
+
+    assert.equal(gate?.scope, "account");
+    assert.equal(gate?.key, "faux");
+
+    // A renewal of the sign-in (a token refresh) is not a new account: the gate stays.
+    await app.providers.check("faux");
+    assert.deepEqual(
+        app.limits.gates().map((each) => each.key),
+        ["faux"],
+    );
+    assert.equal(app.limits.waitFor(Number(id))?.until, gate?.until);
+    await app.close();
+
+    // A restart, whatever the sign-in counter was: the replayed request meets the same gate and sends nothing.
+    app = await open(model, dir);
+    await until(
+        () => app.limits.waitFor(Number(id)) !== undefined,
+        "the wait after the restart",
+        15_000,
+    );
+    assert.equal(app.limits.waitFor(Number(id))?.until, gate?.until);
+    assert.equal(state.calls, 1);
+
+    // A new sign-in is a new account: the gate goes, and the run sends its request at once.
+    state.limited = false;
+    await app.providers.logout("faux").catch(() => {});
+    await until(
+        async () => (await lastAssistant(app, id))?.stopReason === "stop",
+        "the answer",
+        15_000,
+    );
+    assert.equal(app.limits.gates().length, 0);
+    assert.equal(state.calls, 2);
+});
+
+test("a failure of a request sent before a sign-in opens no gate", async () => {
+    let epoch = 0;
+    const gate = new LimitGate({
+        hours: () => 6,
+        epoch: () => epoch,
+        conversationOf: () => undefined,
+        changed: () => {},
+        log: () => {},
+        tuning: { minWaitMs: 5, backoffMs: [200] },
+    });
+    const runtime = {
+        n: 0,
+        streamSimple(_model?: unknown, _context?: unknown) {
+            const stream = createAssistantMessageEventStream();
+            const call = runtime.n++;
+
+            queueMicrotask(() => {
+                const m = { id: "m", provider: "faux", api: "x" } as never;
+                const failed = {
+                    role: "assistant",
+                    content: call === 0 ? [] : [{ type: "text", text: "ok" }],
+                    api: "x",
+                    provider: "faux",
+                    model: "m",
+                    usage: {
+                        input: 0,
+                        output: 0,
+                        cacheRead: 0,
+                        cacheWrite: 0,
+                        totalTokens: 0,
+                        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                    },
+                    stopReason: call === 0 ? "error" : "stop",
+                    ...(call === 0 ? { errorMessage: "529 overloaded_error" } : {}),
+                    timestamp: 0,
+                } as AssistantMessage;
+
+                void m;
+                // The sign-in changes while the first request is out.
+                epoch = 1;
+                stream.push(
+                    call === 0
+                        ? { type: "error", reason: "error", error: failed }
+                        : { type: "done", reason: "stop", message: failed },
+                );
+                stream.end(failed);
+            });
+
+            return stream;
+        },
+    };
+
+    gate.install(runtime);
+
+    const result = await runtime
+        .streamSimple({ id: "m", provider: "faux", api: "x" } as never, {} as never)
+        .result();
+
+    assert.equal(result.stopReason, "stop");
+    assert.equal(runtime.n, 2, "it tried again at once, with no wait");
+    assert.equal(gate.gates().length, 0);
 });

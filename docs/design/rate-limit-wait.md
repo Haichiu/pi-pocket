@@ -194,7 +194,7 @@ Checks for every commit: `npm run check`, `npm run lint`, `npm test`, `npm run f
 
 ## What was built differently
 
-- **The gate key** for a limit that covers the account is the provider and its sign-in: `provider#epoch`, where `Providers.signInEpoch` counts sign-ins and sign-outs here. A token hash was not used, because an OAuth token changes at each renewal, and a wait of five hours would lose its gate. A limit that is not the account's (a 429, an overload, a cap for one Claude model) is held by `provider#epoch/modelId`. One account limit gives one canary.
+- **The gate key** for a limit that covers the account is the provider: `provider`. It has no token (an OAuth token changes at each renewal) and no sign-in counter (it starts again at each start), so a renewal and a restart keep the gate. A sign-in or sign-out here drops the provider's gates, and a failure of a request sent before one opens none. A limit that is not the account's (a 429, an overload, a cap for one Claude model) is held by `provider/modelId`. One account limit gives one canary.
 - **`noWait`** is a symbol-marked option (`noWait(options)` in `limit-gate.ts`), not a plain `pocketNoWait` property, so the options type stays the provider's own.
 - **The recording `fetch`** goes only to the adapters that take one (`anthropic-messages`, `openai-completions`, `openai-responses`, `azure-openai-responses`, `openai-codex-responses`, `mistral-conversations`, `pi-messages`). The Google adapters refuse a custom fetch. For the others the gate reads the error text only.
 - **A plan's usage limit with no known reset** (for example "Monthly usage limit reached") is not waited for: it is `other`, and the run fails as before. There is no time to wait until.

@@ -553,7 +553,7 @@ test("a missing, empty, or damaged file means no limit is known", () => {
     // A good entry is read.
     writeFileSync(
         file,
-        `{"version":1,"gates":[{"key":"p#0","scope":"account","provider":"p","kind":"reset","since":1,"until":${Date.now() + 5000},"tries":1,"reason":"r"}]}`,
+        `{"version":1,"gates":[{"key":"p","scope":"account","provider":"p","kind":"reset","since":1,"until":${Date.now() + 5000},"tries":1,"reason":"r"}]}`,
     );
     assert.equal(gate({ file }).g.gates().length, 1);
 });

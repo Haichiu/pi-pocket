@@ -140,7 +140,10 @@ type Gate = {
 export type GateDeps = {
     /** Hours to wait for a known reset at most; 0 turns the gate off. */
     hours: () => number;
-    /** How many sign-ins and sign-outs here the provider has had: a new one is a new account. */
+    /**
+     * How many sign-ins and sign-outs here the provider has had since this start. Only compared within one request: a
+     * failure of a request sent before one is about the account that is gone, so it opens no gate.
+     */
     epoch: (provider: string) => number;
     /** The conversation whose generation makes a request with this session id, if it is known. */
     conversationOf: (sessionId: string) => Promise<number | undefined> | number | undefined;
@@ -425,6 +428,7 @@ export class LimitGate {
                     canary = gate;
                 }
 
+                const epoch = this.#deps.epoch(model.provider);
                 const attempt = await this.#attempt(underlying, model, context, options, out);
 
                 this.#leave(waiter);
@@ -458,6 +462,15 @@ export class LimitGate {
                     this.#flush(attempt, out);
 
                     return;
+                }
+
+                // Signed in or out meanwhile: the limit is the old account's. Try again with the new one.
+                if (this.#deps.epoch(model.provider) !== epoch) {
+                    if (canary !== undefined) {
+                        this.#free(canary, waiter);
+                    }
+
+                    continue;
                 }
 
                 const gated = this.#limited(model, verdict, canary);
@@ -581,12 +594,15 @@ export class LimitGate {
 
     // ─── Gates ──────────────────────────────────────────────────────────────
 
+    // The key has no sign-in in it: a token changes at each renewal, and a counter starts again at each start, so
+    // neither could name the account across a wait or a restart. A sign-in or sign-out here drops the provider's
+    // gates (`reset`), and `#run` ignores a failure of a request sent before one.
     #accountKey(provider: string): string {
-        return `${provider}#${this.#deps.epoch(provider)}`;
+        return provider;
     }
 
     #modelKey(provider: string, modelId: string): string {
-        return `${this.#accountKey(provider)}/${modelId}`;
+        return `${provider}/${modelId}`;
     }
 
     /** The closed gate a request for this model meets: its account's first, then its model's. */
@@ -1030,6 +1046,12 @@ export class LimitGate {
 
         const modelId = text(each.modelId, 200);
         const resetAt = number(each.resetAt);
+
+        // A key other than the one its scope gives (a file from another version) holds nothing.
+        if (key !== (each.scope === "account" ? provider : `${provider}/${modelId ?? ""}`)) {
+            return undefined;
+        }
+
         const source = each.source === "header" || each.source === "body" || each.source === "text";
 
         return {
