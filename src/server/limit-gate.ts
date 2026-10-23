@@ -674,11 +674,14 @@ export class LimitGate {
         gate.reason = verdict.reason;
         gate.canary = undefined;
 
+        // One deadline for the whole wait, from when the gate closed: a reset after it, or a backoff that comes to it,
+        // gives up. A new reset does not start the wait again.
         const maxReset = this.#deps.hours() * 3_600_000;
         let until: number;
         let why: string | undefined;
 
         if (verdict.resetAt !== undefined) {
+            const deadline = gate.since + maxReset;
             const jitter =
                 tuning.resetJitterMs[0] +
                 this.#random() * (tuning.resetJitterMs[1] - tuning.resetJitterMs[0]);
@@ -691,19 +694,22 @@ export class LimitGate {
                 gate.source = verdict.source;
             }
 
-            if (until - now > maxReset) {
+            if (until > deadline) {
                 why = `it resets in ${span(verdict.resetAt - now)} (${when(verdict.resetAt)}), and Pi Pocket waits at most ${span(maxReset)}`;
             }
         } else {
+            const total = Math.min(tuning.maxBackoffMs, maxReset);
+            const deadline = gate.since + total;
             const step = Math.min(gate.tries - 1, tuning.backoffMs.length - 1);
             const delay = tuning.backoffMs[step]! * (0.8 + this.#random() * 0.4);
 
-            until = now + Math.max(delay, tuning.minWaitMs);
+            // The last try is at the deadline, not after it.
+            until = Math.min(now + Math.max(delay, tuning.minWaitMs), deadline);
             gate.kind = "backoff";
             delete gate.resetAt;
             delete gate.source;
 
-            if (now - gate.since >= Math.min(tuning.maxBackoffMs, maxReset)) {
+            if (now >= deadline) {
                 why = `it did not clear in ${span(now - gate.since)}`;
             }
         }

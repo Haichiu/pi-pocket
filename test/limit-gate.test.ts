@@ -598,3 +598,43 @@ test("an adapter that refuses a custom fetch gets none", async () => {
     assert.equal(seen[0], undefined);
     assert.equal(typeof seen[1], "function");
 });
+
+test("the longest wait is one deadline for the whole wait: known resets one after another do not start it again", async () => {
+    // 60 ms of waiting at most; the provider gives a reset 25 ms away each time.
+    const { g } = gate({
+        hours: () => 60 / 3_600_000,
+        tuning: { ...TUNING, resetJitterMs: [0, 0], maxTries: 40 },
+    });
+    const rt = runtime([], { fail: "429 rate_limit_error retryDelay: 25ms" });
+
+    g.install(rt.models);
+
+    const started = Date.now();
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+    const last = rt.calls.at(-1)!.at - started;
+
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage!, /Not waiting/);
+    // No request goes out after the deadline (the third would be at 75 ms).
+    assert.ok(last <= 60 + 15, `the last request was at ${last} ms`);
+    assert.ok(rt.calls.length <= 3, `${rt.calls.length} requests`);
+});
+
+test("a backoff delay is cut to the deadline, so no request goes out after it", async () => {
+    const { g } = gate({
+        tuning: { ...TUNING, backoffMs: [40], maxBackoffMs: 60, maxTries: 40 },
+        random: () => 0.5,
+    });
+    const rt = runtime([], { fail: "529 overloaded_error" });
+
+    g.install(rt.models);
+
+    const started = Date.now();
+    const { result } = await drain(rt.models.streamSimple(model(), { messages: [] } as never));
+    const last = rt.calls.at(-1)!.at - started;
+
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage!, /Not waiting/);
+    // Requests at 0 and 40 ms; the next would be at 80, past 60: the delay is cut to 60, and that request is the last.
+    assert.ok(last <= 60 + 15, `the last request was at ${last} ms`);
+});
