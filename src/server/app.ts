@@ -822,6 +822,11 @@ export class PocketApp {
                     this.#busy.add(id);
                 }
 
+                // A compaction that resumes asks the model too: it may wait for a limit.
+                if ((live?.compactions?.length ?? 0) > 0) {
+                    this.#compacting.add(id);
+                }
+
                 const agent = await this.harness.snapshot(AgentDoc, id, context);
 
                 if (agent !== undefined) {
