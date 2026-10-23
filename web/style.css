@@ -2776,6 +2776,22 @@ pre.diff .del {
     background: var(--accent-soft);
 }
 
+/* Narrow: the line wraps, so the wait's facts and Retry now stay inside the column. */
+@media (max-width: 600px) {
+    .live-line {
+        flex-wrap: wrap;
+        row-gap: 2px;
+    }
+
+    .live-line .live-limit {
+        flex: 0 1 auto;
+    }
+
+    .live-why {
+        flex: 1 1 100%;
+    }
+}
+
 .live-esc {
     flex: none;
     margin-left: auto;
