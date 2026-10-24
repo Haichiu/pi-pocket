@@ -15215,6 +15215,30 @@ textarea.notes {
     animation: rise-in var(--t-fade) var(--ease-out);
 }
 
+/* A message of yours that waits while PiP works: dimmed, with what happens to it and a way to take it back. */
+.pip-you.pending {
+    opacity: 0.7;
+    border: 1px dashed var(--accent-line);
+}
+
+.pip-pending-line {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: normal;
+}
+
+.pip-pending-withdraw {
+    min-height: 32px;
+    padding: 0 4px;
+    color: var(--accent);
+    font: inherit;
+}
+
 .pip-reply {
     color: var(--body);
     overflow-wrap: anywhere;
