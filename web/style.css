@@ -4690,8 +4690,14 @@ pre.diff .del {
         border-color var(--t-hover) var(--ease-out);
 }
 
+/* Above the open session: its group stays open, so the fold waits. */
+.session-fold:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
 @media (hover: hover) {
-    .session-fold:hover .session-fold-pill {
+    .session-fold:not(:disabled):hover .session-fold-pill {
         color: var(--text);
         border-color: var(--accent-line);
     }

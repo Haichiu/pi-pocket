@@ -375,6 +375,7 @@ function SessionRow({
     branches,
     kids,
     folded,
+    foldHeld,
     foldTrouble,
     onFold,
     index,
@@ -545,7 +546,12 @@ function SessionRow({
                 data-part="session-fold"
                 aria-expanded=${!folded}
                 aria-label=${foldLabel(kids, foldTrouble)}
-                title=${`${folded ? "Show" : "Hide"} ${kids} linked ${kids === 1 ? "session" : "sessions"}`}
+                title=${
+                    foldHeld
+                        ? "The open session is among them, so they show"
+                        : `${folded ? "Show" : "Hide"} ${kids} linked ${kids === 1 ? "session" : "sessions"}`
+                }
+                disabled=${foldHeld}
                 onClick=${() => onFold(session.id)}
             >
                 ${
@@ -718,6 +724,21 @@ function AllSessions({ compact = false }) {
     // Linked sessions folded away (`store.js`), but never above the open session, which always shows.
     const { foldedLinked, conversationId: openId } = store.state;
     const folded = useMemo(() => foldsNow(), [foldedLinked, openId, sessions]);
+    // The sessions above the open one: their folds stay open, so their fold buttons do nothing and are off.
+    const holdsOpen = useMemo(() => {
+        const byId = new Map(sessions.map((session) => [session.id, session]));
+        const above = new Set();
+
+        for (
+            let at = byId.get(openId)?.linkedFrom?.id;
+            at !== undefined && !above.has(at);
+            at = byId.get(at)?.linkedFrom?.id
+        ) {
+            above.add(at);
+        }
+
+        return above;
+    }, [openId, sessions]);
     const [selected, setSelectedState] = useState(() => new Set());
     // Taps select rows instead of opening them: a selection started from a long press's sheet, on a touch screen.
     const [tapSelects, setTapSelects] = useState(false);
@@ -1254,6 +1275,7 @@ function AllSessions({ compact = false }) {
             branches=${sameBranches(branches)}
             kids=${kids}
             folded=${isFolded}
+            foldHeld=${holdsOpen.has(session.id)}
             foldTrouble=${isFolded ? hiddenTrouble(group, session.id) : undefined}
             onFold=${onFold}
             index=${index}
@@ -1514,6 +1536,7 @@ const LIST_KEYS = [
     "peekSeen",
     "appearance",
     "extensionsRev",
+    "foldedLinked",
 ];
 
 /**
@@ -1771,6 +1794,7 @@ const RAIL_KEYS = [
     "page",
     "extPanel",
     "extensionsRev",
+    "foldedLinked",
 ];
 
 /** Drawn again only when what it reads changes (`RAIL_KEYS`): not as an answer streams. */

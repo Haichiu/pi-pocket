@@ -311,27 +311,49 @@ export function workspaceOrder(state = store.state) {
         return ordered.order;
     }
 
-    const active = sessions.filter((session) => !session.archived);
-    const { roots, rows } = sessionForest(active, { pinned: pins });
     // Linked sessions folded away are out of the order too: the numbers and Alt+arrows follow what shows.
-    const folds = foldsNow(state);
-    const family = (root) => unfolded(rows.get(root.id), folds).map((row) => row.session);
-    const byId = new Map(roots.map((root) => [root.id, root]));
-    const pinned = pins.map((id) => byId.get(id)).filter(Boolean);
-    const first = new Set(pinned);
-    // Shared by every caller until the next list: frozen, so none changes it for the others.
-    const order = Object.freeze([
-        ...pinned.flatMap(family),
-        ...roots.filter((root) => !first.has(root)).flatMap(family),
-    ]);
+    const order = orderOf(state, foldsNow(state));
 
     ordered = { sessions, pinned: pins, folded: foldedLinked, open: conversationId, order };
 
     return order;
 }
 
+/**
+ * Every session that is not archived, in workspace order, folded ones too: for finding a session (the launcher), where a
+ * fold must not hide one that waits.
+ */
+export function sessionOrder(state = store.state) {
+    const { sessions, pinned: pins } = state;
+
+    if (orderedAll.sessions !== sessions || orderedAll.pinned !== pins) {
+        orderedAll = { sessions, pinned: pins, order: orderOf(state, new Set()) };
+    }
+
+    return orderedAll.order;
+}
+
+/** Sessions in workspace order, with the linked sessions under `folds` left out. */
+function orderOf(state, folds) {
+    const { sessions, pinned: pins } = state;
+    const active = sessions.filter((session) => !session.archived);
+    const { roots, rows } = sessionForest(active, { pinned: pins });
+    const family = (root) => unfolded(rows.get(root.id), folds).map((row) => row.session);
+    const byId = new Map(roots.map((root) => [root.id, root]));
+    const pinned = pins.map((id) => byId.get(id)).filter(Boolean);
+    const first = new Set(pinned);
+
+    // Shared by every caller until the next list: frozen, so none changes it for the others.
+    return Object.freeze([
+        ...pinned.flatMap(family),
+        ...roots.filter((root) => !first.has(root)).flatMap(family),
+    ]);
+}
+
 /** The last workspace order, and the lists it was made from. */
 let ordered = { sessions: null, pinned: null, folded: null, open: null, order: [] };
+/** The last order of every session, folded ones too. */
+let orderedAll = { sessions: null, pinned: null, order: [] };
 
 function readFoldedLinked() {
     try {

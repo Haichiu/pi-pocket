@@ -432,6 +432,12 @@ test("an ask's card is answered by the person Pi works for, and its values reach
     );
     assert.equal(card!.requestedBy, me.id);
 
+    // Its peek tile knows it is a question, which is answered on its card (Open and Decline, never Allow).
+    const tile = (await app.room(id)).peek()?.approvals[0];
+
+    assert.equal(tile?.form, true);
+    assert.doesNotMatch(JSON.stringify(tile), /fields/);
+
     // Someone else in the session cannot answer it; a plain Allow, or a missing field, is no answer.
     await assert.rejects(
         app.answerApproval(card!.id, true, guest, { user: "x", password: "y" }),

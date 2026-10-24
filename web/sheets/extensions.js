@@ -122,10 +122,25 @@ function ModuleSettings({ module }) {
     const set = (name, next) => setDraft({ ...draft, [name]: next });
 
     const save = async () => {
-        setBusy(true);
         setError(null);
 
         // A number is typed as text ("-", "1."), and becomes a number only now; an empty one puts the default back.
+        const unreadable = shown.fields.find(
+            (field) =>
+                field.type === "number" &&
+                typeof draft[field.name] === "string" &&
+                draft[field.name].trim() !== "" &&
+                !Number.isFinite(Number(draft[field.name])),
+        );
+
+        if (unreadable !== undefined) {
+            setError(`${unreadable.label} must be a number.`);
+
+            return;
+        }
+
+        setBusy(true);
+
         const change = Object.fromEntries(
             Object.entries(draft).map(([name, next]) => {
                 const field = shown.fields.find((each) => each.name === name);

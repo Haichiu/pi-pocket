@@ -26,6 +26,8 @@ type Question = {
     link?: { token: string; path: string; url: string | null; expiresAt: number };
     /** Who shared it, by name, as the page shows it. */
     sentBy?: string;
+    /** Who shared it, by id: the notice of an answer goes to them alone. */
+    sharedBy?: string;
     answer?: { text: string; name?: string; at: number };
     /** Whether someone put the answer in the message box. */
     used?: boolean;
@@ -314,6 +316,7 @@ export default function createAskSomeone(host: PocketHost, web?: ExtensionWeb) {
 
                     question.status = "sent";
                     question.sentBy = line(request.user.name, MAX_NAME);
+                    question.sharedBy = request.user.id;
                     question.link = {
                         token: link.token,
                         path: link.path,
@@ -353,6 +356,7 @@ export default function createAskSomeone(host: PocketHost, web?: ExtensionWeb) {
                 question.status = "draft";
                 delete question.link;
                 delete question.sentBy;
+                delete question.sharedBy;
 
                 return was;
             });
@@ -456,6 +460,7 @@ export default function createAskSomeone(host: PocketHost, web?: ExtensionWeb) {
                 conversation: question.conversation,
                 title: question.title,
                 sentBy: question.sentBy,
+                to: question.sharedBy ?? question.by,
             };
         });
 
@@ -471,11 +476,19 @@ export default function createAskSomeone(host: PocketHost, web?: ExtensionWeb) {
 
         await web.links.end(request.link.token);
         changed(saved.conversation);
-        web.send("answered", {
-            conversation: saved.conversation,
-            title: saved.title,
-            name: name === "" ? null : name,
-        });
+
+        // Only to who shared it: the question's title and who answered are theirs, not every tab's.
+        if (saved.to !== undefined) {
+            web.send(
+                "answered",
+                {
+                    conversation: saved.conversation,
+                    title: saved.title,
+                    name: name === "" ? null : name,
+                },
+                { to: saved.to },
+            );
+        }
 
         return page(
             "Answer sent",
@@ -483,78 +496,75 @@ export default function createAskSomeone(host: PocketHost, web?: ExtensionWeb) {
         );
     });
 
-    const askSomeone = Object.assign(
-        defineTool({
-            name: "ask_someone",
-            description: DESCRIPTION,
-            parameters: Type.Object({
-                title: Type.String({
-                    description: "The question in a short line, up to 120 characters",
-                }),
-                question: Type.String({
-                    description:
-                        "The whole question for the reader, in Markdown: background, the question, options, and your recommendation",
-                }),
+    const askSomeone = defineTool({
+        name: "ask_someone",
+        description: DESCRIPTION,
+        parameters: Type.Object({
+            title: Type.String({
+                description: "The question in a short line, up to 120 characters",
             }),
-            // The draft's id comes from the call: a replay finds the draft it saved.
-            replay: "safe",
-            execute: async (args, api, context) => {
-                const title = line(args.title, MAX_TITLE);
-                const text = body(args.question, MAX_TEXT);
+            question: Type.String({
+                description:
+                    "The whole question for the reader, in Markdown: background, the question, options, and your recommendation",
+            }),
+        }),
+        // The draft's id comes from the call: a replay finds the draft it saved.
+        replay: "safe",
+        execute: async (args, api, context) => {
+            const title = line(args.title, MAX_TITLE);
+            const text = body(args.question, MAX_TEXT);
 
-                if (title === "" || text === "") {
-                    throw new Error("Give the question a title and its words.");
+            if (title === "" || text === "") {
+                throw new Error("Give the question a title and its words.");
+            }
+
+            const id = createHash("sha256")
+                .update(`${api.taskId}:${api.callId}`)
+                .digest("hex")
+                .slice(0, 16);
+            const conversation = Number(api.conversationId);
+            const by = host.requesterOf(api.conversationId);
+
+            await api.commit(async (tx) => {
+                const doc = await tx.doc(Questions);
+
+                if (doc.items[id] !== undefined) {
+                    return;
                 }
 
-                const id = createHash("sha256")
-                    .update(`${api.taskId}:${api.callId}`)
-                    .digest("hex")
-                    .slice(0, 16);
-                const conversation = Number(api.conversationId);
-                const by = host.requesterOf(api.conversationId);
+                const here = Object.values(doc.items).filter(
+                    (each) => each.conversation === conversation,
+                );
 
-                await api.commit(async (tx) => {
-                    const doc = await tx.doc(Questions);
-
-                    if (doc.items[id] !== undefined) {
-                        return;
-                    }
-
-                    const here = Object.values(doc.items).filter(
-                        (each) => each.conversation === conversation,
+                if (here.length >= MAX_PER_SESSION) {
+                    throw new Error(
+                        `This session has ${MAX_PER_SESSION} questions. Ask the person to delete answered ones in Questions first.`,
                     );
+                }
 
-                    if (here.length >= MAX_PER_SESSION) {
-                        throw new Error(
-                            `This session has ${MAX_PER_SESSION} questions. Ask the person to delete answered ones in Questions first.`,
-                        );
-                    }
-
-                    doc.items[id] = {
-                        conversation,
-                        createdAt: Date.now(),
-                        ...(by === undefined ? {} : { by }),
-                        title,
-                        text,
-                        status: "draft",
-                    };
-                }, context);
-
-                changed(conversation);
-                web.send("drafted", { conversation, title }, by === undefined ? {} : { to: by });
-
-                return {
-                    output: [
-                        {
-                            type: "text" as const,
-                            text: `Saved the draft "${title}". Nothing was sent. The person reviews and edits it under Questions (the status line under the message box, or the session menu), then shares it as a link that takes one answer, or copies it as text. An answer comes back to them, and they can give it to you. Tell them the draft is ready in a sentence, and do not repeat it in full.`,
-                        },
-                    ],
+                doc.items[id] = {
+                    conversation,
+                    createdAt: Date.now(),
+                    ...(by === undefined ? {} : { by }),
+                    title,
+                    text,
+                    status: "draft",
                 };
-            },
-        }),
-        { annotations: { readOnlyHint: true } },
-    );
+            }, context);
+
+            changed(conversation);
+            web.send("drafted", { conversation, title }, by === undefined ? {} : { to: by });
+
+            return {
+                output: [
+                    {
+                        type: "text" as const,
+                        text: `Saved the draft "${title}". Nothing was sent. The person reviews and edits it under Questions (the status line under the message box, or the session menu), then shares it as a link that takes one answer, or copies it as text. An answer comes back to them, and they can give it to you. Tell them the draft is ready in a sentence, and do not repeat it in full.`,
+                    },
+                ],
+            };
+        },
+    });
 
     return defineExtension({ name: "pocket-ask-someone", tools: [askSomeone] });
 }
