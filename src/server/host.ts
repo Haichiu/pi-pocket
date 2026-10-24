@@ -374,8 +374,8 @@ export interface PocketHost {
      */
     ask(request: AskRequest, context: Context): Promise<AskAnswer>;
     /**
-     * Hide a value from what Pi and people read: command output as it streams, and every tool's result. It shows as
-     * `[label]`. Returns how to stop; pass that to `web.onDispose`.
+     * Hide a value from what Pi and people read: command output as it streams, every tool's result, and people's
+     * messages to Pi. It shows as `[label]`. Returns how to stop; pass that to `web.onDispose`.
      *
      * @experimental In 0.22: it can change in a minor release (docs/extensions/policies/api-stability.md).
      */

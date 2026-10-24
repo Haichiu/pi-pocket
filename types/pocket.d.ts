@@ -188,7 +188,7 @@ export interface Host {
      */
     ask(request: AskRequest, context: Context): Promise<AskAnswer>;
     /**
-     * Hides a value from what Pi and people read: command output as it streams, and each tool's result. It shows as `[label]`. Returns how to stop: pass it to `web.onDispose`.
+     * Hides a value from what Pi and people read: command output as it streams, each tool's result, and people's messages to Pi. It shows as `[label]`. Returns how to stop: pass it to `web.onDispose`.
      * @since 0.22.0
      * @experimental
      */

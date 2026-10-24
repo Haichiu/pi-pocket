@@ -740,11 +740,13 @@ export class Commands {
         const conversation = await app.conversation(id);
         const typed = request.text.trim();
         // `/skill:name request` sends the skill with the request; `/name arguments`, Pi's prompt template of that name.
-        const text = typed.startsWith("/skill:")
+        const expanded = typed.startsWith("/skill:")
             ? (expandSkillCommand(typed, app.skillCommands(id)) ?? typed)
             : typed.startsWith("/")
               ? (expandPromptTemplate(typed, app.promptTemplates(id)) ?? typed)
               : typed;
+        // A value an extension hides (`host.hide`), pasted into the message, is never stored nor sent to the model.
+        const text = app.hidden.replace(expanded, id);
         const attachments = request.attachments ?? [];
 
         if (text === "" && attachments.length === 0) {
@@ -845,7 +847,10 @@ export class Commands {
             .finally(() => admission?.afterSubmit());
 
         app.collab.setTyping(id, user, null);
-        await this.#touched(id, typed, text === typed ? undefined : text);
+        // The title comes from the message as it was stored: without hidden values.
+        const titled = app.hidden.replace(typed, id);
+
+        await this.#touched(id, titled, text === titled ? undefined : text);
 
         // A person's own words: linked sessions may message each other again (`linked-sessions.ts`).
         if (via === undefined) {
@@ -1970,7 +1975,10 @@ export class Commands {
         // Who sent it comes first, then the heading, whole or (from before 0.14.0) without its blank line.
         const [written, files] = splitAttachments(original.text.replace(FROM_PREFIX, ""));
         // An edit that changes nothing is the same as sending the message again.
-        const edit = edited !== undefined && edited !== written.trim() ? edited : undefined;
+        const edit =
+            edited !== undefined && edited !== written.trim()
+                ? app.hidden.replace(edited, id)
+                : undefined;
 
         if (edit === "" && files === undefined) {
             throw new HttpError(400, "Nothing to send");

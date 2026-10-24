@@ -284,6 +284,32 @@ test("Pi's bash uses the value without the model, the transcript, or the result 
     assert.ok(sent.slice(before).every((request) => !request.includes(SECRET)));
 });
 
+test("a value pasted into a message to Pi, or into an edit sent again, is hidden before it is stored", async () => {
+    const id = await newSession(app);
+    const me = owner(app);
+    const before = sent.length;
+
+    await app.commands.submit(id, me, {
+        text: `the key is ${SECRET} ok`,
+        requestId: crypto.randomUUID(),
+    });
+    await until(async () => (await stored(id)).includes("echo: "), "the answer");
+    assert.match(await stored(id), /the key is \[secret TOKEN\] ok/);
+    assert.doesNotMatch(await stored(id), new RegExp(SECRET));
+
+    const entries = await app.transcripts.allEntries(id, true);
+    const message = entries.find((entry) => entry.kind === "user")!;
+    const { id: fork } = await app.commands.resend(id, me, {
+        entryId: message.id,
+        text: `now ${SECRET} again`,
+    });
+
+    await until(async () => (await stored(fork)).includes("echo: now"), "the fork's answer");
+    assert.match(await stored(fork), /now \[secret TOKEN\] again/);
+    assert.doesNotMatch(await stored(fork), new RegExp(SECRET));
+    assert.ok(sent.slice(before).every((request) => !request.includes(SECRET)));
+});
+
 test("any tool's result hides the value before it is stored, its details too", async () => {
     const id = await newSession(app);
 

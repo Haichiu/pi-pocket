@@ -219,7 +219,8 @@ Since 0.22.0 · Experimental
 Hides a value from what Pi and people read, until the returned function is called. Each one becomes `[label]`:
 
 - in the output of commands as it streams: bash's live output and its result, a `!` command's card, and a check's output. A value split across two chunks is held back until it can be told apart, so up to its length less one character comes later than the rest;
-- in every tool's result (what the model reads, what programs read, and its details), before it is stored.
+- in every tool's result (what the model reads, what programs read, and its details, keys too), before it is stored;
+- in people's messages to Pi, and in an edit sent again: a value pasted there is replaced before the message is stored, sent to the model, or made the session's title.
 
 It does not reach a file that a command writes (such as bash's spill file for long output), entries from before the value was hidden, or a value that a command changed (encoded, reversed). Hide each form that you expect, such as its base64, as a value of its own. It keeps values out of transcripts by accident: it is not a boundary against a command that leaks a value on purpose. Pass the returned function to `web.onDispose`. See [`HiddenValue`](#hiddenvalue).
 

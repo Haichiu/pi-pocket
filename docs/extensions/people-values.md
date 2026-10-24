@@ -5,7 +5,7 @@ Some values must not go through Pi: a password, an API key, a one-time code. Wha
 | Member                                            | What it does                                                                             |
 | ------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | [`host.ask`](reference/host.md#ask)               | Asks the person Pi works for, on a card, and gives their answer to the extension alone.  |
-| [`host.hide`](reference/host.md#hide)             | Takes a value out of command output as it streams, and out of every tool's result.       |
+| [`host.hide`](reference/host.md#hide)             | Takes a value out of command output, every tool's result, and people's messages to Pi.   |
 | [`host.commandEnv`](reference/host.md#commandenv) | Adds environment variables to a command, so a value reaches it as `$NAME`.               |
 | [`host.browser`](reference/host.md#browser)       | The session's browser page: read its controls as data, click, type, and fill in a value. |
 
@@ -53,7 +53,8 @@ if (!answer.answered) {
 `host.hide` keeps a value out of what Pi and people read, from now until you call the function that it returns. It becomes `[label]`:
 
 - in command output as it streams: bash's live output and its result, a `!` command's card, and Done when's checks. A value split across two chunks of output is held back until it can be told apart;
-- in every tool's result, before it is stored: what the model reads, what programs read, and its details.
+- in every tool's result, before it is stored: what the model reads, what programs read, and its details;
+- in people's messages to Pi: a value that someone pastes into a message, or into an edit they send again, is replaced before it is stored or sent to the model. The session's title, made from the first message, does not have it either.
 
 ```typescript
 const unhide = host.hide({ value: token, label: "secret GITHUB_TOKEN" });
