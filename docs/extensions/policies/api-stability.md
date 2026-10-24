@@ -47,6 +47,8 @@ These members are public:
 - `linkedSessions`: `start`, `send`, `list` (experimental in 0.14, see [Experimental](#experimental))
 - `text`: `quoted`, `defang`
 - `thinkingLevels`
+- `fetchPublic(url, init)` (experimental, since 0.20.0)
+- `ask(request, context)`, `hide(value)`, `commandEnv(provider)`, `browser(conversationId, options)` (experimental, since 0.22.0: [People's values and the browser](../people-values.md))
 
 These members are on `host` for Pi Pocket's own built-in extensions: `guard`, `approvals`, `schedules`, `goals`, `browsers`, `memory`, `watches`, `repoWatches`, `gallery`, `pip`, and `pipCompaction`. They are **internal**. A drop-in can read them, but their shapes can change in any release. One of them becomes public only through a request for an extension point ([core-or-extension.md](core-or-extension.md#ask-for-a-new-extension-point)).
 
@@ -55,6 +57,7 @@ The host's members do not change while modules reload. A new member comes only a
 ### 4. `web`
 
 - `api`, `module`, `route`, `conversationRoute` (since 0.16.0), `client`, `command`, `send`, `error`, and `onDispose`.
+- `publicPage` and `links` (experimental, since 0.22.0): pages at `/l/<token>` for anyone with a module's link, what a page handler gets (`PublicPageRequest`), and what its answer does ([Public pages](../public-pages.md)).
 - What a route handler gets (`WebRequest`: `method`, `params`, `query`, `body`, `user`, `signal`; since 0.16.0 also request-lifetime `snapshot`, `context`, `commit`), and what its answer does.
 - A conversation-bound request's `conversation` metadata and human `linkedSessions.start` / `list`, with their authenticated-actor, receipt, and admission checks (since 0.16.0).
 - The route paths, the methods, the `access` values (`owner`, `steer`, `view`), and the `X-Pocket` header that every call to a route must have.
