@@ -306,6 +306,7 @@ export class CommandEnvs {
         for (const provider of [...this.#providers]) {
             let given: unknown;
             let timer: NodeJS.Timeout | undefined;
+            let stopped: (() => void) | undefined;
 
             try {
                 signal?.throwIfAborted();
@@ -320,13 +321,8 @@ export class CommandEnvs {
                                 ),
                             commandEnvLimits.providerMs,
                         );
-                        signal?.addEventListener(
-                            "abort",
-                            () => reject(new Error("the command was stopped")),
-                            {
-                                once: true,
-                            },
-                        );
+                        stopped = () => reject(new Error("the command was stopped"));
+                        signal?.addEventListener("abort", stopped, { once: true });
                     }),
                 ]);
             } catch (error) {
@@ -341,6 +337,10 @@ export class CommandEnvs {
                 continue;
             } finally {
                 clearTimeout(timer);
+
+                if (stopped !== undefined) {
+                    signal?.removeEventListener("abort", stopped);
+                }
             }
 
             if (given === undefined || given === null) {

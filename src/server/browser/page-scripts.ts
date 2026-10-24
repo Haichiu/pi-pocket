@@ -160,11 +160,20 @@ export const SNAPSHOT_SCRIPT = String.raw`(() => {
 })()`;
 
 /**
+ * Helpers that see into shadow roots, as a person does: what is at a point, what has the focus, and whether one node
+ * holds another (through slots and shadow hosts). Put into the scripts that check what a fill reaches.
+ */
+const DEEP = String.raw`
+	const deepAt = (x, y) => { let hit = document.elementFromPoint(x, y); while (hit?.shadowRoot) { const inner = hit.shadowRoot.elementFromPoint(x, y); if (!inner || inner === hit) break; hit = inner; } return hit; };
+	const deepActive = () => { let active = document.activeElement; while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement; return active; };
+	const within = (outer, node) => { for (let at = node; at; at = at.assignedSlot ?? at.parentNode ?? at.host) { if (at === outer) return true; } return false; };
+`;
+
+/**
  * Finds what Pi points at, scrolls it into view, and returns its middle in screen coordinates (CSS pixels of the
  * visual viewport, which mouse events use), with a short description and what covers it, if anything.
  */
-export const LOCATE_SCRIPT = String.raw`(async (target) => {
-	const clip = (text, max) => { const flat = String(text ?? "").replace(/\s+/g, " ").trim(); return flat.length > max ? flat.slice(0, max - 1) + "…" : flat; };
+export const LOCATE_SCRIPT = String.raw`(async (target) => {${DEEP}	const clip = (text, max) => { const flat = String(text ?? "").replace(/\s+/g, " ").trim(); return flat.length > max ? flat.slice(0, max - 1) + "…" : flat; };
 	// A password field's value is never part of what describes or finds it.
 	const valueOf = (el) => (el.tagName === "INPUT" && el.type === "password" ? "" : el.value);
 	const describe = (el) => {
@@ -200,24 +209,27 @@ export const LOCATE_SCRIPT = String.raw`(async (target) => {
 	if (box.width === 0 && box.height === 0) throw new Error(describe(el) + " is not visible.");
 	const x = box.left + box.width / 2;
 	const y = box.top + box.height / 2;
-	const hit = document.elementFromPoint(x, y);
-	const covered = hit && hit !== el && !el.contains(hit) && !hit.contains(el) ? describe(hit) : undefined;
+	const hit = deepAt(x, y);
+	const covered = hit && !within(el, hit) && !within(hit, el) ? describe(hit) : undefined;
 	const view = window.visualViewport;
 	const scale = view?.scale ?? 1;
 	const kind = el.tagName === "INPUT" ? (el.type || "text") : el.tagName === "TEXTAREA" ? "textarea" : el.tagName.toLowerCase();
 	return { x: (x - (view?.offsetLeft ?? 0)) * scale, y: (y - (view?.offsetTop ?? 0)) * scale, label: describe(el), covered, editable: el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName), kind, password: kind === "password" };
 })`;
 
-/** Whether the focus is on what `LOCATE_SCRIPT` found last, or inside it. */
-export const FOCUSED_SCRIPT = String.raw`(() => {
+/**
+ * Whether the focus is on what `LOCATE_SCRIPT` found last, or inside it, in a shadow root too; or on the editor that
+ * holds it, for a part of an editable element (a span in a rich text editor).
+ */
+export const FOCUSED_SCRIPT = String.raw`(() => {${DEEP}
 	const el = window.__piPocketLocated?.deref();
-	const active = document.activeElement;
-	return Boolean(el && active && (active === el || el.contains(active)));
+	const active = deepActive();
+	return Boolean(el && active && (within(el, active) || (active.isContentEditable && within(active, el))));
 })()`;
 
 /** What is at a point of the viewport: its description, kind, and whether it is a field or a password field. */
-export const POINT_SCRIPT = String.raw`((x, y) => {
-	const el = document.elementFromPoint(x, y);
+export const POINT_SCRIPT = String.raw`((x, y) => {${DEEP}
+	const el = deepAt(x, y);
 	if (!el) throw new Error("Nothing is at " + Math.round(x) + "," + Math.round(y) + ".");
 	const kind = el.tagName === "INPUT" ? (el.type || "text") : el.tagName === "TEXTAREA" ? "textarea" : el.tagName.toLowerCase();
 	const value = kind === "password" ? "" : el.value;
@@ -229,8 +241,8 @@ export const POINT_SCRIPT = String.raw`((x, y) => {
  * Selects what the focused field holds, so typed text replaces it: "selected", "empty", "none" (not a field), or "keys"
  * for a field a script cannot select (email, number), which the editor's select-all shortcut selects instead.
  */
-export const SELECT_ALL_SCRIPT = String.raw`(() => {
-	const el = document.activeElement;
+export const SELECT_ALL_SCRIPT = String.raw`(() => {${DEEP}
+	const el = deepActive();
 	if (!el) return "none";
 	if (["INPUT", "TEXTAREA"].includes(el.tagName)) {
 		if (el.value === "") return "empty";

@@ -835,6 +835,9 @@ export class PocketApp {
             void this.guard.warm().catch(() => {});
         }
 
+        await this.pip.tuneAll().catch((error: unknown) => {
+            this.#log(`PiP could not be brought up to date: ${describe(error)}`);
+        });
         // Work a previous process left unfinished continues now.
         this.harness.resume();
     }

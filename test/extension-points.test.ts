@@ -15,6 +15,7 @@ import {
     work,
 } from "./helpers.ts";
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
@@ -124,6 +125,16 @@ export default (host, web) => {
             refused.push(error.message);
         }
 
+        // Nothing went into the covered page's fields: a password field would show ••••.
+        const coveredValues = (await page.snapshot()).controls.map((control) => control.value ?? "").join("");
+
+        // A field in a shadow root, and a part of a rich text editor, are filled as any field is.
+        await page.navigate(String(request.body.url) + "shadow");
+        const deep = (await page.snapshot()).controls.find((control) => control.kind === "password");
+        const shadow = { inspected: await page.inspect({ ref: deep.ref }), filled: await page.fill({ ref: deep.ref }, "deep-pass") };
+
+        await page.fill({ selector: "#editor b" }, "new words");
+
         return {
             before: field,
             info,
@@ -132,6 +143,8 @@ export default (host, web) => {
             refill,
             data,
             refused,
+            coveredValues,
+            shadow,
             after: filled,
             text: after.text,
             evaluate: "evaluate" in page,
@@ -192,6 +205,14 @@ export default (host, web) => {
     await app.setExtensionEnabled(owner(app), "points.ts", true);
     site = createServer((request, response) => {
         response.writeHead(200, { "content-type": "text/html" });
+
+        // At /shadow, a password field in a shadow root, and a rich text editor.
+        if (request.url?.endsWith("shadow")) {
+            return response.end(
+                `<title>Deep</title><sign-in><template shadowrootmode="open"><label>Password <input type="password"></label></template></sign-in><div id="editor" contenteditable>Some <b>old words</b> here</div>`,
+            );
+        }
+
         // At /covered, a banner lies over the password field, as a cookie banner can.
         const banner = request.url?.endsWith("covered")
             ? `<div style="position:fixed;inset:0;background:#fff;z-index:9">Accept cookies</div>`
@@ -287,6 +308,15 @@ test("a provider that hangs adds nothing after its time, and the command runs", 
         assert.deepEqual(await envs.for({ conversationId: 1, command: "true", cwd: work }), {
             AFTER: "yes",
         });
+
+        // One signal for many commands keeps no listener for those done.
+        const signal = new AbortController().signal;
+
+        for (let index = 0; index < 5; index += 1) {
+            await envs.for({ conversationId: 1, command: "true", cwd: work }, signal);
+        }
+
+        assert.equal(getEventListeners(signal, "abort").length, 0);
     } finally {
         commandEnvLimits.providerMs = was;
     }
@@ -474,6 +504,8 @@ test(
                 evaluate: boolean;
                 data: string;
                 refused: string[];
+                coveredValues: string;
+                shadow: { inspected: { password: boolean }; filled: string };
             };
 
             assert.equal(response.status, 200, JSON.stringify(result));
@@ -488,16 +520,18 @@ test(
             assert.match(result.data, /navigate needs/);
             assert.match(result.refused[0] ?? "", /not by a point/);
             assert.match(result.refused[1] ?? "", /covered by/);
+            assert.equal(result.coveredValues, "");
+            assert.equal(result.shadow.inspected.password, true);
             assert.doesNotMatch(result.text, /hunter2/);
             assert.equal(result.evaluate, false, "no script runs through the handle");
-            // On the page with the banner over it, nothing went into the field (nor anywhere else).
+            // The shadow root's field holds the value, and the editor its new words.
             assert.equal(
                 await app.browsers
                     .page(Number(id))!
                     .evaluate(
-                        `[...document.querySelectorAll("input")].map((input) => input.value).join("")`,
+                        `document.querySelector("sign-in").shadowRoot.querySelector("input").value + "|" + document.querySelector("#editor").innerText`,
                     ),
-                "",
+                "deep-pass|new words",
             );
         } finally {
             server.closeAllConnections();

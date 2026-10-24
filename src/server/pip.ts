@@ -363,6 +363,18 @@ export class Pip {
         return conversation.id;
     }
 
+    /**
+     * Give every PiP what this version runs it with, before work resumes: a run or a report that comes before anyone opens
+     * the panel then runs with it too (its hook that hides values, say).
+     */
+    async tuneAll(): Promise<void> {
+        for (const [id, meta] of Object.entries(this.#app.sessionCatalogue())) {
+            if (meta.pip !== undefined) {
+                await this.#tune(Number(id) as unknown as ConversationId);
+            }
+        }
+    }
+
     /** Give PiP the extensions and tools this version runs it with, when it has others (made by an older one). */
     async #tune(id: ConversationId): Promise<void> {
         const agent = await this.#app.agentState(id);
