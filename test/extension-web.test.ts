@@ -261,7 +261,7 @@ test("a browser module loads for the people it is for, and its folder serves onl
     const soloUrl = ownerUi.find((each) => each.module === "solo")!.url;
 
     // Panel's is for everyone with every session; Solo's for the owner alone.
-    // Built-in modules that are on by default (Your messages) have browser modules of their own: only the drop-ins count.
+    // Built-in modules with browser modules of their own may be on by default: only the drop-ins count.
     assert.deepEqual(
         (await uiFor("Vic"))
             .map((each) => each.module)
