@@ -1569,6 +1569,20 @@ kbd {
     overflow-wrap: anywhere;
 }
 
+/* The heading that folds the sessions this one started: a chevron that turns down while they show. */
+.linked-sessions .linked-sessions-fold {
+    color: var(--muted);
+}
+
+.linked-sessions-chevron {
+    display: inline-flex;
+    transition: transform var(--t-in) var(--ease-out);
+}
+
+.linked-sessions-fold.open .linked-sessions-chevron {
+    transform: rotate(90deg);
+}
+
 /* The explicit parent route stays beside the message box on every layout, even when the dock scrolls. */
 .parent-session {
     display: flex;
