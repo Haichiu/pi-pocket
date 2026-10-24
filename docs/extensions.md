@@ -26,6 +26,7 @@ This page is the map. Read all of it, then only the pages that your task needs.
 | Start sessions, and send messages between them                 | [Starting and messaging sessions](extensions/linked-sessions.md)                                                |
 | Add to the app: routes, a browser module, commands             | [Adding to the app](extensions/app.md)                                                                          |
 | Answer requests on the server, and say who may use them        | [Routes](extensions/routes.md)                                                                                  |
+| Show a page to anyone with a link, with no sign-in             | [Public pages](extensions/public-pages.md)                                                                      |
 | Add rail buttons, pages, sheets, panels, status items, menus   | [Browser modules](extensions/browser-modules.md)                                                                |
 | Run something from the message box, without Pi                 | [Slash commands](extensions/commands.md)                                                                        |
 | Show your tool's calls in words                                | [How tool calls show](extensions/tool-calls.md)                                                                 |

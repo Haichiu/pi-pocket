@@ -94,6 +94,26 @@ Adds the command `/name` to the message box, for the people who can run it. The 
 - [Command context](command-context.md) gives the fields of `command` and what its handler gets and returns.
 - [Slash commands](../commands.md) tells you who can run a command, how a run is kept, and how a person stops it.
 
+### `publicPage`
+
+```ts
+publicPage(handle: PublicPageHandler): void;
+```
+
+Since 0.22.0 · Experimental
+
+Draws the module's public pages: what anyone with one of its links sees at `/l/<token>`, with no sign-in. A module has one handler. Pi Pocket sends each page in a sandbox: no script, an opaque origin, and forms that post only back to the same address. See [`PublicPageHandler`](#publicpagehandler) and [Public pages](../public-pages.md).
+
+### `links`
+
+```ts
+readonly links: PublicLinks;
+```
+
+Since 0.22.0 · Experimental
+
+Makes, lists, and ends the module's public links. Unlike the registering calls, it works while the module runs: from a route, a tool, a timer, or the page handler. A version of the module that went makes, lists, and ends none. See [`PublicLinks`](#publiclinks).
+
 ## Sending and answering
 
 ### `send`
@@ -253,6 +273,123 @@ interface HumanLinkedSession extends LinkedSession {
 Since 0.16.0 · Stable
 
 `conversationId` is visible to the authenticated person and can be passed to `pocket.openConversation`. `address` remains the source's opaque address. `title`, `cwd`, `busy`, and `archived` still show only when the source's whole audience sees this session.
+
+### `PublicPageHandler`
+
+```ts
+type PublicPageHandler = (
+    request: PublicPageRequest,
+) => PublicPageAnswer | Promise<PublicPageAnswer>;
+```
+
+Since 0.22.0 · Experimental
+
+Draws a public page. A `POST` to a link with `uses` counts one before the handler runs. A handler that throws, or answers with a status of 400 or more, gives it back.
+
+### `PublicPageAnswer`
+
+```ts
+type PublicPageAnswer = string | { html: string; status?: number };
+```
+
+Since 0.22.0 · Experimental
+
+The page's HTML, or its HTML with a status from 200 to 599 (200 when not given), up to a [size](limits.md#public-links). An error made with `web.error` shows a short page with its message and status. Any other error shows a page that gives no reason, and the server's log has its words.
+
+### `PublicPageRequest`
+
+```ts
+interface PublicPageRequest {
+    readonly method: "GET" | "POST";
+    readonly link: PublicLinkInfo;
+    readonly query: URLSearchParams;
+    readonly form: Readonly<Record<string, string>>;
+    readonly signal: AbortSignal;
+    readonly context: Context;
+    readonly snapshot: DocumentReader["snapshot"];
+    commit<T>(change: (tx: Tx) => T | Promise<T>): Promise<T>;
+}
+```
+
+Since 0.22.0 · Experimental
+
+A request to a public page, from anyone with its address. It has no person.
+
+- `method`: `"GET"` to show the page (`HEAD` comes as `"GET"`), `"POST"` for a form on it.
+- `link`: the link that the address names. It is still open.
+- `query`: the query string.
+- `form`: the fields of a posted form, `application/x-www-form-urlencoded`, as text. The last of a name that comes twice counts. Empty for `GET`.
+- `signal`: aborted when the browser stops waiting.
+- `snapshot`, `context`, and `commit`: read and change the module's own documents. They end when the handler returns.
+
+### `PublicLinks`
+
+```ts
+interface PublicLinks {
+    create(link: PublicLinkRequest): Promise<PublicLinkInfo>;
+    get(token: string): Promise<PublicLinkInfo | undefined>;
+    list(): Promise<PublicLinkInfo[]>;
+    end(token: string): Promise<boolean>;
+}
+```
+
+Since 0.22.0 · Experimental
+
+The module's public links. Each method sees only the links of its own module.
+
+- `create`: makes a link. A request out of its [limits](limits.md#public-links) throws.
+- `get`: one of the module's open links, or `undefined`.
+- `list`: the module's open links, newest first.
+- `end`: ends a link at once, and gives whether there was one to end.
+
+### `PublicLinkRequest`
+
+```ts
+interface PublicLinkRequest {
+    hours: number;
+    uses?: number;
+    by?: string;
+    conversation?: number;
+    data?: unknown;
+}
+```
+
+Since 0.22.0 · Experimental
+
+What a module asks for when it makes a link.
+
+- `hours`: how long it stays open: more than 0, and 720 (30 days) at most.
+- `uses`: how many answered posts it takes before it closes. Without it, any number until its time.
+- `by`: who it is for, such as a route's `user.id`.
+- `conversation`: the session that it is about.
+- `data`: a small JSON value of the module's own, given back with the link.
+
+### `PublicLinkInfo`
+
+```ts
+interface PublicLinkInfo {
+    readonly token: string;
+    readonly path: string;
+    readonly url: string | null;
+    readonly createdAt: number;
+    readonly expiresAt: number;
+    readonly uses: number | null;
+    readonly by: string | null;
+    readonly conversation: number | null;
+    readonly data: unknown;
+}
+```
+
+Since 0.22.0 · Experimental
+
+A link, as its module sees it.
+
+- `token`: 32 hex characters, the whole of its access.
+- `path`: `/l/<token>`.
+- `url`: the whole address on the server's public one (a tunnel's), or `null`. In the browser, use `location.origin` and `path` when it is `null`.
+- `createdAt`, `expiresAt`: when it was made and when it closes, in milliseconds since 1970.
+- `uses`: how many answers it takes still, or `null` for any number.
+- `by`, `conversation`, `data`: as the module gave them, or `null`.
 
 ### `WebMethod`
 

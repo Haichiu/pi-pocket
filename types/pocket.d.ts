@@ -527,6 +527,210 @@ export interface ConversationWebRequest extends WebRequest {
 export type WebHandler = (request: WebRequest) => unknown;
 
 /**
+ * What a module asks for when it makes a public link (`web.links.create`).
+ * @since 0.22.0
+ * @experimental
+ */
+export interface PublicLinkRequest {
+    /**
+     * How long the link stays open, in hours: more than 0, and 720 (30 days) at most.
+     * @since 0.22.0
+     * @experimental
+     */
+    hours: number;
+    /**
+     * How many answered posts it takes before it closes. Without it, any number until its time.
+     * @since 0.22.0
+     * @experimental
+     */
+    uses?: number;
+    /**
+     * Who it is for: a person's id, such as a route's `user.id`.
+     * @since 0.22.0
+     * @experimental
+     */
+    by?: string;
+    /**
+     * The session it is about.
+     * @since 0.22.0
+     * @experimental
+     */
+    conversation?: number;
+    /**
+     * A small JSON value of the module's own, up to 4 KB, given back with the link.
+     * @since 0.22.0
+     * @experimental
+     */
+    data?: unknown;
+}
+
+/**
+ * A public link, as its module sees it.
+ * @since 0.22.0
+ * @experimental
+ */
+export interface PublicLinkInfo {
+    /**
+     * The link's token: 32 hex characters, the whole of its access.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly token: string;
+    /**
+     * Its address on this server: `/l/<token>`.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly path: string;
+    /**
+     * Its whole address on the server's public one (a tunnel's), or null when the server has none.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly url: string | null;
+    /**
+     * When it was made, in milliseconds since 1970.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly createdAt: number;
+    /**
+     * When it closes, in milliseconds since 1970.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly expiresAt: number;
+    /**
+     * How many answers it takes still, or null for any number.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly uses: number | null;
+    /**
+     * Who it is for, as the module said, or null.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly by: string | null;
+    /**
+     * The session it is about, as the module said, or null.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly conversation: number | null;
+    /**
+     * The module's own value, or null.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly data: unknown;
+}
+
+/**
+ * A module's public links: pages at `/l/<token>` for anyone with the address, which `web.publicPage` draws.
+ * @since 0.22.0
+ * @experimental
+ */
+export interface PublicLinks {
+    /**
+     * Makes a link. It always closes: at its time, after its uses, or when the module ends it.
+     * @since 0.22.0
+     * @experimental
+     */
+    create(link: PublicLinkRequest): Promise<PublicLinkInfo>;
+    /**
+     * One of this module's open links, or undefined.
+     * @since 0.22.0
+     * @experimental
+     */
+    get(token: string): Promise<PublicLinkInfo | undefined>;
+    /**
+     * This module's open links, newest first.
+     * @since 0.22.0
+     * @experimental
+     */
+    list(): Promise<PublicLinkInfo[]>;
+    /**
+     * Ends one of this module's links at once. It gives whether there was one to end.
+     * @since 0.22.0
+     * @experimental
+     */
+    end(token: string): Promise<boolean>;
+}
+
+/**
+ * A request to a public link's page, from anyone with its address. There is no person and no sign-in.
+ * @since 0.22.0
+ * @experimental
+ */
+export interface PublicPageRequest {
+    /**
+     * `GET` shows the page; `POST` is a form on it, sent back to the same address.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly method: "GET" | "POST";
+    /**
+     * The link that the address names. It is still open.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly link: PublicLinkInfo;
+    /**
+     * The query string.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly query: URLSearchParams;
+    /**
+     * The fields of a posted form. Empty for `GET`.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly form: Readonly<Record<string, string>>;
+    /**
+     * Aborted when the browser stops waiting.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly signal: AbortSignal;
+    /**
+     * The context for document reads and writes. It ends when the handler returns.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly context: Context;
+    /**
+     * Reads committed documents.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly snapshot: DocumentReader["snapshot"];
+    /**
+     * Changes the module's own documents. Refused after the handler returns.
+     * @since 0.22.0
+     * @experimental
+     */
+    commit<T>(change: (tx: Tx) => T | Promise<T>): Promise<T>;
+}
+
+/**
+ * A public page's answer: its HTML, or its HTML with a status (200 when not given).
+ * @since 0.22.0
+ * @experimental
+ */
+export type PublicPageAnswer = string | { html: string; status?: number };
+
+/**
+ * Draws a module's public pages.
+ * @since 0.22.0
+ * @experimental
+ */
+export type PublicPageHandler = (
+    request: PublicPageRequest,
+) => PublicPageAnswer | Promise<PublicPageAnswer>;
+
+/**
  * What a module adds to the app: the second argument of its default export. Register routes, the browser module, and
  * commands while the module loads. They go when this version of the module goes.
  * @since 0.14.0
@@ -588,6 +792,19 @@ export interface Web {
      * @since 0.14.0
      */
     onDispose(dispose: () => unknown): void;
+    /**
+     * Draws the module's public pages: what anyone with one of its links sees at `/l/<token>`, with no sign-in. One
+     * handler for each module.
+     * @since 0.22.0
+     * @experimental
+     */
+    publicPage(handle: PublicPageHandler): void;
+    /**
+     * Makes, lists, and ends the module's public links. It works while the module runs, not only while it loads.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly links: PublicLinks;
 }
 
 // ─── Commands ────────────────────────────────────────────────────────────────

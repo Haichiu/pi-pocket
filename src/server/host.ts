@@ -420,6 +420,71 @@ export interface ConversationWebRequest extends WebRequest {
  */
 export type WebHandler = (request: WebRequest) => unknown;
 
+/** What a module asks for when it makes a public link (`web.links.create`). */
+export interface PublicLinkRequest {
+    /** How long the link stays open, in hours: more than 0, and 720 (30 days) at most. */
+    hours: number;
+    /** How many answered posts it takes before it closes; absent: any number until its time. */
+    uses?: number;
+    /** Who it is for: a person's id, such as the route's `user.id`. */
+    by?: string;
+    /** The session it is about. */
+    conversation?: number;
+    /** A small JSON value of the module's own (4 KB at most), given back with the link. */
+    data?: unknown;
+}
+
+/** A public link, as its module sees it. */
+export interface PublicLinkInfo {
+    readonly token: string;
+    /** `/l/<token>`, on this server. */
+    readonly path: string;
+    /** The whole address on the server's public one (a tunnel's), when it has one; else null. */
+    readonly url: string | null;
+    readonly createdAt: number;
+    readonly expiresAt: number;
+    /** How many answers it takes still, or null for any number. */
+    readonly uses: number | null;
+    readonly by: string | null;
+    readonly conversation: number | null;
+    readonly data: unknown;
+}
+
+/** A module's public links: pages at `/l/<token>` for anyone with the address, drawn by `web.publicPage`. */
+export interface PublicLinks {
+    /** Make a link. It always closes: at its time, after its uses, or when the module ends it. */
+    create(link: PublicLinkRequest): Promise<PublicLinkInfo>;
+    /** One of this module's open links, or undefined. */
+    get(token: string): Promise<PublicLinkInfo | undefined>;
+    /** This module's open links, newest first. */
+    list(): Promise<PublicLinkInfo[]>;
+    /** End one of this module's links at once. Whether there was one to end. */
+    end(token: string): Promise<boolean>;
+}
+
+/** A request to a public link's page, from anyone with its address: there is no person and no sign-in. */
+export interface PublicPageRequest {
+    readonly method: "GET" | "POST";
+    /** The link the address names, still open. */
+    readonly link: PublicLinkInfo;
+    readonly query: URLSearchParams;
+    /** The fields of a posted form; empty for GET. */
+    readonly form: Readonly<Record<string, string>>;
+    /** Aborted when the browser stops waiting. */
+    readonly signal: AbortSignal;
+    readonly context: Context;
+    readonly snapshot: DocumentReader["snapshot"];
+    /** Change the module's own documents; refused after the handler returns. */
+    commit<T>(change: (tx: Tx) => T | Promise<T>): Promise<T>;
+}
+
+/** A public page's answer: its HTML, with a status (200 when not given). */
+export type PublicPageAnswer = string | { html: string; status?: number };
+
+export type PublicPageHandler = (
+    request: PublicPageRequest,
+) => PublicPageAnswer | Promise<PublicPageAnswer>;
+
 /**
  * A module's own part of the app, the second argument of its default export: routes under `/api/x/<module>/`, a browser
  * module that adds to the app's screens, events from here to that browser module, and commands for the message box.
@@ -467,6 +532,13 @@ export interface ExtensionWeb {
      * module, as routes do. `scope: "conversation"` is for whoever may drive the session; `"global"` is the owner's.
      */
     command(name: string, command: ExtensionCommand): void;
+    /**
+     * Draw the module's public pages: what anyone with one of its links (`web.links`) sees, with no sign-in, at
+     * `/l/<token>`. GET shows the page; a form on it posts back to the same address. One handler for each module.
+     */
+    publicPage(handle: PublicPageHandler): void;
+    /** Make, list, and end the module's public links. Usable while the module runs, not only while it loads. */
+    readonly links: PublicLinks;
 }
 
 /** The shape of every module in `src/server/extensions/`: a default export building one or more extensions. */

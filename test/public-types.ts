@@ -12,6 +12,10 @@ import type {
     ExtensionWeb,
     LinkedSession as RealLinkedSession,
     PocketHost,
+    PublicLinkInfo as RealPublicLinkInfo,
+    PublicLinkRequest as RealPublicLinkRequest,
+    PublicLinks as RealPublicLinks,
+    PublicPageRequest as RealPublicPageRequest,
     WebRequest as RealWebRequest,
 } from "../src/server/host.ts";
 import type {
@@ -24,6 +28,10 @@ import type {
     Host,
     LinkedSession,
     Module,
+    PublicLinkInfo,
+    PublicLinkRequest,
+    PublicLinks,
+    PublicPageRequest,
     Web,
     WebRequest,
 } from "../types/pocket.d.ts";
@@ -79,6 +87,14 @@ export const command = (real: ExtensionCommand): Command => real;
 export const commandBack = (types: Command): ExtensionCommand => types;
 export const result = (real: RealCommandResult): CommandResult => real;
 export const resultBack = (types: CommandResult): RealCommandResult => types;
+export const publicLinks = (real: RealPublicLinks): PublicLinks => real;
+export const publicLinksBack = (types: PublicLinks): RealPublicLinks => types;
+export const publicLinkInfo = (real: RealPublicLinkInfo): PublicLinkInfo => real;
+export const publicLinkInfoBack = (types: PublicLinkInfo): RealPublicLinkInfo => types;
+export const publicLinkRequest = (real: RealPublicLinkRequest): PublicLinkRequest => real;
+export const publicLinkRequestBack = (types: PublicLinkRequest): RealPublicLinkRequest => types;
+export const publicPageRequest = (real: RealPublicPageRequest): PublicPageRequest => real;
+export const publicPageRequestBack = (types: PublicPageRequest): RealPublicPageRequest => types;
 export const linked = (real: RealLinkedSession): LinkedSession => real;
 export const linkedBack = (types: LinkedSession): RealLinkedSession => types;
 

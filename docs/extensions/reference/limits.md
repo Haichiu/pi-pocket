@@ -96,6 +96,20 @@ All the numbers that limit a module, in one place. Each group links to the guide
 - **Events that a version of a module sends:** 100 each second at most, and 1 MB of them. The rest of that second's events are dropped.
 - **A tab that falls behind:** Pi Pocket cuts it off when it is more than 8 MB behind and takes nothing for 30 s. It also cuts off a tab that is more than 128 MB behind. The tab then connects again, with no old events.
 
+## Public links
+
+[Public pages](../public-pages.md)
+
+- **How long a link stays open:** more than 0 hours, and 720 hours (30 days) at most.
+- **Uses of one link:** 1 to 1000, or any number until it closes.
+- **Open links of one module:** 200 at most. Links that closed do not count.
+- **A link's `data`:** 4 KB of JSON at most.
+- **A posted form:** 64 KB and 50 fields at most. Its body must arrive in 15 s.
+- **Forms read at the same time:** 16 in all, and 2 to one link. More get "Busy: try again in a moment".
+- **A page that a handler answers with:** 1 MB at most.
+- **Page handlers running at the same time:** 32 in all, and 4 for one link. More get "Busy". A handler has 30 s: after that, its reads and writes are refused, and the page says it could not be shown.
+- **A link that took its last use:** kept 10 minutes, so that a page that refuses the post can give the use back. It answers nothing meanwhile.
+
 ## Commands
 
 [Slash commands](../commands.md)

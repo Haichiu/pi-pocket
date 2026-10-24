@@ -105,6 +105,7 @@ import { ResendTask } from "./resend.ts";
 import { type Client, reportingOf, Room, ROOM_DOCS, subagentView } from "./room.ts";
 import { Schedules } from "./schedules.ts";
 import { Shares } from "./share.ts";
+import { PublicLinks } from "./public-links.ts";
 import { Shell } from "./shell.ts";
 import {
     loadSessionSkills,
@@ -311,6 +312,8 @@ export class PocketApp {
     readonly folderFavorites = new FolderFavorites(this);
     /** Artifacts published to anyone with their address (`share.ts`), which needs no sign-in. */
     readonly shares = new Shares(this);
+    /** Extension modules' pages for anyone with the address (`public-links.ts`), which need no sign-in. */
+    readonly publicLinks = new PublicLinks(this);
     /** Other people's drop-ins, from a reviewed index: found, installed off, read, updated, removed (`gallery.ts`). */
     readonly gallery = new Gallery(this);
     /** Theme folders: the app's look and layout, built in and the owner's (`themes.ts`). */
@@ -456,6 +459,7 @@ export class PocketApp {
             log: (line) => this.#log(line),
             // Something about a module only the owner can mend: their tabs, as what it says can name the server's folders.
             warn: (message) => this.ownerNotice("warning", message),
+            links: this.publicLinks,
         });
     }
 

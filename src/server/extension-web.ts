@@ -23,10 +23,13 @@ import type {
     ConversationWebRequest,
     ExtensionCommand,
     ExtensionWeb,
+    PublicLinks as ModuleLinks,
+    PublicPageHandler,
     WebAccess,
     WebHandler,
     WebMethod,
 } from "./host.ts";
+import type { PublicLinks } from "./public-links.ts";
 
 /**
  * The version of the extension API: the server's `web` and the app's `pocket`. It goes up only when something modules
@@ -188,6 +191,8 @@ export class WebPart {
     readonly directory: string;
     readonly routes: Route[] = [];
     client: Client | undefined;
+    /** What draws the module's public pages (`web.publicPage`), for anyone with one of its links. */
+    page: PublicPageHandler | undefined;
     readonly commands: RegisteredCommand[] = [];
     /** The tools the module installed with this version: its browser module may describe only their calls. */
     tools: readonly string[] = [];
@@ -209,9 +214,14 @@ export class WebPart {
         this.title = title;
     }
 
-    /** Whether it added nothing to the app: no routes, browser module, or commands (cleanups do not count). */
+    /** Whether it added nothing to the app: no routes, browser module, public pages, or commands (cleanups do not count). */
     get empty(): boolean {
-        return this.routes.length === 0 && this.client === undefined && this.commands.length === 0;
+        return (
+            this.routes.length === 0 &&
+            this.client === undefined &&
+            this.page === undefined &&
+            this.commands.length === 0
+        );
     }
 }
 
@@ -229,6 +239,8 @@ interface Options {
     warn?: (message: string) => void;
     /** The modules' commands changed: tabs must hear the new list. */
     commandsChanged?: () => void;
+    /** Where public links are kept (`public-links.ts`). Without it, `web.links` refuses. */
+    links?: PublicLinks;
 }
 
 export class ExtensionWebs {
@@ -331,6 +343,20 @@ export class ExtensionWebs {
                 sealed("command");
                 part.commands.push(this.#checkCommand(part, name, command));
             },
+            publicPage: (handle) => {
+                open("publicPage");
+
+                if (typeof handle !== "function") {
+                    throw new Error("web.publicPage: give it a function that draws the page");
+                }
+
+                if (part.page !== undefined) {
+                    throw new Error("web.publicPage: a module has one public page handler");
+                }
+
+                part.page = handle;
+            },
+            links: this.#links(part),
             onDispose: (dispose) => {
                 if (typeof dispose !== "function") {
                     throw new Error("web.onDispose: give it a function");
@@ -348,6 +374,46 @@ export class ExtensionWebs {
         };
 
         return { part, web: Object.freeze(web) };
+    }
+
+    /**
+     * A module's public links: only its own, and only while this version runs. A version that went makes, lists, and ends
+     * none, as a turned-off module's links answer nothing.
+     */
+    #links(part: WebPart): ModuleLinks {
+        const store = (what: string): PublicLinks => {
+            if (part.disposed) {
+                throw new Error(`web.links.${what}: this version of the module has gone`);
+            }
+
+            if (!MODULE_NAME.test(part.module)) {
+                throw new Error(
+                    `web.links.${what}: rename ${part.file}: a module with a web part needs a name of letters, digits, - and _`,
+                );
+            }
+
+            const links = this.#options.links;
+
+            if (links === undefined) {
+                throw new Error(`web.links.${what}: this server keeps no public links`);
+            }
+
+            return links;
+        };
+
+        return Object.freeze({
+            create: async (request) => store("create").create(part.module, request),
+            get: async (token) => store("get").get(part.module, token),
+            list: async () => store("list").list(part.module),
+            end: async (token) => store("end").end(part.module, token),
+        } satisfies ModuleLinks);
+    }
+
+    /** The page handler of a module that is on, for a public link it made; none while it is off or has none. */
+    publicPage(module: string): { part: WebPart; handle: PublicPageHandler } | undefined {
+        const part = this.#parts.get(module);
+
+        return part?.page === undefined ? undefined : { part, handle: part.page };
     }
 
     #send(part: WebPart, event: unknown, data: unknown, options: unknown): void {
@@ -701,9 +767,15 @@ export class ExtensionWebs {
     }
 
     /** What a module's web part has, for the Extensions sheet. */
-    describe(
-        file: string,
-    ): { routes: string[]; client?: WebAccess; access: WebAccess; commands: string[] } | undefined {
+    describe(file: string):
+        | {
+              routes: string[];
+              client?: WebAccess;
+              access: WebAccess;
+              commands: string[];
+              publicPage: boolean;
+          }
+        | undefined {
         const part = this.#parts.get(moduleName(file));
 
         if (part === undefined || part.file !== file || part.empty) {
@@ -722,6 +794,7 @@ export class ExtensionWebs {
             ...(part.client === undefined ? {} : { client: part.client.access }),
             access,
             commands: part.commands.map((command) => `${command.scope} /${command.name}`),
+            publicPage: part.page !== undefined,
         };
     }
 

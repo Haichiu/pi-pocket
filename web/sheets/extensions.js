@@ -87,7 +87,10 @@ function ApprovalRule({ owner }) {
     </div>`;
 }
 
-/** What a module adds to the app: its routes, commands, and browser module with how it stands in this browser. */
+/**
+ * What a module adds to the app: its routes, commands, public pages, and browser module with how it stands in this
+ * browser.
+ */
 function WebPart({ module }) {
     const web = module.web;
 
@@ -100,6 +103,7 @@ function WebPart({ module }) {
         web.routes.length > 0 && `routes: ${web.routes.join(", ")}`,
         web.commands?.length > 0 && `commands: ${web.commands.join(", ")}`,
         web.client && `browser module for ${ACCESS_WORDS[web.client] ?? web.client}`,
+        web.publicPage && "pages for anyone with a link, no sign-in",
         here?.status === "loading" && "loading here",
         here?.status === "off" && "off in this tab",
     ].filter(Boolean);

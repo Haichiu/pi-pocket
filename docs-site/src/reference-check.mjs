@@ -43,6 +43,12 @@ export const PAGES = {
         "HumanLinkedSession",
         "WebMethod",
         "WebAccess",
+        "PublicPageHandler",
+        "PublicPageAnswer",
+        "PublicPageRequest",
+        "PublicLinks",
+        "PublicLinkRequest",
+        "PublicLinkInfo",
     ],
     "pocket.md": [
         "Pocket",
