@@ -373,8 +373,8 @@ One setting.
 
 - `name`: its key: letters, digits, and `_`, up to 40, starting with a letter. Each setting's is its own.
 - `label`: what the Extensions sheet calls it, one line of up to 80 characters. `description`: a line of up to 300 under it.
-- `type`: `boolean` (a switch), `text` (up to 4096 characters), `number` (with `min` and `max`), or `choice` (one of `choices`, up to 50).
-- `secret` (text only): the value never leaves the server, nor does its `default`. The sheet shows only that it is set, and `pocket.settings` leaves both out. Use it for a key or a token.
+- `type`: `boolean` (a switch), `text` (up to 4096 characters), `number` (with `min` and `max`; `min` is not more than `max`, and a `default` is between them), or `choice` (one of `choices`, up to 50).
+- `secret` (text only; on another type it throws): the value never leaves the server, nor does its `default`. The sheet shows only that it is set, and `pocket.settings` leaves both out. Use it for a key or a token.
 - `default`: the value until the owner sets one, and again after **Default** or **Clear**.
 
 A module declares 30 settings at most.

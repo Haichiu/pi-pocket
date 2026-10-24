@@ -55,6 +55,11 @@ export function checkSettings(fields: unknown): SettingField[] {
                 : { description: line(given.description, `${given.name}'s description`, 300) }),
         };
 
+        // A secret is text: on another kind it would hide nothing, and the value would reach every browser.
+        if (given.secret !== undefined && given.type !== "text") {
+            throw new Error(`web.settings: ${given.name} is secret only as text`);
+        }
+
         switch (given.type) {
             case "boolean":
                 if (given.default !== undefined && typeof given.default !== "boolean") {
@@ -93,6 +98,21 @@ export function checkSettings(fields: unknown): SettingField[] {
                     if (given[key] !== undefined && !Number.isFinite(given[key])) {
                         throw new Error(`web.settings: ${given.name}'s ${key} is a number`);
                     }
+                }
+
+                const { min, max } = given as { min?: number; max?: number };
+                const dflt = given.default as number | undefined;
+
+                // A range no value fits, or a default outside it, would leave nothing the owner can save.
+                if (min !== undefined && max !== undefined && min > max) {
+                    throw new Error(`web.settings: ${given.name}'s min is more than its max`);
+                }
+
+                if (
+                    dflt !== undefined &&
+                    ((min !== undefined && dflt < min) || (max !== undefined && dflt > max))
+                ) {
+                    throw new Error(`web.settings: ${given.name}'s default is outside its range`);
                 }
 
                 return {

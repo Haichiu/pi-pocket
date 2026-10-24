@@ -8,6 +8,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { checkSettings } from "../src/server/extension-settings.ts";
 import { createHandler } from "../src/server/http.ts";
 
 const dataDir = join(root, "data");
@@ -186,6 +187,19 @@ test("a message sent again with the same request is one message, and one event",
         .map((each) => each.text);
 
     assert.deepEqual(sent, ["only once", "twice at once"]);
+});
+
+test("settings that nothing could fill are a mistake, and a secret is text only", () => {
+    const number = { name: "every", label: "Every", type: "number" };
+
+    assert.throws(() => checkSettings([{ ...number, min: 5, max: 1 }]), /min is more than its max/);
+    assert.throws(() => checkSettings([{ ...number, min: 1, max: 5, default: 9 }]), /outside/);
+    assert.throws(() => checkSettings([{ ...number, secret: true }]), /secret only as text/);
+    assert.throws(
+        () => checkSettings([{ name: "on", label: "On", type: "boolean", secret: true }]),
+        /secret only as text/,
+    );
+    assert.equal(checkSettings([{ ...number, min: 1, max: 5, default: 5 }]).length, 1);
 });
 
 test("an unknown event, or a listener that is not a function, throws", () => {
