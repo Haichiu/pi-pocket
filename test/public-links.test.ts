@@ -4,6 +4,7 @@
 // (`extensions/ask-someone.ts`), from Pi's draft to an answer through its link.
 import {
     cleanUp,
+    fakeTab,
     lastText,
     newSession,
     openApp,
@@ -423,6 +424,15 @@ test("Ask someone: Pi drafts, a person shares it, a stranger answers once", asyn
     // An empty answer is refused, and the link still takes one.
     assert.equal((await open(link, { answer: "  ", name: "Tev" })).status, 400);
 
+    // The notice of the answer goes to who shared it, not to everyone the module is for.
+    const tabs = {
+        owner: fakeTab(undefined, owner(app)),
+        guest: fakeTab(undefined, app.config.addUser("Gus", "guest").user),
+    };
+
+    await app.attach(tabs.owner.client);
+    await app.attach(tabs.guest.client);
+
     const answered = await open(link, {
         answer: "SQLite is fine.\n<script>x</script>",
         name: "Tevis",
@@ -430,6 +440,14 @@ test("Ask someone: Pi drafts, a person shares it, a stranger answers once", asyn
 
     assert.equal(answered.status, 200);
     assert.match(answered.text, /Thank you/);
+
+    const notices = (tab: ReturnType<typeof fakeTab>) =>
+        tab.events.filter((each) => each.event === "ext" && each.data.event === "answered");
+
+    assert.equal(notices(tabs.owner).length, 1);
+    assert.equal(notices(tabs.guest).length, 0);
+    app.detach(tabs.owner.client);
+    app.detach(tabs.guest.client);
     assert.equal((await open(link, { answer: "again" })).status, 404);
     assert.equal((await open(link)).status, 404);
 

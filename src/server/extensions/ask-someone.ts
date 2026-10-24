@@ -460,7 +460,8 @@ export default function createAskSomeone(host: PocketHost, web?: ExtensionWeb) {
                 conversation: question.conversation,
                 title: question.title,
                 sentBy: question.sentBy,
-                to: question.sharedBy ?? question.by,
+                // Who shared it; for one shared before this was kept, who made its link.
+                to: question.sharedBy ?? request.link.by ?? question.by,
             };
         });
 
