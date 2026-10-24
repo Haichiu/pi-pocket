@@ -99,7 +99,20 @@ function ModuleSettings({ module }) {
     const path = `extension-settings/${encodeURIComponent(module)}`;
 
     useEffect(() => {
-        api(path).then(setShown, (failure) => setError(failure.message));
+        // Only the answer for the module shown now: a slower one for another module never takes its place.
+        let live = true;
+
+        setShown(null);
+        setDraft({});
+        setError(null);
+        api(path).then(
+            (answer) => live && setShown(answer),
+            (failure) => live && setError(failure.message),
+        );
+
+        return () => {
+            live = false;
+        };
     }, [module]);
 
     if (error && !shown) {
