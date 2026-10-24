@@ -209,6 +209,19 @@ PiP's `pip-window.js` handles pointer resize zones and the account/browser size 
 
 The menu in `sheets/menu.js` keeps `Sheet`'s focus, Escape, drag-to-close, and the sheet trail's Back behavior. Its `MenuFrame` positions it below the top bar's menu button at ≥700px, and adds arrow navigation and focus return; below that width it stays a bottom sheet. `PlacesSheet` uses the same three-column tiles.
 
+### Icons
+
+[`web/icon.svg`](../web/icon.svg) supplies the tab, manifest, and notification icon, and is the source for the PNG icons beside it. With `rsvg-convert` installed, regenerate the PNGs from the repository root:
+
+```sh
+rsvg-convert -w 180 -h 180 web/icon.svg -o web/apple-touch-icon.png
+rsvg-convert -w 192 -h 192 web/icon.svg -o web/icon-192.png
+rsvg-convert -w 512 -h 512 web/icon.svg -o web/icon-512.png
+rsvg-convert -w 352 -h 352 --page-width 512 --page-height 512 --left 80 --top 80 -b "#13141c" web/icon.svg -o web/icon-maskable-512.png
+```
+
+The maskable icon places the 352 × 352 artwork on a 512 × 512 page with 80-pixel margins and a `#13141c` background. Keep these commands outside the SVG: XML comments cannot contain `--`. The icon test in `test/mobile-ui.test.ts` checks that the served SVG decodes as an image.
+
 ## How a message travels
 
 1. `POST /api/c/:id/submit` → `commands.submit`: checks access, turns, and spend, expands a template, then `conversation.submit()` with request id `u:<userId>:<clientId>`. The request id makes a retry a no-op and names the author.
