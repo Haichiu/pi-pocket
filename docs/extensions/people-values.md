@@ -66,6 +66,8 @@ Hide a value as soon as you have it, before any tool can give it back. A value i
 
 A file that a message brings along (`@notes.txt`) is hidden too. A `!` command that holds a hidden value is refused: it would be stored and shown as typed, so give the value to commands with `host.commandEnv` instead.
 
+Hiding replaces a value where it shows, so it tells whether a guess is right: anyone who can write in the session can send a guess, and see `[label]` if it matches. Hide only values that cannot be guessed, such as a password, a key, or a token. Do not count on it for a short code, such as a PIN, in a session that others share.
+
 Hiding finds the value as it is. It does not find it encoded, reversed, or cut up by a command, nor in a file that a command writes. Hide each form that you expect, such as its base64, as a value of its own. This keeps values out of transcripts by accident and by default: it is not a boundary against a command, or a model, that leaks a value on purpose. Say so to the people who use your extension.
 
 ## Give a command a value
@@ -89,7 +91,7 @@ web.onDispose(
 
 Pi then writes `curl -H "Authorization: Bearer $GITHUB_TOKEN" …`, and the shell puts the value in. The stored call keeps `$GITHUB_TOKEN`, not the value. Hide the value too: a command can print it.
 
-A provider that throws adds nothing, the command still runs, and the server's log says why. Give only the variables that the command names, and decide who may use each value: the provider runs for every command in every session, also for work that a guest's message started.
+A provider that throws, or takes more than 5 seconds, adds nothing, the command still runs, and the server's log says why. Give only the variables that the command names, and decide who may use each value: the provider runs for every command in every session, also for work that a guest's message started.
 
 ## Drive the browser page
 
@@ -97,9 +99,18 @@ A provider that throws adds nothing, the command still runs, and the server's lo
 
 ```typescript
 const page = await host.browser(api.conversationId, { open: true });
+
+if (page === undefined) {
+    return "Turn on the Browser module first.";
+}
+
 const { controls } = await page.snapshot();
 const password = controls.find((control) => control.kind === "password");
 const user = controls.find((control) => control.kind === "email" || control.name.match(/user/i));
+
+if (password === undefined || user === undefined) {
+    return "This page has no sign-in form.";
+}
 
 // Hide first: if hiding refuses a value (shorter than 4 characters, say), nothing went into the page.
 web.onDispose(

@@ -196,10 +196,10 @@ export class PublicLinks {
     }
 
     /**
-     * Count one answer to a link, before its module's page handler runs: false when it has closed, or took all it may
+     * Count one answer to a link, before its module's page handler runs: the link as it leaves it, or undefined when it has closed, or took all it may
      * (two posts at once to a link for one answer: only one gets in). A link with no count of uses always lets one in.
      */
-    async claim(token: string): Promise<boolean> {
+    async claim(token: string): Promise<PublicLinkInfo | undefined> {
         const now = this.#app.now();
 
         return this.#app.harness.commit(async (tx) => {
@@ -207,7 +207,7 @@ export class PublicLinks {
             const link = Object.hasOwn(doc.items, token) ? doc.items[token] : undefined;
 
             if (link === undefined || closed(link, now)) {
-                return false;
+                return undefined;
             }
 
             if (link.uses !== undefined) {
@@ -218,7 +218,9 @@ export class PublicLinks {
                 }
             }
 
-            return true;
+            // The link as this answer leaves it: its page sees the uses left after this one. A plain copy, since the
+            // document's own object is the commit's, which a structured clone cannot take.
+            return this.#info(token, JSON.parse(JSON.stringify(link)) as PublicLink);
         }, BACKGROUND_CONTEXT);
     }
 

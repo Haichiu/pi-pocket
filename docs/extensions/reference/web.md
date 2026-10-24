@@ -102,7 +102,7 @@ publicPage(handle: PublicPageHandler): void;
 
 Since 0.22.0 · Experimental
 
-Draws the module's public pages: what anyone with one of its links sees at `/l/<token>`, with no sign-in. A module has one handler. Pi Pocket sends each page in a sandbox: no script, an opaque origin, and forms that post only back to the same address. See [`PublicPageHandler`](#publicpagehandler) and [Public pages](../public-pages.md).
+Draws the module's public pages: what anyone with one of its links sees at `/l/<token>`, with no sign-in. A module has one handler. Pi Pocket sends each page in a sandbox: no script, an opaque origin, and forms that post only to this server. See [`PublicPageHandler`](#publicpagehandler) and [Public pages](../public-pages.md).
 
 ### `links`
 
@@ -374,7 +374,7 @@ One setting.
 - `name`: its key: letters, digits, and `_`, up to 40, starting with a letter. Each setting's is its own.
 - `label`: what the Extensions sheet calls it, one line of up to 80 characters. `description`: a line of up to 300 under it.
 - `type`: `boolean` (a switch), `text` (up to 4096 characters), `number` (with `min` and `max`), or `choice` (one of `choices`, up to 50).
-- `secret` (text only): the value never leaves the server. The sheet shows only that it is set, and `pocket.settings` leaves it out. Use it for a key or a token.
+- `secret` (text only): the value never leaves the server, nor does its `default`. The sheet shows only that it is set, and `pocket.settings` leaves both out. Use it for a key or a token.
 - `default`: the value until the owner sets one, and again after **Default** or **Clear**.
 
 A module declares 30 settings at most.

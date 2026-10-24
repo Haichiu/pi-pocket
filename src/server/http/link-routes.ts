@@ -161,7 +161,7 @@ export async function linkRoute(
         return answerPage(response, 404, plainPage(CLOSED_TITLE, CLOSED_TEXT));
     }
 
-    const { link } = found;
+    let { link } = found;
     let form: Record<string, string> = Object.freeze({});
     let claimed = false;
 
@@ -179,10 +179,13 @@ export async function linkRoute(
         }
 
         // One answer counts before the module sees it, so two posts at once to a link for one answer let in one.
-        if (!(await app.publicLinks.claim(link.token))) {
+        const counted = await app.publicLinks.claim(link.token);
+
+        if (counted === undefined) {
             return answerPage(response, 410, plainPage(CLOSED_TITLE, CLOSED_TEXT));
         }
 
+        link = counted;
         claimed = true;
     }
 

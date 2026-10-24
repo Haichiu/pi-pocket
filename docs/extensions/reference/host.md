@@ -244,7 +244,7 @@ Hides a value from what Pi and people read, until the returned function is calle
 - in every tool's result (what the model reads, what programs read, and its details, keys too), before it is stored;
 - in people's messages to Pi, the files a message brings along, and an edit sent again: a value pasted there is replaced before the message is stored, sent to the model, or made the session's title. A `!` command that holds one is refused, since it runs as stored.
 
-With `conversationId`, it is hidden in that session and its subagents.
+With `conversationId`, it is hidden in that session and its subagents. A guess that matches shows as `[label]`, so hide only a value that cannot be guessed, never a short code.
 
 It does not reach a file that a command writes (such as bash's spill file for long output), entries from before the value was hidden, or a value that a command changed (encoded, reversed). Hide each form that you expect, such as its base64, as a value of its own. It keeps values out of transcripts by accident: it is not a boundary against a command that leaks a value on purpose. Pass the returned function to `web.onDispose`. See [`HiddenValue`](#hiddenvalue).
 
@@ -670,7 +670,8 @@ The page, with what Pi's `browser` tool does, but no script to run in it.
 - `inspect`: what a target is, scrolled into view: its description, its `kind`, and whether it is a field (`editable`) or a password field.
 - `fill`: puts a person's value into a field (not a select), replacing what it holds. The target is a ref, a selector, or a label, not a point. It throws and fills nothing when something covers the field, or when the focus does not reach it. The value is not in what it returns, and the snapshot shows a password field's as `••••`. Pi can still read a field's value with its `evaluate`: hide the value with `hide` too.
 - `inspect` with a point (`x`, `y`) says what is at that point, without scrolling or acting on it.
-- `type`, `click`, `select`, `press`, `scroll`, `waitFor`, `navigate`: as the `browser` tool's actions. `navigate` takes an http(s) address, host:port, or a file path. Each one returns the description of what it acted on.
+- `type`, `click`, `select`, `press`, `scroll`, `waitFor`, `navigate`: as the `browser` tool's actions. `navigate` takes an http(s) address, host:port, or a file path.
+- What they return: `type`, `select`, and `scroll` give the description of what they acted on; `click` gives it with whether the page went elsewhere (`navigated`); `waitFor` gives whether what it waited for showed; `navigate` and `press` give nothing.
 
 ## Internal members
 

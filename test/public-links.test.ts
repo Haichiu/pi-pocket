@@ -84,7 +84,7 @@ export default (_host, web) => {
             throw web.error(422, "Not that answer.");
         }
 
-        return "<p>got " + request.form.answer.length + "</p>";
+        return "<p>got " + request.form.answer.length + ", " + request.link.uses + " left</p>";
     });
 };
 `,
@@ -217,7 +217,7 @@ test("a link for one answer takes one; a refused post gives its use back", async
     const sent = await open(link.path, { answer: "yes" });
 
     assert.equal(sent.status, 200);
-    assert.equal(sent.text, "<p>got 3</p>");
+    assert.equal(sent.text, "<p>got 3, 0 left</p>");
     assert.equal((await open(link.path, { answer: "again" })).status, 404);
     assert.equal((await open(link.path)).status, 404);
 });
@@ -239,14 +239,14 @@ test("two posts at once to a link for one answer: one gets in", async () => {
 test("a link that took its last use can still get it back, while other links are made", async () => {
     const link = await make({ hours: 1, uses: 1, data: { n: 9 } });
 
-    assert.equal(await app.publicLinks.claim(link.token), true);
+    assert.ok(await app.publicLinks.claim(link.token));
     // Making a link clears out closed ones: not one whose page may still refuse its post.
     await make({ hours: 1, data: { n: 10 } });
     await app.publicLinks.refund(link.token);
     assert.equal((await open(link.path)).status, 200);
 
     // Long after its last use, it goes.
-    assert.equal(await app.publicLinks.claim(link.token), true);
+    assert.ok(await app.publicLinks.claim(link.token));
     clock += 11 * 60 * 1000;
     await make({ hours: 1, data: { n: 11 } });
     await app.publicLinks.refund(link.token);

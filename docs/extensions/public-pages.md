@@ -55,14 +55,14 @@ Pi Pocket sends every public page with a content security policy that puts it in
 
 - **No script runs**, and the page loads nothing from anywhere: no scripts, fonts, or images from other places (`data:` images work). Put the styles in a `<style>` element.
 - **The page has an opaque origin.** A person who opens a link while they are signed in to Pi Pocket lends the page none of their access: it cannot read their cookies or the app's answers. A form cannot call the app's API either, which takes only requests with the `X-Pocket` header.
-- **Forms post only back to the same address.** Give a form `method="post"` and no `action`.
+- **Forms post only to this server.** Give a form `method="post"` and no `action`, so it posts back to its own link.
 - No referrer goes to a page that it links to, so the token does not leak. No browser and no search engine keeps the page.
 
 The handler gets a [`PublicPageRequest`](reference/web.md#publicpagerequest):
 
 - `method`: `"GET"`, or `"POST"` for a form. `HEAD` comes as `"GET"`.
 - `form`: the fields of a posted form (`application/x-www-form-urlencoded`), each as text. Nothing else is taken: no JSON and no files.
-- `link`: the link, with its `data`, `by`, `conversation`, and how many `uses` it has left.
+- `link`: the link, with its `data`, `by`, `conversation`, and how many `uses` it has left. For a post, the count leaves out this one.
 - `snapshot`, `context`, and `commit`: read and change the module's own documents, as a route does. They end when the handler returns.
 - `signal`: aborted when the browser stops waiting.
 

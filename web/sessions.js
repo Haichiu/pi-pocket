@@ -837,14 +837,21 @@ function AllSessions({ compact = false }) {
             ),
         [groups, closed],
     );
-    const chosen = useMemo(
-        () =>
-            selected.size === 0
-                ? []
-                : shown.filter((session) => selected.has(session.id)).map((session) => session.id),
-        [shown, selected],
-    );
-    // Taps select while the bar shows: not for rows selected and then hidden (archived, or searched away).
+    const chosen = useMemo(() => {
+        if (selected.size === 0) {
+            return [];
+        }
+
+        // A row a fold hides is not chosen: an action runs only on rows the person can see were picked.
+        const rows = new Set(
+            groups.flatMap((group) => group.rows.map(({ session }) => session.id)),
+        );
+
+        return shown
+            .filter((session) => selected.has(session.id) && rows.has(session.id))
+            .map((session) => session.id);
+    }, [shown, groups, selected]);
+    // Taps select while the bar shows: not for rows selected and then hidden (archived, searched away, or folded).
     const tapping = tapSelects && chosen.length > 0;
     const order = workspaceOrder();
     const numbers = useMemo(

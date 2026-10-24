@@ -134,7 +134,7 @@ Know where each output goes:
 - **S6.4. Ask for a password, a key, or a code with `host.ask`, and never through Pi.** Do not keep what comes back in a memo or a document, and tell Pi only what happened.\
   _Reason:_ what Pi reads goes to the model provider and into the transcript; a memo and a document are stored.
 - **S6.5. Hide a value with `host.hide` as soon as you have it, and each form of it that you expect, such as its base64.** Give a command a value with `host.commandEnv`, and only to the commands, sessions, and people that may use it.\
-  _Reason:_ a command can print a value, and a guest's message can lead Pi to a command. Hiding keeps values out of transcripts by accident; it is not a boundary against a command or a model that leaks one on purpose ([People's values and the browser](../people-values.md)).
+  _Reason:_ a command can print a value, and a guest's message can lead Pi to a command. Hiding keeps values out of transcripts by accident; it is not a boundary against a command or a model that leaks one on purpose. It also tells whether a guess is right, so it protects only a value that cannot be guessed, never a short code ([People's values and the browser](../people-values.md)).
 
 ## S7. Names for stored data
 

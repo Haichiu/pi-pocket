@@ -271,7 +271,7 @@ export function shownSettings(
         if (field.type === "text" && field.secret === true && !withSecrets) {
             const { default: _default, ...rest } = field;
 
-            return { ...rest, hasDefault: _default !== undefined } as SettingField;
+            return rest;
         }
 
         return { ...field };
