@@ -65,7 +65,7 @@ web.onService("machines", () => web.send("machines-changed"));
 - **Check its shape before you call it.** Another version of the module can offer another one. Say in your module's description which modules it works with, and which versions.
 - **`web.onService(name, listener)`** tells you when the service comes, changes, or goes, so you can show or hide what depends on it.
 - **A service runs with its module's code and rights.** Check what callers give it, as you check what a person gives a route.
-- Modules load in order, and the other one may load after yours. A service you use is not there while your module loads: use it later, in a route, a tool, or after `onService`.
+- Modules load in order. The other one may load before yours, and its service is there while yours loads; or after, and it comes later. `onService` calls only for what changes after you start to listen, not for a service that is there already. So check `web.use(name)` as your module loads, and again in `onService`; or use the service only when you need it, in a route or a tool.
 
 ## Settings
 

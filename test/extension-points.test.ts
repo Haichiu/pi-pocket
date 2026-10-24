@@ -65,6 +65,18 @@ const route: FauxResponseStep = (request) => {
         return call("test_sign_in", {});
     }
 
+    if (text.endsWith("type the password")) {
+        return call("browser", {
+            action: "type",
+            selector: "input[type=password]",
+            text: "typed-by-pi",
+        });
+    }
+
+    if (text.endsWith("type where the focus is")) {
+        return call("browser", { action: "type", text: "typed-by-pi" });
+    }
+
     return fauxAssistantMessage([fauxText(`echo: ${text}`)]);
 };
 
@@ -74,9 +86,11 @@ before(async () => {
         join(dataDir, "extensions", "points.ts"),
         `/** Points: uses host.ask, host.hide, host.commandEnv, and host.browser, for tests. */
 import { Type } from "@earendil-works/pi-ai";
-import { defineExtension, defineTool } from "@earendil-works/pi-durable";
+import { defineExtension, defineTool, hook, ToolTask } from "@earendil-works/pi-durable";
 
 export const pocketApi = 2;
+
+const TARGET = ["ref", "selector", "label", "x", "y"];
 
 export default (host, web) => {
     web.onDispose(host.hide({ value: ${JSON.stringify(SECRET)}, label: "secret TOKEN" }));
@@ -197,7 +211,35 @@ export default (host, web) => {
         }),
     });
 
-    return defineExtension({ name: "test-points", tools: [signIn, leak] });
+    // As the guide shows: Pi's own browser tool never types into a password field; the card fills it.
+    const noTypedPasswords = hook(ToolTask, {
+        beforeTool: async (call, api) => {
+            if (call.name !== "browser" || call.arguments.action !== "type") {
+                return undefined;
+            }
+
+            const at = Object.fromEntries(TARGET.filter((key) => key in call.arguments).map((key) => [key, call.arguments[key]]));
+
+            if (Object.keys(at).length === 0) {
+                return { block: "Name the field to type into." };
+            }
+
+            const page = await host.browser(api.conversationId);
+            const found = await page?.inspect(at).catch(() => undefined);
+
+            return found?.password ? { block: "A password is filled in from its card, not typed by Pi." } : undefined;
+        },
+    });
+
+    web.route("POST", "open", async (request) => {
+        const page = await host.browser(Number(request.body.id), { open: true });
+
+        await page.navigate(String(request.body.url));
+
+        return { ok: true };
+    });
+
+    return defineExtension({ name: "test-points", tools: [signIn, leak], hooks: [noTypedPasswords] });
 };
 `,
     );
@@ -546,3 +588,52 @@ test(
         }
     },
 );
+
+test("a hook can keep Pi's own browser tool from typing into a password field", real, async () => {
+    const id = await newSession(app);
+    const { createHandler } = await import("../src/server/http.ts");
+    const server = createServer(
+        createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} }),
+    );
+
+    await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+
+    try {
+        const opened = await fetch(
+            `http://127.0.0.1:${(server.address() as { port: number }).port}/api/x/points/open`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: `Bearer ${app.config.ownerToken}`,
+                    "x-pocket": "1",
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ id: Number(id), url: `${base}/` }),
+            },
+        );
+
+        assert.equal(opened.status, 200);
+        await app.commands.submit(id, owner(app), {
+            text: "type the password",
+            requestId: crypto.randomUUID(),
+        });
+        await until(async () => (await stored(id)).includes("from its card"), "the block");
+        await app.commands.submit(id, owner(app), {
+            text: "type where the focus is",
+            requestId: crypto.randomUUID(),
+        });
+        await until(async () => (await stored(id)).includes("Name the field"), "the second block");
+        assert.equal(
+            await app.browsers
+                .page(Number(id))!
+                .evaluate(
+                    `[...document.querySelectorAll("input")].map((input) => input.value).join("")`,
+                ),
+            "",
+        );
+    } finally {
+        server.closeAllConnections();
+        server.close();
+        await app.browsers.close(Number(id));
+    }
+});

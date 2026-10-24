@@ -112,24 +112,62 @@ if (password === undefined || user === undefined) {
     return "This page has no sign-in form.";
 }
 
+const { user: name = "", password: secret = "" } = answer.values;
+
 // Hide first: if hiding refuses a value (shorter than 4 characters, say), nothing went into the page.
 web.onDispose(
     host.hide({
-        value: answer.values.password,
+        value: secret,
         label: "password",
         conversationId: Number(api.conversationId),
     }),
 );
-await page.fill({ ref: user.ref }, answer.values.user);
-await page.fill({ ref: password.ref }, answer.values.password);
+await page.fill({ ref: user.ref }, name);
+await page.fill({ ref: password.ref }, secret);
 await page.press("Enter");
 ```
 
 - `snapshot()` gives the page as Pi reads it, and its controls as data: each one's ref, role, name, kind, and value. A password field's value is `••••` when it holds one, never its value.
 - `fill` puts a person's value into a field, and returns only what the field is. It fills only a field named by a ref, a selector, or a label, never a point, and fills nothing when something covers the field or the focus does not reach it, so a value never lands in another field. `type` types as Pi types.
 - A value filled into a field that is not a password field shows in that field: in screenshots, in the Browser panel that the people in the session watch, and in the snapshot's `value`. Fill secrets only into password fields.
-- `inspect` says what a target is, and whether it is a password field. A `beforeTool` hook can use it to refuse Pi's own `type` into a password field ([Hooks](hooks.md)).
+- `inspect` says what a target is, and whether it is a password field. A `beforeTool` hook can use it to refuse Pi's own `type` into a password field ([Hooks](hooks.md)), as below.
 - The handle runs no script in the page. Pi's `browser` tool still can (`evaluate`), and so can read a field's value: hide the value too.
+
+### Keep Pi from typing a password
+
+Pi's `browser` tool takes an `action`, and names its target with `ref`, `selector`, `label`, or `x` and `y`. These arguments are public for hooks (experimental). A hook can check the target before Pi types:
+
+```typescript
+import { hook, ToolTask } from "@earendil-works/pi-durable";
+
+const TARGET = ["ref", "selector", "label", "x", "y"] as const;
+
+const noTypedPasswords = hook(ToolTask, {
+    beforeTool: async (call, api) => {
+        const args = call.arguments as Record<string, unknown>;
+
+        if (call.name !== "browser" || args.action !== "type") {
+            return undefined;
+        }
+
+        const at = Object.fromEntries(
+            TARGET.filter((key) => key in args).map((key) => [key, args[key]]),
+        );
+
+        // Without a target, Pi types where the focus is, which inspect cannot see.
+        if (Object.keys(at).length === 0) {
+            return { block: "Name the field to type into." };
+        }
+
+        const page = await host.browser(api.conversationId);
+        const found = await page?.inspect(at).catch(() => undefined);
+
+        return found?.password ? { block: "Use the sign-in card for passwords." } : undefined;
+    },
+});
+```
+
+Return it in your extension's `hooks`. It is a guard against mistakes: Pi can still press keys one at a time, or set a value with `evaluate`.
 
 ## Together: a sign-in
 

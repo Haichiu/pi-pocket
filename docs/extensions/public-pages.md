@@ -26,11 +26,13 @@ export default function createFeedback(_host: Host, web: Web) {
 </form>`;
         }
 
-        if (request.form.answer?.trim() === "") {
+        const answer = request.form.answer ?? "";
+
+        if (answer.trim() === "") {
             return { status: 400, html: "<p>Write an answer first.</p>" };
         }
 
-        await saveAnswer(request.link.data, request.form.answer); // your own document, with request.commit
+        await saveAnswer(request.link.data, answer); // your own document, with request.commit
 
         return "<p>Thank you.</p>";
     });

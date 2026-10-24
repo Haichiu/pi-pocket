@@ -114,7 +114,7 @@ The host's members do not change while modules reload. A new member comes only a
 - `config.json`, `pocket.sqlite`, and the rest of the data folder, except `extensions/`.
 - All CSS that is not in [CSS](#7-css).
 - The words of errors, notices, logs, and the system prompt.
-- The tools of built-in extensions: their arguments and results. Only their names are public, as reserved names.
+- The tools of built-in extensions: their arguments and results. Only their names are public, as reserved names. One exception, since 0.22.0 and experimental: the `browser` tool's `action` and the arguments that name its target (`ref`, `selector`, `label`, `x`, and `y`), so that a hook can guard what Pi types ([People's values and the browser](../people-values.md)).
 - The `host` members for built-in extensions ([host](#3-host)).
 - The test helpers in `test/`. The index's checks use them, and pin the Pi Pocket version they use.
 
@@ -157,7 +157,7 @@ All public interfaces are stable, unless the docs mark them experimental or depr
 
 Since 0.19.0, these `pocket` members are experimental too: `panel`, `openPanel`, `closePanel`, `status`, `topbar`, `composerButton`, `replyAction`, `insertText`, `arrange`, and their types. The `core:` ids of the items in slots are public, with the same promise as the names of the theme surface.
 
-Since 0.22.0, these are experimental too: `web.publicPage` and `web.links`; `host.ask`, `hide`, `commandEnv`, and `browser`; `host.on`; `web.provide`, `use`, `onService`, `settings`, `setting`, and `onSettings`; `pocket.settings` and `onSettings`; and their types.
+Since 0.22.0, these are experimental too: `web.publicPage` and `web.links`; `host.ask`, `hide`, `commandEnv`, and `browser`; `host.on`; `web.provide`, `use`, `onService`, `settings`, `setting`, and `onSettings`; `pocket.settings` and `onSettings`; and their types. So are the `browser` tool's `action` and target arguments, for hooks.
 
 Since 0.20.0, the session list's extension points are experimental: `pocket.sessionChips`, `sessionAction`, `sessionFilter`, and `sessionSearch`, `WebRequest.sessions`, and their types. So is `pocket.composerKey`, with `ComposerKeySpec` and `ComposerBox`, and so are `pocket.onConversation`, `messages`, and `reveal`, with `MessagesOptions`, `MessagePage`, and `MessageInfo`. So are `host.registerModelProvider`, and `host.fetchPublic` with `PublicFetchInit`.
 

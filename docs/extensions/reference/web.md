@@ -142,7 +142,7 @@ onService(module: string, listener: () => void): () => void;
 
 Since 0.22.0 · Experimental
 
-Calls `listener` when a module's service comes, changes (the module loads again), or goes. Use it to show or hide what you add to the app that needs that service. It returns how to stop. It stops by itself when this version of your module goes.
+Calls `listener` when a module's service comes, changes (the module loads again), or goes. It does not call for a service that is there when you start to listen: check `use` then too. Use it to show or hide what you add to the app that needs that service. It returns how to stop. It stops by itself when this version of your module goes.
 
 ### `settings`
 
