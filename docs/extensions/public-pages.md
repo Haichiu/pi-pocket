@@ -44,7 +44,7 @@ export default function createFeedback(_host: Host, web: Web) {
 ## What a link is
 
 - **It always closes.** `hours` is more than 0, and 720 (30 days) at most. After that, its address answers nothing.
-- **It can take a set number of answers.** With `uses`, each `POST` counts one before the handler runs. A handler that throws, or that answers with a status of 400 or more, gives that use back, so the person can mend the form and send it again. Two posts at once to a link with one use left: one gets in. A `GET` never counts, so a chat app that opens the link to show a preview uses up nothing.
+- **It can take a set number of answers.** With `uses`, each `POST` counts one before the handler runs. A handler that throws, or that answers with a status of 400 or more, gives that use back, so the person can mend the form and send it again. So does a handler that takes too long ([Limits](reference/limits.md#public-links)), or whose browser stops waiting: from then on, its `snapshot` and `commit` are refused. Keep what a post changes in `commit`, so a post that gives its use back changes nothing. Two posts at once to a link with one use left: one gets in. A `GET` never counts, so a chat app that opens the link to show a preview uses up nothing.
 - **It belongs to its module.** Another module cannot see or end it. While the module is off, the address answers nothing, also for a form that was on its way when it went off. Turned on again, the link works again until it closes.
 - **The module can end it at once** with `web.links.end(token)`.
 - An address that names no open link, a link that closed, and a module that is off all get the same page: "This link is not open". An address tells nothing about other links.

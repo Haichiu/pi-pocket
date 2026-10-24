@@ -367,10 +367,19 @@ export class Pip {
      * Give every PiP what this version runs it with, before work resumes: a run or a report that comes before anyone opens
      * the panel then runs with it too (its hook that hides values, say).
      */
-    async tuneAll(): Promise<void> {
+    async tuneAll(log: (line: string) => void): Promise<void> {
         for (const [id, meta] of Object.entries(this.#app.sessionCatalogue())) {
-            if (meta.pip !== undefined) {
+            if (meta.pip === undefined) {
+                continue;
+            }
+
+            // One that fails is logged, and the others still get theirs.
+            try {
                 await this.#tune(Number(id) as unknown as ConversationId);
+            } catch (error) {
+                log(
+                    `PiP ${id} could not be brought up to date: ${error instanceof Error ? error.message : String(error)}`,
+                );
             }
         }
     }
