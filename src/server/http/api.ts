@@ -656,6 +656,23 @@ export function createApi(options: HttpOptions, auth: Auth) {
             return json(response, 200, await app.extensions(user));
         }
 
+        // A module's settings (`web.settings`): the owner sets them; whoever its browser module is for reads them.
+        if (first === "extension-settings" && second !== undefined && third === undefined) {
+            if (method === "GET") {
+                return json(response, 200, app.extensionSettings(user, second));
+            }
+
+            if (method === "PUT") {
+                requireOwner(user);
+
+                return json(
+                    response,
+                    200,
+                    app.setExtensionSettings(user, second, await readJson(request)),
+                );
+            }
+        }
+
         if (first === "extensions" && second === undefined && method === "GET") {
             return json(response, 200, await app.extensions(user));
         }

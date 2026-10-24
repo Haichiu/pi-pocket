@@ -863,6 +863,17 @@ export class Commands {
             await this.#followFailure(id, user, failure, requestId);
         }
 
+        // For extensions (`host.on`): PiP's conversation is its person's alone.
+        if (app.pip.ownerOf(id) === undefined) {
+            app.events.emit("message.sent", {
+                conversationId: Number(id),
+                by: user.id,
+                submissionId: String(submission.id),
+                text,
+                ...(via === undefined ? {} : { via }),
+            });
+        }
+
         return { submissionId: submission.id, requestId };
     }
 

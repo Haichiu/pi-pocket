@@ -88,6 +88,124 @@ function ApprovalRule({ owner }) {
 }
 
 /**
+ * A module's settings (`web.settings`), for the owner: each field as the module declared it, saved together. A secret
+ * shows only whether it is set; typing a new one replaces it, and Clear puts its default back.
+ */
+function ModuleSettings({ module }) {
+    const [shown, setShown] = useState(null);
+    const [draft, setDraft] = useState({});
+    const [error, setError] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const path = `extension-settings/${encodeURIComponent(module)}`;
+
+    useEffect(() => {
+        api(path).then(setShown, (failure) => setError(failure.message));
+    }, [module]);
+
+    if (error && !shown) {
+        return html`<div class="error-box small">${error}</div>`;
+    }
+
+    if (!shown) {
+        return html`<${Loader} label="Settings" />`;
+    }
+
+    const value = (field) =>
+        Object.hasOwn(draft, field.name) ? draft[field.name] : (shown.values[field.name] ?? "");
+    const set = (name, next) => setDraft({ ...draft, [name]: next });
+
+    const save = async () => {
+        setBusy(true);
+        setError(null);
+
+        try {
+            setShown(await api(path, draft, { method: "PUT" }));
+            setDraft({});
+        } catch (failure) {
+            setError(failure.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return html`<div class="ext-settings">
+        <div class="small"><b>Settings</b></div>
+        ${shown.fields.map((field) => {
+            const secret = field.type === "text" && field.secret;
+            const id = `ext-setting-${module}-${field.name}`;
+            const hint =
+                secret && shown.set.includes(field.name)
+                    ? "Set: type to replace"
+                    : (field.placeholder ?? "");
+
+            return html`<div class="setting wrap" key=${field.name}>
+                <div class="grow">
+                    <label class="small" for=${id}>${field.label}</label>
+                    ${field.description && html`<div class="muted small">${field.description}</div>`}
+                </div>
+                ${
+                    field.type === "boolean"
+                        ? html`<${Switch}
+                              on=${value(field) === true}
+                              label=${field.label}
+                              onChange=${(on) => set(field.name, on)}
+                          />`
+                        : field.type === "choice"
+                          ? html`<select
+                                id=${id}
+                                value=${value(field)}
+                                onChange=${(event) => set(field.name, event.currentTarget.value)}
+                            >
+                                ${field.choices.map(
+                                    (choice) =>
+                                        html`<option value=${choice.value}>${choice.label}</option>`,
+                                )}
+                            </select>`
+                          : html`<input
+                                id=${id}
+                                class="ext-setting-input"
+                                type=${secret ? "password" : field.type === "number" ? "number" : "text"}
+                                autocomplete="off"
+                                placeholder=${hint}
+                                value=${secret ? (draft[field.name] ?? "") : value(field)}
+                                min=${field.min}
+                                max=${field.max}
+                                onInput=${(event) =>
+                                    set(
+                                        field.name,
+                                        field.type === "number"
+                                            ? Number(event.currentTarget.value)
+                                            : event.currentTarget.value,
+                                    )}
+                            />`
+                }
+                ${
+                    shown.set.includes(field.name) &&
+                    html`<button
+                        class="button small"
+                        title="Put its default back"
+                        disabled=${busy}
+                        onClick=${() => set(field.name, null)}
+                    >
+                        ${secret ? "Clear" : "Default"}
+                    </button>`
+                }
+            </div>`;
+        })}
+        ${error && html`<div class="error-box small">${error}</div>`}
+        <div class="ext-step-actions">
+            <button
+                class="button small primary"
+                disabled=${busy || Object.keys(draft).length === 0}
+                onClick=${save}
+            >
+                ${busy ? "Saving…" : "Save settings"}
+            </button>
+        </div>
+    </div>`;
+}
+
+/**
  * What a module adds to the app: its routes, commands, public pages, and browser module with how it stands in this
  * browser.
  */
@@ -104,6 +222,7 @@ function WebPart({ module }) {
         web.commands?.length > 0 && `commands: ${web.commands.join(", ")}`,
         web.client && `browser module for ${ACCESS_WORDS[web.client] ?? web.client}`,
         web.publicPage && "pages for anyone with a link, no sign-in",
+        web.service && "a service for other modules",
         here?.status === "loading" && "loading here",
         here?.status === "off" && "off in this tab",
     ].filter(Boolean);
@@ -499,6 +618,12 @@ export function ExtensionsContent({ galleryInstalled, query = "", onChanged = ()
                     ${guard && module.enabled && html`<${ApprovalRule} owner=${owner} />`}
                     ${module.file === "pip.ts" && module.enabled && html`<${PipCompactAt} owner=${owner} />`}
                     <${WebPart} module=${module} />
+                    ${
+                        owner &&
+                        module.enabled &&
+                        module.web?.settings &&
+                        html`<${ModuleSettings} module=${module.file.replace(/\.ts$/, "")} />`
+                    }
                     <${GalleryPart}
                         module=${module}
                         installed=${installed}

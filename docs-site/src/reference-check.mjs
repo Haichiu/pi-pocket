@@ -47,6 +47,8 @@ export const PAGES = {
         "BrowserTarget",
         "BrowserControl",
         "BrowserPageHandle",
+        "AppEvents",
+        "AppEventName",
     ],
     "web.md": [
         "Web",
@@ -64,6 +66,8 @@ export const PAGES = {
         "PublicLinks",
         "PublicLinkRequest",
         "PublicLinkInfo",
+        "SettingField",
+        "SettingValue",
     ],
     "pocket.md": [
         "Pocket",

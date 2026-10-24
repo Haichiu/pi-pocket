@@ -23,6 +23,7 @@ export const SIDEBAR = [
             ["docs/extensions/routes.md", "Routes"],
             ["docs/extensions/public-pages.md", "Public pages"],
             ["docs/extensions/people-values.md", "People's values and the browser"],
+            ["docs/extensions/services-settings.md", "Events, services, and settings"],
             ["docs/extensions/browser-modules.md", "Browser modules"],
             ["docs/extensions/commands.md", "Slash commands"],
             ["docs/extensions/tool-calls.md", "How tool calls show"],

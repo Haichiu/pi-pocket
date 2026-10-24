@@ -114,6 +114,66 @@ Since 0.22.0 · Experimental
 
 Makes, lists, and ends the module's public links. Unlike the registering calls, it works while the module runs: from a route, a tool, a timer, or the page handler. A version of the module that went makes, lists, and ends none. See [`PublicLinks`](#publiclinks).
 
+### `provide`
+
+```ts
+provide(service: object): void;
+```
+
+Since 0.22.0 · Experimental
+
+Offers other modules an object of this module's own: functions and values that they call with `web.use(module)`. A module provides one service, while it loads. When this version of the module goes (an edit, or the owner turns it off), its service goes too, and modules that listen with `onService` hear it. A service is what it says it is: it runs with the providing module's code, so check what other modules give it, as you check what a person gives a route. See [Extensions that work together](../services-settings.md#services).
+
+### `use`
+
+```ts
+use(module: string): unknown;
+```
+
+Since 0.22.0 · Experimental
+
+The service that a module offers now, by the module's name, or `undefined` while that module is off, still loading, or offers none. Ask again each time that you need it, and do not keep it: a reload replaces it. Check its shape before you call it, since another version of the module may offer another one.
+
+### `onService`
+
+```ts
+onService(module: string, listener: () => void): () => void;
+```
+
+Since 0.22.0 · Experimental
+
+Calls `listener` when a module's service comes, changes (the module loads again), or goes. Use it to show or hide what you add to the app that needs that service. It returns how to stop. It stops by itself when this version of your module goes.
+
+### `settings`
+
+```ts
+settings(fields: readonly SettingField[]): void;
+```
+
+Since 0.22.0 · Experimental
+
+Declares the module's settings, while it loads. Core keeps the owner's values in `config.json`, shows them in Menu → Extensions under the module, and checks each value against its field before it keeps it. A mistake in `fields` throws, so the module does not load and the Extensions sheet says why. See [`SettingField`](#settingfield) and [Extensions that work together](../services-settings.md#settings).
+
+### `setting`
+
+```ts
+setting(name: string): SettingValue | undefined;
+```
+
+Since 0.22.0 · Experimental
+
+A setting's value now: the owner's, or the field's default, or `undefined` when it has neither. A value that no longer fits the field, from an older version of the module, gives the default. A name the module did not declare throws. Read it when you need it: the owner can change it at any time.
+
+### `onSettings`
+
+```ts
+onSettings(listener: () => void): () => void;
+```
+
+Since 0.22.0 · Experimental
+
+Calls `listener` after the owner changes the module's settings. The module's tabs hear it too, with `pocket.onSettings`. It returns how to stop, and stops by itself when this version of the module goes.
+
 ## Sending and answering
 
 ### `send`
@@ -273,6 +333,61 @@ interface HumanLinkedSession extends LinkedSession {
 Since 0.16.0 · Stable
 
 `conversationId` is visible to the authenticated person and can be passed to `pocket.openConversation`. `address` remains the source's opaque address. `title`, `cwd`, `busy`, and `archived` still show only when the source's whole audience sees this session.
+
+### `SettingField`
+
+```ts
+type SettingField =
+    | { name: string; label: string; description?: string; type: "boolean"; default?: boolean }
+    | {
+          name: string;
+          label: string;
+          description?: string;
+          type: "text";
+          default?: string;
+          placeholder?: string;
+          secret?: boolean;
+      }
+    | {
+          name: string;
+          label: string;
+          description?: string;
+          type: "number";
+          default?: number;
+          min?: number;
+          max?: number;
+      }
+    | {
+          name: string;
+          label: string;
+          description?: string;
+          type: "choice";
+          default?: string;
+          choices: { value: string; label: string }[];
+      };
+```
+
+Since 0.22.0 · Experimental
+
+One setting.
+
+- `name`: its key: letters, digits, and `_`, up to 40, starting with a letter. Each setting's is its own.
+- `label`: what the Extensions sheet calls it, one line of up to 80 characters. `description`: a line of up to 300 under it.
+- `type`: `boolean` (a switch), `text` (up to 4096 characters), `number` (with `min` and `max`), or `choice` (one of `choices`, up to 50).
+- `secret` (text only): the value never leaves the server. The sheet shows only that it is set, and `pocket.settings` leaves it out. Use it for a key or a token.
+- `default`: the value until the owner sets one, and again after **Default** or **Clear**.
+
+A module declares 30 settings at most.
+
+### `SettingValue`
+
+```ts
+type SettingValue = string | number | boolean;
+```
+
+Since 0.22.0 · Experimental
+
+A setting's value: `true` or `false`, text, a number, or a choice's `value`.
 
 ### `PublicPageHandler`
 

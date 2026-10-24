@@ -109,6 +109,8 @@ import { type Client, reportingOf, Room, ROOM_DOCS, subagentView } from "./room.
 import { Schedules } from "./schedules.ts";
 import { Shares } from "./share.ts";
 import { CommandEnvs, HiddenValues, wrapEnv } from "./hidden.ts";
+import { AppEventBus } from "./app-events.ts";
+import { changeSettings, shownSettings } from "./extension-settings.ts";
 import { ask, browserFor, checkValues } from "./extension-points.ts";
 import { PublicLinks } from "./public-links.ts";
 import { Shell } from "./shell.ts";
@@ -319,6 +321,8 @@ export class PocketApp {
     readonly shares = new Shares(this);
     /** Extension modules' pages for anyone with the address (`public-links.ts`), which need no sign-in. */
     readonly publicLinks = new PublicLinks(this);
+    /** What happens in the app, for extensions (`app-events.ts`, `host.on`). */
+    readonly events = new AppEventBus((line) => this.#log(line));
     /** Values extensions hide from what commands and tools give back (`hidden.ts`, `host.hide`). */
     readonly hidden = new HiddenValues();
     /** What extensions add to the environment of each command (`hidden.ts`, `host.commandEnv`). */
@@ -469,6 +473,7 @@ export class PocketApp {
             // Something about a module only the owner can mend: their tabs, as what it says can name the server's folders.
             warn: (message) => this.ownerNotice("warning", message),
             links: this.publicLinks,
+            settings: (module) => this.config.extensionSettings(module),
         });
     }
 
@@ -699,6 +704,7 @@ export class PocketApp {
             },
             fetchPublic: createPublicFetch(),
             requesterOf: (conversationId) => this.attribution.requesterOf(conversationId),
+            on: (event, listener) => this.events.on(event, listener),
             ask: (request, askContext) => ask(this.approvals, request, askContext),
             hide: (value) => this.hidden.add(value),
             commandEnv: (provider) => this.commandEnvs.add(provider),
@@ -992,6 +998,16 @@ export class PocketApp {
             }
 
             if (busy !== this.#busy.has(id)) {
+                const session = Number(this.rootOf(id));
+
+                // For extensions (`host.on`): PiP's runs are its person's alone.
+                if (this.#sessions[String(session)]?.pip === undefined) {
+                    this.events.emit(busy ? "run.started" : "run.ended", {
+                        conversationId: Number(id),
+                        session,
+                    });
+                }
+
                 if (busy) {
                     this.#busy.add(id);
                     // A new run starts over: whether it fails is its own to say.
@@ -1036,10 +1052,13 @@ export class PocketApp {
 
             sessionsChanged = true;
         } else if (kind === SessionsDoc.definition.kind) {
+            const before = this.#sessions;
+
             this.#sessions = {
                 ...((change.value as { items?: Record<string, SessionMeta> } | null)?.items ?? {}),
             };
             sessionsChanged = true;
+            this.#sessionEvents(before, this.#sessions);
 
             // Views show a session's title, limit, and worktree from here.
             for (const pending of this.#rooms.values()) {
@@ -1155,6 +1174,40 @@ export class PocketApp {
                 return safe(() => settings.getFollowUpMode());
             },
         } as HarnessSettings;
+    }
+
+    /** What changed in the session list, as events for extensions (`host.on`). PiP's conversations send none. */
+    #sessionEvents(before: Record<string, SessionMeta>, after: Record<string, SessionMeta>): void {
+        for (const [key, meta] of Object.entries(after)) {
+            const was = before[key];
+            const conversationId = Number(key);
+
+            if (meta.pip !== undefined) {
+                continue;
+            }
+
+            if (was === undefined) {
+                this.events.emit("session.created", {
+                    conversationId,
+                    cwd: meta.cwd,
+                    ...(meta.createdBy === undefined ? {} : { createdBy: meta.createdBy }),
+                    ...(meta.forkedFrom === undefined ? {} : { forkedFrom: meta.forkedFrom.id }),
+                    ...(meta.linkedFrom === undefined ? {} : { linkedFrom: meta.linkedFrom.id }),
+                });
+                continue;
+            }
+
+            if ((meta.title ?? "") !== (was.title ?? "") && meta.title !== undefined) {
+                this.events.emit("session.renamed", { conversationId, title: meta.title });
+            }
+
+            if ((meta.archived === true) !== (was.archived === true)) {
+                this.events.emit("session.archived", {
+                    conversationId,
+                    archived: meta.archived === true,
+                });
+            }
+        }
     }
 
     /** Where a conversation's commands run: its folder on this machine. */
@@ -2889,6 +2942,50 @@ export class PocketApp {
         }
 
         await this.#refreshClients();
+    }
+
+    /**
+     * A module's settings as `user` may see them: the owner, and whoever its browser module is for. A secret's value
+     * never leaves the server: only whether it is set. 404 for anyone else, and for a module that is off or has none.
+     */
+    extensionSettings(user: User, module: string) {
+        const fields = this.webs.settingsOf(module);
+        const access = this.webs.clientAccess(module);
+
+        if (
+            fields === undefined ||
+            (user.role !== "owner" && (access === undefined || !mayUse(user, access)))
+        ) {
+            throw new HttpError(404, "That module has no settings here.");
+        }
+
+        return shownSettings(fields, this.config.extensionSettings(module), false);
+    }
+
+    /** The owner changes a module's settings; the module hears it (`web.onSettings`). */
+    setExtensionSettings(user: User, module: string, change: unknown) {
+        if (user.role !== "owner") {
+            throw new HttpError(403, "Only the owner can do that");
+        }
+
+        const fields = this.webs.settingsOf(module);
+
+        if (fields === undefined) {
+            throw new HttpError(404, "That module has no settings here.");
+        }
+
+        let next: Record<string, string | number | boolean>;
+
+        try {
+            next = changeSettings(fields, this.config.extensionSettings(module), change);
+        } catch (error) {
+            throw new HttpError(400, describe(error));
+        }
+
+        this.config.setExtensionSettings(module, next);
+        this.webs.settingsChanged(module);
+
+        return shownSettings(fields, next, false);
     }
 
     /** The owner chooses when PiP compacts itself: above so many tokens of context once idle, or (0) as sessions do. */

@@ -24,6 +24,12 @@ import type { Watches } from "./watches.ts";
 import type { FetchPublic } from "./public-fetch.ts";
 import type { BrowserControl } from "./browser/page.ts";
 import type { CommandEnvProvider, HiddenValue } from "./hidden.ts";
+import type { AppEventName, AppEvents } from "./app-events.ts";
+import type { SettingField, SettingValue } from "./extension-settings.ts";
+
+export type { SettingField, SettingValue } from "./extension-settings.ts";
+
+export type { AppEventName, AppEvents } from "./app-events.ts";
 
 export type { BrowserControl } from "./browser/page.ts";
 export type { CommandEnvProvider, CommandRun, HiddenValue } from "./hidden.ts";
@@ -367,6 +373,13 @@ export interface PocketHost {
     /** Who Pi works for in a conversation now: whose message led to its current work. */
     requesterOf(conversationId: ConversationId): string | undefined;
     /**
+     * Listen to what happens in the app: sessions made, renamed, and archived, messages people send to Pi, and
+     * runs that start and end. Returns how to stop; pass that to `web.onDispose`. PiP's conversations send none.
+     *
+     * @experimental In 0.22: it can change in a minor release (docs/extensions/policies/api-stability.md).
+     */
+    on<E extends AppEventName>(event: E, listener: (data: AppEvents[E]) => unknown): () => void;
+    /**
      * Ask the person Pi works for on a card in the session, as an approval asks: their answer, with the values they
      * typed, goes to the extension, never to Pi or into the transcript. Do not keep the values in a memo or a document.
      *
@@ -659,6 +672,18 @@ export interface ExtensionWeb {
     publicPage(handle: PublicPageHandler): void;
     /** Make, list, and end the module's public links. Usable while the module runs, not only while it loads. */
     readonly links: PublicLinks;
+    /** Offer other modules an object of the module's own (`web.use(module)` there). One for each module, while it loads. */
+    provide(service: object): void;
+    /** The service a module that is on offers now, or undefined. Ask again each time: a reload replaces it. */
+    use(module: string): unknown;
+    /** Hear when a module's service comes, changes, or goes. Returns how to stop; it stops when this version goes. */
+    onService(module: string, listener: () => void): () => void;
+    /** Declare the module's settings, while it loads: core keeps the owner's values and shows them in Extensions. */
+    settings(fields: readonly SettingField[]): void;
+    /** A setting's value now: the owner's, or its default. */
+    setting(name: string): SettingValue | undefined;
+    /** Hear when the owner changes the module's settings. Returns how to stop; it stops when this version goes. */
+    onSettings(listener: () => void): () => void;
 }
 
 /** The shape of every module in `src/server/extensions/`: a default export building one or more extensions. */

@@ -16362,6 +16362,27 @@ textarea.notes {
     line-height: 1.55;
 }
 
+/* A module's settings (`web.settings`) in its open row: its fields as the app's settings rows. */
+.ext-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 0;
+    border-top: 1px solid var(--line);
+}
+
+.ext-setting-input,
+.ext-settings select {
+    min-height: 36px;
+    max-width: 220px;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-control);
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+}
+
 .ext-step-actions {
     display: flex;
     flex-wrap: wrap;

@@ -12,6 +12,8 @@ import type {
     ExtensionWeb,
     LinkedSession as RealLinkedSession,
     PocketHost,
+    AppEvents as RealAppEvents,
+    SettingField as RealSettingField,
     AskRequest as RealAskRequest,
     AskAnswer as RealAskAnswer,
     AskField as RealAskField,
@@ -36,6 +38,8 @@ import type {
     Host,
     LinkedSession,
     Module,
+    AppEvents,
+    SettingField,
     AskRequest,
     AskAnswer,
     AskField,
@@ -127,6 +131,10 @@ export const browserControl = (real: RealBrowserControl): BrowserControl => real
 export const browserControlBack = (types: BrowserControl): RealBrowserControl => types;
 export const browserTarget = (real: RealBrowserTarget): BrowserTarget => real;
 export const browserTargetBack = (types: BrowserTarget): RealBrowserTarget => types;
+export const appEvents = (real: RealAppEvents): AppEvents => real;
+export const appEventsBack = (types: AppEvents): RealAppEvents => types;
+export const settingField = (real: RealSettingField): SettingField => real;
+export const settingFieldBack = (types: SettingField): RealSettingField => types;
 export const linked = (real: RealLinkedSession): LinkedSession => real;
 export const linkedBack = (types: LinkedSession): RealLinkedSession => types;
 

@@ -182,6 +182,12 @@ export interface Host {
      */
     requesterOf(conversationId: ConversationId): string | undefined;
     /**
+     * Listens to what happens in the app: sessions made, renamed, and archived, messages people send to Pi, and runs that start and end. Returns how to stop: pass it to `web.onDispose`. PiP's conversations send none.
+     * @since 0.22.0
+     * @experimental
+     */
+    on<E extends AppEventName>(event: E, listener: (data: AppEvents[E]) => unknown): () => void;
+    /**
      * Asks the person Pi works for on a card in the session: their answer, with what they typed, goes to the extension, never to Pi or into the transcript. Do not keep the values in a memo or a document.
      * @since 0.22.0
      * @experimental
@@ -269,6 +275,110 @@ export interface SafeText {
      */
     defang(text: string): string;
 }
+
+/**
+ * The events of `host.on`, and what each listener gets.
+ * @since 0.22.0
+ * @experimental
+ */
+export interface AppEvents {
+    /**
+     * A session was made: by a person, a fork, a linked start, or a resend.
+     * @since 0.22.0
+     * @experimental
+     */
+    "session.created": {
+        conversationId: number;
+        cwd: string;
+        createdBy?: string;
+        forkedFrom?: number;
+        linkedFrom?: number;
+    };
+    /**
+     * A session got a new title.
+     * @since 0.22.0
+     * @experimental
+     */
+    "session.renamed": { conversationId: number; title: string };
+    /**
+     * A session was archived, or brought back.
+     * @since 0.22.0
+     * @experimental
+     */
+    "session.archived": { conversationId: number; archived: boolean };
+    /**
+     * A person sent Pi a message: its words as stored, attachments left out. `via` names what sent it for them.
+     * @since 0.22.0
+     * @experimental
+     */
+    "message.sent": {
+        conversationId: number;
+        by: string;
+        submissionId: string;
+        text: string;
+        via?: string;
+    };
+    /**
+     * Pi started to work in a conversation, a session's or a subagent's. `session` is its session.
+     * @since 0.22.0
+     * @experimental
+     */
+    "run.started": { conversationId: number; session: number };
+    /**
+     * Pi stopped working in a conversation.
+     * @since 0.22.0
+     * @experimental
+     */
+    "run.ended": { conversationId: number; session: number };
+}
+
+/**
+ * The name of an event of `host.on`.
+ * @since 0.22.0
+ * @experimental
+ */
+export type AppEventName = keyof AppEvents;
+
+/**
+ * One setting that a module declares (`web.settings`).
+ * @since 0.22.0
+ * @experimental
+ */
+export type SettingField =
+    | { name: string; label: string; description?: string; type: "boolean"; default?: boolean }
+    | {
+          name: string;
+          label: string;
+          description?: string;
+          type: "text";
+          default?: string;
+          placeholder?: string;
+          secret?: boolean;
+      }
+    | {
+          name: string;
+          label: string;
+          description?: string;
+          type: "number";
+          default?: number;
+          min?: number;
+          max?: number;
+      }
+    | {
+          name: string;
+          label: string;
+          description?: string;
+          type: "choice";
+          default?: string;
+          choices: { value: string; label: string }[];
+      };
+
+/**
+ * A setting's value.
+ * @since 0.22.0
+ * @experimental
+ */
+export type SettingValue = string | number | boolean;
 
 /**
  * A question for the person Pi works for, on a card in the session (`host.ask`).
@@ -1195,6 +1305,42 @@ export interface Web {
      * @experimental
      */
     readonly links: PublicLinks;
+    /**
+     * Offers other modules an object of this module's own, which they get with `web.use(module)`. One for each module, while it loads.
+     * @since 0.22.0
+     * @experimental
+     */
+    provide(service: object): void;
+    /**
+     * The service that a module that is on offers now, or `undefined`. Ask again each time that you need it: a reload replaces it.
+     * @since 0.22.0
+     * @experimental
+     */
+    use(module: string): unknown;
+    /**
+     * Calls `listener` when a module's service comes, changes, or goes. Returns how to stop. It stops when this version of the module goes.
+     * @since 0.22.0
+     * @experimental
+     */
+    onService(module: string, listener: () => void): () => void;
+    /**
+     * Declares the module's settings, while it loads. Core keeps the owner's values, and shows the settings in the Extensions sheet.
+     * @since 0.22.0
+     * @experimental
+     */
+    settings(fields: readonly SettingField[]): void;
+    /**
+     * A setting's value now: the owner's, or its default.
+     * @since 0.22.0
+     * @experimental
+     */
+    setting(name: string): SettingValue | undefined;
+    /**
+     * Calls `listener` when the owner changes the module's settings. Returns how to stop. It stops when this version of the module goes.
+     * @since 0.22.0
+     * @experimental
+     */
+    onSettings(listener: () => void): () => void;
 }
 
 // ─── Commands ────────────────────────────────────────────────────────────────
@@ -2379,6 +2525,22 @@ export interface Pocket {
      * @since 0.14.0
      */
     on<T = unknown>(event: string, run: (data: T) => void): () => void;
+    /**
+     * The module's settings as the person in this tab may read them. A secret's value is left out: `set` says whether it is set.
+     * @since 0.22.0
+     * @experimental
+     */
+    settings(): Promise<{
+        fields: SettingField[];
+        values: Record<string, SettingValue | null>;
+        set: string[];
+    }>;
+    /**
+     * Calls `run` when the owner changes the module's settings. Returns a function that stops it.
+     * @since 0.22.0
+     * @experimental
+     */
+    onSettings(run: () => void): () => void;
     /**
      * Shows a notice, as the app's own.
      * @since 0.14.0

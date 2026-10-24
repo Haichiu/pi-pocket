@@ -28,6 +28,7 @@ This page is the map. Read all of it, then only the pages that your task needs.
 | Answer requests on the server, and say who may use them         | [Routes](extensions/routes.md)                                                                                  |
 | Show a page to anyone with a link, with no sign-in              | [Public pages](extensions/public-pages.md)                                                                      |
 | Ask for a password or a key, hide it, or drive the browser page | [People's values and the browser](extensions/people-values.md)                                                  |
+| React to sessions and runs, use other modules, add settings     | [Events, services, and settings](extensions/services-settings.md)                                               |
 | Add rail buttons, pages, sheets, panels, status items, menus    | [Browser modules](extensions/browser-modules.md)                                                                |
 | Run something from the message box, without Pi                  | [Slash commands](extensions/commands.md)                                                                        |
 | Show your tool's calls in words                                 | [How tool calls show](extensions/tool-calls.md)                                                                 |

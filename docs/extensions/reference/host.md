@@ -192,6 +192,28 @@ Since 0.12.0 · Stable
 
 Calls `listener` each time the owner changes a spend limit. It returns a function: call it to stop.
 
+## Events
+
+### `on`
+
+```ts
+on<E extends AppEventName>(event: E, listener: (data: AppEvents[E]) => unknown): () => void;
+```
+
+Since 0.22.0 · Experimental
+
+Calls `listener` each time something happens in the app: a session is made, renamed, or archived, a person sends Pi a message, or Pi starts or stops working. Each event comes after the change is stored. A listener runs after the work that caused it, never in its way: one that throws or rejects is logged, and the other listeners still run. Each one gets its own frozen copy of the data. It returns how to stop: pass that to `web.onDispose`. PiP's conversation is its person's alone, and sends no events. An unknown event name throws. See [`AppEvents`](#appevents).
+
+```typescript
+web.onDispose(
+    host.on("run.ended", ({ conversationId, session }) => {
+        if (conversationId === session) {
+            counts.set(session, (counts.get(session) ?? 0) + 1);
+        }
+    }),
+);
+```
+
 ## Asking people, hiding values, and the browser
 
 These came in 0.22.0, and are experimental. [People's values and the browser](../people-values.md) tells how to use them together.
@@ -425,6 +447,52 @@ A linked session, as `list` gives it.
 
 - `address`: the address that the asking session uses for it. It is never the session's id.
 - `title`, `cwd` (its folder), `busy` (Pi works in it now), and `archived`: these are there only when all the people who see the asking session see this session too.
+
+## Types for events
+
+### `AppEvents`
+
+```ts
+interface AppEvents {
+    "session.created": {
+        conversationId: number;
+        cwd: string;
+        createdBy?: string;
+        forkedFrom?: number;
+        linkedFrom?: number;
+    };
+    "session.renamed": { conversationId: number; title: string };
+    "session.archived": { conversationId: number; archived: boolean };
+    "message.sent": {
+        conversationId: number;
+        by: string;
+        submissionId: string;
+        text: string;
+        via?: string;
+    };
+    "run.started": { conversationId: number; session: number };
+    "run.ended": { conversationId: number; session: number };
+}
+```
+
+Since 0.22.0 · Experimental
+
+What each event's listener gets.
+
+- `session.created`: a session in the list was made, by a person, a fork (`forkedFrom`), a linked start (`linkedFrom`), or a resend. `createdBy` is a person's id. Subagents are not sessions in the list, and send none.
+- `session.renamed`, `session.archived`: its new title, or whether it is archived now.
+- `message.sent`: a person's message to Pi, a steer or a queued one too. `by` is their id. `text` is the words as stored, with values that extensions hide already hidden and attachments left out. `via` names what sent it for them, such as PiP or a schedule.
+- `run.started`, `run.ended`: Pi started or stopped working in a conversation. `conversationId` is that conversation, a session's or a subagent's; `session` is the session it belongs to.
+
+### `AppEventName`
+
+```ts
+type AppEventName = keyof AppEvents;
+```
+
+Since 0.22.0 · Experimental
+
+The name of an event: `"session.created"`, `"session.renamed"`, `"session.archived"`, `"message.sent"`, `"run.started"`, or `"run.ended"`.
 
 ## Types for asking, hiding, and the browser
 

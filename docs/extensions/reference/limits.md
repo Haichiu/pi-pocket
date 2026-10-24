@@ -96,6 +96,14 @@ All the numbers that limit a module, in one place. Each group links to the guide
 - **Events that a version of a module sends:** 100 each second at most, and 1 MB of them. The rest of that second's events are dropped.
 - **A tab that falls behind:** Pi Pocket cuts it off when it is more than 8 MB behind and takes nothing for 30 s. It also cuts off a tab that is more than 128 MB behind. The tab then connects again, with no old events.
 
+## Events, services, and settings
+
+[Events, services, and settings](../services-settings.md)
+
+- **Settings of one module:** 30 at most. A name is up to 40 characters, a label up to 80, a description up to 300, and a text value up to 4096. A choice setting has 1 to 50 choices.
+- **Services:** one for each module.
+- **Events:** each listener gets each event once, after the change is stored; nothing is kept for a listener added later.
+
 ## Asking people and hidden values
 
 [People's values and the browser](../people-values.md)
