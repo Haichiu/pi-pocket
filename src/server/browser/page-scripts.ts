@@ -61,6 +61,8 @@ export const SNAPSHOT_SCRIPT = String.raw`(() => {
 	const refs = new Map();
 	window.__piPocketRefs = refs;
 	let count = 0;
+	// The same controls as data, for extensions (host.browser): never a password value, whatever it holds.
+	const items = [];
 	let size = 0;
 	let full = false;
 	const lines = [];
@@ -97,6 +99,18 @@ export const SNAPSHOT_SCRIPT = String.raw`(() => {
 		if (expanded) line += expanded === "true" ? " (expanded)" : " (collapsed)";
 		if (["aria-checked", "aria-selected", "aria-pressed"].some((attr) => el.getAttribute(attr) === "true")) line += " (selected)";
 		if (el.disabled || el.getAttribute("aria-disabled") === "true") line += " (disabled)";
+		if (items.length < 500) {
+			const kind = el.tagName === "INPUT" ? (el.type || "text") : el.tagName === "TEXTAREA" ? "textarea" : el.tagName.toLowerCase();
+			const box = el.getBoundingClientRect();
+			const item = { ref, role: role ?? "clickable", name: clip(nameOf(el), 120), kind, disabled: Boolean(el.disabled || el.getAttribute("aria-disabled") === "true"), inView: box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth };
+			if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+				if (kind === "checkbox" || kind === "radio") item.checked = el.checked;
+				else if (!["button", "submit", "reset", "image"].includes(kind)) { item.value = kind === "password" ? (el.value ? "••••" : "") : clip(el.value, 200); if (el.placeholder) item.placeholder = clip(el.placeholder, 80); }
+			}
+			if (el.tagName === "SELECT") { item.value = clip(el.selectedOptions?.[0]?.text ?? "", 80); item.options = [...el.options].slice(0, 50).map((option) => clip(option.text, 60)); }
+			if (role === "link") { const href = el.getAttribute("href"); if (href && !href.startsWith("javascript:")) item.href = clip(href, 300); }
+			items.push(item);
+		}
 		return line;
 	};
 	const visit = (node, depth) => {
@@ -142,7 +156,7 @@ export const SNAPSHOT_SCRIPT = String.raw`(() => {
 	const walk = (el, depth) => { for (const child of (el.shadowRoot ?? el).childNodes) visit(child, depth); };
 	if (document.body) walk(document.body, 0);
 	const scrolling = document.scrollingElement ?? document.documentElement;
-	return { lines: lines.join("\n"), truncated: full, controls: count, scrollY: Math.round(scrollY), scrollHeight: Math.round(scrolling.scrollHeight), innerHeight: Math.round(innerHeight) };
+	return { lines: lines.join("\n"), truncated: full, controls: count, items, scrollY: Math.round(scrollY), scrollHeight: Math.round(scrolling.scrollHeight), innerHeight: Math.round(innerHeight) };
 })()`;
 
 /**
@@ -151,8 +165,10 @@ export const SNAPSHOT_SCRIPT = String.raw`(() => {
  */
 export const LOCATE_SCRIPT = String.raw`(async (target) => {
 	const clip = (text, max) => { const flat = String(text ?? "").replace(/\s+/g, " ").trim(); return flat.length > max ? flat.slice(0, max - 1) + "…" : flat; };
+	// A password field's value is never part of what describes or finds it.
+	const valueOf = (el) => (el.tagName === "INPUT" && el.type === "password" ? "" : el.value);
 	const describe = (el) => {
-		const name = clip(el.getAttribute("aria-label") || el.innerText || el.value || el.getAttribute("placeholder") || el.getAttribute("title") || "", 60);
+		const name = clip(el.getAttribute("aria-label") || el.innerText || valueOf(el) || el.getAttribute("placeholder") || el.getAttribute("title") || "", 60);
 		return el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (name ? ' "' + name + '"' : "");
 	};
 	let el = null;
@@ -164,7 +180,7 @@ export const LOCATE_SCRIPT = String.raw`(async (target) => {
 		if (!el) throw new Error("Nothing matches the selector " + target.selector + ".");
 	} else if (target.label) {
 		const want = target.label.replace(/\s+/g, " ").trim().toLowerCase();
-		const text = (each) => (each.getAttribute("aria-label") || each.innerText || each.value || each.getAttribute("placeholder") || each.getAttribute("title") || "").replace(/\s+/g, " ").trim().toLowerCase();
+		const text = (each) => (each.getAttribute("aria-label") || each.innerText || valueOf(each) || each.getAttribute("placeholder") || each.getAttribute("title") || "").replace(/\s+/g, " ").trim().toLowerCase();
 		const seen = (each) => each.getClientRects().length > 0 && getComputedStyle(each).visibility !== "hidden";
 		const controls = [...document.querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea, summary, label, [role], [onclick], [tabindex]')].filter(seen);
 		el = controls.find((each) => text(each) === want) ?? controls.find((each) => text(each).includes(want)) ?? null;
@@ -186,7 +202,8 @@ export const LOCATE_SCRIPT = String.raw`(async (target) => {
 	const covered = hit && hit !== el && !el.contains(hit) && !hit.contains(el) ? describe(hit) : undefined;
 	const view = window.visualViewport;
 	const scale = view?.scale ?? 1;
-	return { x: (x - (view?.offsetLeft ?? 0)) * scale, y: (y - (view?.offsetTop ?? 0)) * scale, label: describe(el), covered, editable: el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) };
+	const kind = el.tagName === "INPUT" ? (el.type || "text") : el.tagName === "TEXTAREA" ? "textarea" : el.tagName.toLowerCase();
+	return { x: (x - (view?.offsetLeft ?? 0)) * scale, y: (y - (view?.offsetTop ?? 0)) * scale, label: describe(el), covered, editable: el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName), kind, password: kind === "password" };
 })`;
 
 /**

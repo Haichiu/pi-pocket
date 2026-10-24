@@ -1,0 +1,417 @@
+// The extension points of 0.22.0 for people's values (`hidden.ts`, `extension-points.ts`): `host.commandEnv` puts a value
+// into a command's environment, `host.hide` keeps it out of the output as it streams and out of every tool's result,
+// `host.ask` asks the person Pi works for on a card whose values reach only the extension, and `host.browser` gives an
+// extension the session's page, with a `fill` for a person's value.
+import {
+    type App,
+    cleanUp,
+    lastText,
+    newSession,
+    openApp,
+    owner,
+    root,
+    scriptedModel,
+    until,
+    work,
+} from "./helpers.ts";
+import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import { join } from "node:path";
+import { after, before, test } from "node:test";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { FauxResponseStep } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import type { ConversationId } from "@earendil-works/pi-durable";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
+import { findBrowser } from "../src/server/browser/discovery.ts";
+import { HttpError } from "../src/server/errors.ts";
+import { CommandEnvs, HiddenValues, wrapEnv } from "../src/server/hidden.ts";
+
+const SECRET = "s3cr3t-token-value";
+const dataDir = join(root, "data");
+const real = {
+    skip: findBrowser() === undefined ? "no Chromium-based browser on this machine" : false,
+} as const;
+/** Everything the model was sent, to check that no value reached it. */
+const sent: string[] = [];
+let app: App;
+let site: Server;
+let base = "";
+
+const route: FauxResponseStep = (request) => {
+    sent.push(JSON.stringify(request));
+
+    const { role, text } = lastText(request as never);
+    const call = (name: string, args: Parameters<typeof fauxToolCall>[1]) =>
+        fauxAssistantMessage([fauxToolCall(name, args)], { stopReason: "toolUse" });
+
+    if (role === "toolResult") {
+        return fauxAssistantMessage([fauxText(`ok: ${text}`)]);
+    }
+
+    if (text.endsWith("use the token")) {
+        return call("bash", {
+            command: 'printf "%s" "$TOKEN"; echo; printf "%s" "$TOKEN" | wc -c',
+        });
+    }
+
+    if (text.endsWith("leak it")) {
+        return call("test_leak", {});
+    }
+
+    if (text.endsWith("sign in")) {
+        return call("test_sign_in", {});
+    }
+
+    return fauxAssistantMessage([fauxText(`echo: ${text}`)]);
+};
+
+before(async () => {
+    mkdirSync(join(dataDir, "extensions"), { recursive: true });
+    writeFileSync(
+        join(dataDir, "extensions", "points.ts"),
+        `/** Points: uses host.ask, host.hide, host.commandEnv, and host.browser, for tests. */
+import { Type } from "@earendil-works/pi-ai";
+import { defineExtension, defineTool } from "@earendil-works/pi-durable";
+
+export const pocketApi = 2;
+
+export default (host, web) => {
+    web.onDispose(host.hide({ value: ${JSON.stringify(SECRET)}, label: "secret TOKEN" }));
+    web.onDispose(
+        host.commandEnv(({ command }) =>
+            typeof command === "string" && command.includes("$TOKEN") ? { TOKEN: ${JSON.stringify(SECRET)} } : undefined,
+        ),
+    );
+    web.route("POST", "browse", async (request) => {
+        const page = await host.browser(Number(request.body.id), { open: true });
+
+        await page.navigate(String(request.body.url));
+
+        const before = await page.snapshot();
+        const field = before.controls.find((control) => control.kind === "password");
+        const info = await page.inspect({ ref: field.ref });
+        const label = await page.fill({ ref: field.ref }, "hunter2-pass");
+        const after = await page.snapshot();
+        const filled = after.controls.find((control) => control.kind === "password");
+        // A field that holds a password, with no name of its own: what describes it never says the password.
+        const again = await page.inspect({ ref: filled.ref });
+        const refill = await page.fill({ ref: filled.ref }, "hunter2-pass");
+        let data = "";
+
+        try {
+            await page.navigate("data:text/html,<script>1</script>");
+        } catch (error) {
+            data = error.message;
+        }
+
+        return {
+            before: field,
+            info,
+            label,
+            again: again.label,
+            refill,
+            data,
+            after: filled,
+            text: after.text,
+            evaluate: "evaluate" in page,
+        };
+    });
+
+    const signIn = defineTool({
+        name: "test_sign_in",
+        description: "Sign in, with the person's values.",
+        parameters: Type.Object({}),
+        execute: async (_args, api, context) => {
+            const answer = await host.ask(
+                {
+                    conversationId: api.conversationId,
+                    id: api.taskId + ":" + api.callId,
+                    taskId: api.taskId,
+                    callId: api.callId,
+                    title: "Sign in to example.test",
+                    fields: [
+                        { name: "user", label: "Username", autocomplete: "username" },
+                        { name: "password", label: "Password", secret: true },
+                    ],
+                    submit: "Fill in",
+                },
+                context,
+            );
+
+            if (!answer.answered) {
+                throw new Error(answer.by + " declined");
+            }
+
+            return {
+                output: [
+                    {
+                        type: "text",
+                        text: "filled " + answer.values.user.length + "+" + answer.values.password.length,
+                    },
+                ],
+            };
+        },
+    });
+
+    const leak = defineTool({
+        name: "test_leak",
+        description: "Give back the value, as a careless tool would.",
+        parameters: Type.Object({}),
+        execute: async () => ({
+            output: [{ type: "text", text: "the value is " + ${JSON.stringify(SECRET)} }],
+            details: { nested: [${JSON.stringify(SECRET)}] },
+        }),
+    });
+
+    return defineExtension({ name: "test-points", tools: [signIn, leak] });
+};
+`,
+    );
+    app = await openApp(scriptedModel(route), dataDir);
+    await app.setExtensionEnabled(owner(app), "points.ts", true);
+    site = createServer((_request, response) => {
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end(
+            `<title>Sign in</title><form><label>User <input name="user"></label><label>Password <input type="password" name="password"></label><button>Sign in</button></form>`,
+        );
+    });
+    await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
+    base = `http://127.0.0.1:${(site.address() as { port: number }).port}`;
+});
+
+after(async () => {
+    site?.close();
+    await app?.close();
+    cleanUp();
+});
+
+const stored = async (id: ConversationId) =>
+    JSON.stringify(await app.transcripts.allEntries(id, true));
+
+test("hidden values leave output as it streams, also when a value is split across chunks", () => {
+    const hidden = new HiddenValues();
+    const stop = hidden.add({ value: "abcdefgh", label: "secret X" });
+    const out: string[] = [];
+    const stream = hidden.stream(1, (text) => out.push(text));
+    const context = BACKGROUND_CONTEXT;
+
+    for (const chunk of ["one abc", "def", "gh two ", "abcdefgh", " three"]) {
+        stream.onOutput(chunk, context, { stream: "stdout" });
+    }
+
+    stream.flush();
+    assert.equal(out.join(""), "one [secret X] two [secret X] three");
+
+    // Output keeps its order across the two streams.
+    const ordered: string[] = [];
+    const both = hidden.stream(1, (text) => ordered.push(text));
+
+    both.onOutput("ERR ", context, { stream: "stderr" });
+    both.onOutput("OUT ", context, { stream: "stdout" });
+    both.onOutput("ERR2", context, { stream: "stderr" });
+    both.flush();
+    assert.equal(ordered.join(""), "ERR OUT ERR2");
+
+    // In a tool's result: strings and object keys, and the same object when nothing is there to hide.
+    const result = {
+        output: [{ type: "text" as const, text: "x" }],
+        details: { abcdefgh: ["abcdefgh"] },
+    };
+
+    assert.deepEqual(hidden.result(result, 1).details, { "[secret X]": ["[secret X]"] });
+
+    const clean = { output: [{ type: "text" as const, text: "nothing here" }] };
+
+    assert.equal(hidden.result(clean, 1), clean);
+    assert.ok(out.every((each) => !each.includes("abcdefgh")));
+    // Another session's value, and one taken away, hide nothing here.
+    hidden.add({ value: "elsewhere", label: "x", conversationId: 2 });
+    assert.equal(hidden.replace("elsewhere", 1), "elsewhere");
+    stop();
+    assert.equal(hidden.replace("abcdefgh", 1), "abcdefgh");
+
+    for (const bad of [
+        { value: "abc", label: "x" },
+        { value: "abcd", label: "two\nlines" },
+        { value: "abcd", label: "x", conversationId: 0 },
+    ]) {
+        assert.throws(() => hidden.add(bad));
+    }
+});
+
+test("a command gets the variables a provider gives it, and its output hides the value", async () => {
+    const hidden = new HiddenValues();
+    const envs = new CommandEnvs(() => {});
+
+    hidden.add({ value: SECRET, label: "secret TOKEN" });
+    envs.add(({ command }) => (String(command).includes("$TOKEN") ? { TOKEN: SECRET } : undefined));
+    // A provider that throws, or gives a bad name, adds nothing, and the command still runs.
+    envs.add(() => {
+        throw new Error("broken");
+    });
+    envs.add(() => ({ "1BAD": "x", GOOD: "yes" }));
+
+    const env = wrapEnv(new NodeExecutionEnv({ cwd: work }), 1, work, envs, hidden);
+    let output = "";
+    const result = await env.exec(
+        'printf "%s %s" "$TOKEN" "$GOOD"',
+        { onOutput: (text) => (output += text) },
+        BACKGROUND_CONTEXT,
+    );
+
+    assert.ok(result.ok);
+    assert.equal(output, "[secret TOKEN] yes");
+});
+
+test("Pi's bash uses the value without the model, the transcript, or the result holding it", async () => {
+    const id = await newSession(app);
+    const before = sent.length;
+
+    await app.commands.submit(id, owner(app), {
+        text: "please use the token",
+        requestId: crypto.randomUUID(),
+    });
+    await until(async () => (await stored(id)).includes("ok: "), "the answer");
+
+    const transcript = await stored(id);
+
+    assert.match(transcript, /\[secret TOKEN\]/);
+    // The value was there: its length counted.
+    assert.match(transcript, new RegExp(String(SECRET.length)));
+    assert.doesNotMatch(transcript, new RegExp(SECRET));
+    assert.ok(sent.slice(before).every((request) => !request.includes(SECRET)));
+});
+
+test("any tool's result hides the value before it is stored, its details too", async () => {
+    const id = await newSession(app);
+
+    await app.commands.submit(id, owner(app), {
+        text: "please leak it",
+        requestId: crypto.randomUUID(),
+    });
+    await until(async () => (await stored(id)).includes("ok: "), "the answer");
+
+    const transcript = await stored(id);
+
+    assert.match(transcript, /the value is \[secret TOKEN\]/);
+    assert.doesNotMatch(transcript, new RegExp(SECRET));
+});
+
+test("an ask's card is answered by the person Pi works for, and its values reach only the extension", async () => {
+    const id = await newSession(app);
+    const me = owner(app);
+    const guest = app.config.addUser("Gus", "guest").user;
+
+    await app.commands.submit(id, me, { text: "please sign in", requestId: crypto.randomUUID() });
+    await until(() => app.approvals.forConversation(id).length === 1, "the card");
+
+    const [card] = app.approvals.forConversation(id);
+
+    assert.equal(card!.form?.title, "Sign in to example.test");
+    assert.deepEqual(
+        card!.form?.fields.map((field) => field.name),
+        ["user", "password"],
+    );
+    assert.equal(card!.requestedBy, me.id);
+
+    // Someone else in the session cannot answer it; a plain Allow, or a missing field, is no answer.
+    await assert.rejects(
+        app.answerApproval(card!.id, true, guest, { user: "x", password: "y" }),
+        (error) => error instanceof HttpError && error.status === 403,
+    );
+    await assert.rejects(
+        app.answerApproval(card!.id, true, me),
+        (error) => error instanceof HttpError && error.status === 400,
+    );
+    await assert.rejects(
+        app.answerApproval(card!.id, true, me, { user: "tevis" }),
+        /Fill in Password/,
+    );
+    await assert.rejects(
+        app.answerApproval(card!.id, true, me, { user: "tevis", password: "pw", extra: "z" }),
+        /not a field/,
+    );
+
+    assert.equal(
+        await app.answerApproval(card!.id, true, me, { user: "tevis", password: "correct-horse" }),
+        true,
+    );
+    await until(async () => (await stored(id)).includes("ok: filled"), "the answer");
+
+    const transcript = await stored(id);
+
+    assert.match(transcript, /filled 5\+13/);
+    assert.doesNotMatch(transcript, /correct-horse|tevis/);
+
+    // Anyone who can steer declines one.
+    await app.commands.submit(id, me, { text: "again sign in", requestId: crypto.randomUUID() });
+    await until(() => app.approvals.forConversation(id).length === 1, "the second card");
+    assert.equal(
+        await app.answerApproval(app.approvals.forConversation(id)[0]!.id, false, guest),
+        true,
+    );
+    await until(async () => (await stored(id)).includes("Gus declined"), "the decline");
+});
+
+test(
+    "an extension drives the session's page and fills a password Pi never sees",
+    real,
+    async () => {
+        const id = await newSession(app);
+        const { createHandler } = await import("../src/server/http.ts");
+        const server = createServer(
+            createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} }),
+        );
+
+        await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+
+        try {
+            const response = await fetch(
+                `http://127.0.0.1:${(server.address() as { port: number }).port}/api/x/points/browse`,
+                {
+                    method: "POST",
+                    headers: {
+                        authorization: `Bearer ${app.config.ownerToken}`,
+                        "x-pocket": "1",
+                        "content-type": "application/json",
+                    },
+                    body: JSON.stringify({ id: Number(id), url: `${base}/` }),
+                },
+            );
+            const result = (await response.json()) as {
+                before: { kind: string; value: string; role: string };
+                info: { password: boolean; editable: boolean };
+                after: { value: string };
+                text: string;
+                evaluate: boolean;
+                data: string;
+            };
+
+            assert.equal(response.status, 200, JSON.stringify(result));
+            assert.equal(result.before.kind, "password");
+            assert.equal(result.before.value, "");
+            assert.deepEqual(
+                { password: result.info.password, editable: result.info.editable },
+                { password: true, editable: true },
+            );
+            assert.equal(result.after.value, "••••");
+            assert.doesNotMatch(JSON.stringify(result), /hunter2/);
+            assert.match(result.data, /navigate needs/);
+            assert.doesNotMatch(result.text, /hunter2/);
+            assert.equal(result.evaluate, false, "no script runs through the handle");
+            // The value is in the page itself, as the person typed it.
+            assert.equal(
+                await app.browsers
+                    .page(Number(id))!
+                    .evaluate(`document.querySelector("input[type=password]").value`),
+                "hunter2-pass",
+            );
+        } finally {
+            server.closeAllConnections();
+            server.close();
+            await app.browsers.close(Number(id));
+        }
+    },
+);

@@ -82,3 +82,4 @@ Each member in the reference has its own Since line. These parts came together:
 | The session's messages: `pocket.onConversation`, `messages`, `reveal` (experimental)                                                 | 0.20.0 |
 | `group` in `pocket.menu` (experimental)                                                                                              | 0.21.0 |
 | Public pages: `web.publicPage` and `web.links` (experimental)                                                                        | 0.22.0 |
+| People's values and the browser: `host.ask`, `hide`, `commandEnv`, `browser` (experimental)                                          | 0.22.0 |

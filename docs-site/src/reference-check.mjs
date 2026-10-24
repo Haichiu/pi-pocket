@@ -32,7 +32,22 @@ const HEADED = new Map([
 
 /** Which types each page describes. */
 export const PAGES = {
-    "host.md": ["Host", "SafeText", "PublicFetchInit", "LinkedSessions", "LinkedSession"],
+    "host.md": [
+        "Host",
+        "SafeText",
+        "PublicFetchInit",
+        "LinkedSessions",
+        "LinkedSession",
+        "AskRequest",
+        "AskField",
+        "AskAnswer",
+        "HiddenValue",
+        "CommandRun",
+        "CommandEnvProvider",
+        "BrowserTarget",
+        "BrowserControl",
+        "BrowserPageHandle",
+    ],
     "web.md": [
         "Web",
         "WebHandler",

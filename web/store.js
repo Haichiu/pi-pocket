@@ -1310,7 +1310,9 @@ export const actions = {
     /** Watch the session's pull request: its branch's, or `pr` (a number or address). */
     watchPr: (pr) => api(`c/${current()}/watch`, pr ? { pr } : {}),
     unwatchPr: () => api(`c/${current()}/watch`, { stop: true }),
-    approve: (id, allow) => api(`approvals/${encodeURIComponent(id)}`, { allow }),
+    /** Allow or deny a call; an ask (`host.ask`) is allowed with what was typed in its fields. */
+    approve: (id, allow, values) =>
+        api(`approvals/${encodeURIComponent(id)}`, { allow, ...(values ? { values } : {}) }),
     /** `worktree`: the session works in a git worktree of its own, made from the folder. */
     createSession: (cwd, { worktree = false } = {}) =>
         api("sessions", { cwd, ...(worktree ? { worktree } : {}) }),

@@ -1,0 +1,130 @@
+# People's values and the browser
+
+Some values must not go through Pi: a password, an API key, a one-time code. Whatever Pi reads goes to the model provider and into the transcript, where everyone in the session can read it. Since 0.22.0, four members of the host let an extension use such values without Pi seeing them, and drive the session's browser page. They are experimental: they can change in a minor release ([API versions](reference/api-versions.md)).
+
+| Member                                            | What it does                                                                             |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| [`host.ask`](reference/host.md#ask)               | Asks the person Pi works for, on a card, and gives their answer to the extension alone.  |
+| [`host.hide`](reference/host.md#hide)             | Takes a value out of command output as it streams, and out of every tool's result.       |
+| [`host.commandEnv`](reference/host.md#commandenv) | Adds environment variables to a command, so a value reaches it as `$NAME`.               |
+| [`host.browser`](reference/host.md#browser)       | The session's browser page: read its controls as data, click, type, and fill in a value. |
+
+A module that uses them checks that they are there, and adds nothing on an older server:
+
+```typescript
+if (typeof host.ask !== "function") {
+    return;
+}
+```
+
+## Ask the person
+
+`host.ask` shows a card in the session, as an approval does: a title, some words, fields, and a button. Only the person Pi works for can send it, and the app notifies them. Anyone who can steer can decline it.
+
+```typescript
+const answer = await host.ask(
+    {
+        conversationId: api.conversationId,
+        id: `${api.taskId}:${api.callId}`,
+        taskId: api.taskId,
+        callId: api.callId,
+        title: `Sign in to ${site}`,
+        fields: [
+            { name: "user", label: "Username", autocomplete: "username" },
+            { name: "password", label: "Password", secret: true, autocomplete: "current-password" },
+        ],
+        submit: "Fill in",
+    },
+    context,
+);
+
+if (!answer.answered) {
+    throw new Error(`${answer.by} declined to sign in.`);
+}
+```
+
+- The values are in `answer.values`, by field name. They are not in the transcript, nor sent to the other people in the session. A plain Allow, as from a notification, is refused: each field must be filled in.
+- With no fields, the card is a question that the button answers: "Solve the CAPTCHA in the browser, then tap Done".
+- **Do not keep the values** in `api.memo` or a document: a restart would find them there. A tool that asks is not safe to replay (the default), so a call that a restart cut off comes back as interrupted, and Pi asks again.
+- Tell Pi what happened, never the values: "Signed in as the person".
+
+## Hide a value
+
+`host.hide` keeps a value out of what Pi and people read, from now until you call the function that it returns. It becomes `[label]`:
+
+- in command output as it streams: bash's live output and its result, a `!` command's card, and Done when's checks. A value split across two chunks of output is held back until it can be told apart;
+- in every tool's result, before it is stored: what the model reads, what programs read, and its details.
+
+```typescript
+const unhide = host.hide({ value: token, label: "secret GITHUB_TOKEN" });
+
+web.onDispose(unhide);
+```
+
+Hide a value as soon as you have it, before any tool can give it back. A value is 4 characters at least: a shorter one would turn up in ordinary output by chance. `conversationId` hides it in one session only.
+
+Hiding finds the value as it is. It does not find it encoded, reversed, or cut up by a command, nor in a file that a command writes. Hide each form that you expect, such as its base64, as a value of its own. This keeps values out of transcripts by accident and by default: it is not a boundary against a command, or a model, that leaks a value on purpose. Say so to the people who use your extension.
+
+## Give a command a value
+
+`host.commandEnv` adds environment variables to commands that run in sessions. Before each command, your provider gets the command, its folder, and its session:
+
+```typescript
+web.onDispose(
+    host.commandEnv(({ command, conversationId }) => {
+        if (typeof command !== "string" || !command.includes("$GITHUB_TOKEN")) {
+            return undefined;
+        }
+
+        // Only for the owner's work: a guest's message must not use the owner's key.
+        const by = host.requesterOf(conversationId as ConversationId);
+
+        return by === ownerId ? { GITHUB_TOKEN: token } : undefined;
+    }),
+);
+```
+
+Pi then writes `curl -H "Authorization: Bearer $GITHUB_TOKEN" …`, and the shell puts the value in. The stored call keeps `$GITHUB_TOKEN`, not the value. Hide the value too: a command can print it.
+
+A provider that throws adds nothing, the command still runs, and the server's log says why. Give only the variables that the command names, and decide who may use each value: the provider runs for every command in every session, also for work that a guest's message started.
+
+## Drive the browser page
+
+`host.browser(conversationId, { open: true })` gives the session's browser page: the one that Pi's `browser` tool and the people in the session use. It is `undefined` while the Browser module is off.
+
+```typescript
+const page = await host.browser(api.conversationId, { open: true });
+const { controls } = await page.snapshot();
+const password = controls.find((control) => control.kind === "password");
+const user = controls.find((control) => control.kind === "email" || control.name.match(/user/i));
+
+await page.fill({ ref: user.ref }, answer.values.user);
+await page.fill({ ref: password.ref }, answer.values.password);
+host.hide({
+    value: answer.values.password,
+    label: "password",
+    conversationId: Number(api.conversationId),
+});
+await page.press("Enter");
+```
+
+- `snapshot()` gives the page as Pi reads it, and its controls as data: each one's ref, role, name, kind, and value. A password field's value is `••••` when it holds one, never its value.
+- `fill` puts a person's value into a field, and returns only what the field is. `type` types as Pi types.
+- `inspect` says what a target is, and whether it is a password field. A `beforeTool` hook can use it to refuse Pi's own `type` into a password field ([Hooks](hooks.md)).
+- The handle runs no script in the page. Pi's `browser` tool still can (`evaluate`), and so can read a field's value: hide the value too.
+
+## Together: a sign-in
+
+A tool `sign_in` that Pi calls when it meets a sign-in page:
+
+1. `host.browser` gives the page, and its snapshot gives the fields.
+2. `host.ask` asks the person for the username and the password.
+3. `host.hide` hides both values in this session.
+4. `fill` puts them in, and `press("Enter")` sends the form.
+5. The result tells Pi that the person signed in, with a new snapshot: never the values.
+
+## See also
+
+- [The host reference](reference/host.md#asking-people-hiding-values-and-the-browser): the members and their types.
+- [Hooks](hooks.md), to refuse a call before it runs.
+- [Limits](reference/limits.md#asking-people-and-hidden-values): sizes and counts.

@@ -22,6 +22,11 @@ import type { Schedules } from "./schedules.ts";
 import type { RepoWatches } from "./repo-watches.ts";
 import type { Watches } from "./watches.ts";
 import type { FetchPublic } from "./public-fetch.ts";
+import type { BrowserControl } from "./browser/page.ts";
+import type { CommandEnvProvider, HiddenValue } from "./hidden.ts";
+
+export type { BrowserControl } from "./browser/page.ts";
+export type { CommandEnvProvider, CommandRun, HiddenValue } from "./hidden.ts";
 
 /** A session linked to another, as `host.linkedSessions.list` gives it to the session that asks. */
 export interface LinkedSession {
@@ -96,9 +101,93 @@ export interface ApprovalRequest {
     createdAt: number;
     /** Who Pi was working for when the call asked: set by `Approvals`, not by the asker. */
     requestedBy?: string;
+    /**
+     * A question for a person instead of a call to allow (`host.ask`): what the card asks, and its fields. Only the
+     * person Pi works for answers it; anyone who can steer can decline it. Its values go to the asker, never here.
+     */
+    form?: AskForm;
 }
 
-export type ApprovalAnswer = { allow: boolean; by: string };
+/** What an ask's card shows (`ApprovalRequest.form`). */
+export type AskForm = { title: string; text?: string; fields: AskField[]; submit: string };
+
+/** The answer to an approval; an ask's also carries what the person typed, which no one else sees. */
+export type ApprovalAnswer = { allow: boolean; by: string; values?: Record<string, string> };
+
+/** One field of an ask's card. */
+export interface AskField {
+    /** The value's key in the answer: letters, digits, and _, starting with a letter. */
+    name: string;
+    /** What the card says above the field. */
+    label: string;
+    /** A hidden input, as for a password. */
+    secret?: boolean;
+    /** What the field shows while empty. */
+    placeholder?: string;
+    /** A hint for the browser and the phone's keyboard: `username`, `current-password`, `one-time-code`, … */
+    autocomplete?: string;
+}
+
+/** A question for the person Pi works for, on a card in the session (`host.ask`). */
+export interface AskRequest {
+    readonly conversationId: ConversationId;
+    /** Unique while it waits, and the same when the call asks again: `${api.taskId}:${api.callId}`. */
+    readonly id: string;
+    /** The task that asks, so the card shows on its call. */
+    readonly taskId: TaskId;
+    /** The model's tool call id, to show the answer on the call's card. */
+    readonly callId?: string;
+    /** One line: what is asked, such as "Sign in to example.com". */
+    readonly title: string;
+    /** More words, such as what to do first. */
+    readonly text?: string;
+    /** Up to 6 fields; none for a question answered with the button alone ("Done"). */
+    readonly fields?: readonly AskField[];
+    /** The button's words: "Send" by default, or "Done" with no fields. */
+    readonly submit?: string;
+}
+
+/** What the person did: answered, with the values they typed, or declined. */
+export type AskAnswer =
+    | {
+          readonly answered: true;
+          readonly by: string;
+          readonly values: Readonly<Record<string, string>>;
+      }
+    | { readonly answered: false; readonly by: string };
+
+/** What an extension points at on a page: a ref from the snapshot, a CSS selector, a visible label, or a point. */
+export interface BrowserTarget {
+    readonly ref?: string;
+    readonly selector?: string;
+    readonly label?: string;
+    readonly x?: number;
+    readonly y?: number;
+}
+
+/** A session's browser page, as extensions use it (`host.browser`). */
+export interface BrowserPageHandle {
+    /** The page's address and title now. */
+    readonly url: string;
+    readonly title: string;
+    /** The page as Pi reads it (`text`, with refs such as `[e12]`) and its controls as data. Refs last until the next. */
+    snapshot(): Promise<{ text: string; controls: BrowserControl[]; truncated: boolean }>;
+    /** What a target is: its description, its kind (an input's type, or a tag), and whether it is a field or a password. */
+    inspect(
+        target: BrowserTarget,
+    ): Promise<{ label: string; kind: string; editable: boolean; password: boolean }>;
+    navigate(url: string): Promise<void>;
+    click(target: BrowserTarget): Promise<{ label: string; navigated: boolean }>;
+    /** Type as Pi types: what is typed can be seen in the page. */
+    type(target: BrowserTarget, text: string, options?: { submit?: boolean }): Promise<string>;
+    /** Put a person's value into a field, such as a password: core never shows it, and it is not in what comes back. */
+    fill(target: BrowserTarget, value: string): Promise<string>;
+    select(target: BrowserTarget, value: string): Promise<string>;
+    press(key: string): Promise<void>;
+    scroll(target?: BrowserTarget, dy?: number): Promise<string>;
+    /** Wait until text or a selector shows: true when it did in time. */
+    waitFor(options: { text?: string; selector?: string; timeoutMs?: number }): Promise<boolean>;
+}
 
 /**
  * Tool calls waiting for a human. In memory on purpose: the guard hook runs before a call's intent is stored, so after
@@ -277,6 +366,37 @@ export interface PocketHost {
     readonly fetchPublic: FetchPublic;
     /** Who Pi works for in a conversation now: whose message led to its current work. */
     requesterOf(conversationId: ConversationId): string | undefined;
+    /**
+     * Ask the person Pi works for on a card in the session, as an approval asks: their answer, with the values they
+     * typed, goes to the extension, never to Pi or into the transcript. Do not keep the values in a memo or a document.
+     *
+     * @experimental In 0.22: it can change in a minor release (docs/extensions/policies/api-stability.md).
+     */
+    ask(request: AskRequest, context: Context): Promise<AskAnswer>;
+    /**
+     * Hide a value from what Pi and people read: command output as it streams, and every tool's result. It shows as
+     * `[label]`. Returns how to stop; pass that to `web.onDispose`.
+     *
+     * @experimental In 0.22: it can change in a minor release (docs/extensions/policies/api-stability.md).
+     */
+    hide(value: HiddenValue): () => void;
+    /**
+     * Add environment variables to the commands Pi and people run in sessions (bash, `!` commands, checks), chosen for
+     * each command. Returns how to stop; pass that to `web.onDispose`.
+     *
+     * @experimental In 0.22: it can change in a minor release (docs/extensions/policies/api-stability.md).
+     */
+    commandEnv(provider: CommandEnvProvider): () => void;
+    /**
+     * A session's browser page, the one Pi and people use: opened when `open` is true, else only when it is open
+     * already. Undefined while the Browser module is off, or with no page.
+     *
+     * @experimental In 0.22: it can change in a minor release (docs/extensions/policies/api-stability.md).
+     */
+    browser(
+        conversationId: ConversationId,
+        options?: { open?: boolean },
+    ): Promise<BrowserPageHandle | undefined>;
     /** Report something odd to the log and the connected clients: with `conversationId`, to that session's tabs only. */
     notice(
         level: "info" | "warning" | "error",

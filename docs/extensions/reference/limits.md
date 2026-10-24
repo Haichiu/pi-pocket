@@ -96,6 +96,17 @@ All the numbers that limit a module, in one place. Each group links to the guide
 - **Events that a version of a module sends:** 100 each second at most, and 1 MB of them. The rest of that second's events are dropped.
 - **A tab that falls behind:** Pi Pocket cuts it off when it is more than 8 MB behind and takes nothing for 30 s. It also cuts off a tab that is more than 128 MB behind. The tab then connects again, with no old events.
 
+## Asking people and hidden values
+
+[People's values and the browser](../people-values.md)
+
+- **An ask's card:** a title of 120 characters, words of 2000, up to 6 fields, and a button of 30 characters. A field's name is up to 40 characters, its label up to 80.
+- **A value typed on a card:** 1 to 4096 characters.
+- **A hidden value:** 4 to 4096 characters, and 2000 values hidden at once in all.
+- **What streams late:** command output holds back up to the longest hidden value's length less one character, until the command ends.
+- **Variables for one command:** 256 KB in all; a name is up to 128 characters.
+- **A snapshot's controls as data:** 500 at most; a select's options, 50.
+
 ## Public links
 
 [Public pages](../public-pages.md)

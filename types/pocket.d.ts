@@ -21,6 +21,7 @@ import type {
     DocumentReader,
     Extension,
     ModelRef,
+    TaskId,
     Tx,
 } from "@earendil-works/pi-durable";
 import type { ComponentType, Fragment, FunctionComponent, h, VNode } from "preact";
@@ -181,6 +182,33 @@ export interface Host {
      */
     requesterOf(conversationId: ConversationId): string | undefined;
     /**
+     * Asks the person Pi works for on a card in the session: their answer, with what they typed, goes to the extension, never to Pi or into the transcript. Do not keep the values in a memo or a document.
+     * @since 0.22.0
+     * @experimental
+     */
+    ask(request: AskRequest, context: Context): Promise<AskAnswer>;
+    /**
+     * Hides a value from what Pi and people read: command output as it streams, and each tool's result. It shows as `[label]`. Returns how to stop: pass it to `web.onDispose`.
+     * @since 0.22.0
+     * @experimental
+     */
+    hide(value: HiddenValue): () => void;
+    /**
+     * Adds environment variables to the commands that run in sessions (bash, `!` commands, checks), chosen for each command. Returns how to stop: pass it to `web.onDispose`.
+     * @since 0.22.0
+     * @experimental
+     */
+    commandEnv(provider: CommandEnvProvider): () => void;
+    /**
+     * A session's browser page, the one Pi and people use: opened when `open` is true, else only when it is open already. Undefined while the Browser module is off.
+     * @since 0.22.0
+     * @experimental
+     */
+    browser(
+        conversationId: ConversationId,
+        options?: { open?: boolean },
+    ): Promise<BrowserPageHandle | undefined>;
+    /**
      * Reports something to the server log and to the app. With `conversationId` (since 0.13.1), only that session's
      * tabs show it.
      * @since 0.1.0
@@ -240,6 +268,368 @@ export interface SafeText {
      * @since 0.14.0
      */
     defang(text: string): string;
+}
+
+/**
+ * A question for the person Pi works for, on a card in the session (`host.ask`).
+ * @since 0.22.0
+ * @experimental
+ */
+export interface AskRequest {
+    /**
+     * The session to ask in.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly conversationId: ConversationId;
+    /**
+     * Unique while it waits, and the same when the call asks again: `${api.taskId}:${api.callId}`.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly id: string;
+    /**
+     * The task that asks, so the card shows with its call.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly taskId: TaskId;
+    /**
+     * The model's tool call id, to show the answer on the call's card.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly callId?: string;
+    /**
+     * One line: what is asked, such as "Sign in to example.com".
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly title: string;
+    /**
+     * More words, up to 2000 characters.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly text?: string;
+    /**
+     * Up to 6 fields; none for a question answered with the button alone.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly fields?: readonly AskField[];
+    /**
+     * The button's words: "Send" by default, "Done" with no fields.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly submit?: string;
+}
+
+/**
+ * One field of an ask's card.
+ * @since 0.22.0
+ * @experimental
+ */
+export interface AskField {
+    /**
+     * The value's key in the answer: letters, digits, and _, starting with a letter.
+     * @since 0.22.0
+     * @experimental
+     */
+    name: string;
+    /**
+     * What the card says above the field.
+     * @since 0.22.0
+     * @experimental
+     */
+    label: string;
+    /**
+     * A hidden input, as for a password.
+     * @since 0.22.0
+     * @experimental
+     */
+    secret?: boolean;
+    /**
+     * What the field shows while empty.
+     * @since 0.22.0
+     * @experimental
+     */
+    placeholder?: string;
+    /**
+     * A hint for the browser and the phone's keyboard, such as `current-password` or `one-time-code`.
+     * @since 0.22.0
+     * @experimental
+     */
+    autocomplete?: string;
+}
+
+/**
+ * What the person did with an ask: answered, with what they typed in each field, or declined.
+ * @since 0.22.0
+ * @experimental
+ */
+export type AskAnswer =
+    | {
+          readonly answered: true;
+          readonly by: string;
+          readonly values: Readonly<Record<string, string>>;
+      }
+    | { readonly answered: false; readonly by: string };
+
+/**
+ * A value core hides (`host.hide`).
+ * @since 0.22.0
+ * @experimental
+ */
+export interface HiddenValue {
+    /**
+     * The text to hide: 4 to 4096 characters.
+     * @since 0.22.0
+     * @experimental
+     */
+    value: string;
+    /**
+     * What shows in its place, as `[label]`: letters, digits, spaces, and _ . : -.
+     * @since 0.22.0
+     * @experimental
+     */
+    label: string;
+    /**
+     * Only in this session; absent: in every session.
+     * @since 0.22.0
+     * @experimental
+     */
+    conversationId?: number;
+}
+
+/**
+ * A command about to run, as a `host.commandEnv` provider gets it.
+ * @since 0.22.0
+ * @experimental
+ */
+export interface CommandRun {
+    /**
+     * The session it runs in.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly conversationId: number;
+    /**
+     * The command as the shell gets it, or a program and its arguments.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly command: string | readonly string[];
+    /**
+     * The folder it runs in.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly cwd: string;
+}
+
+/**
+ * Gives the environment variables to add to one command, or nothing.
+ * @since 0.22.0
+ * @experimental
+ */
+export type CommandEnvProvider = (
+    run: CommandRun,
+) => Record<string, string> | undefined | Promise<Record<string, string> | undefined>;
+
+/**
+ * What an extension points at on a page: a ref from the snapshot, a CSS selector, a visible label, or a point.
+ * @since 0.22.0
+ * @experimental
+ */
+export interface BrowserTarget {
+    /**
+     * A ref from the last snapshot, such as `e12`.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly ref?: string;
+    /**
+     * A CSS selector.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly selector?: string;
+    /**
+     * The element's visible text or label.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly label?: string;
+    /**
+     * A point in CSS pixels of the viewport, with `y`.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly x?: number;
+    /**
+     * A point in CSS pixels of the viewport, with `x`.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly y?: number;
+}
+
+/**
+ * One control of a page's snapshot, as data. A password field's value is `••••` when it holds one.
+ * @since 0.22.0
+ * @experimental
+ */
+export interface BrowserControl {
+    /**
+     * Its ref, until the next snapshot.
+     * @since 0.22.0
+     * @experimental
+     */
+    ref: string;
+    /**
+     * Its role: `button`, `link`, `textbox`, `checkbox`, …, or `clickable`.
+     * @since 0.22.0
+     * @experimental
+     */
+    role: string;
+    /**
+     * Its accessible name.
+     * @since 0.22.0
+     * @experimental
+     */
+    name: string;
+    /**
+     * An input's type (`text`, `password`, `email`, …), `textarea`, `select`, or the element's tag.
+     * @since 0.22.0
+     * @experimental
+     */
+    kind: string;
+    /**
+     * Whether it is disabled.
+     * @since 0.22.0
+     * @experimental
+     */
+    disabled: boolean;
+    /**
+     * Whether it is in the viewport now.
+     * @since 0.22.0
+     * @experimental
+     */
+    inView: boolean;
+    /**
+     * A field's or a select's value.
+     * @since 0.22.0
+     * @experimental
+     */
+    value?: string;
+    /**
+     * A field's placeholder.
+     * @since 0.22.0
+     * @experimental
+     */
+    placeholder?: string;
+    /**
+     * A checkbox's or radio button's state.
+     * @since 0.22.0
+     * @experimental
+     */
+    checked?: boolean;
+    /**
+     * A select's options, up to 50.
+     * @since 0.22.0
+     * @experimental
+     */
+    options?: string[];
+    /**
+     * A link's address.
+     * @since 0.22.0
+     * @experimental
+     */
+    href?: string;
+}
+
+/**
+ * A session's browser page, as extensions use it (`host.browser`).
+ * @since 0.22.0
+ * @experimental
+ */
+export interface BrowserPageHandle {
+    /**
+     * The page's address now.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly url: string;
+    /**
+     * The page's title now.
+     * @since 0.22.0
+     * @experimental
+     */
+    readonly title: string;
+    /**
+     * The page as Pi reads it, with refs such as `[e12]`, and its controls as data. Refs last until the next snapshot.
+     * @since 0.22.0
+     * @experimental
+     */
+    snapshot(): Promise<{ text: string; controls: BrowserControl[]; truncated: boolean }>;
+    /**
+     * What a target is: its description, its kind, and whether it is a field or a password field.
+     * @since 0.22.0
+     * @experimental
+     */
+    inspect(
+        target: BrowserTarget,
+    ): Promise<{ label: string; kind: string; editable: boolean; password: boolean }>;
+    /**
+     * Opens an http(s) address, host:port, or a file path.
+     * @since 0.22.0
+     * @experimental
+     */
+    navigate(url: string): Promise<void>;
+    /**
+     * Clicks a target.
+     * @since 0.22.0
+     * @experimental
+     */
+    click(target: BrowserTarget): Promise<{ label: string; navigated: boolean }>;
+    /**
+     * Types into a target as Pi types.
+     * @since 0.22.0
+     * @experimental
+     */
+    type(target: BrowserTarget, text: string, options?: { submit?: boolean }): Promise<string>;
+    /**
+     * Puts a person's value into a field, such as a password: the value is not in what comes back.
+     * @since 0.22.0
+     * @experimental
+     */
+    fill(target: BrowserTarget, value: string): Promise<string>;
+    /**
+     * Picks an option of a select element by its value or text.
+     * @since 0.22.0
+     * @experimental
+     */
+    select(target: BrowserTarget, value: string): Promise<string>;
+    /**
+     * Presses a key or a combination, such as `Enter`.
+     * @since 0.22.0
+     * @experimental
+     */
+    press(key: string): Promise<void>;
+    /**
+     * Scrolls a target into view, or the page by `dy` pixels.
+     * @since 0.22.0
+     * @experimental
+     */
+    scroll(target?: BrowserTarget, dy?: number): Promise<string>;
+    /**
+     * Waits until text or a selector shows: true when it did in time.
+     * @since 0.22.0
+     * @experimental
+     */
+    waitFor(options: { text?: string; selector?: string; timeoutMs?: number }): Promise<boolean>;
 }
 
 /**

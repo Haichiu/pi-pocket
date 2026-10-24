@@ -28,6 +28,8 @@ import {
     createRegistry,
     defineExtension,
     type DocumentCommitChange,
+    hook,
+    ToolTask,
     Harness,
     type HarnessSettings,
     LiveDoc,
@@ -38,6 +40,7 @@ import {
     UsageDoc,
     type UsageState,
 } from "@earendil-works/pi-durable";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
@@ -105,6 +108,8 @@ import { ResendTask } from "./resend.ts";
 import { type Client, reportingOf, Room, ROOM_DOCS, subagentView } from "./room.ts";
 import { Schedules } from "./schedules.ts";
 import { Shares } from "./share.ts";
+import { CommandEnvs, HiddenValues, wrapEnv } from "./hidden.ts";
+import { ask, browserFor, checkValues } from "./extension-points.ts";
 import { PublicLinks } from "./public-links.ts";
 import { Shell } from "./shell.ts";
 import {
@@ -314,6 +319,10 @@ export class PocketApp {
     readonly shares = new Shares(this);
     /** Extension modules' pages for anyone with the address (`public-links.ts`), which need no sign-in. */
     readonly publicLinks = new PublicLinks(this);
+    /** Values extensions hide from what commands and tools give back (`hidden.ts`, `host.hide`). */
+    readonly hidden = new HiddenValues();
+    /** What extensions add to the environment of each command (`hidden.ts`, `host.commandEnv`). */
+    readonly commandEnvs = new CommandEnvs((line) => this.#log(line));
     /** Other people's drop-ins, from a reviewed index: found, installed off, read, updated, removed (`gallery.ts`). */
     readonly gallery = new Gallery(this);
     /** Theme folders: the app's look and layout, built in and the owner's (`themes.ts`). */
@@ -645,6 +654,16 @@ export class PocketApp {
                     this.commands.followTask,
                     this.extensionCommands.task,
                 ],
+                // Values extensions hide (`host.hide`) leave every tool's result before it is stored.
+                hooks: [
+                    hook(ToolTask, {
+                        afterTool: (_call, result, api) => {
+                            const cleaned = this.hidden.result(result, api.conversationId);
+
+                            return cleaned === result ? undefined : cleaned;
+                        },
+                    }),
+                ],
             }),
         );
         const host: PocketHost = {
@@ -680,6 +699,16 @@ export class PocketApp {
             },
             fetchPublic: createPublicFetch(),
             requesterOf: (conversationId) => this.attribution.requesterOf(conversationId),
+            ask: (request, askContext) => ask(this.approvals, request, askContext),
+            hide: (value) => this.hidden.add(value),
+            commandEnv: (provider) => this.commandEnvs.add(provider),
+            browser: (conversationId, options) =>
+                browserFor(
+                    this.browsers,
+                    () => this.browserOn(),
+                    Number(conversationId),
+                    options?.open === true,
+                ),
             notice: (level, message, conversationId) => this.notice(level, message, conversationId),
             heldBack: (conversationId) => this.spend.heldBack(conversationId),
             onLimitsChanged: (listener) => this.spend.onLimitsChanged(listener),
@@ -741,7 +770,8 @@ export class PocketApp {
                 registry,
                 settings: this.#harnessSettings(),
                 now: this.now,
-                env: ({ cwd }) => this.#env(cwd ?? this.defaultCwd),
+                env: ({ conversationId, cwd }) =>
+                    this.#wrapped(conversationId, cwd ?? this.defaultCwd),
                 conversationCreated: async (tx, conversation) => {
                     // Every conversation gets the app's documents up front, so views can read them from the start.
                     await tx.doc(AuthorsDoc, conversation.id);
@@ -1128,8 +1158,13 @@ export class PocketApp {
     }
 
     /** Where a conversation's commands run: its folder on this machine. */
-    envFor(id: ConversationId): NodeExecutionEnv {
-        return this.#env(this.cwdOf(id));
+    envFor(id: ConversationId): ExecutionEnv {
+        return this.#wrapped(id, this.cwdOf(id));
+    }
+
+    /** A folder's environment, with what extensions add to each command and hide from its output in this session. */
+    #wrapped(id: ConversationId, cwd: string): ExecutionEnv {
+        return wrapEnv(this.#env(cwd), Number(id), cwd, this.commandEnvs, this.hidden);
     }
 
     #env(cwd: string): NodeExecutionEnv {
@@ -2261,6 +2296,17 @@ export class PocketApp {
             return "You can view this session but not steer Pi.";
         }
 
+        // An ask (`host.ask`) is answered by the person Pi works for: what it asks for is theirs. With nobody known, the
+        // owner answers it. Anyone who can steer can decline it.
+        if (request.form !== undefined) {
+            const answerer =
+                request.requestedBy ?? this.config.users.find((each) => each.role === "owner")?.id;
+
+            return answerer === user.id
+                ? undefined
+                : "Only the person Pi works for here can answer this.";
+        }
+
         if (this.config.approvalRule !== "others" || user.role === "owner") {
             return undefined;
         }
@@ -2275,7 +2321,12 @@ export class PocketApp {
             : undefined;
     }
 
-    async answerApproval(id: string, allow: boolean, user: User): Promise<boolean> {
+    async answerApproval(
+        id: string,
+        allow: boolean,
+        user: User,
+        values?: unknown,
+    ): Promise<boolean> {
         this.requireSteer(user);
         const request = this.approvals.all().find((each) => each.id === id);
 
@@ -2289,7 +2340,24 @@ export class PocketApp {
             throw new HttpError(403, refused);
         }
 
-        if (!this.approvals.answer(id, { allow, by: user.name })) {
+        let given: Record<string, string> | undefined;
+
+        // An ask's answer is what was typed, each field filled in: a plain Allow (from a notification, say) is not one.
+        if (allow && request.form !== undefined) {
+            try {
+                given = checkValues(request.form.fields, values);
+            } catch (error) {
+                throw new HttpError(400, describe(error));
+            }
+        }
+
+        if (
+            !this.approvals.answer(id, {
+                allow,
+                by: user.name,
+                ...(given === undefined ? {} : { values: given }),
+            })
+        ) {
             return false;
         }
 
@@ -2305,6 +2373,7 @@ export class PocketApp {
                         by: user.name,
                         userId: user.id,
                         at: Date.now(),
+                        ...(request.form === undefined ? {} : { ask: true as const }),
                     };
                 }, context)
                 .catch((error: unknown) => this.#log(`decision not recorded: ${describe(error)}`));
