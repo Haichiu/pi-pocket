@@ -101,14 +101,23 @@ async function readForm(request: IncomingMessage, token: string): Promise<Record
     reading += 1;
     readingBy.set(token, (readingBy.get(token) ?? 0) + 1);
 
-    const timer = setTimeout(
-        () => request.destroy(new HttpError(408, "The form took too long to arrive.")),
-        linkReads.timeoutMs,
-    );
+    // Past its time, the form is let go of without closing the connection, so the person gets a page that says why;
+    // the answer closes the connection after it (`linkRoute`).
+    let timer: NodeJS.Timeout | undefined;
+    const tooLate = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+            request.pause();
+            reject(new HttpError(408, "The form took too long to arrive."));
+        }, linkReads.timeoutMs);
+    });
+    const read = readBody(request, MAX_FORM);
     let body: Buffer;
 
+    // The read that lost the race ends when the connection does; that is no error of anyone's.
+    read.catch(() => {});
+
     try {
-        body = await readBody(request, MAX_FORM);
+        body = await Promise.race([read, tooLate]);
     } catch (error) {
         if (error instanceof HttpError) {
             throw error;
@@ -170,6 +179,11 @@ export async function linkRoute(
             form = await readForm(request, link.token);
         } catch (error) {
             const status = error instanceof HttpError ? error.status : 400;
+
+            // What is left of a body that took too long is not read: the connection closes after this page.
+            if (status === 408) {
+                response.setHeader("connection", "close");
+            }
 
             return answerPage(
                 response,

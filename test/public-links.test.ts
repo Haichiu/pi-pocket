@@ -284,6 +284,47 @@ test("a page that never answers is given up at its time, and holds no place afte
     }
 });
 
+test("a form that arrives too slowly gets a page that says so, not a dropped connection", async () => {
+    const link = await make({ hours: 1, data: { n: 13 } });
+    const was = linkReads.timeoutMs;
+
+    linkReads.timeoutMs = 150;
+
+    try {
+        const { request } = await import("node:http");
+        const answer = await new Promise<{ status: number; text: string }>((resolve, reject) => {
+            const post = request(
+                `${base}${link.path}`,
+                {
+                    method: "POST",
+                    headers: {
+                        "content-type": "application/x-www-form-urlencoded",
+                        "content-length": "100",
+                    },
+                },
+                (response) => {
+                    let text = "";
+
+                    response.setEncoding("utf8");
+                    response.on("data", (chunk: string) => (text += chunk));
+                    response.on("end", () => resolve({ status: response.statusCode ?? 0, text }));
+                },
+            );
+
+            post.on("error", reject);
+            // A little of the body, and then nothing more.
+            post.write("answer=slow");
+        });
+
+        assert.equal(answer.status, 408);
+        assert.match(answer.text, /took too long to arrive/);
+        // The link still takes its answer.
+        assert.equal((await open(link.path)).status, 200);
+    } finally {
+        linkReads.timeoutMs = was;
+    }
+});
+
 test("a link closes at its time", async () => {
     const link = await make({ hours: 2, data: { n: 5 } });
 
