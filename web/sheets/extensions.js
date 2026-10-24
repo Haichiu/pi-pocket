@@ -186,21 +186,22 @@ function GalleryPart({ module, installed, busy, turnOff }) {
 
 /** When PiP compacts its own context: once idle above so many tokens (`pip-compact.ts`), or only as sessions do. */
 const PIP_COMPACT = [
+    [0, "As sessions do"],
     [40000, "Above 40k tokens"],
     [60000, "Above 60k tokens"],
     [100000, "Above 100k tokens"],
-    [0, "As sessions do"],
 ];
 
 function PipCompactAt({ owner }) {
-    const at = store.state.server?.pipCompactAt ?? 60000;
+    const at = store.state.server?.pipCompactAt ?? 0;
     const change = (value) => attempt(() => api("settings", { pipCompactAt: value }));
 
     return html`<div class="setting wrap">
         <div class="grow">
             <div class="small">Compact PiP's context</div>
             <div class="muted small">
-                Once PiP is idle above this, older messages become a short summary.
+                When PiP's older messages become a short summary: as a session's do, or sooner,
+                once PiP is idle above a limit, which keeps each reply cheaper.
             </div>
         </div>
         <div class="segmented" role="group" aria-label="Compact PiP's context">
