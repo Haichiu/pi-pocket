@@ -780,7 +780,13 @@ export class Commands {
             request.inlineFiles === true
                 ? await this.#mentionedFiles(id, user, typed, model.input.includes("image"))
                 : [];
-        const parts: (TextContent | ImageContent)[] = [{ type: "text", text: body }, ...mentioned];
+        // A file's text that a message brings along hides what extensions hide (`host.hide`), as the message does.
+        const parts: (TextContent | ImageContent)[] = [
+            { type: "text", text: body },
+            ...mentioned.map((part) =>
+                part.type === "text" ? { ...part, text: app.hidden.replace(part.text, id) } : part,
+            ),
+        ];
 
         for (const file of attachments) {
             if (
@@ -834,6 +840,11 @@ export class Commands {
             await app.collab.activity(id, user, "interrupted the run");
         }
 
+        // A retry of a request finds its first submission: it is no new message, and no event goes out for it again.
+        const known =
+            app.pip.ownerOf(id) === undefined &&
+            (await app.harness.commit((tx) => tx.submissionByRequest(id, requestId), context)) !==
+                undefined;
         const submission = await conversation
             .submit(
                 {
@@ -863,8 +874,9 @@ export class Commands {
             await this.#followFailure(id, user, failure, requestId);
         }
 
-        // For extensions (`host.on`): PiP's conversation is its person's alone.
-        if (app.pip.ownerOf(id) === undefined) {
+        // For extensions (`host.on`): once for each message (two retries at once, too), never for PiP's conversation,
+        // which is its person's alone.
+        if (app.pip.ownerOf(id) === undefined && !known && this.#announce(submission.id)) {
             app.events.emit("message.sent", {
                 conversationId: Number(id),
                 by: user.id,
@@ -875,6 +887,27 @@ export class Commands {
         }
 
         return { submissionId: submission.id, requestId };
+    }
+
+    /** Submissions `message.sent` went out for lately: a retry that raced its first try finds its id here. */
+    readonly #announced = new Set<string>();
+
+    /** Whether to send `message.sent` for a submission: once only, as far as this process knows. */
+    #announce(submissionId: unknown): boolean {
+        const key = String(submissionId);
+
+        if (this.#announced.has(key)) {
+            return false;
+        }
+
+        this.#announced.add(key);
+
+        // The newest few hundred are enough: a retry comes within seconds.
+        if (this.#announced.size > 500) {
+            this.#announced.delete(this.#announced.values().next().value!);
+        }
+
+        return true;
     }
 
     /** When a subagent (`id`, its conversation) failed, if it is failed now (not stopped); undefined otherwise. */

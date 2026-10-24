@@ -168,6 +168,8 @@ export interface ExtensionInfo {
         access?: WebAccess;
         commands?: string[];
         publicPage?: boolean;
+        service?: boolean;
+        settings?: boolean;
     };
     /** Why the module is not loaded, when it failed. */
     error?: string;

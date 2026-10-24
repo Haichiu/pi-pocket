@@ -112,7 +112,7 @@ All the numbers that limit a module, in one place. Each group links to the guide
 - **A value typed on a card:** 1 to 4096 characters.
 - **A hidden value:** 4 to 4096 characters, and 2000 values hidden at once in all.
 - **What streams late:** command output holds back up to the longest hidden value's length less one character, until the command ends.
-- **Variables for one command:** 256 KB in all; a name is up to 128 characters.
+- **Variables for one command:** 256 KB in all; a name is up to 128 characters. A provider has 5 seconds for one command; past that, it adds nothing.
 - **A snapshot's controls as data:** 500 at most; a select's options, 50.
 
 ## Public links

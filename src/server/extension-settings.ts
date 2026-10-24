@@ -266,5 +266,16 @@ export function shownSettings(
         values[field.name] = settingValue(field, stored) ?? null;
     }
 
-    return { fields: fields.map((field) => ({ ...field })), values, set };
+    // A secret's default is a secret too (it may come from the server's environment): browsers get neither.
+    const shown = fields.map((field) => {
+        if (field.type === "text" && field.secret === true && !withSecrets) {
+            const { default: _default, ...rest } = field;
+
+            return { ...rest, hasDefault: _default !== undefined } as SettingField;
+        }
+
+        return { ...field };
+    });
+
+    return { fields: shown, values, set };
 }

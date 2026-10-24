@@ -6,7 +6,9 @@ import { BrowserError, type Connection, type Json } from "./cdp.ts";
 import { KEYS, keyEvents, parseKeys } from "./keys.ts";
 import {
     DESCRIBE_FUNCTION,
+    FOCUSED_SCRIPT,
     LOCATE_SCRIPT,
+    POINT_SCRIPT,
     SELECT_ALL_SCRIPT,
     SELECT_OPTION_SCRIPT,
     SNAPSHOT_SCRIPT,
@@ -1135,13 +1137,37 @@ export class BrowserPage {
         this.usedAt = Date.now();
         const found = await this.locate(target);
 
+        // A value goes into the field named, or nowhere: never into whatever else a click or the focus found.
+        if (
+            typeof target.x === "number" &&
+            target.ref === undefined &&
+            target.selector === undefined &&
+            target.label === undefined
+        ) {
+            throw new BrowserError("Fill a field by its ref, selector, or label, not by a point.");
+        }
+
         if (found.editable !== true || found.kind === "select") {
             throw new BrowserError(`${found.label} is not a field to fill in.`);
         }
 
+        if (found.covered !== undefined) {
+            throw new BrowserError(
+                `${found.label} is covered by ${found.covered}: nothing was filled in.`,
+            );
+        }
+
         await this.#click({ x: found.x, y: found.y }, "left", 1);
 
+        if ((await this.#evaluate(FOCUSED_SCRIPT)) !== true) {
+            throw new BrowserError(`${found.label} did not take the focus: nothing was filled in.`);
+        }
+
         const field = await this.#evaluate(SELECT_ALL_SCRIPT);
+
+        if (field === "none") {
+            throw new BrowserError(`${found.label} cannot be typed into: nothing was filled in.`);
+        }
 
         if (field === "keys") {
             await this.#key("a", 2);
@@ -1156,6 +1182,14 @@ export class BrowserPage {
         }
 
         return found.label;
+    }
+
+    /** What is at a point of the viewport, without acting on it. */
+    async describeAt(
+        x: number,
+        y: number,
+    ): Promise<{ label: string; kind: string; editable: boolean; password: boolean }> {
+        return await this.#evaluate(`(${POINT_SCRIPT})(${Number(x)}, ${Number(y)})`);
     }
 
     async press(combo: string, options: { signal?: AbortSignal } = {}): Promise<void> {

@@ -231,13 +231,36 @@ export async function linkRoute(
 
     let status = 200;
     let html: string;
-    const deadline = setTimeout(() => {
-        gone.abort();
-        done.abort();
-    }, linkReads.handlerMs);
+    let deadline: NodeJS.Timeout | undefined;
+    // Past its time, or when the browser goes, the handler is not waited for: a handler that ignores the abort must not
+    // keep its place among those running. What it does after is refused (its context has ended), and a late failure is
+    // only logged.
+    const stopped = new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => {
+            // First the reason, then the aborts: a promise settles once.
+            reject(new HttpError(504, "This page took too long. Try again later."));
+            gone.abort();
+            done.abort();
+        }, linkReads.handlerMs);
+        gone.signal.addEventListener("abort", () =>
+            reject(new HttpError(499, "The browser stopped waiting.")),
+        );
+    });
+
+    stopped.catch(() => {});
 
     try {
-        const answer = await page.handle(Object.freeze(input));
+        const handled = Promise.resolve().then(() => page.handle(Object.freeze(input)));
+
+        handled.catch((error: unknown) => {
+            if (done.signal.aborted) {
+                app.log(
+                    `${page.part.file}: a public page failed after it was stopped: ${describe(error)}`,
+                );
+            }
+        });
+
+        const answer = await Promise.race([handled, stopped]);
 
         if (typeof answer === "string") {
             html = answer;
@@ -258,7 +281,11 @@ export async function linkRoute(
             throw new Error(`web.publicPage: a page is ${MAX_PAGE} bytes at most`);
         }
     } catch (error) {
-        const exposed = exposedError(error);
+        const exposed =
+            exposedError(error) ??
+            (error instanceof HttpError
+                ? { status: error.status, message: error.message }
+                : undefined);
 
         if (exposed === undefined) {
             app.log(`${page.part.file}: a public page failed: ${describe(error)}`);

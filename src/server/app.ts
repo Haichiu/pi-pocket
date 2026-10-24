@@ -324,7 +324,9 @@ export class PocketApp {
     /** What happens in the app, for extensions (`app-events.ts`, `host.on`). */
     readonly events = new AppEventBus((line) => this.#log(line));
     /** Values extensions hide from what commands and tools give back (`hidden.ts`, `host.hide`). */
-    readonly hidden = new HiddenValues();
+    readonly hidden = new HiddenValues((id) =>
+        Number(this.rootOf(id as unknown as ConversationId)),
+    );
     /** What extensions add to the environment of each command (`hidden.ts`, `host.commandEnv`). */
     readonly commandEnvs = new CommandEnvs((line) => this.#log(line));
     /** Other people's drop-ins, from a reviewed index: found, installed off, read, updated, removed (`gallery.ts`). */

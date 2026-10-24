@@ -107,12 +107,15 @@ export default function setup(pocket) {
     };
 
     const load = (conversation) => {
+        // Another session: nothing of the one before shows while its questions load.
+        if (conversation !== shown) {
+            questions = [];
+            publish();
+        }
+
         shown = conversation;
 
         if (conversation === null) {
-            questions = [];
-            publish();
-
             return;
         }
 
@@ -148,8 +151,13 @@ export default function setup(pocket) {
         return questions;
     };
 
-    const call = (path, body, method) =>
-        pocket.api(`questions/${shown}${path}`, body, method ? { method } : undefined);
+    /** A route of one question, in its own session: never the one the tab moved to meanwhile. */
+    const call = (question, path, body, method) =>
+        pocket.api(
+            `questions/${question.conversation}${path}`,
+            body,
+            method ? { method } : undefined,
+        );
 
     const address = (link) => link.url ?? `${location.origin}${link.path}`;
 
@@ -174,15 +182,15 @@ export default function setup(pocket) {
             }
         };
 
-        const save = () => run(() => call(`/${question.id}`, { title, text }, "PUT"));
+        const save = () => run(() => call(question, `/${question.id}`, { title, text }, "PUT"));
 
         const share = () =>
             run(async () => {
                 if (edited) {
-                    await call(`/${question.id}`, { title, text }, "PUT");
+                    await call(question, `/${question.id}`, { title, text }, "PUT");
                 }
 
-                const { link } = await call(`/${question.id}/link`, { hours });
+                const { link } = await call(question, `/${question.id}/link`, { hours });
 
                 if (await copy(address(link))) {
                     pocket.notify("info", "Link copied. It takes one answer.");
@@ -233,7 +241,7 @@ export default function setup(pocket) {
                 <button
                     class="button"
                     disabled=${busy}
-                    onClick=${() => run(() => call(`/${question.id}`, undefined, "DELETE"))}
+                    onClick=${() => run(() => call(question, `/${question.id}`, undefined, "DELETE"))}
                 >
                     Delete
                 </button>
@@ -272,7 +280,7 @@ export default function setup(pocket) {
         const where = link ? address(link) : "";
 
         const end = () =>
-            call(`/${question.id}/link`, undefined, "DELETE").catch((failure) =>
+            call(question, `/${question.id}/link`, undefined, "DELETE").catch((failure) =>
                 setError(failure.message),
             );
 
@@ -350,10 +358,18 @@ export default function setup(pocket) {
         const answer = question.answer;
 
         const give = async () => {
+            // The message box is the session the tab shows: only an answer of that session goes into it.
+            if (question.conversation !== pocket.conversationId()) {
+                pocket.notify("warning", "That answer belongs to another session.");
+                close();
+
+                return;
+            }
+
             pocket.insertText(answerMessage(question));
 
             try {
-                await call(`/${question.id}/used`, {});
+                await call(question, `/${question.id}/used`, {});
             } catch {
                 // It is in the message box either way.
             }
@@ -375,7 +391,7 @@ export default function setup(pocket) {
                 <button
                     class="button"
                     onClick=${() =>
-                        call(`/${question.id}`, undefined, "DELETE").catch((failure) =>
+                        call(question, `/${question.id}`, undefined, "DELETE").catch((failure) =>
                             setError(failure.message),
                         )}
                 >

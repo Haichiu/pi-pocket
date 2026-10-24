@@ -4706,11 +4706,11 @@ pre.diff .del {
 }
 
 .session-row.with-fold .session {
-    padding-right: 52px;
+    padding-right: 64px;
 }
 
 .session-row.with-fold .session-actions {
-    right: 50px;
+    right: 62px;
 }
 
 /* Chips take a line under the title: the fold stays beside the title's line. */
@@ -15253,7 +15253,7 @@ textarea.notes {
 }
 
 .pip-pending-withdraw {
-    min-height: 32px;
+    min-height: 40px;
     padding: 0 4px;
     color: var(--accent);
     font: inherit;

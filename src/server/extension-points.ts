@@ -198,7 +198,20 @@ export function browserHandle(page: BrowserPage): BrowserPageHandle {
             };
         },
         inspect: async (at: BrowserTarget) => {
-            const found = await page.locate(target(at, "inspect"));
+            const where = target(at, "inspect");
+
+            // A point names what is there: a hook that guards password fields must see one Pi points at by x and y.
+            if (
+                typeof where.x === "number" &&
+                typeof where.y === "number" &&
+                where.ref === undefined &&
+                where.selector === undefined &&
+                where.label === undefined
+            ) {
+                return await page.describeAt(where.x, where.y);
+            }
+
+            const found = await page.locate(where);
 
             return {
                 label: found.label,

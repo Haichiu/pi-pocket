@@ -1,6 +1,6 @@
 // App state, the server connection, and API calls. Components read `store.state` and re-render on `store.subscribe`.
 import { onRoute, pushRoute } from "./back.js";
-import { sessionForest } from "./session-tree.js";
+import { sessionForest, unfolded } from "./session-tree.js";
 import { liveMessage } from "./live.js";
 
 /** A random id. crypto.randomUUID only exists on https and localhost pages; plain-http network addresses lack it. */
@@ -104,6 +104,9 @@ function readExtPanel() {
     }
 }
 
+/** Where this browser keeps the sessions whose linked sessions are folded away (`toggleFoldedLinked`). */
+const FOLDED_LINKED_KEY = "pocket.foldedLinked";
+
 export const store = {
     state: {
         me: undefined, // undefined: unknown, null: signed out
@@ -123,6 +126,8 @@ export const store = {
         /** Sessions marked unread in this browser: an id each, until opened again. */
         unread: unreadOf(),
         conversationId: routeConversation(),
+        /** Sessions whose linked sessions are folded away in the list: this browser's choice (`toggleFoldedLinked`). */
+        foldedLinked: readFoldedLinked(),
         view: emptyView(),
         /** How far this browser has read each session's chat, by id: what `pocket.chatRead.<id>` keeps. */
         chatReads: firstReads,
@@ -294,16 +299,23 @@ export function sessionUnread(session, state = store.state) {
  * (`session-tree.js`). Archived sessions are left out.
  */
 export function workspaceOrder(state = store.state) {
-    const { sessions, pinned: pins } = state;
+    const { sessions, pinned: pins, foldedLinked, conversationId } = state;
 
     // The list, the rail, the home screen, and peek tiles all ask as they draw: the order is made once for each list.
-    if (ordered.sessions === sessions && ordered.pinned === pins) {
+    if (
+        ordered.sessions === sessions &&
+        ordered.pinned === pins &&
+        ordered.folded === foldedLinked &&
+        ordered.open === conversationId
+    ) {
         return ordered.order;
     }
 
     const active = sessions.filter((session) => !session.archived);
     const { roots, rows } = sessionForest(active, { pinned: pins });
-    const family = (root) => rows.get(root.id).map((row) => row.session);
+    // Linked sessions folded away are out of the order too: the numbers and Alt+arrows follow what shows.
+    const folds = foldsNow(state);
+    const family = (root) => unfolded(rows.get(root.id), folds).map((row) => row.session);
     const byId = new Map(roots.map((root) => [root.id, root]));
     const pinned = pins.map((id) => byId.get(id)).filter(Boolean);
     const first = new Set(pinned);
@@ -313,13 +325,70 @@ export function workspaceOrder(state = store.state) {
         ...roots.filter((root) => !first.has(root)).flatMap(family),
     ]);
 
-    ordered = { sessions, pinned: pins, order };
+    ordered = { sessions, pinned: pins, folded: foldedLinked, open: conversationId, order };
 
     return order;
 }
 
 /** The last workspace order, and the lists it was made from. */
-let ordered = { sessions: null, pinned: null, order: [] };
+let ordered = { sessions: null, pinned: null, folded: null, open: null, order: [] };
+
+function readFoldedLinked() {
+    try {
+        const kept = JSON.parse(localStorage.getItem(FOLDED_LINKED_KEY) ?? "[]");
+
+        return Array.isArray(kept) ? kept.filter((id) => Number.isSafeInteger(id)) : [];
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * The folds that apply now: a session whose linked sessions are folded, but not one above the open session, which
+ * always shows.
+ */
+export function foldsNow(state = store.state) {
+    const folds = new Set(state.foldedLinked);
+    const byId = new Map(state.sessions.map((session) => [session.id, session]));
+    const seen = new Set();
+
+    for (
+        let at = byId.get(state.conversationId)?.linkedFrom?.id;
+        at !== undefined && !seen.has(at);
+        at = byId.get(at)?.linkedFrom?.id
+    ) {
+        seen.add(at);
+        folds.delete(at);
+    }
+
+    return folds;
+}
+
+/** Fold a session's linked sessions away in the list, or show them again; kept for this browser, its other tabs too. */
+export function toggleFoldedLinked(id) {
+    const known = new Set(store.state.sessions.map((session) => session.id));
+    // Sessions that are gone are let go of as the choice is saved.
+    const next = store.state.foldedLinked.filter((each) => each !== id && known.has(each));
+
+    if (!store.state.foldedLinked.includes(id)) {
+        next.push(id);
+    }
+
+    try {
+        localStorage.setItem(FOLDED_LINKED_KEY, JSON.stringify(next));
+    } catch {
+        // Storage refused (a private window): the fold holds until the page reloads.
+    }
+
+    store.set({ foldedLinked: next });
+}
+
+// Another tab of this browser folded or unfolded: this one follows.
+addEventListener("storage", (event) => {
+    if (event.key === FOLDED_LINKED_KEY) {
+        store.set({ foldedLinked: readFoldedLinked() });
+    }
+});
 
 /** Server features the web app may use. `collab` 2 adds roles, take turns, reactions, pins, notes, mentions, push. */
 export const collab = () => (store.state.server?.collab ?? 0) >= 2;

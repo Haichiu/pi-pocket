@@ -110,16 +110,36 @@ function ModuleSettings({ module }) {
         return html`<${Loader} label="Settings" />`;
     }
 
-    const value = (field) =>
-        Object.hasOwn(draft, field.name) ? draft[field.name] : (shown.values[field.name] ?? "");
+    // What a field shows: the owner's change, the default when they asked for it back (null), or the value now.
+    const value = (field) => {
+        if (!Object.hasOwn(draft, field.name)) {
+            return shown.values[field.name] ?? "";
+        }
+
+        return draft[field.name] === null ? (field.default ?? "") : draft[field.name];
+    };
+
     const set = (name, next) => setDraft({ ...draft, [name]: next });
 
     const save = async () => {
         setBusy(true);
         setError(null);
 
+        // A number is typed as text ("-", "1."), and becomes a number only now; an empty one puts the default back.
+        const change = Object.fromEntries(
+            Object.entries(draft).map(([name, next]) => {
+                const field = shown.fields.find((each) => each.name === name);
+
+                if (field?.type !== "number" || typeof next !== "string") {
+                    return [name, next];
+                }
+
+                return [name, next.trim() === "" ? null : Number(next)];
+            }),
+        );
+
         try {
-            setShown(await api(path, draft, { method: "PUT" }));
+            setShown(await api(path, change, { method: "PUT" }));
             setDraft({});
         } catch (failure) {
             setError(failure.message);
@@ -133,6 +153,10 @@ function ModuleSettings({ module }) {
         ${shown.fields.map((field) => {
             const secret = field.type === "text" && field.secret;
             const id = `ext-setting-${module}-${field.name}`;
+            const range =
+                field.type === "number" && (field.min !== undefined || field.max !== undefined)
+                    ? `From ${field.min ?? "any"} to ${field.max ?? "any"}`
+                    : undefined;
             const hint =
                 secret && shown.set.includes(field.name)
                     ? "Set: type to replace"
@@ -148,7 +172,7 @@ function ModuleSettings({ module }) {
                         ? html`<${Switch}
                               on=${value(field) === true}
                               label=${field.label}
-                              onChange=${(on) => set(field.name, on)}
+                              onChange=${() => set(field.name, value(field) !== true)}
                           />`
                         : field.type === "choice"
                           ? html`<select
@@ -164,19 +188,13 @@ function ModuleSettings({ module }) {
                           : html`<input
                                 id=${id}
                                 class="ext-setting-input"
-                                type=${secret ? "password" : field.type === "number" ? "number" : "text"}
+                                type=${secret ? "password" : "text"}
+                                inputmode=${field.type === "number" ? "decimal" : undefined}
                                 autocomplete="off"
                                 placeholder=${hint}
                                 value=${secret ? (draft[field.name] ?? "") : value(field)}
-                                min=${field.min}
-                                max=${field.max}
-                                onInput=${(event) =>
-                                    set(
-                                        field.name,
-                                        field.type === "number"
-                                            ? Number(event.currentTarget.value)
-                                            : event.currentTarget.value,
-                                    )}
+                                title=${range}
+                                onInput=${(event) => set(field.name, event.currentTarget.value)}
                             />`
                 }
                 ${

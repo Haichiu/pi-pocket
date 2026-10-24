@@ -854,6 +854,14 @@ function PendingMemories({ id }) {
     </div>`;
 }
 
+/** When PiP takes a message that waits: a steer at its next pause, a queued one when it finishes its work. */
+const pendingWhen = (item, busy) =>
+    !busy
+        ? "Waiting for PiP"
+        : item.mode === "steer"
+          ? "PiP reads this at its next pause"
+          : "PiP reads this when it finishes";
+
 /** Who sent a message, as the server writes it at the start when several people use Pi (`FROM_PREFIX`). */
 const FROM = /^\[from: [^\]\n]{1,60}\] /;
 
@@ -1056,7 +1064,7 @@ function PipPanel({ leaving, scrim }) {
                 (item) => html`<div class="pip-you pending" key=${`pending-${item.id}`}>
                     <div>${(item.text ?? "").replace(FROM, "")}</div>
                     <div class="pip-pending-line">
-                        <span>${busy ? "PiP reads this at its next pause" : "Waiting for PiP"}</span>
+                        <span>${pendingWhen(item, busy)}</span>
                         <button
                             type="button"
                             class="pip-pending-withdraw"

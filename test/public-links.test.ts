@@ -21,6 +21,7 @@ import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { createHandler } from "../src/server/http.ts";
+import { linkReads } from "../src/server/http/link-routes.ts";
 
 const dataDir = join(root, "data");
 let app: Awaited<ReturnType<typeof openApp>>;
@@ -63,6 +64,10 @@ export default (_host, web) => {
     web.route("POST", "end", async (request) => ({ ended: await web.links.end(request.body.token) }));
     web.route("GET", "list", () => web.links.list());
     web.publicPage((request) => {
+        if (request.query.get("hang") === "1") {
+            return new Promise(() => {});
+        }
+
         if (request.method === "GET") {
             return "<p>page " + request.link.data.n + "</p>";
         }
@@ -255,6 +260,27 @@ test("a page that fails says so without its words, which only the log has", asyn
     assert.equal(failed.status, 500);
     assert.doesNotMatch(failed.text, /secret words/);
     assert.match(failed.text, /could not be shown/);
+});
+
+test("a page that never answers is given up at its time, and holds no place after", async () => {
+    const link = await make({ hours: 1, data: { n: 12 } });
+    const was = linkReads.handlerMs;
+
+    linkReads.handlerMs = 100;
+
+    try {
+        // More than may run at once for one link: each is let go, so none is turned away as busy.
+        for (let index = 0; index < 6; index++) {
+            const page = await open(`${link.path}?hang=1`);
+
+            assert.equal(page.status, 504, `try ${index}`);
+            assert.match(page.text, /took too long/);
+        }
+
+        assert.equal((await open(link.path)).status, 200);
+    } finally {
+        linkReads.handlerMs = was;
+    }
 });
 
 test("a link closes at its time", async () => {

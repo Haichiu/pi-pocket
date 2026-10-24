@@ -62,7 +62,9 @@ const unhide = host.hide({ value: token, label: "secret GITHUB_TOKEN" });
 web.onDispose(unhide);
 ```
 
-Hide a value as soon as you have it, before any tool can give it back. A value is 4 characters at least: a shorter one would turn up in ordinary output by chance. `conversationId` hides it in one session only.
+Hide a value as soon as you have it, before any tool can give it back. A value is 4 characters at least: a shorter one would turn up in ordinary output by chance. `conversationId` hides it in one session only, and in that session's subagents.
+
+A file that a message brings along (`@notes.txt`) is hidden too. A `!` command that holds a hidden value is refused: it would be stored and shown as typed, so give the value to commands with `host.commandEnv` instead.
 
 Hiding finds the value as it is. It does not find it encoded, reversed, or cut up by a command, nor in a file that a command writes. Hide each form that you expect, such as its base64, as a value of its own. This keeps values out of transcripts by accident and by default: it is not a boundary against a command, or a model, that leaks a value on purpose. Say so to the people who use your extension.
 
@@ -99,18 +101,22 @@ const { controls } = await page.snapshot();
 const password = controls.find((control) => control.kind === "password");
 const user = controls.find((control) => control.kind === "email" || control.name.match(/user/i));
 
+// Hide first: if hiding refuses a value (shorter than 4 characters, say), nothing went into the page.
+web.onDispose(
+    host.hide({
+        value: answer.values.password,
+        label: "password",
+        conversationId: Number(api.conversationId),
+    }),
+);
 await page.fill({ ref: user.ref }, answer.values.user);
 await page.fill({ ref: password.ref }, answer.values.password);
-host.hide({
-    value: answer.values.password,
-    label: "password",
-    conversationId: Number(api.conversationId),
-});
 await page.press("Enter");
 ```
 
 - `snapshot()` gives the page as Pi reads it, and its controls as data: each one's ref, role, name, kind, and value. A password field's value is `••••` when it holds one, never its value.
-- `fill` puts a person's value into a field, and returns only what the field is. `type` types as Pi types.
+- `fill` puts a person's value into a field, and returns only what the field is. It fills only a field named by a ref, a selector, or a label, never a point, and fills nothing when something covers the field or the focus does not reach it, so a value never lands in another field. `type` types as Pi types.
+- A value filled into a field that is not a password field shows in that field: in screenshots, in the Browser panel that the people in the session watch, and in the snapshot's `value`. Fill secrets only into password fields.
 - `inspect` says what a target is, and whether it is a password field. A `beforeTool` hook can use it to refuse Pi's own `type` into a password field ([Hooks](hooks.md)).
 - The handle runs no script in the page. Pi's `browser` tool still can (`evaluate`), and so can read a field's value: hide the value too.
 
@@ -120,7 +126,7 @@ A tool `sign_in` that Pi calls when it meets a sign-in page:
 
 1. `host.browser` gives the page, and its snapshot gives the fields.
 2. `host.ask` asks the person for the username and the password.
-3. `host.hide` hides both values in this session.
+3. `host.hide` hides the password in this session, before anything else.
 4. `fill` puts them in, and `press("Enter")` sends the form.
 5. The result tells Pi that the person signed in, with a new snapshot: never the values.
 

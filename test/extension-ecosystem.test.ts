@@ -68,6 +68,7 @@ before(async () => {
         { name: "loud", label: "Loud", type: "boolean", default: false },
         { name: "region", label: "Region", type: "choice", default: "eu", choices: [{ value: "eu", label: "Europe" }, { value: "us", label: "United States" }] },
         { name: "apiKey", label: "API key", type: "text", secret: true },
+        { name: "token", label: "Token", type: "text", secret: true, default: "env-secret-default" },
     ]);
     web.onSettings(() => { changes++; });
     web.client("configured.js", { access: "view" });
@@ -168,6 +169,25 @@ test("host.on hears sessions made, renamed, and archived, messages, and runs", a
     assert.equal(events.find((each) => each.event === "session.archived")!.archived, true);
 });
 
+test("a message sent again with the same request is one message, and one event", async () => {
+    const id = await newSession(app);
+    const requestId = crypto.randomUUID();
+
+    await app.commands.submit(id, owner(app), { text: "only once", requestId });
+    await app.commands.submit(id, owner(app), { text: "a retry with other words", requestId });
+    await Promise.all([
+        app.commands.submit(id, owner(app), { text: "twice at once", requestId: "same-moment" }),
+        app.commands.submit(id, owner(app), { text: "twice at once", requestId: "same-moment" }),
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const sent = ((await call("/api/x/watcher/seen")).data as unknown as Record<string, unknown>[])
+        .filter((each) => each.event === "message.sent" && each.conversationId === Number(id))
+        .map((each) => each.text);
+
+    assert.deepEqual(sent, ["only once", "twice at once"]);
+});
+
 test("an unknown event, or a listener that is not a function, throws", () => {
     assert.throws(() => app.events.on("session.exploded" as never, () => {}), /no event/);
     assert.throws(() => app.events.on("run.ended", null as never), /a function/);
@@ -239,12 +259,16 @@ test("settings: core keeps the owner's values, the module reads them, and secret
     });
     assert.equal(app.config.extensionSettings("configured").every, 5);
 
-    // A viewer, whom its browser module is for, reads them without the secret.
+    // A viewer, whom its browser module is for, reads them without the secret, or a secret's default.
     const read = await call("/api/extension-settings/configured", "viewer");
 
     assert.equal(read.status, 200);
     assert.equal((read.data.values as Record<string, unknown>).every, 5);
-    assert.doesNotMatch(JSON.stringify(read.data), /sk-very-secret/);
+    assert.doesNotMatch(JSON.stringify(read.data), /sk-very-secret|env-secret-default/);
+    assert.doesNotMatch(
+        JSON.stringify((await call("/api/extension-settings/configured", "owner")).data),
+        /sk-very-secret|env-secret-default/,
+    );
 
     // Null puts the default back.
     await call("/api/extension-settings/configured", "owner", { every: null, apiKey: null }, "PUT");

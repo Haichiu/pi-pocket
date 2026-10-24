@@ -242,7 +242,9 @@ Hides a value from what Pi and people read, until the returned function is calle
 
 - in the output of commands as it streams: bash's live output and its result, a `!` command's card, and a check's output. A value split across two chunks is held back until it can be told apart, so up to its length less one character comes later than the rest;
 - in every tool's result (what the model reads, what programs read, and its details, keys too), before it is stored;
-- in people's messages to Pi, and in an edit sent again: a value pasted there is replaced before the message is stored, sent to the model, or made the session's title.
+- in people's messages to Pi, the files a message brings along, and an edit sent again: a value pasted there is replaced before the message is stored, sent to the model, or made the session's title. A `!` command that holds one is refused, since it runs as stored.
+
+With `conversationId`, it is hidden in that session and its subagents.
 
 It does not reach a file that a command writes (such as bash's spill file for long output), entries from before the value was hidden, or a value that a command changed (encoded, reversed). Hide each form that you expect, such as its base64, as a value of its own. It keeps values out of transcripts by accident: it is not a boundary against a command that leaks a value on purpose. Pass the returned function to `web.onDispose`. See [`HiddenValue`](#hiddenvalue).
 
@@ -254,7 +256,7 @@ commandEnv(provider: CommandEnvProvider): () => void;
 
 Since 0.22.0 · Experimental
 
-Adds environment variables to the commands that run in sessions: Pi's bash, people's `!` commands, and Done when's checks. Before each command, each provider gets the command, its folder, and its session, and gives variables to add, or nothing. A later provider's variable wins over an earlier one's. A provider that throws adds nothing, and the server's log says why; the command still runs. Use it to put a value into `$NAME` for the commands that name it, so the value does not go through Pi. Hide the value with `hide` too. Pass the returned function to `web.onDispose`. See [`CommandEnvProvider`](#commandenvprovider).
+Adds environment variables to the commands that run in sessions: Pi's bash, people's `!` commands, and Done when's checks. Before each command, each provider gets the command, its folder, and its session, and gives variables to add, or nothing. A later provider's variable wins over an earlier one's. A provider that throws, or takes more than 5 seconds, adds nothing, and the server's log says why; the command still runs. Use it to put a value into `$NAME` for the commands that name it, so the value does not go through Pi. Hide the value with `hide` too. Pass the returned function to `web.onDispose`. See [`CommandEnvProvider`](#commandenvprovider).
 
 ### `browser`
 
@@ -666,7 +668,8 @@ The page, with what Pi's `browser` tool does, but no script to run in it.
 
 - `snapshot`: the page as Pi reads it (`text`), and its controls as data. Refs last until the next snapshot, Pi's too.
 - `inspect`: what a target is, scrolled into view: its description, its `kind`, and whether it is a field (`editable`) or a password field.
-- `fill`: puts a person's value into a field (not a select), replacing what it holds. The value is not in what it returns, and the snapshot shows a password field's as `••••`. Pi can still read a field's value with its `evaluate`: hide the value with `hide` too.
+- `fill`: puts a person's value into a field (not a select), replacing what it holds. The target is a ref, a selector, or a label, not a point. It throws and fills nothing when something covers the field, or when the focus does not reach it. The value is not in what it returns, and the snapshot shows a password field's as `••••`. Pi can still read a field's value with its `evaluate`: hide the value with `hide` too.
+- `inspect` with a point (`x`, `y`) says what is at that point, without scrolling or acting on it.
 - `type`, `click`, `select`, `press`, `scroll`, `waitFor`, `navigate`: as the `browser` tool's actions. `navigate` takes an http(s) address, host:port, or a file path. Each one returns the description of what it acted on.
 
 ## Internal members

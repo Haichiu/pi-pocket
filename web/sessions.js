@@ -29,6 +29,8 @@ import {
     stillMoving,
     store,
     workspaceOrder,
+    foldsNow,
+    toggleFoldedLinked,
 } from "./store.js";
 import { finishedUnseen } from "./seen.js";
 import { isPinned, prefs, setPrefs, togglePin } from "./theme.js";
@@ -176,16 +178,16 @@ const readClosed = () => {
     }
 };
 
-/** The sessions whose linked sessions are folded away in the list: this browser's choice, kept across reloads. */
-const FOLDED_KEY = "pocket.foldedLinked";
+/** The fold's name for a screen reader: how many, and what its dot says (`aria-expanded` says whether they show). */
+function foldLabel(kids, trouble) {
+    const count = `${kids} linked ${kids === 1 ? "session" : "sessions"}`;
 
-const readFolded = () => {
-    try {
-        return new Set(JSON.parse(localStorage.getItem(FOLDED_KEY) ?? "[]"));
-    } catch {
-        return new Set();
-    }
-};
+    return trouble === "waiting"
+        ? `${count}, one needs you`
+        : trouble === "failed"
+          ? `${count}, one failed`
+          : count;
+}
 
 /** Whether a session folded away under `id` waits for you or failed: the fold shows it, as a folded group does. */
 function hiddenTrouble(group, id) {
@@ -542,7 +544,7 @@ function SessionRow({
                 class=${`session-fold ${folded ? "folded" : ""}`}
                 data-part="session-fold"
                 aria-expanded=${!folded}
-                aria-label=${`${folded ? "Show" : "Hide"} ${kids} linked ${kids === 1 ? "session" : "sessions"}`}
+                aria-label=${foldLabel(kids, foldTrouble)}
                 title=${`${folded ? "Show" : "Hide"} ${kids} linked ${kids === 1 ? "session" : "sessions"}`}
                 onClick=${() => onFold(session.id)}
             >
@@ -713,7 +715,9 @@ function AllSessions({ compact = false }) {
     const [query, setQueryState] = useState(() => (compact ? "" : listKept.query));
     const [tab, setTabState] = useState(() => (prefs().group === "folder" ? "folders" : "recent"));
     const [closed, setClosed] = useState(readClosed);
-    const [folded, setFolded] = useState(readFolded);
+    // Linked sessions folded away (`store.js`), but never above the open session, which always shows.
+    const { foldedLinked, conversationId: openId } = store.state;
+    const folded = useMemo(() => foldsNow(), [foldedLinked, openId, sessions]);
     const [selected, setSelectedState] = useState(() => new Set());
     // Taps select rows instead of opening them: a selection started from a long press's sheet, on a touch screen.
     const [tapSelects, setTapSelects] = useState(false);
@@ -1193,23 +1197,7 @@ function AllSessions({ compact = false }) {
         return () => removeEventListener("keydown", onKey);
     }, [selecting]);
 
-    const toggleFold = (id) => {
-        const next = new Set(folded);
-
-        if (next.has(id)) {
-            next.delete(id);
-        } else {
-            next.add(id);
-        }
-
-        try {
-            localStorage.setItem(FOLDED_KEY, JSON.stringify([...next]));
-        } catch {
-            // Storage refused (a private window): the fold holds until the page reloads.
-        }
-
-        setFolded(next);
-    };
+    const toggleFold = (id) => toggleFoldedLinked(id);
 
     const toggleGroup = (key) => {
         const next = new Set(closed);

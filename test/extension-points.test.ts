@@ -26,7 +26,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { findBrowser } from "../src/server/browser/discovery.ts";
 import { HttpError } from "../src/server/errors.ts";
-import { CommandEnvs, HiddenValues, wrapEnv } from "../src/server/hidden.ts";
+import { CommandEnvs, commandEnvLimits, HiddenValues, wrapEnv } from "../src/server/hidden.ts";
 
 const SECRET = "s3cr3t-token-value";
 const dataDir = join(root, "data");
@@ -106,6 +106,24 @@ export default (host, web) => {
             data = error.message;
         }
 
+        const refused = [];
+
+        try {
+            await page.fill({ x: 10, y: 10 }, "hunter2-pass");
+        } catch (error) {
+            refused.push(error.message);
+        }
+
+        try {
+            await page.fill({ ref: filled.ref }, "hunter2-pass");
+            await page.navigate(String(request.body.url) + "covered");
+            const covered = (await page.snapshot()).controls.find((control) => control.kind === "password");
+
+            await page.fill({ ref: covered.ref }, "hunter2-pass");
+        } catch (error) {
+            refused.push(error.message);
+        }
+
         return {
             before: field,
             info,
@@ -113,6 +131,7 @@ export default (host, web) => {
             again: again.label,
             refill,
             data,
+            refused,
             after: filled,
             text: after.text,
             evaluate: "evaluate" in page,
@@ -171,10 +190,15 @@ export default (host, web) => {
     );
     app = await openApp(scriptedModel(route), dataDir);
     await app.setExtensionEnabled(owner(app), "points.ts", true);
-    site = createServer((_request, response) => {
+    site = createServer((request, response) => {
         response.writeHead(200, { "content-type": "text/html" });
+        // At /covered, a banner lies over the password field, as a cookie banner can.
+        const banner = request.url?.endsWith("covered")
+            ? `<div style="position:fixed;inset:0;background:#fff;z-index:9">Accept cookies</div>`
+            : "";
+
         response.end(
-            `<title>Sign in</title><form><label>User <input name="user"></label><label>Password <input type="password" name="password"></label><button>Sign in</button></form>`,
+            `<title>Sign in</title><form><label>User <input name="user"></label><label>Password <input type="password" name="password"></label><button>Sign in</button></form>${banner}`,
         );
     });
     await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
@@ -238,6 +262,33 @@ test("hidden values leave output as it streams, also when a value is split acros
         { value: "abcd", label: "x", conversationId: 0 },
     ]) {
         assert.throws(() => hidden.add(bad));
+    }
+});
+
+test("a session's hidden value is hidden in its subagents too, and not elsewhere", () => {
+    // Conversation 7 is a subagent of session 3.
+    const hidden = new HiddenValues((id) => (id === 7 ? 3 : id));
+
+    hidden.add({ value: "session-three-secret", label: "s3", conversationId: 3 });
+    assert.equal(hidden.replace("session-three-secret", 7), "[s3]");
+    assert.equal(hidden.replace("session-three-secret", 3), "[s3]");
+    assert.equal(hidden.replace("session-three-secret", 4), "session-three-secret");
+});
+
+test("a provider that hangs adds nothing after its time, and the command runs", async () => {
+    const envs = new CommandEnvs(() => {});
+    const was = commandEnvLimits.providerMs;
+
+    commandEnvLimits.providerMs = 50;
+    envs.add(() => new Promise(() => {}));
+    envs.add(() => ({ AFTER: "yes" }));
+
+    try {
+        assert.deepEqual(await envs.for({ conversationId: 1, command: "true", cwd: work }), {
+            AFTER: "yes",
+        });
+    } finally {
+        commandEnvLimits.providerMs = was;
     }
 });
 
@@ -308,6 +359,15 @@ test("a value pasted into a message to Pi, or into an edit sent again, is hidden
     assert.match(await stored(fork), /now \[secret TOKEN\] again/);
     assert.doesNotMatch(await stored(fork), new RegExp(SECRET));
     assert.ok(sent.slice(before).every((request) => !request.includes(SECRET)));
+});
+
+test("a ! command that holds a hidden value is refused, so it is not stored as typed", async () => {
+    const id = await newSession(app);
+
+    await assert.rejects(
+        app.shell.start(id, owner(app), { command: `echo ${SECRET}` }),
+        /holds a hidden value/,
+    );
 });
 
 test("any tool's result hides the value before it is stored, its details too", async () => {
@@ -413,6 +473,7 @@ test(
                 text: string;
                 evaluate: boolean;
                 data: string;
+                refused: string[];
             };
 
             assert.equal(response.status, 200, JSON.stringify(result));
@@ -425,14 +486,18 @@ test(
             assert.equal(result.after.value, "••••");
             assert.doesNotMatch(JSON.stringify(result), /hunter2/);
             assert.match(result.data, /navigate needs/);
+            assert.match(result.refused[0] ?? "", /not by a point/);
+            assert.match(result.refused[1] ?? "", /covered by/);
             assert.doesNotMatch(result.text, /hunter2/);
             assert.equal(result.evaluate, false, "no script runs through the handle");
-            // The value is in the page itself, as the person typed it.
+            // On the page with the banner over it, nothing went into the field (nor anywhere else).
             assert.equal(
                 await app.browsers
                     .page(Number(id))!
-                    .evaluate(`document.querySelector("input[type=password]").value`),
-                "hunter2-pass",
+                    .evaluate(
+                        `[...document.querySelectorAll("input")].map((input) => input.value).join("")`,
+                    ),
+                "",
             );
         } finally {
             server.closeAllConnections();

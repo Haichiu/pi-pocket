@@ -29,6 +29,9 @@ export const MAX_HIDDEN = 4096;
 export const MAX_HIDDEN_VALUES = 2000;
 const LABEL = /^[A-Za-z0-9 _.:-]{1,60}$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+
+/** How long a `host.commandEnv` provider may take for one command. Tests shorten it. */
+export const commandEnvLimits = { providerMs: 5000 };
 /** The most bytes of variables extensions add to one command. */
 const MAX_ENV_BYTES = 256 * 1024;
 
@@ -45,6 +48,12 @@ type Hidden = { value: string; replacement: string; conversationId?: number };
 
 export class HiddenValues {
     readonly #values = new Set<Hidden>();
+    /** The session a conversation belongs to: a subagent's values are its session's. */
+    readonly #rootOf: (conversationId: number) => number;
+
+    constructor(rootOf: (conversationId: number) => number = (id) => id) {
+        this.#rootOf = rootOf;
+    }
 
     /** Hide a value until the returned function is called. A value out of bounds throws. */
     add(hidden: HiddenValue): () => void {
@@ -87,18 +96,29 @@ export class HiddenValues {
     /** The values hidden in a session, longest first, so a value inside a longer one does not split it. */
     for(conversationId: ConversationId | number): Hidden[] {
         const id = Number(conversationId);
+        const root = this.#rootOf(id);
 
         return [...this.#values]
-            .filter((each) => each.conversationId === undefined || each.conversationId === id)
+            .filter(
+                (each) =>
+                    each.conversationId === undefined ||
+                    each.conversationId === id ||
+                    each.conversationId === root,
+            )
             .sort((a, b) => b.value.length - a.value.length);
     }
 
     /** Whether anything is hidden in a session. */
     any(conversationId: ConversationId | number): boolean {
         const id = Number(conversationId);
+        const root = this.#rootOf(id);
 
         for (const each of this.#values) {
-            if (each.conversationId === undefined || each.conversationId === id) {
+            if (
+                each.conversationId === undefined ||
+                each.conversationId === id ||
+                each.conversationId === root
+            ) {
                 return true;
             }
         }
@@ -279,20 +299,48 @@ export class CommandEnvs {
      * The variables every provider gives a command, later ones over earlier ones. A provider that throws, or gives
      * something that is not a set of variables, adds nothing, and the log says why: the command runs as it would.
      */
-    async for(run: CommandRun): Promise<Record<string, string>> {
+    async for(run: CommandRun, signal?: AbortSignal): Promise<Record<string, string>> {
         const env: Record<string, string> = {};
         let bytes = 0;
 
         for (const provider of [...this.#providers]) {
             let given: unknown;
+            let timer: NodeJS.Timeout | undefined;
 
             try {
-                given = await provider(Object.freeze({ ...run }));
+                signal?.throwIfAborted();
+                // A provider has a few seconds, and stops with the command: one that hangs must not hold every command.
+                given = await Promise.race([
+                    Promise.resolve().then(() => provider(Object.freeze({ ...run }))),
+                    new Promise<never>((_, reject) => {
+                        timer = setTimeout(
+                            () =>
+                                reject(
+                                    new Error(`took more than ${commandEnvLimits.providerMs} ms`),
+                                ),
+                            commandEnvLimits.providerMs,
+                        );
+                        signal?.addEventListener(
+                            "abort",
+                            () => reject(new Error("the command was stopped")),
+                            {
+                                once: true,
+                            },
+                        );
+                    }),
+                ]);
             } catch (error) {
+                // The command was stopped: it runs no more, and the environment says so as it always does.
+                if (signal?.aborted) {
+                    return env;
+                }
+
                 this.#log(
                     `host.commandEnv: a provider failed: ${error instanceof Error ? error.message : String(error)}`,
                 );
                 continue;
+            } finally {
+                clearTimeout(timer);
             }
 
             if (given === undefined || given === null) {
@@ -345,11 +393,10 @@ export function wrapEnv(
 
     const exec: ExecutionEnv["exec"] = async (command, options, context) => {
         const added = envs.any
-            ? await envs.for({
-                  conversationId,
-                  command,
-                  cwd: options?.cwd ?? cwd,
-              })
+            ? await envs.for(
+                  { conversationId, command, cwd: options?.cwd ?? cwd },
+                  context.abortSignal,
+              )
             : {};
         const stream =
             options?.onOutput !== undefined && hidden.any(conversationId)

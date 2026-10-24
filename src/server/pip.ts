@@ -61,6 +61,8 @@ export const PIP_NAME = "PiP";
  */
 export const PIP_EXTENSIONS = [
     "coding-tools",
+    // Core's own: its hook takes the values extensions hide (`host.hide`) out of PiP's tool results too.
+    "pocket-core",
     PIP_EXTENSION,
     "pocket-artifacts",
     "pocket-schedules",

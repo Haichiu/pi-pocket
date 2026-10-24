@@ -192,6 +192,8 @@ export const LOCATE_SCRIPT = String.raw`(async (target) => {
 		// A label stands for its field.
 		if (el.tagName === "LABEL" && el.control) el = el.control;
 	}
+	// What was found last, so a fill can check that the focus reached it (FOCUSED_SCRIPT).
+	window.__piPocketLocated = new WeakRef(el);
 	el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
 	await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
 	const box = el.getBoundingClientRect();
@@ -204,6 +206,23 @@ export const LOCATE_SCRIPT = String.raw`(async (target) => {
 	const scale = view?.scale ?? 1;
 	const kind = el.tagName === "INPUT" ? (el.type || "text") : el.tagName === "TEXTAREA" ? "textarea" : el.tagName.toLowerCase();
 	return { x: (x - (view?.offsetLeft ?? 0)) * scale, y: (y - (view?.offsetTop ?? 0)) * scale, label: describe(el), covered, editable: el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName), kind, password: kind === "password" };
+})`;
+
+/** Whether the focus is on what `LOCATE_SCRIPT` found last, or inside it. */
+export const FOCUSED_SCRIPT = String.raw`(() => {
+	const el = window.__piPocketLocated?.deref();
+	const active = document.activeElement;
+	return Boolean(el && active && (active === el || el.contains(active)));
+})()`;
+
+/** What is at a point of the viewport: its description, kind, and whether it is a field or a password field. */
+export const POINT_SCRIPT = String.raw`((x, y) => {
+	const el = document.elementFromPoint(x, y);
+	if (!el) throw new Error("Nothing is at " + Math.round(x) + "," + Math.round(y) + ".");
+	const kind = el.tagName === "INPUT" ? (el.type || "text") : el.tagName === "TEXTAREA" ? "textarea" : el.tagName.toLowerCase();
+	const value = kind === "password" ? "" : el.value;
+	const name = String(el.getAttribute("aria-label") || el.innerText || value || el.getAttribute("placeholder") || el.getAttribute("title") || "").replace(/\s+/g, " ").trim().slice(0, 60);
+	return { label: el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (name ? ' "' + name + '"' : ""), kind, editable: el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName), password: kind === "password" };
 })`;
 
 /**
