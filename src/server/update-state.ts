@@ -398,8 +398,13 @@ export function undoPartialSwitch(appRoot: string, pending: PendingUpdate): Kept
     const folder = mkdtempSync(join(parent, `${pending.at}-`));
     const moved: string[] = [];
 
-    // The release's new files first: a folder the version before has a file in place of may need their room.
-    for (const path of [...added, ...other]) {
+    // The release's new files first: a folder the version before has a file in place of may need their room. And a
+    // path before the paths under it: a folder the release made of a file goes aside whole, with what is in it, rather
+    // than after its files, onto the folder that they made in the place it would take.
+    const depth = (path: string) => path.split("/").length;
+    const order = [...added, ...other].sort((one, two) => depth(one) - depth(two));
+
+    for (const path of order) {
         // A submodule's folder is its own checkout: only its index entry goes back.
         if (links.has(path)) {
             continue;
