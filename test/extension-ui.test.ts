@@ -700,6 +700,7 @@ test(
                     shown: [...row.querySelectorAll(".ext-composer-button")].filter((each) => each.offsetWidth > 0).length,
                 });
             `);
+
         const inside = (width: number, what: string, f: Awaited<ReturnType<typeof fit>>) => {
             assert.ok(
                 f.scroll <= f.client,
@@ -733,6 +734,33 @@ test(
                     working.shown,
                     width <= 480 ? 0 : 3,
                     "the extension's buttons wait while Pi works",
+                );
+
+                // A touch screen's taller tap layer on each mode still takes a tap above and below it: the cut that
+                // keeps Stop in is sideways only.
+                const taps = await inPage<{ above: boolean; below: boolean }[]>(`
+                    const touch = new CSSStyleSheet();
+
+                    touch.replaceSync(".mode-switch button { position: relative } .mode-switch button::before { content: ''; position: absolute; inset: -6px 0 }");
+                    document.adoptedStyleSheets = [...document.adoptedStyleSheets, touch];
+                    const hits = [...document.querySelectorAll(".composer .mode-switch button")].map((each) => {
+                        const box = each.getBoundingClientRect();
+                        const x = box.left + box.width / 2;
+
+                        return {
+                            above: document.elementFromPoint(x, box.top - 4) === each,
+                            below: document.elementFromPoint(x, box.bottom + 4) === each,
+                        };
+                    });
+
+                    document.adoptedStyleSheets = document.adoptedStyleSheets.filter((each) => each !== touch);
+
+                    return JSON.stringify(hits);
+                `);
+
+                assert.ok(
+                    taps.length === 3 && taps.every((each) => each.above && each.below),
+                    `the modes' tap layer is cut at ${width} px: ${JSON.stringify(taps)}`,
                 );
 
                 // Text that the browser's own font-size setting makes bigger (Firefox on a phone does): the labels of the

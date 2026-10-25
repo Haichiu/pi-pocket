@@ -3444,7 +3444,8 @@ pre.diff .del {
 }
 
 /* Whatever else takes room in the row, Stop, Send, and the mic keep theirs, and the three modes give way: their labels
- * are cut before Stop leaves the box. */
+ * are cut before Stop leaves the box. Cut sideways only: a touch screen's taller tap layer (`::before`, below) reaches
+ * above and below each mode, and a clip there would take it away. */
 .composer.busy .composer-row :is(.stop-button, .send-button, .composer-mic) {
     flex: none;
 }
@@ -3452,13 +3453,14 @@ pre.diff .del {
 .composer.busy .mode-switch {
     flex: 0 1 auto;
     min-width: 0;
-    overflow: hidden;
+    overflow-x: clip;
 }
 
 .composer.busy .mode-switch button {
     flex: 0 1 auto;
     min-width: 0;
-    overflow: hidden;
+    overflow-x: clip;
+    white-space: nowrap;
     text-overflow: ellipsis;
 }
 

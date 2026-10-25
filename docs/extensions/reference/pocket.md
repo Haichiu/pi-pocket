@@ -469,7 +469,7 @@ composerButton(spec: ComposerButtonSpec): Added<ComposerButtonSpec>;
 
 Since 0.19.0 · Experimental
 
-Adds a button on the left of the message box's row, after the app's own (Attach, the model, Plan). Send, Stop, the mic, and Steer, Queue and Interrupt stay on the right. See [`ComposerButtonSpec`](#composerbuttonspec).
+Adds a button on the left of the message box's row, after the app's own (Attach, the model, Plan). Send, Stop, the mic, and Steer, Queue and Interrupt stay on the right. While Pi works in a message box up to 480 px wide (a phone's), these buttons step aside, as the model chip does, so Stop stays in the row; they come back when Pi stops. See [`ComposerButtonSpec`](#composerbuttonspec).
 
 ### `replyAction`
 
