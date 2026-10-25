@@ -2,7 +2,7 @@
 import { onRoute, pushRoute } from "./back.js";
 import { sessionForest, unfolded } from "./session-tree.js";
 import { liveMessage } from "./live.js";
-import { fitClock } from "./clock.js";
+import { fitClock, moment } from "./clock.js";
 
 /** A random id. crypto.randomUUID only exists on https and localhost pages; plain-http network addresses lack it. */
 export function uid() {
@@ -840,7 +840,7 @@ let helloAsked;
  */
 function keptServer(had, next, asked) {
     if (typeof next?.now === "number") {
-        clockOffset = fitClock(clockOffset, next.now, Date.now(), asked);
+        clockOffset = fitClock(clockOffset, next.now, moment(), asked);
     }
 
     return had && next && sameJson({ ...had, now: 0 }, { ...next, now: 0 }) ? had : next;
@@ -1012,7 +1012,7 @@ addEventListener("pageshow", (event) => {
 
 /** Server-sent events: one long response the server writes to as things change. */
 function streamEvents(query) {
-    helloAsked = Date.now();
+    helloAsked = moment();
     const events = new EventSource(`/api/events?${query}`);
     /** The first batch arrived whole: the session's view, or the session list when no session is open. */
     let settled = false;
@@ -1117,7 +1117,7 @@ function pollEvents(query) {
 
         while (!stopped) {
             request = new AbortController();
-            const asked = Date.now();
+            const asked = moment();
 
             try {
                 const response = await fetch(
@@ -1313,7 +1313,7 @@ onRoute(() => {
 
 export async function start() {
     try {
-        const asked = Date.now();
+        const asked = moment();
         const hello = await api("me");
 
         store.set({
