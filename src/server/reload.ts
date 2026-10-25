@@ -61,7 +61,6 @@ const ORDER = [
     "session-tags.ts",
     "ask-someone.ts",
     "updates.ts",
-    "processes.ts",
 ];
 
 /** The built-in modules' names (their files' without `.ts`): a drop-in with one of them is never loaded. */
@@ -97,7 +96,6 @@ const TITLES: Record<string, string> = {
     "session-tags.ts": "Session tags",
     "ask-someone.ts": "Ask someone",
     "updates.ts": "Pi Pocket updates",
-    "processes.ts": "Background processes",
 };
 
 /**
