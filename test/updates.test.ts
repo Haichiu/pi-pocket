@@ -21,17 +21,22 @@ import {
     readOutcome,
     readPending,
     rollBackUpdate,
+    stopMeansRollBack,
     undoPartialSwitch,
     updatePaths,
 } from "../src/server/update-state.ts";
 import {
+    changedFiles,
     newer,
     nodeMeets,
     notesWarn,
     type Release,
+    repositoryProblem,
     Updates,
     type UpdatesOptions,
+    type UpdateStatus,
 } from "../src/server/updates.ts";
+import { installsByItself } from "../src/server/extensions/updates.ts";
 
 const root = mkdtempSync(join(tmpdir(), "pi-pocket-updates-"));
 
@@ -690,4 +695,178 @@ test("going back keeps a file someone put where only the version before has one"
     const folder = /kept in (\S+?)\.$/.exec(said)![1]!;
 
     assert.equal(readFileSync(join(app, folder, "notes.local"), "utf8"), "mine now\n");
+});
+
+test("a repository address that git could read as an option or a command is refused before git runs", async () => {
+    const { upstream, app } = setUp();
+    const marker = join(root, "executed");
+
+    for (const repository of [
+        `--upload-pack=touch ${marker} #`,
+        `ext::sh -c touch% ${marker}`,
+        "http://example.com/plain.git",
+    ]) {
+        const { updates } = updater(app, upstream, () => undefined, {
+            repository,
+            releases: undefined,
+        });
+        const status = await updates.check();
+
+        assert.match(status.error ?? "", /Updates do not fetch from/);
+        assert.equal(existsSync(marker), false);
+    }
+
+    assert.equal(repositoryProblem("https://github.com/TannerMidd/pi-pocket.git"), undefined);
+    assert.equal(repositoryProblem("git@github.com:TannerMidd/pi-pocket.git"), undefined);
+    assert.equal(repositoryProblem(upstream), undefined);
+});
+
+test("a lock git left behind ends the update with words for the owner, rather than failing at each start", async () => {
+    const { upstream, app, first } = setUp();
+
+    release(upstream, "1.1.0");
+    const { updates } = updater(app, upstream, () => releaseOf("1.1.0"));
+
+    await updates.apply();
+    run(app, ["update-ref", "refs/heads/main", first]);
+    writeFileSync(join(app, ".git", "index.lock"), "");
+
+    // The launcher's try, and the server's: each ends the update once.
+    const said = rollBackUpdate(app) ?? "";
+
+    assert.match(said, /Fix the checkout by hand/);
+    assert.equal(readPending(app), undefined);
+    assert.equal(rollBackUpdate(app), undefined);
+    rmSync(join(app, ".git", "index.lock"));
+});
+
+test("a server that starts on an update stopped part way puts it back, without reloads, and restarts", async () => {
+    const { upstream, app, first } = setUp();
+
+    release(upstream, "1.1.0");
+    await updater(app, upstream, () => releaseOf("1.1.0")).updates.apply();
+    run(app, ["update-ref", "refs/heads/main", first]);
+
+    const paused: boolean[] = [];
+    const { updates, restarts } = updater(app, upstream, () => releaseOf("1.1.0"), {
+        quiesce: (on) => paused.push(on),
+    });
+    const outcome = await updates.recover();
+
+    assert.match(outcome?.message ?? "", /did not finish/);
+    assert.deepEqual(paused, [true]);
+    assert.equal(restarts.length, 1);
+    assert.equal(readFileSync(join(app, "code.txt"), "utf8"), "code of 1.0.0\n");
+});
+
+test("the install by itself takes only a release that needs no question, and the launcher goes back only for the version's fault", () => {
+    const ready = {
+        version: "1.0.0",
+        repository: "x",
+        available: true,
+        blockers: [],
+        cautions: [],
+        packages: false,
+        busy: 0,
+        supervised: true,
+        rollback: true,
+        latest: releaseOf("1.1.0"),
+    } satisfies UpdateStatus;
+
+    assert.equal(installsByItself(ready), true);
+    assert.equal(installsByItself({ ...ready, busy: 1 }), false, "someone at work");
+    assert.equal(installsByItself({ ...ready, blockers: ["no"] }), false);
+    assert.equal(
+        installsByItself({ ...ready, rollback: false }),
+        false,
+        "a launcher that cannot go back",
+    );
+    assert.equal(installsByItself({ ...ready, step: "Checking" }), false);
+    assert.equal(
+        installsByItself({
+            ...ready,
+            latest: releaseOf("1.1.0", { notes: "> [!WARNING]\n> One way." }),
+        }),
+        false,
+    );
+    assert.equal(
+        installsByItself({ ...ready, latest: { ...releaseOf("1.1.0"), notes: undefined } }),
+        false,
+        "no notes to read a warning in",
+    );
+    const failed = {
+        v: 1 as const,
+        id: "x",
+        ok: false,
+        tag: "v1.1.0",
+        fromVersion: "1.0.0",
+        toVersion: "1.1.0",
+        message: "",
+        at: 0,
+    };
+
+    assert.equal(installsByItself({ ...ready, last: failed }), false, "it failed before");
+    assert.equal(installsByItself({ ...ready, last: { ...failed, toVersion: "1.0.5" } }), true);
+
+    assert.equal(stopMeansRollBack(false, 1), true);
+    assert.equal(stopMeansRollBack(false, null), true, "killed by a signal");
+    assert.equal(stopMeansRollBack(false, 75), false, "a restart it asked for");
+    assert.equal(stopMeansRollBack(false, 78), false, "a port it cannot listen on");
+    assert.equal(stopMeansRollBack(true, 1), false, "it was ready: a crash after is not the start");
+});
+
+test("a checkout that writes CRLF line endings does not make git's own files look like the owner's", async () => {
+    const { upstream, app, first } = setUp();
+
+    release(upstream, "1.1.0");
+    await updater(app, upstream, () => releaseOf("1.1.0")).updates.apply();
+    run(app, ["update-ref", "refs/heads/main", first]);
+    run(app, ["config", "core.autocrlf", "true"]);
+    // As git writes the release's file here, part way.
+    writeFileSync(join(app, "code.txt"), "code of 1.1.0\r\n");
+
+    const kept = undoPartialSwitch(app, readPending(app)!);
+
+    assert.deepEqual(kept.paths, []);
+    assert.equal(kept.folder, undefined);
+});
+
+test("status names files as they are, renames by their new name", () => {
+    assert.deepEqual(changedFiles(" M a b.txt\0R  new.txt\0old.txt\0 M nl\nname\0"), [
+        "a b.txt",
+        "new.txt",
+        "nl\nname",
+    ]);
+    assert.deepEqual(changedFiles(""), []);
+});
+
+test("a release that moves a submodule leaves the submodule's folder where it is when undone", async () => {
+    const { upstream, app, first } = setUp();
+    const sub = join(upstream, "..", "sub");
+    const allow = ["-c", "protocol.file.allow=always"];
+
+    mkdirSync(sub);
+    run(sub, ["init", "--quiet"]);
+    writeFileSync(join(sub, "s.txt"), "one\n");
+    run(sub, ["add", "-A"]);
+    run(sub, ["commit", "--quiet", "-m", "one"]);
+    run(upstream, [...allow, "submodule", "--quiet", "add", sub, "mod"]);
+    run(upstream, ["commit", "--quiet", "-m", "mod"]);
+    run(app, ["pull", "--quiet"]);
+    run(app, [...allow, "submodule", "--quiet", "update", "--init"]);
+    const base = run(app, ["rev-parse", "HEAD"]);
+
+    assert.notEqual(base, first);
+    writeFileSync(join(sub, "s.txt"), "two\n");
+    run(sub, ["commit", "--quiet", "-am", "two"]);
+    run(join(upstream, "mod"), ["pull", "--quiet"]);
+    run(upstream, ["add", "mod"]);
+    release(upstream, "1.1.0");
+    await updater(app, upstream, () => releaseOf("1.1.0")).updates.apply();
+    run(app, ["update-ref", "refs/heads/main", base]);
+
+    const kept = undoPartialSwitch(app, readPending(app)!);
+
+    assert.ok(!kept.paths.includes("mod"));
+    assert.equal(readFileSync(join(app, "mod", "s.txt"), "utf8"), "one\n");
 });

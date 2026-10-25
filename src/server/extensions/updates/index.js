@@ -68,12 +68,29 @@ export default function setup(pocket) {
     /** While the server restarts for an update, its status is read again until the new one answers. */
     let poll = null;
     let gone = false;
+    /** When the restart began, as this tab saw it: one that takes long says so. */
+    let restartingSince = null;
+    let slow = false;
 
     const later = () => {
         if (poll === null && !gone) {
             poll = setTimeout(() => {
                 poll = null;
-                pocket.api("status").then(publish, later);
+                pocket.api("status").then(publish, () => {
+                    if (
+                        !slow &&
+                        restartingSince !== null &&
+                        Date.now() - restartingSince > 120_000
+                    ) {
+                        slow = true;
+
+                        for (const listener of listeners) {
+                            listener();
+                        }
+                    }
+
+                    later();
+                });
             }, 2000);
         }
     };
@@ -92,7 +109,11 @@ export default function setup(pocket) {
         failure = null;
 
         if (next.step === "Restarting") {
+            restartingSince ??= Date.now();
             later();
+        } else {
+            restartingSince = null;
+            slow = false;
         }
 
         const hint =
@@ -246,18 +267,27 @@ export default function setup(pocket) {
                         Check now
                     </button>
                 </div>
-                <div class="muted small">
-                    ${
-                        current.available
-                            ? `${latest.version} is out.`
-                            : latest
-                              ? "This is the newest version."
-                              : current.checkedAt
-                                ? "No release found."
-                                : "Not checked since the server started."
-                    }
-                    ${current.checkedAt ? ` Checked ${ago(current.checkedAt)}.` : ""}
-                </div>
+                ${
+                    step === "Checking" && !current.available
+                        ? html`<div class="updates-step">
+                              <${pocket.Spinner} label="Checking" />
+                              <span>Checking…</span>
+                          </div>`
+                        : html`<div class="muted small">
+                              ${
+                                  current.error
+                                      ? "Could not check."
+                                      : current.available
+                                        ? `${latest.version} is out.`
+                                        : latest
+                                          ? "This is the newest version."
+                                          : current.checkedAt
+                                            ? "No release found."
+                                            : "Not checked since the server started."
+                              }
+                              ${current.checkedAt ? ` Last look ${ago(current.checkedAt)}.` : ""}
+                          </div>`
+                }
                 ${current.error && html`<div class="error-box">${current.error}</div>`}
                 ${
                     failure &&
@@ -339,9 +369,17 @@ export default function setup(pocket) {
                     ${
                         step
                             ? html`<div class="updates-step">
-                                  <${pocket.Spinner} label=${step} />
-                                  <span>${step}…</span>
-                              </div>`
+                                      <${pocket.Spinner} label=${step} />
+                                      <span>${step}…</span>
+                                  </div>
+                                  ${
+                                      slow &&
+                                      html`<p class="muted small">
+                                          This takes longer than usual. If the new version does not
+                                          start in 5 minutes, the launcher goes back to the version
+                                          before. The server's log says why.
+                                      </p>`
+                                  }`
                             : html`<button
                                   class="button primary updates-go"
                                   disabled=${current.blockers.length > 0 || (latest.warning && !confirmed)}

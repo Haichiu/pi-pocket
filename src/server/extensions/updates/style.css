@@ -73,9 +73,7 @@
 
 .updates-notes summary {
     cursor: pointer;
-    min-height: 40px;
-    display: flex;
-    align-items: center;
+    padding: 10px 0;
 }
 
 .updates-notes-body {

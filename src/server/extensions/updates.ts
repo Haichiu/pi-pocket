@@ -14,6 +14,24 @@ const FIRST_CHECK_MS = 2 * 60 * 1000;
 const WAIT_MS = 5 * 60 * 1000;
 const QUIET_MS = 10 * 60 * 1000;
 
+/**
+ * A release the install by itself may take: one an owner could install with no question asked, with nobody at work,
+ * notes that say no warning, a launcher that can go back, and not one that failed before (did not start, or did not
+ * install its packages).
+ */
+export function installsByItself(status: UpdateStatus): boolean {
+    return (
+        status.busy === 0 &&
+        status.available &&
+        status.blockers.length === 0 &&
+        status.step === undefined &&
+        status.rollback &&
+        status.latest?.notes !== undefined &&
+        !status.latest.warning &&
+        !(status.last?.ok === false && status.last.toVersion === status.latest.version)
+    );
+}
+
 export default function createUpdates(host: PocketHost, web: ExtensionWeb) {
     const updates = (host as Partial<PocketHost>).updates;
 
@@ -112,19 +130,7 @@ export default function createUpdates(host: PocketHost, web: ExtensionWeb) {
 
     /** Install by itself: only what an owner could install with no question asked, while nobody works. */
     const autoInstall = (status: UpdateStatus) => {
-        const ready =
-            quiet() &&
-            status.busy === 0 &&
-            status.available &&
-            status.blockers.length === 0 &&
-            status.step === undefined &&
-            status.rollback &&
-            status.latest?.notes !== undefined &&
-            !status.latest.warning &&
-            // A version that did not start, and was undone, is not tried again by itself.
-            !(status.last?.ok === false && status.last.toVersion === status.latest.version);
-
-        if (ready) {
+        if (quiet() && installsByItself(status)) {
             void updates
                 .apply({
                     by: "installed by itself",
