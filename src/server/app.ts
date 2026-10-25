@@ -3359,6 +3359,7 @@ export class PocketApp {
             this.themes.close();
             this.spend.close();
             this.limits.close();
+            this.background.close();
             this.#unsubscribeCommits?.();
             this.#unsubscribeApprovals?.();
             this.#unsubscribeBrowsers?.();

@@ -10,6 +10,7 @@ import {
     BACKGROUND_EXTENSION,
     BACKGROUND_PREFIX,
     type BackgroundTask,
+    type ByteRange,
     DEFAULT_BACKGROUND_LIMITS,
     duration,
     outcome,
@@ -70,10 +71,10 @@ export default function createBackground(host: PocketHost, web: ExtensionWeb) {
                 Type.String({ description: "output, stop: the task's id, from start or list" }),
             ),
         }),
-        // Safe to run again: a start finds the task this very call started, an output reads the same part again, and a
-        // stop of a task that ended changes nothing.
+        // Safe to run again: a start finds the task this very call reserved and never starts it twice, an output reads
+        // the part this call pinned, and a stop of a task that ended changes nothing.
         replay: "safe",
-        execute: async (args, api) => {
+        execute: async (args, api, context) => {
             const reply = (text: string) => ({ output: [{ type: "text" as const, text }] });
             const key = `${api.taskId}:${api.callId}`;
             const line = (item: BackgroundTask) =>
@@ -95,12 +96,29 @@ export default function createBackground(host: PocketHost, web: ExtensionWeb) {
                 }
 
                 const requestedBy = host.requesterOf(api.conversationId);
-                const item = await background.start(api.conversationId, {
-                    command: args.command,
-                    key,
-                    ...(args.notify === undefined ? {} : { notify: args.notify }),
-                    ...(requestedBy === undefined ? {} : { requestedBy }),
-                });
+                const item = await background.start(
+                    api.conversationId,
+                    {
+                        command: args.command,
+                        key,
+                        ...(args.notify === undefined ? {} : { notify: args.notify }),
+                        ...(requestedBy === undefined ? {} : { requestedBy }),
+                    },
+                    context.abortSignal,
+                );
+
+                // This call, run again after a restart cut its start off: it is not started twice.
+                if (item.status === "starting") {
+                    return reply(
+                        `A restart cut off the start of ${item.id}. It is not started again: Pi Pocket looks for its process within a minute, and keeps it or records that it never ran. Check with list.`,
+                    );
+                }
+
+                if (item.status !== "running") {
+                    return reply(
+                        `${item.id} started and has since ${outcome(item)}. Read it with action output.`,
+                    );
+                }
 
                 return reply(
                     `Started ${item.id} (pid ${item.pid}) in ${item.cwd}. ${item.notify ? "You get a message when it ends." : "You get no message when it ends: check it with list."} Read what it prints with action output, id ${item.id}.`,
@@ -125,7 +143,10 @@ export default function createBackground(host: PocketHost, web: ExtensionWeb) {
                 );
             }
 
-            const read = await background.read(api.conversationId, args.id, key);
+            // The part this call reads, kept with the call: run again, it reads the same.
+            const pin = (range: ByteRange) =>
+                api.memo<ByteRange>(`background.read.${args.id}`, range, context);
+            const read = await background.read(api.conversationId, args.id, pin);
 
             if (read === undefined) {
                 return reply(`There is no background task ${args.id}.`);

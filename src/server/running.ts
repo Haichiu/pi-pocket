@@ -121,7 +121,7 @@ async function describeTask(
                 label:
                     item === undefined
                         ? "running a command in the background"
-                        : `running in the background: ${item.command}`,
+                        : `running in the background: ${app.background.describe(id, item)}`,
             };
         }
 

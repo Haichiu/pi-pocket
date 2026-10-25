@@ -491,12 +491,13 @@ export type BackgroundTask = {
     id: string;
     command: string;
     cwd: string;
-    /** Its process, the leader of its own process group. */
+    /** Its process, the leader of its own process group; 0 while it is starting. */
     pid: number;
     /** When its process started, in the kernel's clock ticks since boot: with `pid`, what says it is still the same. */
     startTicks?: number;
     startedAt: number;
-    status: "running" | "exited" | "stopped" | "lost";
+    /** `starting` from when it is reserved until its process is known; `running` while any process of its group runs. */
+    status: "starting" | "running" | "exited" | "stopped" | "lost";
     /** Its exit code, once it exited by itself. */
     code?: number;
     endedAt?: number;
@@ -508,11 +509,10 @@ export type BackgroundTask = {
     taskId: TaskId;
     /** Set by the same call already, when a tool call is replayed: its `taskId:callId`. */
     key?: string;
-    /** How much of its log Pi has read, in bytes, and the last read, so a replayed read gets the same text. */
+    /** How much of its output Pi has read, in bytes from its very start (counting what a trim dropped). */
     read: number;
-    lastRead?: { key: string; from: number; to: number };
-    /** How many times its log grew too long and lost its start. */
-    trimmed?: number;
+    /** Where the log file starts in its output: what trims dropped, less the note each put in their place. */
+    shift?: number;
 };
 
 /** Commands Pi runs in the background. A fork starts without them: their processes belong to the session they were started in. */

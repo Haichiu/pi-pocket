@@ -132,6 +132,25 @@ export class HiddenValues {
     }
 
     /**
+     * How many characters at the end of `text` could be the start of a value hidden in the session: output read in
+     * parts holds them back until the rest comes, so a value split between two reads is still hidden.
+     */
+    pending(text: string, conversationId: ConversationId | number): number {
+        let longest = 0;
+
+        for (const { value } of this.for(conversationId)) {
+            for (let length = Math.min(value.length - 1, text.length); length > longest; length--) {
+                if (text.endsWith(value.slice(0, length))) {
+                    longest = length;
+                    break;
+                }
+            }
+        }
+
+        return longest;
+    }
+
+    /**
      * A tool's result with each value replaced, in what the model reads, what programs read, and its details: in strings
      * and in object keys. The same object when nothing changed, found without copying it.
      */
