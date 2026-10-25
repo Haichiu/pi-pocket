@@ -676,7 +676,7 @@ test("Lancet Guard stays on until its inline confirmation is accepted", real, as
 });
 
 test(
-    "while Pi works, Stop stays inside the message box on every phone width, with extension buttons and with more",
+    "Send, and while Pi works Stop, stay inside the message box on every phone width, with extension buttons and with more",
     real,
     async () => {
         const busy = (on: boolean) =>
@@ -688,16 +688,29 @@ test(
                 }
             `);
         const fit = () =>
-            inPage<{ scroll: number; client: number; stop: number; right: number; shown: number }>(`
+            inPage<{
+                scroll: number;
+                client: number;
+                stop: number;
+                send: number;
+                right: number;
+                shown: number;
+                below: boolean;
+            }>(`
                 const row = document.querySelector(".composer-row");
                 const stop = row.querySelector(".stop-button")?.getBoundingClientRect();
+                const send = row.querySelector(".send-button")?.getBoundingClientRect();
+                const shown = [...row.querySelectorAll(".ext-composer-button")].filter((each) => each.offsetWidth > 0);
+                const end = (stop ?? send).bottom;
 
                 return JSON.stringify({
                     scroll: row.scrollWidth,
                     client: row.clientWidth,
                     stop: stop?.right ?? 0,
+                    send: send?.right ?? 0,
                     right: row.getBoundingClientRect().right,
-                    shown: [...row.querySelectorAll(".ext-composer-button")].filter((each) => each.offsetWidth > 0).length,
+                    shown: shown.length,
+                    below: shown.every((each) => each.getBoundingClientRect().top >= end),
                 });
             `);
 
@@ -726,15 +739,22 @@ test(
                 `);
                 await until(() => has(".ext-composer-button"), "the extension's buttons");
 
+                // Idle: three buttons would push Send out of a phone's box: they take a line under it.
+                const idle = await fit();
+
+                assert.ok(
+                    idle.scroll <= idle.client && idle.send > 0 && idle.send <= idle.right,
+                    `Send is out of the row at ${width} px: ${JSON.stringify(idle)}`,
+                );
+                assert.equal(idle.shown, 3, `the buttons show at ${width} px`);
+                assert.ok(idle.below, `the buttons are on a line under Send at ${width} px`);
+
                 await busy(true);
                 const working = await fit();
 
                 inside(width, "with three extension buttons", working);
-                assert.equal(
-                    working.shown,
-                    width <= 480 ? 0 : 3,
-                    "the extension's buttons wait while Pi works",
-                );
+                assert.equal(working.shown, 3, "the extension's buttons stay, on their own line");
+                assert.ok(working.below, `the buttons are on a line under Stop at ${width} px`);
 
                 // A touch screen's taller tap layer on each mode still takes a tap above and below it: the cut that
                 // keeps Stop in is sideways only.

@@ -3422,10 +3422,65 @@ pre.diff .del {
     }
 }
 
-/* The buttons that extensions add to the row are optional too, and any number of them can come: while Pi works they step
- * aside on a narrow box, so Steer, Queue, Interrupt, and Stop stay inside it. They show again after. */
+/* The buttons that extensions add to the row: any number of them can come. Where they would push Send (or Stop) out of a
+ * narrow box (two or more up to 480 px, one up to 340 px), they take a line of their own under the row, where they stay
+ * while Pi works. The break is the row's `::after`: a line of no height, so only the buttons' margin parts the lines. A
+ * wrapping row breaks before an item that is too wide, not after shrinking one: the model asks for no room, so Send
+ * stays on the first line, then takes what is left, up to its whole name. */
 @container composer (max-width: 480px) {
-    .composer.busy .composer-row .ext-composer-button {
+    .composer-row:has(.ext-composer-button ~ .ext-composer-button) {
+        flex-wrap: wrap;
+        row-gap: 0;
+    }
+
+    .composer-row:has(.ext-composer-button ~ .ext-composer-button) .model-chip {
+        flex: 100 1 0;
+        max-width: max-content;
+    }
+
+    .composer-row:has(.ext-composer-button ~ .ext-composer-button)::after {
+        content: "";
+        order: 1;
+        flex-basis: 100%;
+        height: 0;
+    }
+
+    .composer-row:has(.ext-composer-button ~ .ext-composer-button) .ext-composer-button {
+        order: 2;
+        margin-top: 4px;
+    }
+}
+
+@container composer (max-width: 340px) {
+    .composer-row:has(.ext-composer-button) {
+        flex-wrap: wrap;
+        row-gap: 0;
+    }
+
+    .composer-row:has(.ext-composer-button) .model-chip {
+        flex: 100 1 0;
+        max-width: max-content;
+    }
+
+    .composer-row:has(.ext-composer-button)::after {
+        content: "";
+        order: 1;
+        flex-basis: 100%;
+        height: 0;
+    }
+
+    .composer-row:has(.ext-composer-button) .ext-composer-button {
+        order: 2;
+        margin-top: 4px;
+    }
+}
+
+/* One button, on its line in the row: while Pi works it steps aside on a narrow box, so Steer, Queue, Interrupt, and
+ * Stop stay inside it. It shows again after. */
+@container composer (340px < width <= 480px) {
+    .composer.busy
+        .composer-row:not(:has(.ext-composer-button ~ .ext-composer-button))
+        .ext-composer-button {
         display: none;
     }
 }
@@ -5789,9 +5844,14 @@ button.session-chip {
         /* A sheet keeps 16px from the sides, and clear of a notch. */
         padding: 7vh max(16px, var(--inset-r)) 16px max(16px, var(--inset-l));
     }
-    /* The drawer keeps its place, and its rail clears the notch itself (below). */
+    /* The drawer keeps its place, and its rail clears the notch itself (below). It fills the room inside the margins,
+       not the whole screen's height, which would put its foot below the screen (a phone on its side). */
     .overlay.drawer-overlay {
         padding-left: 16px;
+    }
+    .overlay.drawer-overlay .drawer {
+        height: auto;
+        border-radius: var(--r-sheet);
     }
     .sheet {
         max-width: 500px;
