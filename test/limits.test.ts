@@ -70,7 +70,7 @@ test("what clears with time waits, for the account or the model, until the time 
     );
 });
 
-test("a person's problem, a refused request, or a plan limit with no time never waits", () => {
+test("a person's problem, a refused request, or a monthly plan limit never waits", () => {
     for (const [text, status] of [
         ["insufficient_quota: you exceeded your current quota", undefined],
         ["OAuth refresh failed for anthropic", undefined],
@@ -87,6 +87,51 @@ test("a person's problem, a refused request, or a plan limit with no time never 
 
     // A 409 waits only when a header gives the time.
     assert.equal(ask("409 Conflict", 409, { "retry-after": "5" }).type, "limit");
+});
+
+test("OpenAI Subscription Sharing waits without a reset, but explicit long limits never do", () => {
+    const message =
+        "The ChatGPT user has reached their Subscription Sharing usage limit. " +
+        "Ask the user to try again after their usage limit resets or use an API key instead.";
+
+    for (const status of [undefined, 200, 403, 429]) {
+        assert.deepEqual(ask(message, status, {}, "openai"), {
+            type: "limit",
+            scope: "account",
+            backoff: true,
+            subscription: true,
+            reason: message,
+        });
+    }
+
+    for (const message of [
+        "subscription_sharing_usage_limit_exceeded",
+        "Codex error: The usage limit has been reached",
+        "Usage limit reached for the past 5 hours",
+    ]) {
+        assert.equal((ask(message) as { subscription?: true }).subscription, true);
+    }
+
+    const known = ask(message, 429, { "retry-after": "3600" }, "openai");
+
+    assert.equal((known as { resetAt: number }).resetAt, now + 3_600_000);
+    assert.equal((known as { subscription?: true }).subscription, undefined);
+
+    for (const message of [
+        "Weekly usage limit reached",
+        "Monthly usage limit reached",
+        "Daily usage limit reached",
+    ]) {
+        assert.equal(ask(message).type, "other");
+        assert.equal((ask(message, 429, { "retry-after": "60" }) as { long?: true }).long, true);
+    }
+
+    const streamedReset = ask(message, 200, { "retry-after": "3600" }, "openai");
+
+    assert.equal((streamedReset as { resetAt: number }).resetAt, now + 3_600_000);
+    assert.equal(ask(message, 401).type, "other");
+    assert.equal(ask(message, 402).type, "other");
+    assert.equal(ask(`${message} insufficient_quota`, 429).type, "other");
 });
 
 test("a ChatGPT Business admin cap never waits, even with a retry time", () => {
