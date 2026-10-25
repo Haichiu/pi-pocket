@@ -974,32 +974,33 @@ export function Launcher({ leaving, returnTo }) {
     };
 
     const onKey = (event) => {
-        if (event.isComposing || event.keyCode === 229) {
+        const key = event.key;
+        // A touch screen with a keyboard: the launcher holds focus, not its field (see `home` above). Typing goes to the
+        // field, which takes focus before the key lands: a letter, a dead key (an accent to come), an input method's
+        // keys, or AltGr's (Ctrl+Alt on Windows); not a shortcut. The keys that move and open work from the launcher too.
+        const onDialog = event.target === dialog.current;
+        const composing = event.isComposing || event.keyCode === 229 || key === "Process";
+        const altGr = event.ctrlKey && event.altKey;
+        const typing =
+            (key.length === 1 || key === "Backspace" || key === "Dead" || composing) &&
+            !event.metaKey &&
+            (altGr || (!event.ctrlKey && !event.altKey) || composing);
+
+        if (onDialog && typing) {
+            input.current?.focus({ preventScroll: true });
+
             return;
         }
 
-        const key = event.key;
+        // The keys an input method uses to compose (Escape, Enter among them) are its own, not the launcher's.
+        if (composing) {
+            return;
+        }
 
         if (key === "Escape") {
             event.preventDefault();
             event.stopPropagation();
             close();
-
-            return;
-        }
-
-        // A touch screen with a keyboard: the launcher holds focus, not its field (see `home` above). Typing goes to the
-        // field, which takes focus before the key lands; the keys that move and open work from the launcher too.
-        const onDialog = event.target === dialog.current;
-
-        if (
-            onDialog &&
-            (key.length === 1 || key === "Backspace") &&
-            !event.ctrlKey &&
-            !event.metaKey &&
-            !event.altKey
-        ) {
-            input.current?.focus({ preventScroll: true });
 
             return;
         }
