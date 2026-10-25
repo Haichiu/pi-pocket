@@ -30,6 +30,7 @@ import {
     newer,
     nodeMeets,
     notesWarn,
+    failureLines,
     type Release,
     repositoryProblem,
     Updates,
@@ -911,4 +912,26 @@ test("a release that moves a submodule leaves the submodule's folder where it is
 
     assert.ok(!kept.paths.includes("mod"));
     assert.equal(readFileSync(join(app, "mod", "s.txt"), "utf8"), "one\n");
+});
+
+test("a failed npm says its cause, not its help for the command", () => {
+    const said = [
+        "npm error code EUSAGE",
+        "npm error",
+        "npm error `npm ci` can only install packages when your package.json and package-lock.json are in sync.",
+        "npm error",
+        "npm error Missing: is-number@6.0.0 from lock file",
+        "npm error",
+        "npm error Clean install a project",
+        "npm error",
+        "npm error Usage:",
+        "npm error npm ci",
+        ...Array.from({ length: 30 }, (_, at) => `npm error   --option-${at}`),
+    ].join("\n");
+
+    assert.equal(
+        failureLines(said),
+        "code EUSAGE\n`npm ci` can only install packages when your package.json and package-lock.json are in sync.\nMissing: is-number@6.0.0 from lock file",
+    );
+    assert.equal(failureLines("one\ntwo\n"), "one\ntwo");
 });

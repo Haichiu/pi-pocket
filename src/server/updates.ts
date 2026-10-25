@@ -282,6 +282,20 @@ function npm(): { file: string; shell: boolean } {
     return { file: existsSync(beside) ? beside : windows ? "npm.cmd" : "npm", shell: windows };
 }
 
+/**
+ * What a failed program said, in its last lines; npm's help for the command, which it prints after the error itself
+ * (from the command's summary, the line before `Usage:`, on), is left out, so the cause shows.
+ */
+export function failureLines(output: string): string {
+    const lines = output
+        .split("\n")
+        .map((line) => line.replace(/^npm (error|ERR!)/, "").trim())
+        .filter((line) => line !== "");
+    const usage = lines.findIndex((line) => line === "Usage:");
+
+    return (usage > 0 ? lines.slice(0, usage - 1) : lines).slice(-6).join("\n");
+}
+
 /** Run a program; its last lines of output are the error when it fails. */
 function run(file: string, args: string[], cwd: string, timeoutMs: number, shell = false) {
     return new Promise<void>((done, fail) => {
@@ -306,12 +320,7 @@ function run(file: string, args: string[], cwd: string, timeoutMs: number, shell
                     return;
                 }
 
-                const said = `${stderr}\n${stdout}`
-                    .split("\n")
-                    .map((line) => line.trim())
-                    .filter((line) => line !== "")
-                    .slice(-6)
-                    .join("\n");
+                const said = failureLines(`${stderr}\n${stdout}`);
 
                 fail(new Error(said || error.message));
             },
