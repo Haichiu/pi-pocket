@@ -432,7 +432,7 @@ export interface PocketHost {
      */
     readonly linkedSessions: LinkedSessionsApi;
     /** Messages to Pi for later: the schedule tool sets up Pi's own. */
-    readonly schedules: Pick<Schedules, "add" | "cancel" | "list" | "task">;
+    readonly schedules: Pick<Schedules, "add" | "cancel" | "limits" | "list" | "task">;
     /** Sessions' goals: the goals extension runs their checks and counts them. */
     readonly goals: Pick<Goals, "get" | "run" | "record" | "mayContinue">;
     /** The built-in browser: a page per conversation, which the people in it watch and use too. */
