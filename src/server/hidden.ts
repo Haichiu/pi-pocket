@@ -132,22 +132,42 @@ export class HiddenValues {
     }
 
     /**
-     * How many characters at the end of `text` could be the start of a value hidden in the session: output read in
-     * parts holds them back until the rest comes, so a value split between two reads is still hidden.
+     * How much of `text` can be shown before the rest comes, in characters: up to where its end could be the start of a
+     * value hidden in the session, and never inside a whole value, so output read in parts still hides a value split
+     * between two reads. Values can overlap themselves (`ABAB` in `ABABAB`): a cut is moved back to the start of any
+     * value it would fall inside, until none.
      */
-    pending(text: string, conversationId: ConversationId | number): number {
-        let longest = 0;
+    safe(text: string, conversationId: ConversationId | number): number {
+        const values = this.for(conversationId).map((each) => each.value);
+        let cut = text.length;
 
-        for (const { value } of this.for(conversationId)) {
-            for (let length = Math.min(value.length - 1, text.length); length > longest; length--) {
+        for (const value of values) {
+            for (let length = Math.min(value.length - 1, text.length); length > 0; length--) {
                 if (text.endsWith(value.slice(0, length))) {
-                    longest = length;
+                    cut = Math.min(cut, text.length - length);
                     break;
                 }
             }
         }
 
-        return longest;
+        for (let moved = true; moved;) {
+            moved = false;
+
+            for (const value of values) {
+                for (
+                    let at = text.indexOf(value);
+                    at !== -1 && at < cut;
+                    at = text.indexOf(value, at + 1)
+                ) {
+                    if (at + value.length > cut) {
+                        cut = at;
+                        moved = true;
+                    }
+                }
+            }
+        }
+
+        return cut;
     }
 
     /**

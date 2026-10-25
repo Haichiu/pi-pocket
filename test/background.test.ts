@@ -399,24 +399,128 @@ test(
     },
 );
 
-test("a cut-off start whose process is gone is told as never run", { skip }, async () => {
-    const id = await session();
-
+/** Start a command and cut its start off as a crash between its process and its record would. */
+async function cutOff(id: ConversationId, command: string): Promise<BackgroundTask> {
     app.background.beforeRecord = async () => {
         throw new StartCutOff("the server crashed here");
     };
 
     try {
-        await assert.rejects(app.background.start(id, { command: "true" }), StartCutOff);
+        await assert.rejects(app.background.start(id, { command }), StartCutOff);
     } finally {
         app.background.beforeRecord = undefined;
     }
 
+    return one(id);
+}
+
+test("a cut-off start that ran and ended is told with its exit code", { skip }, async () => {
+    const id = await session();
+
+    await cutOff(id, "echo done early; exit 4");
+    await until(async () => (await one(id)).status === "exited", "the watch to find its code");
+    assert.equal((await one(id)).code, 4);
+    await until(
+        async () => (await userTexts(id)).some((text) => text.includes("done early")),
+        "Pi's message, with its output",
+    );
+});
+
+test("a cut-off start with no process and no exit code is told as unknown", { skip }, async () => {
+    const id = await session();
+
+    // The wrapper goes before it can write the code.
+    await cutOff(id, "kill -9 $PPID");
     await until(async () => (await one(id)).status === "lost", "the watch to give it up");
     await until(
-        async () => (await userTexts(id)).some((text) => text.includes("did not start")),
+        async () => (await userTexts(id)).some((text) => text.includes("unknown outcome")),
         "Pi's message",
     );
+});
+
+test("a stop while a start is under way stops its process too", { skip }, async () => {
+    const id = await session();
+
+    let release = () => {};
+
+    const held = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+
+    app.background.beforeRecord = () => held;
+
+    try {
+        const start = app.background.start(id, { command: "sleep 300" });
+
+        await until(async () => (await items(id)).length === 1, "the reservation");
+        const reserved = await one(id);
+
+        await until(() => markedProcesses(id, reserved.id).length > 0, "its process");
+        assert.equal((await app.background.stop(id, reserved.id))?.status, "stopped");
+        release();
+        await start;
+        await until(() => markedProcesses(id, reserved.id).length === 0, "no process of it left");
+        assert.equal((await one(id)).status, "stopped");
+    } finally {
+        app.background.beforeRecord = undefined;
+        release();
+    }
+});
+
+test(
+    "a daemon that leaves the group keeps its task running, and a stop ends it",
+    { skip },
+    async () => {
+        const id = await session();
+        const item = await app.background.start(id, {
+            command: "setsid sleep 300 & echo $! > daemon.pid; exit 0",
+            notify: false,
+        });
+        const pidFile = join(item.cwd, "daemon.pid");
+
+        await until(
+            () => existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== "",
+            "daemon",
+        );
+        const daemon = Number(readFileSync(pidFile, "utf8"));
+
+        await until(
+            () => !readFileSync(`/proc/${daemon}/stat`, "utf8").includes(` ${item.pid} `),
+            "the daemon in a group of its own",
+        );
+        await wait(400);
+        assert.equal((await one(id)).status, "running", "its daemon still runs");
+
+        await app.background.stop(id, item.id);
+        await until(() => !running(daemon), "the daemon to be stopped");
+    },
+);
+
+test("a value that repeats inside itself stays hidden across reads", { skip }, async () => {
+    const id = await session();
+    const remove = app.hidden.add({ value: "ABCDABCD", label: "twice" });
+
+    try {
+        const item = await app.background.start(id, {
+            command: "printf 'xABCDABCD'; while [ ! -f go-twice ]; do sleep 0.05; done; printf '!'",
+            notify: false,
+        });
+        let seen = "";
+
+        await until(async () => {
+            seen += (await app.background.read(id, item.id))?.text ?? "";
+
+            return (
+                existsSync(join(dataDir, "background", String(id), `${item.id}.log`)) && seen !== ""
+            );
+        }, "a first read");
+        writeFileSync(join(item.cwd, "go-twice"), "");
+        await until(async () => (await one(id)).status !== "running", "the end");
+        seen += (await app.background.read(id, item.id))?.text ?? "";
+        assert.equal(seen, "x[twice]!");
+    } finally {
+        remove();
+    }
 });
 
 test("starts at the same time keep to the limit", { skip }, async () => {
@@ -533,7 +637,10 @@ test("a long log keeps its end, and reads go on across a trim", { skip }, async 
         await until(async () => {
             await app.background.sweep();
 
-            return (await one(id)).shift !== undefined;
+            return readFileSync(
+                join(dataDir, "background", String(id), `${item.id}.log`),
+                "utf8",
+            ).startsWith("[Pi Pocket: output before byte");
         }, "a trim");
 
         const read = (await app.background.read(id, item.id))!;

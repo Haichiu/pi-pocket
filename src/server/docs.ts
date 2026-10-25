@@ -511,8 +511,6 @@ export type BackgroundTask = {
     key?: string;
     /** How much of its output Pi has read, in bytes from its very start (counting what a trim dropped). */
     read: number;
-    /** Where the log file starts in its output: what trims dropped, less the note each put in their place. */
-    shift?: number;
 };
 
 /** Commands Pi runs in the background. A fork starts without them: their processes belong to the session they were started in. */

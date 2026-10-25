@@ -161,7 +161,7 @@ function marked(pid: number, marker: string): boolean {
  * the task's; once the leader is gone, a member counts only while one carries the task's marker, so a group id that a
  * new process took after the task's ended is not taken for it.
  */
-function members(item: BackgroundTask, marker: string): number[] {
+function members(item: BackgroundTask, marker: string, fresh = false): number[] {
     if (item.pid <= 0) {
         return [];
     }
@@ -176,10 +176,10 @@ function members(item: BackgroundTask, marker: string): number[] {
         }
     }
 
-    let group = processes().filter((each) => each.pgid === item.pid);
+    let group = processes(fresh).filter((each) => each.pgid === item.pid);
 
     // A scan from before the task started does not know it yet.
-    if (group.length === 0) {
+    if (group.length === 0 && !fresh) {
         group = processes(true).filter((each) => each.pgid === item.pid);
     }
 
@@ -195,24 +195,23 @@ function members(item: BackgroundTask, marker: string): number[] {
     return group.some((each) => marked(each.pid, marker)) ? group.map((each) => each.pid) : [];
 }
 
-/** Processes with the task's marker that left its group (`setsid`, a daemon): a stop ends them too. */
-function strays(item: BackgroundTask, marker: string): number[] {
+/**
+ * Every live process that carries a task's marker, wherever it is: its group, or one that left it (`setsid`, a daemon).
+ * Reads each process's environment, so it is for the moments that need it: the end of a group, a stop, a recovery.
+ */
+function markedProcesses(marker: string): ProcInfo[] {
     if (!hasProc) {
         return [];
     }
 
-    return processes()
-        .filter((each) => each.pgid !== item.pid && marked(each.pid, marker))
-        .map((each) => each.pid);
+    return processes(true).filter((each) => marked(each.pid, marker));
 }
 
-/** The leader of a task's group found by its marker: for a start that a crash cut off before its record. */
-function findLeader(marker: string): ProcInfo | undefined {
-    if (!hasProc) {
-        return undefined;
-    }
+/** Whether a process found before still runs: the same pid, started at the same time. */
+function same(info: ProcInfo): boolean {
+    const now = procStat(info.pid);
 
-    return processes().find((each) => each.pid === each.pgid && marked(each.pid, marker));
+    return now !== undefined && !gone(now) && now.start === info.start;
 }
 
 function kill(pid: number, name: NodeJS.Signals): void {
@@ -251,7 +250,7 @@ export function outcome(item: BackgroundTask): string {
             return "stopped";
         case "lost":
             return item.pid === 0
-                ? "did not start (a restart cut its start off, and no process of it was found)"
+                ? "has an unknown outcome: a restart cut its start off, and no process or exit code of it was found (it may have run and ended, or never started)"
                 : "ended without an exit code (killed by a signal, or the machine restarted)";
         default:
             return `exited with code ${item.code ?? "?"}`;
@@ -328,6 +327,23 @@ function sizeOf(path: string): number {
     }
 }
 
+/** The note a trim puts first in a log, with where in the output what follows it starts. */
+const TRIM_NOTE = /^\[Pi Pocket: output before byte (\d+) dropped[^\n]*\]\n/;
+
+/**
+ * Where a log stands in its output, from its first line: `skip` bytes of note at its start, and `shift` to add to a
+ * place in the file for its place in the output. Kept in the file itself, so a trim and its note are one write.
+ */
+function headOf(path: string): { skip: number; shift: number } {
+    const note = TRIM_NOTE.exec(readBytes(path, 0, 160).toString("latin1"));
+
+    if (note === null) {
+        return { skip: 0, shift: 0 };
+    }
+
+    return { skip: note[0].length, shift: Number(note[1]) - note[0].length };
+}
+
 // ─── Tasks ──────────────────────────────────────────────────────────────────
 
 export class BackgroundTasks {
@@ -342,11 +358,15 @@ export class BackgroundTasks {
     /** Exit codes of the processes this server started, as Node saw them end. */
     readonly #ends = new Map<number, number | null>();
     #sweeper: ReturnType<typeof setInterval> | undefined;
+    /** Processes with a task's marker found outside its group, by marker. */
+    readonly #strays = new Map<string, ProcInfo[]>();
     /** The durable task behind each background command; the background extension installs it. */
     readonly task: Task<WatchInput, WatchState, null, object>;
 
     constructor(app: PocketApp) {
         this.#app = app;
+        // From the start, whether or not any watch runs: a log keeps to its limit while its extension is off too.
+        this.#sweeping();
         this.task = defineTask<WatchInput, WatchState, null>({
             name: "pocket.background",
             version: 1,
@@ -363,7 +383,8 @@ export class BackgroundTasks {
                 const id = task.input.backgroundId;
                 const item = await this.#stored(conversationId, id);
 
-                if (item?.status === "running") {
+                // A start under way has a process too, maybe: its marker finds it.
+                if (item?.status === "running" || item?.status === "starting") {
                     await this.#kill(conversationId, item);
                 }
 
@@ -393,7 +414,7 @@ export class BackgroundTasks {
         return this.#app.loader.extensionNames().includes(BACKGROUND_EXTENSION);
     }
 
-    /** The sweep runs while this server has a task to watch. */
+    /** The sweep runs while the server does; it only reads a folder until a log there passes its limit. */
     #sweeping(): void {
         if (this.#sweeper === undefined) {
             this.#sweeper = setInterval(() => void this.sweep().catch(() => {}), this.timing.sweep);
@@ -429,48 +450,72 @@ export class BackgroundTasks {
         ];
     }
 
-    /** Whether any process of a task still runs. */
-    #alive(conversationId: ConversationId, item: BackgroundTask): boolean {
-        return members(item, this.#marker(conversationId, item.id)).length > 0;
-    }
-
-    /** Ask the group and its strays to stop, and force what is left after the grace period. */
-    async #kill(conversationId: ConversationId, item: BackgroundTask): Promise<void> {
+    /**
+     * Whether any process of a task still runs: its group, or a process with its marker that left it. Processes found
+     * outside the group are kept, and looked at by pid after; the environments of all are read again only once none is
+     * left of what is known, so a task whose daemon left its group costs a full look only when it may have ended.
+     */
+    #alive(conversationId: ConversationId, item: BackgroundTask, fresh = false): boolean {
         const marker = this.#marker(conversationId, item.id);
 
-        const signal = (name: NodeJS.Signals) => {
-            if (members(item, marker).length > 0) {
-                kill(-item.pid, name);
-            }
+        if (members(item, marker, fresh).length > 0) {
+            return true;
+        }
 
-            for (const pid of strays(item, marker)) {
-                kill(pid, name);
-            }
+        const known = (this.#strays.get(marker) ?? []).filter(same);
 
-            scan = undefined;
-        };
+        if (known.length > 0) {
+            this.#strays.set(marker, known);
 
-        signal("SIGTERM");
+            return true;
+        }
+
+        const found = markedProcesses(marker);
+
+        if (found.length === 0) {
+            this.#strays.delete(marker);
+
+            return false;
+        }
+
+        this.#strays.set(marker, found);
+
+        return true;
+    }
+
+    /** Send a signal to every process of a task: its group, and each process with its marker, found afresh. */
+    #signal(conversationId: ConversationId, item: BackgroundTask, name: NodeJS.Signals): void {
+        const marker = this.#marker(conversationId, item.id);
+
+        if (members(item, marker, true).length > 0) {
+            kill(-item.pid, name);
+        }
+
+        for (const each of markedProcesses(marker)) {
+            kill(each.pid === each.pgid ? -each.pid : each.pid, name);
+        }
+
+        scan = undefined;
+    }
+
+    /** Ask every process of a task to stop, and force what is left after the grace period. */
+    async #kill(conversationId: ConversationId, item: BackgroundTask): Promise<void> {
+        this.#signal(conversationId, item, "SIGTERM");
 
         const until = Date.now() + this.timing.grace;
 
-        while (
-            Date.now() < until &&
-            (members(item, marker).length > 0 || strays(item, marker).length > 0)
-        ) {
+        while (Date.now() < until && this.#alive(conversationId, item, true)) {
             await wait(100);
-            scan = undefined;
         }
 
-        signal("SIGKILL");
+        this.#signal(conversationId, item, "SIGKILL");
+        this.#strays.delete(this.#marker(conversationId, item.id));
     }
 
     /** Wait while any process of the task runs, then record how it ended. */
     async #watch(id: string, runtime: Runtime, context: Context): Promise<void> {
         const conversationId = runtime.conversationId;
         const aborted = context.abortSignal;
-
-        this.#sweeping();
 
         const stop = () => {
             if (aborted?.aborted) {
@@ -479,6 +524,7 @@ export class BackgroundTasks {
         };
 
         let item = await this.#stored(conversationId, id);
+        let recovered = false;
 
         // Reserved, and its process not recorded yet: the start is under way, or a crash cut it off.
         while (item?.status === "starting") {
@@ -486,6 +532,7 @@ export class BackgroundTasks {
 
             if (this.#app.now() - item.startedAt > this.timing.starting) {
                 await this.#recover(conversationId, item);
+                recovered = true;
             } else {
                 await wait(this.timing.look, aborted);
             }
@@ -493,7 +540,8 @@ export class BackgroundTasks {
             item = await this.#stored(conversationId, id);
         }
 
-        if (item === undefined || (item.status !== "running" && item.status !== "lost")) {
+        // Ended elsewhere (a stop), or gone; a recovery that found it ended is told below.
+        if (item === undefined || (item.status !== "running" && !recovered)) {
             return runtime.commit(() => finished, context);
         }
 
@@ -508,7 +556,7 @@ export class BackgroundTasks {
 
             await wait(Math.min(200, this.timing.look * 2), aborted);
 
-            return !this.alive(conversationId, watched);
+            return !this.#alive(conversationId, watched, true);
         };
 
         while (watched.status === "running" && !(await ended())) {
@@ -519,17 +567,10 @@ export class BackgroundTasks {
         stop();
 
         // The wrapper's file, or what Node saw: a command killed by a signal leaves no file.
-        let code: number | undefined;
-
-        try {
-            const text = readFileSync(this.#exitFile(conversationId, id), "utf8").trim();
-
-            code = /^\d+$/.test(text) ? Number(text) : undefined;
-        } catch {
-            code = this.#ends.get(watched.pid) ?? undefined;
-        }
+        const code = this.#exitCode(conversationId, id) ?? this.#ends.get(watched.pid) ?? undefined;
 
         this.#ends.delete(watched.pid);
+        this.#strays.delete(this.#marker(conversationId, id));
 
         let pruned: string[] = [];
 
@@ -541,7 +582,6 @@ export class BackgroundTasks {
                 return finished;
             }
 
-            // A start never found is told as such; one that ran ends with its code, or without one.
             if (stored.status === "running") {
                 stored.status = code === undefined ? "lost" : "exited";
 
@@ -550,7 +590,7 @@ export class BackgroundTasks {
                 }
 
                 stored.endedAt = this.#app.now();
-            } else if (stored.status !== "lost") {
+            } else if (!recovered || (stored.status !== "exited" && stored.status !== "lost")) {
                 return finished;
             }
 
@@ -564,11 +604,28 @@ export class BackgroundTasks {
         this.#removeFiles(conversationId, pruned);
     }
 
-    /** A start a crash cut off: adopt its process when one carries its marker, or record that it never ran. */
-    async #recover(conversationId: ConversationId, item: BackgroundTask): Promise<void> {
-        scan = undefined;
+    /** The exit code the wrapper wrote; undefined while there is none. */
+    #exitCode(conversationId: ConversationId, id: string): number | undefined {
+        try {
+            const text = readFileSync(this.#exitFile(conversationId, id), "utf8").trim();
 
-        const leader = findLeader(this.#marker(conversationId, item.id));
+            return /^\d+$/.test(text) ? Number(text) : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * A start a crash cut off before its process was recorded. Its processes, found by their marker, are adopted: the
+     * group's leader, or what is left of the group. With none, its exit code tells that it ran and ended; with neither,
+     * how it went cannot be known (it may have run and ended without its code, or never started).
+     */
+    async #recover(conversationId: ConversationId, item: BackgroundTask): Promise<void> {
+        const found = markedProcesses(this.#marker(conversationId, item.id));
+        const leader =
+            found.find((each) => each.pid === each.pgid) ??
+            (found[0] === undefined ? undefined : procStat(found[0].pgid));
+        const code = this.#exitCode(conversationId, item.id);
 
         await this.#app.harness.commit(async (tx) => {
             const stored = (await tx.doc(BackgroundDoc, conversationId)).items[item.id];
@@ -577,16 +634,28 @@ export class BackgroundTasks {
                 return;
             }
 
-            if (leader === undefined) {
-                stored.status = "lost";
-                stored.endedAt = this.#app.now();
+            if (found.length > 0) {
+                stored.status = "running";
+                stored.pid = leader?.pid ?? found[0]!.pgid;
+
+                // A leader that carries the marker is known for sure; a group whose leader is gone counts by its members.
+                if (
+                    leader !== undefined &&
+                    marked(leader.pid, this.#marker(conversationId, item.id))
+                ) {
+                    stored.startTicks = leader.start;
+                }
 
                 return;
             }
 
-            stored.status = "running";
-            stored.pid = leader.pid;
-            stored.startTicks = leader.start;
+            stored.status = code === undefined ? "lost" : "exited";
+
+            if (code !== undefined) {
+                stored.code = code;
+            }
+
+            stored.endedAt = this.#app.now();
         }, context);
     }
 
@@ -640,10 +709,6 @@ export class BackgroundTasks {
             `Command: ${this.describe(conversationId, item, 300)}`,
         ];
 
-        if (item.pid === 0) {
-            return lines.join("\n");
-        }
-
         const tail = this.#tail(conversationId, item, TELL_CHARS);
 
         if (tail.text.trim() === "") {
@@ -673,10 +738,11 @@ export class BackgroundTasks {
     ): { text: string; clipped: boolean } {
         const path = this.#log(conversationId, item.id);
         const size = sizeOf(path);
-        const from = Math.max(0, size - max * 4);
+        const { skip } = headOf(path);
+        const from = Math.max(skip, size - max * 4);
         const bytes = readBytes(path, from, size);
         const text = this.#clean(conversationId, bytes.subarray(closingHead(bytes)).toString());
-        const clipped = from > 0 || (item.shift ?? 0) > 0 || text.length > max;
+        const clipped = from > 0 || text.length > max;
 
         return { text: text.length > max ? text.slice(-max) : text, clipped };
     }
@@ -690,9 +756,9 @@ export class BackgroundTasks {
 
     /**
      * Keep each log under the limit: one past it keeps its last part, after a note. The command appends (its output was
-     * opened for appending), so it writes on at the new end; where the file starts in the output moves on (`shift`),
-     * so what Pi read and will read stays where it was. Runs apart from the watches, so a log stays short while its
-     * watch cannot run.
+     * opened for appending), so it writes on at the new end. The note says where in the output what follows it starts,
+     * so what Pi read and will read stays where it was. Runs apart from the watches, from the server's start, so a log
+     * stays short while its watch cannot run.
      */
     async sweep(): Promise<void> {
         const root = join(this.#app.dataDir, "background");
@@ -735,23 +801,16 @@ export class BackgroundTasks {
             return;
         }
 
+        const { shift } = headOf(path);
         const tail = readBytes(path, size - this.sizes.keep, size);
         const kept = tail.subarray(closingHead(tail));
+        // What is kept starts here in the output: the note says so, for reads to place it.
+        const at = size - kept.length + shift;
         const note = Buffer.from(
-            `[Pi Pocket: earlier output dropped, the log passed ${Math.round(this.sizes.maxLog / 1024 / 1024)} MB]\n`,
+            `[Pi Pocket: output before byte ${at} dropped, the log passed ${Math.round(this.sizes.maxLog / 1024 / 1024)} MB]\n`,
         );
 
         writeFileSync(path, Buffer.concat([note, kept]));
-        // Output at `size - kept.length` in the old file is at `note.length` in the new one.
-        const moved = size - kept.length - note.length;
-
-        await this.#app.harness.commit(async (tx) => {
-            const stored = (await tx.doc(BackgroundDoc, conversationId)).items[id];
-
-            if (stored !== undefined) {
-                stored.shift = (stored.shift ?? 0) + moved;
-            }
-        }, context);
     }
 
     /** Ended tasks past the last few leave the document; their files go once the commit holds (`#removeFiles`). */
@@ -822,7 +881,6 @@ export class BackgroundTasks {
         }
 
         signal?.throwIfAborted();
-        this.#sweeping();
 
         // Reserved with its watch in one commit: the limit and the key hold for starts at the same time.
         const reserved = await app.harness.commit(async (tx) => {
@@ -884,6 +942,7 @@ export class BackgroundTasks {
         }
 
         const item = reserved.item;
+        let pid: number | undefined;
 
         try {
             const added = await app.commandEnvs.for(
@@ -893,11 +952,12 @@ export class BackgroundTasks {
 
             signal?.throwIfAborted();
 
-            const pid = this.#spawn(conversationId, item, added);
+            const spawned = this.#spawn(conversationId, item, added);
 
+            pid = spawned;
             await this.beforeRecord?.();
 
-            const startTicks = procStat(pid)?.start;
+            const startTicks = procStat(spawned)?.start;
             const recorded = await app.harness.commit(async (tx) => {
                 const stored = (await tx.doc(BackgroundDoc, conversationId)).items[item.id];
 
@@ -907,7 +967,7 @@ export class BackgroundTasks {
                 }
 
                 stored.status = "running";
-                stored.pid = pid;
+                stored.pid = spawned;
 
                 if (startTicks !== undefined && !Number.isNaN(startTicks)) {
                     stored.startTicks = startTicks;
@@ -917,14 +977,14 @@ export class BackgroundTasks {
             }, context);
 
             if (!recorded) {
-                kill(-pid, "SIGKILL");
+                kill(-spawned, "SIGKILL");
             }
 
             return (await this.#stored(conversationId, item.id)) ?? item;
         } catch (error) {
             // Never started, or started and not recorded: the reservation goes, and so does any process.
             if (!(error instanceof StartCutOff)) {
-                await this.#forget(conversationId, item);
+                await this.#forget(conversationId, item, pid);
             }
 
             throw error;
@@ -969,12 +1029,16 @@ export class BackgroundTasks {
     }
 
     /** Take back a reservation whose start failed: its watch, its record, its files, and any process it has. */
-    async #forget(conversationId: ConversationId, item: BackgroundTask): Promise<void> {
-        const leader = findLeader(this.#marker(conversationId, item.id));
-
-        if (leader !== undefined) {
-            kill(-leader.pid, "SIGKILL");
+    async #forget(
+        conversationId: ConversationId,
+        item: BackgroundTask,
+        pid?: number,
+    ): Promise<void> {
+        if (pid !== undefined) {
+            kill(-pid, "SIGKILL");
         }
+
+        this.#signal(conversationId, item, "SIGKILL");
 
         await this.#app.harness.commit(async (tx) => {
             delete (await tx.doc(BackgroundDoc, conversationId)).items[item.id];
@@ -1000,7 +1064,7 @@ export class BackgroundTasks {
         }
 
         const path = this.#log(conversationId, id);
-        const shift = item.shift ?? 0;
+        const { shift, skip } = headOf(path);
         const end = sizeOf(path) + shift;
         let to = end;
 
@@ -1008,7 +1072,7 @@ export class BackgroundTasks {
             // Enough for the longest value that can be hidden, in its longest UTF-8.
             const last = readBytes(
                 path,
-                Math.max(0, item.read - shift, end - shift - 4 * 4096),
+                Math.max(skip, item.read - shift, end - shift - 4 * 4096),
                 end - shift,
             );
             const open = openTail(last);
@@ -1017,9 +1081,7 @@ export class BackgroundTasks {
             to =
                 end -
                 open -
-                Buffer.byteLength(
-                    text.slice(text.length - this.#app.hidden.pending(text, conversationId)),
-                );
+                Buffer.byteLength(text.slice(this.#app.hidden.safe(text, conversationId)));
         }
 
         const range = (await pin?.({ from: item.read, to: Math.max(item.read, to) })) ?? {
@@ -1038,12 +1100,16 @@ export class BackgroundTasks {
         }
 
         // In the file now: what a trim dropped since is skipped, and said so.
-        const now = (await this.#stored(conversationId, id))?.shift ?? shift;
-        const start = Math.max(range.from - now, 0, range.to - now - READ_CHARS * 4);
-        const bytes = readBytes(path, start, Math.max(start, range.to - now));
+        const now = headOf(path);
+        const start = Math.max(
+            range.from - now.shift,
+            now.skip,
+            range.to - now.shift - READ_CHARS * 4,
+        );
+        const bytes = readBytes(path, start, Math.max(start, range.to - now.shift));
         const head = closingHead(bytes);
         let text = this.#clean(conversationId, bytes.subarray(head).toString());
-        let skipped = start + head - (range.from - now);
+        let skipped = start + head - (range.from - now.shift);
 
         if (text.length > READ_CHARS) {
             skipped += Buffer.byteLength(text.slice(0, text.length - READ_CHARS));
@@ -1111,8 +1177,6 @@ export class BackgroundTasks {
 
     /** Whether any process of a task runs: for tests and checks. */
     alive(conversationId: ConversationId, item: BackgroundTask): boolean {
-        scan = undefined;
-
-        return this.#alive(conversationId, item);
+        return this.#alive(conversationId, item, true);
     }
 }

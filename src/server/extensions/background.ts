@@ -143,7 +143,14 @@ export default function createBackground(host: PocketHost, web: ExtensionWeb) {
                 );
             }
 
-            // The part this call reads, kept with the call: run again, it reads the same.
+            // What this call answered, kept with the call: run again, it answers the same, even after a trim.
+            const answered = await api.memo<string>(`background.output.${args.id}`, context);
+
+            if (answered !== undefined) {
+                return reply(answered);
+            }
+
+            // The part this call reads, kept with the call before the read moves on.
             const pin = (range: ByteRange) =>
                 api.memo<ByteRange>(`background.read.${args.id}`, range, context);
             const read = await background.read(api.conversationId, args.id, pin);
@@ -155,14 +162,14 @@ export default function createBackground(host: PocketHost, web: ExtensionWeb) {
             const state = `${read.item.id}: ${outcome(read.item)}.`;
             const skipped =
                 read.skipped > 0
-                    ? `\n[${read.skipped} earlier bytes not shown: only the last 20,000 characters]`
+                    ? `\n[${read.skipped} bytes before this not shown: past the 20,000 characters a read gives, or dropped from a log that grew too long]`
                     : "";
-
-            return reply(
+            const text =
                 read.text === ""
                     ? `${state} Nothing new since the last read.`
-                    : `${state}${skipped}\n${read.text}`,
-            );
+                    : `${state}${skipped}\n${read.text}`;
+
+            return reply(await api.memo(`background.output.${args.id}`, text, context));
         },
     });
 
