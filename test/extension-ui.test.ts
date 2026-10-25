@@ -675,6 +675,66 @@ test("Lancet Guard stays on until its inline confirmation is accepted", real, as
     );
 });
 
+test(
+    "buttons that extensions add to the message box step aside while Pi works, so Stop stays in a 320 px box",
+    real,
+    async () => {
+        await page.setViewport({ width: 320, height: 700, scale: 2, mobile: true });
+        await page.navigate(`${base}/s/${session}`);
+        await until(() => has(".composer-row"), "the message box");
+        await withMeter(`
+            for (const id of ["a", "b", "c"]) {
+                pocket.composerButton({ id, title: "Tool " + id, icon: "pulse", run: () => {} });
+            }
+
+            return "null";
+        `);
+        await until(() => has(".ext-composer-button"), "the extension's buttons");
+
+        const busy = (on: boolean) =>
+            page.evaluate(`
+                const { store } = await import("/store.js");
+                store.set((state) => ({ view: { ...state.view, live: { ...state.view.live, busy: ${on} } } }));
+                for (let frame = 0; frame < 3; frame++) {
+                    await new Promise((resolve) => requestAnimationFrame(resolve));
+                }
+            `);
+        const fit = () =>
+            inPage<{ scroll: number; client: number; stop: number; right: number; shown: number }>(`
+                const row = document.querySelector(".composer-row");
+                const stop = row.querySelector(".stop-button")?.getBoundingClientRect();
+
+                return JSON.stringify({
+                    scroll: row.scrollWidth,
+                    client: row.clientWidth,
+                    stop: stop?.right ?? 0,
+                    right: row.getBoundingClientRect().right,
+                    shown: [...row.querySelectorAll(".ext-composer-button")].filter((each) => each.offsetWidth > 0).length,
+                });
+            `);
+
+        try {
+            await busy(true);
+            const working = await fit();
+
+            assert.ok(
+                working.scroll <= working.client,
+                `the row overflows: ${JSON.stringify(working)}`,
+            );
+            assert.ok(
+                working.stop > 0 && working.stop <= working.right,
+                `Stop is out of the row: ${JSON.stringify(working)}`,
+            );
+            assert.equal(working.shown, 0, "the extension's buttons wait while Pi works");
+        } finally {
+            await busy(false);
+        }
+
+        assert.equal((await fit()).shown, 3, "and are back when Pi stops");
+        await page.setViewport(DESKTOP);
+    },
+);
+
 test("turning the module off takes away its button and closes its page", real, async () => {
     await page.navigate(`${base}/s/${session}`);
     await until(() => has(rail("Meter")), "the meter's rail button");
