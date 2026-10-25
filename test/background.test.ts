@@ -523,6 +523,121 @@ test("a value that repeats inside itself stays hidden across reads", { skip }, a
     }
 });
 
+test("a stop while the environment is made keeps the command from starting", { skip }, async () => {
+    const id = await session();
+
+    let release = () => {};
+
+    const held = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const remove = app.commandEnvs.add(async () => {
+        await held;
+
+        return {};
+    });
+
+    try {
+        const start = app.background.start(id, { command: "sleep 300" });
+
+        await until(async () => (await items(id)).length === 1, "the reservation");
+        const reserved = await one(id);
+
+        assert.equal((await app.background.stop(id, reserved.id))?.status, "stopped");
+        release();
+        await assert.rejects(start, /stopped before it started/);
+        await wait(200);
+        assert.deepEqual(markedProcesses(id, reserved.id), [], "nothing ran");
+    } finally {
+        remove();
+        release();
+    }
+});
+
+test("a start cut off before its process is told, also after a restart", { skip }, async () => {
+    const id = await session();
+
+    app.background.beforeSpawn = async () => {
+        throw new StartCutOff("the server crashed here");
+    };
+
+    try {
+        await assert.rejects(app.background.start(id, { command: "echo never" }), StartCutOff);
+    } finally {
+        app.background.beforeSpawn = undefined;
+    }
+
+    // The server goes down before the watch looks again; the next one finds no process, no code, and no log.
+    await app.close();
+    app = await openApp(model, dataDir);
+    quick();
+    await until(async () => (await one(id)).status === "lost", "the watch to give it up");
+    await until(
+        async () => (await userTexts(id)).some((text) => text.includes("unknown outcome")),
+        "Pi's message",
+    );
+    assert.equal(
+        (await app.background.read(id, (await one(id)).id))?.text,
+        "",
+        "no log, no output",
+    );
+});
+
+test("a trim a crash cut off is finished from its journal", { skip }, async () => {
+    const id = await session();
+    const item = await app.background.start(id, {
+        command: "echo old; while [ ! -f go-journal ]; do sleep 0.05; done; echo new",
+        notify: false,
+    });
+    const folder = join(dataDir, "background", String(id));
+    const log = join(folder, `${item.id}.log`);
+
+    await until(() => existsSync(log) && readFileSync(log, "utf8") === "old\n", "the first line");
+
+    // As a crash leaves it: the journal written, the log emptied, and the command writing on.
+    const note = "[Pi Pocket: output before byte 100 dropped, the log passed 50 MB]\n";
+
+    writeFileSync(join(folder, `${item.id}.trim`), `${note}kept\n`);
+    writeFileSync(log, "");
+    writeFileSync(join(item.cwd, "go-journal"), "");
+    await until(async () => (await one(id)).status !== "running", "the end");
+
+    const read = (await app.background.read(id, item.id))!;
+
+    assert.equal(read.text, "kept\nnew\n");
+    assert.ok(read.skipped > 0, "what the trim dropped is counted");
+    assert.equal(readFileSync(log, "utf8"), `${note}kept\nnew\n`);
+    assert.equal(existsSync(join(folder, `${item.id}.trim`)), false, "the journal is done");
+});
+
+test("a value split by a color code stays hidden across reads", { skip }, async () => {
+    const id = await session();
+    const remove = app.hidden.add({ value: "ABCD", label: "colored" });
+
+    try {
+        const item = await app.background.start(id, {
+            command:
+                "printf 'AB\\033[0m'; while [ ! -f go-color ]; do sleep 0.05; done; printf 'CD x'",
+            notify: false,
+        });
+        let seen = "";
+
+        await until(async () => {
+            seen += (await app.background.read(id, item.id))?.text ?? "";
+
+            return existsSync(join(dataDir, "background", String(id), `${item.id}.log`));
+        }, "a first read");
+        await wait(200);
+        seen += (await app.background.read(id, item.id))?.text ?? "";
+        writeFileSync(join(item.cwd, "go-color"), "");
+        await until(async () => (await one(id)).status !== "running", "the end");
+        seen += (await app.background.read(id, item.id))?.text ?? "";
+        assert.equal(seen, "[colored] x");
+    } finally {
+        remove();
+    }
+});
+
 test("starts at the same time keep to the limit", { skip }, async () => {
     const id = await session();
     const limits = app.background.limits;

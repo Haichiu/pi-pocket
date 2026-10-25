@@ -26,6 +26,7 @@ import {
     readdirSync,
     readFileSync,
     readSync,
+    renameSync,
     rmSync,
     statSync,
     writeFileSync,
@@ -302,12 +303,19 @@ function closingHead(buffer: Buffer): number {
     return at;
 }
 
+/** Bytes `from` to `to` of a file; none from a file that is not there (a start cut off before its log). */
 function readBytes(path: string, from: number, to: number): Buffer {
     if (to <= from) {
         return Buffer.alloc(0);
     }
 
-    const fd = openSync(path, "r");
+    let fd: number;
+
+    try {
+        fd = openSync(path, "r");
+    } catch {
+        return Buffer.alloc(0);
+    }
 
     try {
         const buffer = Buffer.alloc(to - from);
@@ -353,7 +361,8 @@ export class BackgroundTasks {
     /** How the watches and stops pace themselves, and how long logs grow; tests shorten them. */
     timing = { look: 1000, grace: 4000, starting: 60_000, sweep: 5000 };
     sizes = { maxLog: 50 * 1024 * 1024, keep: 1024 * 1024, keepEnded: 20 };
-    /** Tests only: runs between the start of a process and its record, to cut a start off there. */
+    /** Tests only: run before a process starts, and between its start and its record, to cut a start off there. */
+    beforeSpawn: (() => Promise<void>) | undefined;
     beforeRecord: (() => Promise<void>) | undefined;
     /** Exit codes of the processes this server started, as Node saw them end. */
     readonly #ends = new Map<number, number | null>();
@@ -524,15 +533,16 @@ export class BackgroundTasks {
         };
 
         let item = await this.#stored(conversationId, id);
-        let recovered = false;
 
         // Reserved, and its process not recorded yet: the start is under way, or a crash cut it off.
         while (item?.status === "starting") {
             stop();
 
             if (this.#app.now() - item.startedAt > this.timing.starting) {
-                await this.#recover(conversationId, item);
-                recovered = true;
+                // Found ended, it is recorded with the step after in one commit: nothing is lost to a restart.
+                if (await this.#recover(runtime, item, context)) {
+                    return;
+                }
             } else {
                 await wait(this.timing.look, aborted);
             }
@@ -540,8 +550,8 @@ export class BackgroundTasks {
             item = await this.#stored(conversationId, id);
         }
 
-        // Ended elsewhere (a stop), or gone; a recovery that found it ended is told below.
-        if (item === undefined || (item.status !== "running" && !recovered)) {
+        // Ended elsewhere (a stop), or gone.
+        if (item === undefined || item.status !== "running") {
             return runtime.commit(() => finished, context);
         }
 
@@ -590,7 +600,7 @@ export class BackgroundTasks {
                 }
 
                 stored.endedAt = this.#app.now();
-            } else if (!recovered || (stored.status !== "exited" && stored.status !== "lost")) {
+            } else {
                 return finished;
             }
 
@@ -620,33 +630,44 @@ export class BackgroundTasks {
      * group's leader, or what is left of the group. With none, its exit code tells that it ran and ended; with neither,
      * how it went cannot be known (it may have run and ended without its code, or never started).
      */
-    async #recover(conversationId: ConversationId, item: BackgroundTask): Promise<void> {
-        const found = markedProcesses(this.#marker(conversationId, item.id));
-        const leader =
-            found.find((each) => each.pid === each.pgid) ??
-            (found[0] === undefined ? undefined : procStat(found[0].pgid));
-        const code = this.#exitCode(conversationId, item.id);
+    async #recover(runtime: Runtime, item: BackgroundTask, context: Context): Promise<boolean> {
+        const conversationId = runtime.conversationId;
+        const marker = this.#marker(conversationId, item.id);
+        const found = markedProcesses(marker);
 
-        await this.#app.harness.commit(async (tx) => {
-            const stored = (await tx.doc(BackgroundDoc, conversationId)).items[item.id];
+        if (found.length > 0) {
+            const leader =
+                found.find((each) => each.pid === each.pgid) ??
+                (found[0] === undefined ? undefined : procStat(found[0].pgid));
 
-            if (stored?.status !== "starting") {
-                return;
-            }
+            await this.#app.harness.commit(async (tx) => {
+                const stored = (await tx.doc(BackgroundDoc, conversationId)).items[item.id];
 
-            if (found.length > 0) {
+                if (stored?.status !== "starting") {
+                    return;
+                }
+
                 stored.status = "running";
                 stored.pid = leader?.pid ?? found[0]!.pgid;
 
                 // A leader that carries the marker is known for sure; a group whose leader is gone counts by its members.
-                if (
-                    leader !== undefined &&
-                    marked(leader.pid, this.#marker(conversationId, item.id))
-                ) {
+                if (leader !== undefined && marked(leader.pid, marker)) {
                     stored.startTicks = leader.start;
                 }
+            }, context);
 
-                return;
+            return false;
+        }
+
+        const code = this.#exitCode(conversationId, item.id);
+        let pruned: string[] = [];
+
+        await runtime.commit(async (tx) => {
+            const doc = await tx.doc(BackgroundDoc, conversationId);
+            const stored = doc.items[item.id];
+
+            if (stored?.status !== "starting") {
+                return finished;
             }
 
             stored.status = code === undefined ? "lost" : "exited";
@@ -656,7 +677,16 @@ export class BackgroundTasks {
             }
 
             stored.endedAt = this.#app.now();
+            pruned = this.#prune(doc.items);
+
+            return stored.notify
+                ? ({ status: "running", checkpoint: { phase: "tell" } } as const)
+                : finished;
         }, context);
+
+        this.#removeFiles(conversationId, pruned);
+
+        return true;
     }
 
     /** Tell Pi the task ended, once: the request id is the task's. */
@@ -736,6 +766,8 @@ export class BackgroundTasks {
         item: BackgroundTask,
         max: number,
     ): { text: string; clipped: boolean } {
+        this.#settle(conversationId, item.id);
+
         const path = this.#log(conversationId, item.id);
         const size = sizeOf(path);
         const { skip } = headOf(path);
@@ -745,6 +777,41 @@ export class BackgroundTasks {
         const clipped = from > 0 || text.length > max;
 
         return { text: text.length > max ? text.slice(-max) : text, clipped };
+    }
+
+    /**
+     * How much of raw output can be shown before more comes, in characters: what `#clean` makes of it is what hidden
+     * values are looked for in, so the safe cut is found there and mapped back. An escape code or a carriage return not
+     * finished yet waits too: what follows can change what it means.
+     */
+    #safeRaw(conversationId: ConversationId, raw: string): number {
+        const unfinished = /\u001b(\[[0-9;?]*)?$|\r$/.exec(raw);
+        const head = unfinished === null ? raw : raw.slice(0, unfinished.index);
+        const escape = /\u001b\[[0-9;?]*[A-Za-z]/y;
+        // `at[i]`: where the i-th character of the cleaned text is in the raw text.
+        const at: number[] = [];
+        let cleaned = "";
+
+        for (let index = 0; index < head.length;) {
+            escape.lastIndex = index;
+
+            const code = escape.exec(head);
+
+            if (code !== null) {
+                index += code[0].length;
+                continue;
+            }
+
+            const char = head[index]!;
+
+            cleaned += char === "\r" && head[index + 1] !== "\n" ? "\n" : char;
+            at.push(index);
+            index++;
+        }
+
+        at.push(head.length);
+
+        return at[this.#app.hidden.safe(cleaned, conversationId)]!;
     }
 
     #clean(conversationId: ConversationId, text: string): string {
@@ -794,6 +861,8 @@ export class BackgroundTasks {
     }
 
     async #trim(conversationId: ConversationId, id: string): Promise<void> {
+        this.#settle(conversationId, id);
+
         const path = this.#log(conversationId, id);
         const size = sizeOf(path);
 
@@ -810,7 +879,46 @@ export class BackgroundTasks {
             `[Pi Pocket: output before byte ${at} dropped, the log passed ${Math.round(this.sizes.maxLog / 1024 / 1024)} MB]\n`,
         );
 
-        writeFileSync(path, Buffer.concat([note, kept]));
+        const journal = this.#journal(conversationId, id);
+        const next = Buffer.concat([note, kept]);
+
+        // Kept aside first, whole (a rename is one step): a crash while the log is rewritten is finished from it.
+        writeFileSync(`${journal}.tmp`, next);
+        renameSync(`${journal}.tmp`, journal);
+        writeFileSync(path, next);
+        rmSync(journal, { force: true });
+    }
+
+    /**
+     * Finish a trim a crash cut off: the log holds the start of what the journal keeps (none of it, when the crash came
+     * right after the log was emptied), and then what the command wrote since. It becomes the journal's whole, and then
+     * that. Done again after a crash in the middle of this, it comes to the same.
+     */
+    #settle(conversationId: ConversationId, id: string): void {
+        const journal = this.#journal(conversationId, id);
+
+        if (!existsSync(journal)) {
+            return;
+        }
+
+        const kept = readFileSync(journal);
+        const path = this.#log(conversationId, id);
+        const current = existsSync(path) ? readFileSync(path) : Buffer.alloc(0);
+        let same = 0;
+
+        while (same < kept.length && same < current.length && kept[same] === current[same]) {
+            same++;
+        }
+
+        if (same < kept.length) {
+            writeFileSync(path, Buffer.concat([kept, current.subarray(same)]));
+        }
+
+        rmSync(journal, { force: true });
+    }
+
+    #journal(conversationId: ConversationId, id: string): string {
+        return join(this.#dir(conversationId), `${id}.trim`);
     }
 
     /** Ended tasks past the last few leave the document; their files go once the commit holds (`#removeFiles`). */
@@ -831,6 +939,7 @@ export class BackgroundTasks {
         for (const id of ids ?? []) {
             rmSync(this.#log(conversationId, id), { force: true });
             rmSync(this.#exitFile(conversationId, id), { force: true });
+            rmSync(this.#journal(conversationId, id), { force: true });
         }
     }
 
@@ -952,6 +1061,14 @@ export class BackgroundTasks {
 
             signal?.throwIfAborted();
 
+            // Stopped while its environment was made: it does not start. (A stop after this look still finds it: the
+            // record below sees the stop, and ends the process.)
+            if ((await this.#stored(conversationId, item.id))?.status !== "starting") {
+                throw new HttpError(409, "The task was stopped before it started.");
+            }
+
+            await this.beforeSpawn?.();
+
             const spawned = this.#spawn(conversationId, item, added);
 
             pid = spawned;
@@ -1063,6 +1180,8 @@ export class BackgroundTasks {
             return undefined;
         }
 
+        this.#settle(conversationId, id);
+
         const path = this.#log(conversationId, id);
         const { shift, skip } = headOf(path);
         const end = sizeOf(path) + shift;
@@ -1078,10 +1197,7 @@ export class BackgroundTasks {
             const open = openTail(last);
             const text = last.subarray(0, last.length - open).toString();
 
-            to =
-                end -
-                open -
-                Buffer.byteLength(text.slice(this.#app.hidden.safe(text, conversationId)));
+            to = end - open - Buffer.byteLength(text.slice(this.#safeRaw(conversationId, text)));
         }
 
         const range = (await pin?.({ from: item.read, to: Math.max(item.read, to) })) ?? {
