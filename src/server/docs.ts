@@ -502,6 +502,12 @@ export type BackgroundTask = {
     code?: number;
     /** `split`'s exit code, when writing its log failed (a full disk): its output may stop short. */
     logFailed?: number;
+    /** Why Pi Pocket stopped it, when it did of itself (its output came too fast to keep). */
+    why?: string;
+    /** Processes it started that left its group and still ran when it ended (a daemon): a stop ends them. */
+    left?: number[];
+    /** The machine's boot it started in: a task of another boot has no process left. */
+    boot?: string;
     endedAt?: number;
     /** Whether Pi gets a message when it ends. */
     notify: boolean;

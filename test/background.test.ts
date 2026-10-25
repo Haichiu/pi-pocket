@@ -40,7 +40,8 @@ const route: FauxResponseStep = (request) => {
         return fauxAssistantMessage([fauxText(`tool said: ${text}`)]);
     }
 
-    const args = /^bg (\{.*\})$/s.exec(text)?.[1];
+    // With more than one person on the server, a message starts with whom it is from.
+    const args = /^(?:\[from: [^\]]+\] )?bg (\{.*\})$/s.exec(text)?.[1];
 
     if (args !== undefined) {
         return fauxAssistantMessage([fauxToolCall("background", JSON.parse(args))], {
@@ -501,6 +502,101 @@ test(
         await until(() => !running(daemon), "the daemon to be stopped");
     },
 );
+
+test(
+    "a daemon that closes its output does not keep its task, and a stop ends it after",
+    { skip },
+    async () => {
+        const id = await session();
+        const item = await app.background.start(id, {
+            command:
+                "setsid sleep 300 > /dev/null 2>&1 < /dev/null & echo $! > quiet-daemon.pid; echo started",
+        });
+        const pidFile = join(item.cwd, "quiet-daemon.pid");
+
+        await until(
+            () => existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== "",
+            "daemon",
+        );
+        const daemon = Number(readFileSync(pidFile, "utf8"));
+
+        // The command ended, and the daemon left: the task ends, and says what it left.
+        await until(async () => (await one(id)).status === "exited", "the task to end");
+        assert.deepEqual((await one(id)).left, [daemon]);
+        assert.equal(running(daemon), true);
+        await until(
+            async () => (await userTexts(id)).some((text) => text.includes(`pid ${daemon}`)),
+            "Pi told what it left",
+        );
+
+        await app.background.stop(id, item.id);
+        await until(() => !running(daemon), "the daemon to be stopped");
+        assert.equal((await one(id)).left, undefined);
+    },
+);
+
+test(
+    "a command that writes faster than its log can be kept is stopped, and Pi is told why",
+    { skip },
+    async () => {
+        const id = await session();
+        const sizes = app.background.sizes;
+        const was = sizes.runaway;
+
+        sizes.runaway = 1024 * 1024;
+
+        try {
+            await app.background.start(id, { command: "yes" });
+            await until(
+                async () => (await one(id)).status === "stopped",
+                "the runaway to be stopped",
+            );
+            assert.match((await one(id)).why ?? "", /faster than its log can be kept/);
+            await until(
+                async () =>
+                    (await userTexts(id)).some((text) => text.includes("stopped by Pi Pocket")),
+                "Pi told why",
+            );
+        } finally {
+            sizes.runaway = was;
+        }
+    },
+);
+
+test("Running now's Stop ends a background task, for those who may steer", { skip }, async () => {
+    const id = await session();
+    const item = await app.background.start(id, { command: "sleep 300", notify: false });
+    const { createServer } = await import("node:http");
+    const { createHandler } = await import("../src/server/http.ts");
+    const server = createServer(
+        createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} }),
+    );
+
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+    try {
+        const port = (server.address() as { port: number }).port;
+        const stop = (token: string, taskId: string) =>
+            fetch(`http://127.0.0.1:${port}/api/c/${String(id)}/background/${taskId}/stop`, {
+                method: "POST",
+                headers: {
+                    authorization: `Bearer ${token}`,
+                    "content-type": "application/json",
+                    "x-pocket": "1",
+                },
+                body: "{}",
+            });
+        const viewer = app.config.addUser("Viewer", "viewer");
+
+        assert.equal((await stop(viewer.token, String(item.taskId))).status, 403);
+        assert.equal((await stop(app.config.ownerToken, "999999")).status, 404);
+        assert.equal((await stop(app.config.ownerToken, String(item.taskId))).status, 200);
+        assert.equal((await one(id)).status, "stopped");
+        assert.equal(app.background.alive(id, item), false);
+    } finally {
+        server.close();
+    }
+});
 
 test("a value that repeats inside itself stays hidden across reads", { skip }, async () => {
     const id = await session();

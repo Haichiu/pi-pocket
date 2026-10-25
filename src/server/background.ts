@@ -80,6 +80,8 @@ const WRAPPER =
     'cmd=$PI_POCKET_BACKGROUND_COMMAND; out=$PI_POCKET_BACKGROUND_EXIT; log=$PI_POCKET_BACKGROUND_LOG; size=$PI_POCKET_BACKGROUND_SEGMENT; unset PI_POCKET_BACKGROUND_COMMAND PI_POCKET_BACKGROUND_EXIT PI_POCKET_BACKGROUND_LOG PI_POCKET_BACKGROUND_SEGMENT; bash -c "$cmd" 2>&1 | split -a 6 -b "$size" - "$log"; codes=("${PIPESTATUS[@]}"); printf "%s %s" "${codes[0]}" "${codes[1]}" > "$out"';
 /** The size of a log's segments, unless a test sets another; each task keeps the size it started with. */
 const SEGMENT_BYTES = 4 * 1024 * 1024;
+/** How often a watch keeps its task's log short, whatever its looks at the processes. */
+const TICK_MS = 250;
 /** A segment's name after its task's prefix: six letters, `aaaaaa` the first (enough for 300 million segments). */
 const SEGMENT_NAME = /^[a-z]{6}$/;
 
@@ -117,6 +119,15 @@ export type BackgroundStart = {
 
 const PROC = "/proc";
 const hasProc = existsSync(`${PROC}/self/stat`);
+
+/** This boot of the machine: a task from another boot has no process left, whatever pid it had. */
+const BOOT = (() => {
+    try {
+        return readFileSync(`${PROC}/sys/kernel/random/boot_id`, "utf8").trim();
+    } catch {
+        return undefined;
+    }
+})();
 
 type ProcInfo = { pid: number; pgid: number; state: string; start: number };
 
@@ -179,7 +190,7 @@ function marked(pid: number, marker: string): boolean {
  * new process took after the task's ended is not taken for it.
  */
 function members(item: BackgroundTask, marker: string, fresh = false): number[] {
-    if (item.pid <= 0) {
+    if (item.pid <= 0 || (item.boot !== undefined && item.boot !== BOOT)) {
         return [];
     }
 
@@ -246,13 +257,6 @@ function markedProcesses(marker: string): ProcInfo[] {
     return processes(true).filter((each) => marked(each.pid, marker));
 }
 
-/** Whether a process found before still runs: the same pid, started at the same time. */
-function same(info: ProcInfo): boolean {
-    const now = procStat(info.pid);
-
-    return now !== undefined && !gone(now) && now.start === info.start;
-}
-
 function kill(pid: number, name: NodeJS.Signals): void {
     try {
         process.kill(pid, name);
@@ -278,15 +282,23 @@ export function duration(ms: number): string {
     return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
-/** How a task ended, in words. */
+/** How a task ended, in words, with what it left running. */
 export function outcome(item: BackgroundTask): string {
+    const left = item.left?.length ?? 0;
+
+    return left === 0
+        ? ending(item)
+        : `${ending(item)}; ${left === 1 ? "1 process it started still runs" : `${left} processes it started still run`} outside it (a daemon: pid ${item.left!.join(", ")}), which a stop ends`;
+}
+
+function ending(item: BackgroundTask): string {
     switch (item.status) {
         case "starting":
             return "starting";
         case "running":
             return "running";
         case "stopped":
-            return "stopped";
+            return item.why === undefined ? "stopped" : `stopped by Pi Pocket: ${item.why}`;
         case "lost":
             return item.pid === 0
                 ? "has an unknown outcome: a restart cut its start off, and no process or exit code of it was found (it may have run and ended, or never started)"
@@ -383,15 +395,19 @@ export class BackgroundTasks {
     readonly limits: BackgroundLimits = { ...DEFAULT_BACKGROUND_LIMITS };
     /** How the watches and stops pace themselves, and how long logs grow; tests shorten them. */
     timing = { look: 1000, grace: 4000, starting: 60_000, sweep: 5000 };
-    sizes = { maxLog: 50 * 1024 * 1024, segment: SEGMENT_BYTES, keepEnded: 20 };
+    sizes = {
+        maxLog: 50 * 1024 * 1024,
+        segment: SEGMENT_BYTES,
+        keepEnded: 20,
+        /** More output than this in one tick stops the task: about 800 MB a second. */
+        runaway: 200 * 1024 * 1024,
+    };
     /** Tests only: run before a process starts, and between its start and its record, to cut a start off there. */
     beforeSpawn: (() => Promise<void>) | undefined;
     beforeRecord: (() => Promise<void>) | undefined;
     #sweeper: ReturnType<typeof setInterval> | undefined;
     /** Whether `split` was found. */
     #split = false;
-    /** Processes with a task's marker found outside its group, by marker. */
-    readonly #strays = new Map<string, ProcInfo[]>();
     /** The durable task behind each background command; the background extension installs it. */
     readonly task: Task<WatchInput, WatchState, null, object>;
 
@@ -556,42 +572,26 @@ export class BackgroundTasks {
     }
 
     async #stored(conversationId: ConversationId, id: string): Promise<BackgroundTask | undefined> {
-        return (await this.#app.harness.snapshot(BackgroundDoc, conversationId, context))?.items[
-            id
-        ];
+        const items = (await this.#app.harness.snapshot(BackgroundDoc, conversationId, context))
+            ?.items;
+
+        return items !== undefined && Object.hasOwn(items, id) ? items[id] : undefined;
     }
 
     /**
-     * Whether any process of a task still runs: its group, or a process with its marker that left it. Processes found
-     * outside the group are kept, and looked at by pid after; the environments of all are read again only once none is
-     * left of what is known, so a task whose daemon left its group costs a full look only when it may have ended.
+     * Whether a task still runs: any process of its group. A process that left the group (a daemon, `setsid`) does not
+     * keep it running, or a build tool's daemon would hold one of the session's places for good and its end would never
+     * be told; it is named when the task ends (`#left`), and a stop ends it, also after.
      */
     #alive(conversationId: ConversationId, item: BackgroundTask, fresh = false): boolean {
-        const marker = this.#marker(conversationId, item.id);
+        return members(item, this.#marker(conversationId, item.id), fresh).length > 0;
+    }
 
-        if (members(item, marker, fresh).length > 0) {
-            return true;
-        }
-
-        const known = (this.#strays.get(marker) ?? []).filter(same);
-
-        if (known.length > 0) {
-            this.#strays.set(marker, known);
-
-            return true;
-        }
-
-        const found = markedProcesses(marker);
-
-        if (found.length === 0) {
-            this.#strays.delete(marker);
-
-            return false;
-        }
-
-        this.#strays.set(marker, found);
-
-        return true;
+    /** The processes with a task's marker that still run outside its group: what it left behind. */
+    #left(conversationId: ConversationId, item: BackgroundTask): number[] {
+        return markedProcesses(this.#marker(conversationId, item.id))
+            .filter((each) => each.pgid !== item.pid)
+            .map((each) => each.pid);
     }
 
     /** Send a signal to every process of a task: its group, and each process with its marker, found afresh. */
@@ -615,12 +615,14 @@ export class BackgroundTasks {
 
         const until = Date.now() + this.timing.grace;
 
-        while (Date.now() < until && this.#alive(conversationId, item, true)) {
+        while (
+            Date.now() < until &&
+            (this.#alive(conversationId, item, true) || this.#left(conversationId, item).length > 0)
+        ) {
             await wait(100);
         }
 
         this.#signal(conversationId, item, "SIGKILL");
-        this.#strays.delete(this.#marker(conversationId, item.id));
     }
 
     /** Wait while any process of the task runs, then record how it ended. */
@@ -671,18 +673,44 @@ export class BackgroundTasks {
             return !this.#alive(conversationId, watched, true);
         };
 
-        while (watched.status === "running" && !(await ended())) {
+        // Its log is kept short at each tick, apart from the looks at its processes: a command that writes faster than
+        // the log can be kept (more than `runaway` bytes in a tick) is stopped, before it fills the disk.
+        const tick = Math.min(TICK_MS, this.timing.look);
+        let written = this.#end(conversationId, watched);
+        let looked = Date.now();
+        let runaway: string | undefined;
+
+        for (;;) {
             stop();
-            await wait(this.timing.look, aborted);
+            this.#trimLog(conversationId, watched.id);
+
+            const now = this.#end(conversationId, watched);
+
+            if (now - written > this.sizes.runaway) {
+                runaway = `it wrote more than ${Math.round(this.sizes.runaway / 1024 / 1024)} MB of output in ${tick} ms, faster than its log can be kept`;
+                await this.#kill(conversationId, watched);
+                break;
+            }
+
+            written = now;
+
+            if (Date.now() - looked >= this.timing.look) {
+                looked = Date.now();
+
+                if (await ended()) {
+                    break;
+                }
+            }
+
+            await wait(tick, aborted);
         }
 
         stop();
+        this.#trimLog(conversationId, watched.id);
 
         // The wrapper's file: a command stopped or killed with its wrapper leaves none.
         const codes = this.#exitCodes(conversationId, id);
-
-        this.#strays.delete(this.#marker(conversationId, id));
-
+        const left = this.#left(conversationId, watched);
         let pruned: string[] = [];
 
         await runtime.commit(async (tx) => {
@@ -697,7 +725,12 @@ export class BackgroundTasks {
                 return finished;
             }
 
-            this.#ended(stored, codes);
+            this.#ended(stored, codes, left);
+
+            if (runaway !== undefined) {
+                stored.status = "stopped";
+                stored.why = runaway;
+            }
 
             pruned = this.#prune(doc.items);
 
@@ -709,10 +742,21 @@ export class BackgroundTasks {
         this.#removeFiles(conversationId, pruned);
     }
 
-    /** Record how a task ended, from the codes its wrapper wrote; with none, it is lost. Runs inside a commit. */
-    #ended(stored: BackgroundTask, codes: { code: number; log: number } | undefined): void {
+    /**
+     * Record how a task ended, from the codes its wrapper wrote (with none, it is lost), when (the time of that file:
+     * a task that ended while the server was down ended then), and what it left running. Runs inside a commit.
+     */
+    #ended(
+        stored: BackgroundTask,
+        codes: { code: number; log: number; at: number } | undefined,
+        left: number[] = [],
+    ): void {
         stored.status = codes === undefined ? "lost" : "exited";
-        stored.endedAt = this.#app.now();
+        stored.endedAt = Math.min(codes?.at ?? Infinity, this.#app.now());
+
+        if (left.length > 0) {
+            stored.left = left;
+        }
 
         if (codes !== undefined) {
             stored.code = codes.code;
@@ -727,14 +771,19 @@ export class BackgroundTasks {
     #exitCodes(
         conversationId: ConversationId,
         id: string,
-    ): { code: number; log: number } | undefined {
+    ): { code: number; log: number; at: number } | undefined {
         try {
-            const text = readFileSync(this.#exitFile(conversationId, id), "utf8").trim();
+            const path = this.#exitFile(conversationId, id);
+            const text = readFileSync(path, "utf8").trim();
             const codes = /^(\d+)(?: (\d+))?$/.exec(text);
 
             return codes === null
                 ? undefined
-                : { code: Number(codes[1]), log: Number(codes[2] ?? 0) };
+                : {
+                      code: Number(codes[1]),
+                      log: Number(codes[2] ?? 0),
+                      at: statSync(path).mtimeMs,
+                  };
         } catch {
             return undefined;
         }
@@ -956,22 +1005,54 @@ export class BackgroundTasks {
                 continue;
             }
 
-            const ids = new Set(
-                names.map((name) => /^(\w+)\.log\.[a-z]{6}$/.exec(name)?.[1]).filter(Boolean),
-            );
+            // Files of a task no longer recorded (a crash between its record going and its files): they go, once a
+            // minute old, so a start whose files come just before its record is left alone.
+            const items =
+                (await this.#app.harness.snapshot(BackgroundDoc, conversationId, context))?.items ??
+                {};
+            const ids = new Set<string>();
+
+            for (const name of names) {
+                const id = /^(\w+)\.(?:log(?:\.[a-z]{6})?|exit)$/.exec(name)?.[1];
+
+                if (id === undefined) {
+                    continue;
+                }
+
+                const path = join(root, folder, name);
+
+                if (!Object.hasOwn(items, id)) {
+                    try {
+                        if (Date.now() - statSync(path).mtimeMs > 60_000) {
+                            rmSync(path, { force: true });
+                        }
+                    } catch {
+                        // Gone already.
+                    }
+
+                    continue;
+                }
+
+                ids.add(id);
+            }
 
             for (const id of ids) {
-                // Any size will do to order them: only their sizes are summed.
-                const segments = this.#segments(conversationId, { id: id! });
-                let total = segments.reduce((sum, each) => sum + each.size, 0);
-
-                while (segments.length > 2 && total > this.sizes.maxLog) {
-                    const oldest = segments.shift()!;
-
-                    rmSync(oldest.path, { force: true });
-                    total -= oldest.size;
-                }
+                this.#trimLog(conversationId, id);
             }
+        }
+    }
+
+    /** Keep one task's log under the limit: its oldest segments go while more than the limit is left, but the last two. */
+    #trimLog(conversationId: ConversationId, id: string): void {
+        // Any size will do to order them: only their sizes are summed.
+        const segments = this.#segments(conversationId, { id });
+        let total = segments.reduce((sum, each) => sum + each.size, 0);
+
+        while (segments.length > 2 && total > this.sizes.maxLog) {
+            const oldest = segments.shift()!;
+
+            rmSync(oldest.path, { force: true });
+            total -= oldest.size;
         }
     }
 
@@ -1005,6 +1086,14 @@ export class BackgroundTasks {
     #check(conversationId: ConversationId): void {
         if (!this.running) {
             throw new HttpError(409, "Background tasks are turned off in Extensions.");
+        }
+
+        // Without /proc a task's processes cannot be told from others that took their ids: a stop could hit those.
+        if (!hasProc) {
+            throw new HttpError(
+                501,
+                "Background tasks need Linux: they follow their processes through /proc.",
+            );
         }
 
         const meta = this.#app.sessionMeta(conversationId);
@@ -1089,6 +1178,7 @@ export class BackgroundTasks {
                 command,
                 cwd,
                 pid: 0,
+                ...(BOOT === undefined ? {} : { boot: BOOT }),
                 segment: this.sizes.segment,
                 startedAt: app.now(),
                 status: "starting",
@@ -1295,8 +1385,24 @@ export class BackgroundTasks {
     async stop(conversationId: ConversationId, id: string): Promise<BackgroundTask | undefined> {
         const item = await this.#stored(conversationId, id);
 
-        if (item === undefined || (item.status !== "running" && item.status !== "starting")) {
-            return item;
+        if (item === undefined) {
+            return undefined;
+        }
+
+        // Ended: what it left running (a daemon) is stopped, found again by its marker.
+        if (item.status !== "running" && item.status !== "starting") {
+            if (this.#left(conversationId, item).length > 0 || (item.left?.length ?? 0) > 0) {
+                await this.#kill(conversationId, { ...item, pid: 0 });
+                await this.#app.harness.commit(async (tx) => {
+                    const stored = (await tx.doc(BackgroundDoc, conversationId)).items[id];
+
+                    if (stored !== undefined) {
+                        delete stored.left;
+                    }
+                }, context);
+            }
+
+            return this.#stored(conversationId, id);
         }
 
         // The task's abort stops the processes and records it; a task already gone is stopped here.
@@ -1347,7 +1453,7 @@ export class BackgroundTasks {
         return (await this.list(conversationId)).find((item) => String(item.taskId) === taskId);
     }
 
-    /** Whether any process of a task runs: for tests and checks. */
+    /** Whether any process of a task's group runs: for tests and checks. */
     alive(conversationId: ConversationId, item: BackgroundTask): boolean {
         return this.#alive(conversationId, item, true);
     }

@@ -304,7 +304,7 @@ export class LancetGuard {
                 available: true,
                 enabled: settings.enabled === true,
                 detail: settings.enabled
-                    ? "Lancet Guard checks bash, write, and edit calls."
+                    ? "Lancet Guard checks bash, background, write, and edit calls."
                     : `Lancet Guard is off in ${this.settingsFile}.`,
                 ...withModel,
             };
@@ -315,7 +315,7 @@ export class LancetGuard {
                 ? {
                       available: false,
                       enabled: true,
-                      detail: `Lancet Guard is on but failed to load, so bash, write, and edit calls are blocked: ${reason}`,
+                      detail: `Lancet Guard is on but failed to load, so bash, background, write, and edit calls are blocked: ${reason}`,
                   }
                 : {
                       available: false,

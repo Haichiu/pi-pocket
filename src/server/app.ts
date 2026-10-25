@@ -2789,7 +2789,7 @@ export class PocketApp {
         return {
             available: status.available,
             enabled: false,
-            detail: "Lancet Guard is off in Pi Pocket: bash, write, and edit calls run unchecked here.",
+            detail: "Lancet Guard is off in Pi Pocket: bash, background, write, and edit calls run unchecked here.",
         };
     }
 
