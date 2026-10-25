@@ -30,6 +30,7 @@ import {
     newer,
     nodeMeets,
     notesWarn,
+    failureLines,
     type Release,
     repositoryProblem,
     Updates,
@@ -283,6 +284,23 @@ test("a release whose notes warn needs the owner's word, and the launcher does n
     assert.equal(run(app, ["rev-parse", "HEAD"]), next);
     assert.equal(readPending(app), undefined);
     assert.equal(readOutcome(app)?.ok, false);
+});
+
+test("a release whose notes GitHub did not give is treated as one that warns", async () => {
+    const { upstream, app } = setUp();
+    const next = release(upstream, "1.1.0");
+    const unread: Release = { ...releaseOf("1.1.0"), notes: undefined, unread: true };
+    const { updates } = updater(app, upstream, () => unread);
+    const status = await updates.check();
+
+    assert.match(status.cautions.join("\n"), /could not read this version's release notes/);
+    await assert.rejects(updates.apply(), /read them on GitHub/);
+    assert.notEqual(run(app, ["rev-parse", "HEAD"]), next);
+
+    await updates.apply({ confirmWarning: true });
+    assert.equal(readPending(app)?.oneWay, true);
+    assert.match(rollBackUpdate(app) ?? "", /did not go back/);
+    assert.equal(run(app, ["rev-parse", "HEAD"]), next);
 });
 
 test("new packages install beside the checkout, and the launcher puts the old ones back with the old version", async () => {
@@ -647,6 +665,31 @@ test("a folder or a link where a changed file was, and a second recovery, keep e
     assert.equal(run(app, ["status", "--porcelain"]), "");
 });
 
+test("a file the release makes a folder, with something of the owner's in it, is kept whole when undone", async () => {
+    const { upstream, app } = setUp();
+
+    writeFileSync(join(upstream, "tools"), "a file in 1.0.1\n");
+    const from = release(upstream, "1.0.1");
+
+    run(app, ["pull", "--quiet", "--ff-only"]);
+    rmSync(join(upstream, "tools"));
+    mkdirSync(join(upstream, "tools"));
+    writeFileSync(join(upstream, "tools", "b.txt"), "in a folder in 1.1.0\n");
+    release(upstream, "1.1.0");
+
+    await updater(app, upstream, () => releaseOf("1.1.0")).updates.apply();
+    // Stopped part way, and the owner wrote into the release's new folder before the next start.
+    run(app, ["update-ref", "refs/heads/main", from]);
+    writeFileSync(join(app, "tools", "mine.txt"), "the owner's\n");
+
+    const kept = undoPartialSwitch(app, readPending(app)!);
+
+    assert.deepEqual(kept.paths, ["tools"]);
+    assert.equal(readFileSync(join(kept.folder!, "tools", "mine.txt"), "utf8"), "the owner's\n");
+    assert.equal(readFileSync(join(app, "tools"), "utf8"), "a file in 1.0.1\n");
+    assert.equal(run(app, ["status", "--porcelain"]), "");
+});
+
 test("a clean filter that hides part of a file does not make the owner's file look like git's", async () => {
     const { upstream, app, first } = setUp();
 
@@ -869,4 +912,26 @@ test("a release that moves a submodule leaves the submodule's folder where it is
 
     assert.ok(!kept.paths.includes("mod"));
     assert.equal(readFileSync(join(app, "mod", "s.txt"), "utf8"), "one\n");
+});
+
+test("a failed npm says its cause, not its help for the command", () => {
+    const said = [
+        "npm error code EUSAGE",
+        "npm error",
+        "npm error `npm ci` can only install packages when your package.json and package-lock.json are in sync.",
+        "npm error",
+        "npm error Missing: is-number@6.0.0 from lock file",
+        "npm error",
+        "npm error Clean install a project",
+        "npm error",
+        "npm error Usage:",
+        "npm error npm ci",
+        ...Array.from({ length: 30 }, (_, at) => `npm error   --option-${at}`),
+    ].join("\n");
+
+    assert.equal(
+        failureLines(said),
+        "code EUSAGE\n`npm ci` can only install packages when your package.json and package-lock.json are in sync.\nMissing: is-number@6.0.0 from lock file",
+    );
+    assert.equal(failureLines("one\ntwo\n"), "one\ntwo");
 });

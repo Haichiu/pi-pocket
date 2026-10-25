@@ -41,7 +41,17 @@ export type Release = {
     publishedAt?: string;
     /** The notes have a `[!WARNING]` alert: a step that cannot be undone, or one that needs care. */
     warning: boolean;
+    /**
+     * GitHub did not answer, so the release came from its tag: it may have notes, and a warning in them, that Pi Pocket
+     * could not read. An update to it is treated as one with a warning: the owner's word first, and no going back.
+     */
+    unread?: boolean;
 };
+
+/** The release may need care: its notes warn, or Pi Pocket could not read them to know. */
+export function needsCare(release: Release): boolean {
+    return release.warning || release.unread === true;
+}
 
 export type UpdateStatus = {
     /** The running version, and the checkout's commit and branch (null when detached). */
@@ -272,6 +282,20 @@ function npm(): { file: string; shell: boolean } {
     return { file: existsSync(beside) ? beside : windows ? "npm.cmd" : "npm", shell: windows };
 }
 
+/**
+ * What a failed program said, in its last lines; npm's help for the command, which it prints after the error itself
+ * (from the command's summary, the line before `Usage:`, on), is left out, so the cause shows.
+ */
+export function failureLines(output: string): string {
+    const lines = output
+        .split("\n")
+        .map((line) => line.replace(/^npm (error|ERR!)/, "").trim())
+        .filter((line) => line !== "");
+    const usage = lines.findIndex((line) => line === "Usage:");
+
+    return (usage > 0 ? lines.slice(0, usage - 1) : lines).slice(-6).join("\n");
+}
+
 /** Run a program; its last lines of output are the error when it fails. */
 function run(file: string, args: string[], cwd: string, timeoutMs: number, shell = false) {
     return new Promise<void>((done, fail) => {
@@ -296,12 +320,7 @@ function run(file: string, args: string[], cwd: string, timeoutMs: number, shell
                     return;
                 }
 
-                const said = `${stderr}\n${stdout}`
-                    .split("\n")
-                    .map((line) => line.trim())
-                    .filter((line) => line !== "")
-                    .slice(-6)
-                    .join("\n");
+                const said = failureLines(`${stderr}\n${stdout}`);
 
                 fail(new Error(said || error.message));
             },
@@ -632,7 +651,11 @@ export class Updates {
                 );
             }
 
-            if (latest?.notes === undefined) {
+            if (latest?.unread === true) {
+                cautions.push(
+                    "Pi Pocket could not read this version's release notes, so it cannot tell whether they warn of a step that cannot be undone. Read them on GitHub, and back up the data folder, before you update. If this version does not start, Pi Pocket does not go back by itself.",
+                );
+            } else if (latest?.notes === undefined) {
                 cautions.push("Pi Pocket found this version's tag, but not its release notes.");
             }
 
@@ -736,7 +759,18 @@ export class Updates {
 
         // No release page (or GitHub did not answer): the tags give the newest version, without its notes.
         try {
-            return await tagRelease(this.repository, this.#root);
+            const tagged = await tagRelease(this.repository, this.#root);
+
+            // GitHub failed, rather than said there is no release: notes may exist, with a warning Pi Pocket cannot see.
+            if (failed !== undefined && github !== undefined && tagged !== undefined) {
+                return {
+                    ...tagged,
+                    unread: true,
+                    url: `https://github.com/${github.owner}/${github.name}/releases/tag/${tagged.tag}`,
+                };
+            }
+
+            return tagged;
         } catch (error) {
             throw new Error(
                 failed === undefined ? describe(error) : `${describe(failed)}; ${describe(error)}`,
@@ -831,10 +865,12 @@ export class Updates {
                 throw new HttpError(409, status.blockers[0]!);
             }
 
-            if (latest.warning && options.confirmWarning !== true) {
+            if (needsCare(latest) && options.confirmWarning !== true) {
                 throw new HttpError(
                     409,
-                    "The release notes have a warning: read it, then confirm that you did.",
+                    latest.warning
+                        ? "The release notes have a warning: read it, then confirm that you did."
+                        : "Pi Pocket could not read the release notes: read them on GitHub, then confirm that you did.",
                 );
             }
 
@@ -895,7 +931,7 @@ export class Updates {
                 to: target.commit,
                 branch: status.branch,
                 modules: status.packages,
-                oneWay: latest.warning,
+                oneWay: needsCare(latest),
                 phase: "packages",
                 at: this.#now,
             };
