@@ -193,6 +193,28 @@ function members(item: BackgroundTask, marker: string, fresh = false): number[] 
         }
     }
 
+    // Cheap first, as most looks go: no process in the group at all, or its leader still the same.
+    try {
+        process.kill(-item.pid, 0);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EPERM") {
+            return [];
+        }
+    }
+
+    const first = procStat(item.pid);
+
+    if (
+        first !== undefined &&
+        !gone(first) &&
+        first.pgid === item.pid &&
+        item.startTicks !== undefined &&
+        first.start === item.startTicks
+    ) {
+        return [item.pid];
+    }
+
+    // The leader is gone and the group is not: what is left of it, from a scan.
     let group = processes(fresh).filter((each) => each.pgid === item.pid);
 
     // A scan from before the task started does not know it yet.
@@ -270,7 +292,9 @@ export function outcome(item: BackgroundTask): string {
                 ? "has an unknown outcome: a restart cut its start off, and no process or exit code of it was found (it may have run and ended, or never started)"
                 : "ended without an exit code (killed by a signal, or the machine restarted)";
         default:
-            return `exited with code ${item.code ?? "?"}`;
+            return item.logFailed === undefined
+                ? `exited with code ${item.code ?? "?"}`
+                : `exited with code ${item.code ?? "?"}, but its log failed (split exited with code ${item.logFailed}; a full disk?), so its output may stop short`;
     }
 }
 
@@ -825,12 +849,6 @@ export class BackgroundTasks {
         ];
 
         const tail = this.#tail(conversationId, item, TELL_CHARS);
-
-        if (item.logFailed !== undefined) {
-            lines.push(
-                `Its log failed (split exited with code ${item.logFailed}; a full disk?): its output may stop short.`,
-            );
-        }
 
         if (tail.text.trim() === "") {
             lines.push("It printed nothing.");

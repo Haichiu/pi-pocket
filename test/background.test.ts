@@ -747,8 +747,26 @@ test("a log that fails is told, not hidden behind the command's code", { skip },
         assert.equal((await one(id)).code, 0);
         assert.equal((await one(id)).logFailed, 3);
         await until(
-            async () => (await userTexts(id)).some((text) => text.includes("Its log failed")),
+            async () => (await userTexts(id)).some((text) => text.includes("its log failed")),
             "Pi told the log failed",
+        );
+
+        // Without a message too: list and output say so.
+        const quiet = await app.background.start(id, { command: "echo lost", notify: false });
+
+        await until(
+            async () => (await items(id)).every((each) => each.status !== "running"),
+            "end",
+        );
+        await until(() => !app.isBusy(id), "Pi to answer");
+        await say(id, `bg ${JSON.stringify({ action: "list" })}`);
+        await say(id, `bg ${JSON.stringify({ action: "output", id: quiet.id })}`);
+        assert.equal(
+            (await answers(id)).match(
+                new RegExp(`${quiet.id}: exited with code 0, but its log failed`, "g"),
+            )?.length,
+            2,
+            "in list and in output",
         );
     } finally {
         remove();
