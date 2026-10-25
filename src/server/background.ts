@@ -26,10 +26,8 @@ import {
     readdirSync,
     readFileSync,
     readSync,
-    renameSync,
     rmSync,
     statSync,
-    writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import type { Context } from "@earendil-works/chord";
@@ -72,11 +70,28 @@ const TELL_CHARS = 3000;
 const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
 
 /**
- * Runs the command in a child shell, so that an `exit` in it ends only that shell, then writes its exit code. A stop
+ * Runs the command in a child shell, so that an `exit` in it ends only that shell, with its output and errors through
+ * `split` into segments of the log: `<id>.log.aaaa`, `.aaab`, … Old segments can then go whole, by a deletion, without
+ * rewriting a file the command still writes to. The command's own exit code is written once the pipe ends. A stop
  * signals the whole group, the wrapper too, so a stopped command leaves no exit code.
  */
 const WRAPPER =
-    'cmd=$PI_POCKET_BACKGROUND_COMMAND; out=$PI_POCKET_BACKGROUND_EXIT; unset PI_POCKET_BACKGROUND_COMMAND PI_POCKET_BACKGROUND_EXIT; bash -c "$cmd"; code=$?; printf %s "$code" > "$out"';
+    'cmd=$PI_POCKET_BACKGROUND_COMMAND; out=$PI_POCKET_BACKGROUND_EXIT; log=$PI_POCKET_BACKGROUND_LOG; size=$PI_POCKET_BACKGROUND_SEGMENT; unset PI_POCKET_BACKGROUND_COMMAND PI_POCKET_BACKGROUND_EXIT PI_POCKET_BACKGROUND_LOG PI_POCKET_BACKGROUND_SEGMENT; bash -c "$cmd" 2>&1 | split -a 4 -b "$size" - "$log"; code=${PIPESTATUS[0]}; printf %s "$code" > "$out"';
+/** The size of a log's segments, unless a test sets another; each task keeps the size it started with. */
+const SEGMENT_BYTES = 4 * 1024 * 1024;
+/** A segment's name after its task's prefix: four letters, `aaaa` the first. */
+const SEGMENT_NAME = /^[a-z]{4}$/;
+
+/** A segment's number from its four letters. */
+function segmentIndex(name: string): number {
+    let index = 0;
+
+    for (const char of name) {
+        index = index * 26 + (char.charCodeAt(0) - 97);
+    }
+
+    return index;
+}
 
 type WatchInput = { backgroundId: string };
 type WatchState = { phase: "watch" } | { phase: "tell" };
@@ -335,23 +350,6 @@ function sizeOf(path: string): number {
     }
 }
 
-/** The note a trim puts first in a log, with where in the output what follows it starts. */
-const TRIM_NOTE = /^\[Pi Pocket: output before byte (\d+) dropped[^\n]*\]\n/;
-
-/**
- * Where a log stands in its output, from its first line: `skip` bytes of note at its start, and `shift` to add to a
- * place in the file for its place in the output. Kept in the file itself, so a trim and its note are one write.
- */
-function headOf(path: string): { skip: number; shift: number } {
-    const note = TRIM_NOTE.exec(readBytes(path, 0, 160).toString("latin1"));
-
-    if (note === null) {
-        return { skip: 0, shift: 0 };
-    }
-
-    return { skip: note[0].length, shift: Number(note[1]) - note[0].length };
-}
-
 // ─── Tasks ──────────────────────────────────────────────────────────────────
 
 export class BackgroundTasks {
@@ -360,7 +358,7 @@ export class BackgroundTasks {
     readonly limits: BackgroundLimits = { ...DEFAULT_BACKGROUND_LIMITS };
     /** How the watches and stops pace themselves, and how long logs grow; tests shorten them. */
     timing = { look: 1000, grace: 4000, starting: 60_000, sweep: 5000 };
-    sizes = { maxLog: 50 * 1024 * 1024, keep: 1024 * 1024, keepEnded: 20 };
+    sizes = { maxLog: 50 * 1024 * 1024, segment: SEGMENT_BYTES, keepEnded: 20 };
     /** Tests only: run before a process starts, and between its start and its record, to cut a start off there. */
     beforeSpawn: (() => Promise<void>) | undefined;
     beforeRecord: (() => Promise<void>) | undefined;
@@ -441,8 +439,82 @@ export class BackgroundTasks {
         return join(this.#app.dataDir, "background", String(conversationId));
     }
 
-    #log(conversationId: ConversationId, id: string): string {
-        return join(this.#dir(conversationId), `${id}.log`);
+    /** Where a task's log segments go: this, and four letters. */
+    #logPrefix(conversationId: ConversationId, id: string): string {
+        return join(this.#dir(conversationId), `${id}.log.`);
+    }
+
+    /** A task's log segments there are, first to last, with where each starts in the output. */
+    #segments(
+        conversationId: ConversationId,
+        item: Pick<BackgroundTask, "id" | "segment">,
+    ): { path: string; start: number; size: number }[] {
+        const size = item.segment ?? SEGMENT_BYTES;
+        const prefix = `${item.id}.log.`;
+        let names: string[] = [];
+
+        try {
+            names = readdirSync(this.#dir(conversationId));
+        } catch {
+            return [];
+        }
+
+        return names
+            .filter(
+                (name) => name.startsWith(prefix) && SEGMENT_NAME.test(name.slice(prefix.length)),
+            )
+            .map((name) => ({
+                path: join(this.#dir(conversationId), name),
+                start: segmentIndex(name.slice(prefix.length)) * size,
+                size: sizeOf(join(this.#dir(conversationId), name)),
+            }))
+            .sort((a, b) => a.start - b.start);
+    }
+
+    /** How far a task's output goes, in bytes from its start. */
+    #end(conversationId: ConversationId, item: BackgroundTask): number {
+        const last = this.#segments(conversationId, item).at(-1);
+
+        return last === undefined ? 0 : last.start + last.size;
+    }
+
+    /**
+     * Bytes `from` to `to` of a task's output, from the segments there are, and how many of them are gone with the
+     * segments a sweep removed (at its start: a sweep removes the oldest).
+     */
+    #span(
+        conversationId: ConversationId,
+        item: BackgroundTask,
+        from: number,
+        to: number,
+    ): { bytes: Buffer; gone: number } {
+        const parts: Buffer[] = [];
+        let at = from;
+        let gone = 0;
+
+        for (const segment of this.#segments(conversationId, item)) {
+            const end = segment.start + segment.size;
+
+            if (end <= at || segment.start >= to) {
+                continue;
+            }
+
+            if (segment.start > at) {
+                gone += segment.start - at;
+                at = segment.start;
+            }
+
+            const part = readBytes(
+                segment.path,
+                at - segment.start,
+                Math.min(end, to) - segment.start,
+            );
+
+            parts.push(part);
+            at += part.length;
+        }
+
+        return { bytes: Buffer.concat(parts), gone };
     }
 
     #exitFile(conversationId: ConversationId, id: string): string {
@@ -766,15 +838,11 @@ export class BackgroundTasks {
         item: BackgroundTask,
         max: number,
     ): { text: string; clipped: boolean } {
-        this.#settle(conversationId, item.id);
-
-        const path = this.#log(conversationId, item.id);
-        const size = sizeOf(path);
-        const { skip } = headOf(path);
-        const from = Math.max(skip, size - max * 4);
-        const bytes = readBytes(path, from, size);
+        const end = this.#end(conversationId, item);
+        const from = Math.max(0, end - max * 4);
+        const { bytes, gone } = this.#span(conversationId, item, from, end);
         const text = this.#clean(conversationId, bytes.subarray(closingHead(bytes)).toString());
-        const clipped = from > 0 || text.length > max;
+        const clipped = from > 0 || gone > 0 || text.length > max;
 
         return { text: text.length > max ? text.slice(-max) : text, clipped };
     }
@@ -822,10 +890,10 @@ export class BackgroundTasks {
     }
 
     /**
-     * Keep each log under the limit: one past it keeps its last part, after a note. The command appends (its output was
-     * opened for appending), so it writes on at the new end. The note says where in the output what follows it starts,
-     * so what Pi read and will read stays where it was. Runs apart from the watches, from the server's start, so a log
-     * stays short while its watch cannot run.
+     * Keep each log under the limit: its oldest segments go, whole, while the rest still holds more than the limit; the
+     * last two always stay (`split` writes the last). A deletion is one step: nothing is rewritten, so a crash leaves
+     * nothing half done. Runs apart from the watches, from the server's start, so a log stays short while its watch
+     * cannot run. A segment's place in the output is in its name, so reads stay right.
      */
     async sweep(): Promise<void> {
         const root = join(this.#app.dataDir, "background");
@@ -842,109 +910,32 @@ export class BackgroundTasks {
                 continue;
             }
 
-            let files: string[] = [];
+            const conversationId = Number(folder) as unknown as ConversationId;
+            let names: string[] = [];
 
             try {
-                files = readdirSync(join(root, folder));
+                names = readdirSync(join(root, folder));
             } catch {
                 continue;
             }
 
-            for (const file of files) {
-                const id = /^(\w+)\.log$/.exec(file)?.[1];
+            const ids = new Set(
+                names.map((name) => /^(\w+)\.log\.[a-z]{4}$/.exec(name)?.[1]).filter(Boolean),
+            );
 
-                if (id !== undefined) {
-                    await this.#trim(Number(folder) as unknown as ConversationId, id);
+            for (const id of ids) {
+                // Any size will do to order them: only their sizes are summed.
+                const segments = this.#segments(conversationId, { id: id! });
+                let total = segments.reduce((sum, each) => sum + each.size, 0);
+
+                while (segments.length > 2 && total > this.sizes.maxLog) {
+                    const oldest = segments.shift()!;
+
+                    rmSync(oldest.path, { force: true });
+                    total -= oldest.size;
                 }
             }
         }
-    }
-
-    async #trim(conversationId: ConversationId, id: string): Promise<void> {
-        this.#settle(conversationId, id);
-
-        const path = this.#log(conversationId, id);
-        const size = sizeOf(path);
-
-        if (size <= this.sizes.maxLog) {
-            return;
-        }
-
-        const { shift } = headOf(path);
-        const tail = readBytes(path, size - this.sizes.keep, size);
-        const kept = tail.subarray(closingHead(tail));
-        // What is kept starts here in the output: the note says so, for reads to place it.
-        const at = size - kept.length + shift;
-        const note = Buffer.from(
-            `[Pi Pocket: output before byte ${at} dropped, the log passed ${Math.round(this.sizes.maxLog / 1024 / 1024)} MB]\n`,
-        );
-
-        const journal = this.#journal(conversationId, id);
-        const next = Buffer.concat([note, kept]);
-
-        // Kept aside first, whole (a rename is one step), with how the log looked before: a crash while the log is
-        // rewritten is finished from it, and one before the log changed is told apart.
-        const before = JSON.stringify({ size, head: readBytes(path, 0, 64).toString("base64") });
-
-        writeFileSync(`${journal}.tmp`, Buffer.concat([Buffer.from(`${before}\n`), next]));
-        renameSync(`${journal}.tmp`, journal);
-        writeFileSync(path, next);
-        rmSync(journal, { force: true });
-    }
-
-    /**
-     * Finish a trim a crash cut off. The log is in one of three states. Still as it was (at least as long, and starting
-     * the same): the trim never began, and the next sweep does it again. Holding the start of what the journal keeps
-     * (the rewrite stopped part way): that part, then what the command wrote since. Neither (emptied, then written to):
-     * what the command wrote since. The last two become the journal's whole, and then what was written since. Done
-     * again after a crash in the middle of this, it comes to the same.
-     */
-    #settle(conversationId: ConversationId, id: string): void {
-        const journal = this.#journal(conversationId, id);
-
-        if (!existsSync(journal)) {
-            return;
-        }
-
-        const saved = readFileSync(journal);
-        const line = saved.indexOf(0x0a);
-        let before: { size?: unknown; head?: unknown } = {};
-
-        try {
-            before = JSON.parse(saved.subarray(0, line).toString()) as typeof before;
-        } catch {
-            // A journal without its first line is not one this wrote whole: the log is left as it is.
-            rmSync(journal, { force: true });
-
-            return;
-        }
-
-        const kept = saved.subarray(line + 1);
-        const path = this.#log(conversationId, id);
-        const current = existsSync(path) ? readFileSync(path) : Buffer.alloc(0);
-        const head = Buffer.from(typeof before.head === "string" ? before.head : "", "base64");
-        const untouched =
-            typeof before.size === "number" &&
-            current.length >= before.size &&
-            current.subarray(0, head.length).equals(head);
-
-        if (!untouched) {
-            let same = 0;
-
-            while (same < kept.length && same < current.length && kept[same] === current[same]) {
-                same++;
-            }
-
-            if (same < kept.length) {
-                writeFileSync(path, Buffer.concat([kept, current.subarray(same)]));
-            }
-        }
-
-        rmSync(journal, { force: true });
-    }
-
-    #journal(conversationId: ConversationId, id: string): string {
-        return join(this.#dir(conversationId), `${id}.trim`);
     }
 
     /** Ended tasks past the last few leave the document; their files go once the commit holds (`#removeFiles`). */
@@ -963,9 +954,11 @@ export class BackgroundTasks {
 
     #removeFiles(conversationId: ConversationId, ids: readonly string[] | undefined): void {
         for (const id of ids ?? []) {
-            rmSync(this.#log(conversationId, id), { force: true });
             rmSync(this.#exitFile(conversationId, id), { force: true });
-            rmSync(this.#journal(conversationId, id), { force: true });
+
+            for (const segment of this.#segments(conversationId, { id })) {
+                rmSync(segment.path, { force: true });
+            }
         }
     }
 
@@ -1057,6 +1050,7 @@ export class BackgroundTasks {
                 command,
                 cwd,
                 pid: 0,
+                segment: this.sizes.segment,
                 startedAt: app.now(),
                 status: "starting",
                 notify: request.notify !== false,
@@ -1137,38 +1131,34 @@ export class BackgroundTasks {
     #spawn(conversationId: ConversationId, item: BackgroundTask, added: Record<string, string>) {
         mkdirSync(this.#dir(conversationId), { recursive: true });
 
-        const out = openSync(this.#log(conversationId, item.id), "a");
+        const child = spawn("bash", ["-c", WRAPPER], {
+            cwd: item.cwd,
+            detached: true,
+            stdio: "ignore",
+            env: {
+                ...process.env,
+                ...added,
+                [BACKGROUND_MARKER]: this.#marker(conversationId, item.id),
+                PI_POCKET_BACKGROUND_COMMAND: item.command,
+                PI_POCKET_BACKGROUND_EXIT: this.#exitFile(conversationId, item.id),
+                PI_POCKET_BACKGROUND_LOG: this.#logPrefix(conversationId, item.id),
+                PI_POCKET_BACKGROUND_SEGMENT: String(item.segment ?? SEGMENT_BYTES),
+            },
+        });
 
-        try {
-            const child = spawn("bash", ["-c", WRAPPER], {
-                cwd: item.cwd,
-                detached: true,
-                stdio: ["ignore", out, out],
-                env: {
-                    ...process.env,
-                    ...added,
-                    [BACKGROUND_MARKER]: this.#marker(conversationId, item.id),
-                    PI_POCKET_BACKGROUND_COMMAND: item.command,
-                    PI_POCKET_BACKGROUND_EXIT: this.#exitFile(conversationId, item.id),
-                },
-            });
-
-            child.on("error", () => {});
-            child.on("exit", (code) => {
-                if (child.pid !== undefined) {
-                    this.#ends.set(child.pid, code);
-                }
-            });
-            child.unref();
-
-            if (child.pid === undefined) {
-                throw new HttpError(500, "The command could not start: no bash on this machine?");
+        child.on("error", () => {});
+        child.on("exit", (code) => {
+            if (child.pid !== undefined) {
+                this.#ends.set(child.pid, code);
             }
+        });
+        child.unref();
 
-            return child.pid;
-        } finally {
-            closeSync(out);
+        if (child.pid === undefined) {
+            throw new HttpError(500, "The command could not start: no bash on this machine?");
         }
+
+        return child.pid;
     }
 
     /** Take back a reservation whose start failed: its watch, its record, its files, and any process it has. */
@@ -1206,20 +1196,17 @@ export class BackgroundTasks {
             return undefined;
         }
 
-        this.#settle(conversationId, id);
-
-        const path = this.#log(conversationId, id);
-        const { shift, skip } = headOf(path);
-        const end = sizeOf(path) + shift;
+        const end = this.#end(conversationId, item);
         let to = end;
 
         if (item.status === "running" || item.status === "starting") {
             // Enough for the longest value that can be hidden, in its longest UTF-8.
-            const last = readBytes(
-                path,
-                Math.max(skip, item.read - shift, end - shift - 4 * 4096),
-                end - shift,
-            );
+            const last = this.#span(
+                conversationId,
+                item,
+                Math.max(item.read, end - 4 * 4096),
+                end,
+            ).bytes;
             const open = openTail(last);
             const text = last.subarray(0, last.length - open).toString();
 
@@ -1241,17 +1228,12 @@ export class BackgroundTasks {
             }, context);
         }
 
-        // In the file now: what a trim dropped since is skipped, and said so.
-        const now = headOf(path);
-        const start = Math.max(
-            range.from - now.shift,
-            now.skip,
-            range.to - now.shift - READ_CHARS * 4,
-        );
-        const bytes = readBytes(path, start, Math.max(start, range.to - now.shift));
+        // What a sweep removed since is skipped, and said so.
+        const start = Math.max(range.from, range.to - READ_CHARS * 4);
+        const { bytes, gone } = this.#span(conversationId, item, start, range.to);
         const head = closingHead(bytes);
         let text = this.#clean(conversationId, bytes.subarray(head).toString());
-        let skipped = start + head - (range.from - now.shift);
+        let skipped = start - range.from + gone + head;
 
         if (text.length > READ_CHARS) {
             skipped += Buffer.byteLength(text.slice(0, text.length - READ_CHARS));

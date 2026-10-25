@@ -124,6 +124,19 @@ const items = async (id: ConversationId): Promise<BackgroundTask[]> =>
 
 const one = async (id: ConversationId) => (await items(id))[0]!;
 
+/** A task's log segments, first to last. */
+const segments = (id: ConversationId, taskId: string): string[] => {
+    const folder = join(dataDir, "background", String(id));
+
+    return existsSync(folder)
+        ? readdirSync(folder)
+              .filter((name) => name.startsWith(`${taskId}.log.`))
+              .sort()
+        : [];
+};
+
+const hasLog = (id: ConversationId, taskId: string) => segments(id, taskId).length > 0;
+
 /** The processes of this test run that carry a task's marker. */
 function markedProcesses(id: ConversationId, taskId: string): number[] {
     const marker = `${BACKGROUND_MARKER}=${dataDir}#${String(id)}/${taskId}`;
@@ -297,11 +310,7 @@ test("a task runs while a child it left runs, and a stop ends that child", { ski
     const child = Number(readFileSync(pidFile, "utf8"));
 
     // The command's shell ended, its child runs on: still running.
-    await until(
-        () => existsSync(join(dataDir, "background", String(id), `${item.id}.exit`)),
-        "exit",
-    );
-    await wait(200);
+    await wait(400);
     assert.equal((await one(id)).status, "running");
 
     await app.background.stop(id, item.id);
@@ -510,9 +519,7 @@ test("a value that repeats inside itself stays hidden across reads", { skip }, a
         await until(async () => {
             seen += (await app.background.read(id, item.id))?.text ?? "";
 
-            return (
-                existsSync(join(dataDir, "background", String(id), `${item.id}.log`)) && seen !== ""
-            );
+            return hasLog(id, item.id) && seen !== "";
         }, "a first read");
         writeFileSync(join(item.cwd, "go-twice"), "");
         await until(async () => (await one(id)).status !== "running", "the end");
@@ -583,72 +590,24 @@ test("a start cut off before its process is told, also after a restart", { skip 
     );
 });
 
-test("a trim a crash cut off is finished from its journal", { skip }, async () => {
+test("a character split between two segments reads whole", { skip }, async () => {
     const id = await session();
-    const item = await app.background.start(id, {
-        command: "echo old; while [ ! -f go-journal ]; do sleep 0.05; done; echo new",
-        notify: false,
-    });
-    const folder = join(dataDir, "background", String(id));
-    const log = join(folder, `${item.id}.log`);
+    const sizes = app.background.sizes;
+    const was = sizes.segment;
 
-    await until(() => existsSync(log) && readFileSync(log, "utf8") === "old\n", "the first line");
+    sizes.segment = 4;
 
-    // As a crash leaves it: the journal written, the log emptied, and the command writing on.
-    const note = "[Pi Pocket: output before byte 100 dropped, the log passed 50 MB]\n";
+    try {
+        // "abc" and the first byte of é fill the first segment; its second byte starts the next.
+        const item = await app.background.start(id, { command: "printf 'abc\\303\\251d'" });
 
-    const before = JSON.stringify({ size: 4, head: Buffer.from("old\n").toString("base64") });
-
-    writeFileSync(join(folder, `${item.id}.trim`), `${before}\n${note}kept\n`);
-    writeFileSync(log, "");
-    writeFileSync(join(item.cwd, "go-journal"), "");
-    await until(async () => (await one(id)).status !== "running", "the end");
-
-    const read = (await app.background.read(id, item.id))!;
-
-    assert.equal(read.text, "kept\nnew\n");
-    assert.ok(read.skipped > 0, "what the trim dropped is counted");
-    assert.equal(readFileSync(log, "utf8"), `${note}kept\nnew\n`);
-    assert.equal(existsSync(join(folder, `${item.id}.trim`)), false, "the journal is done");
-});
-
-test(
-    "a trim a crash cut off before the log changed leaves the log as it was",
-    { skip },
-    async () => {
-        const id = await session();
-        const item = await app.background.start(id, {
-            command: "echo one; echo two; while [ ! -f go-early ]; do sleep 0.05; done; echo three",
-            notify: false,
-        });
-        const folder = join(dataDir, "background", String(id));
-        const log = join(folder, `${item.id}.log`);
-
-        await until(
-            () => existsSync(log) && readFileSync(log, "utf8") === "one\ntwo\n",
-            "two lines",
-        );
-
-        // The journal is written, and the crash comes before the log is touched; the command writes on.
-        const before = JSON.stringify({
-            size: 8,
-            head: Buffer.from("one\ntwo\n").toString("base64"),
-        });
-
-        writeFileSync(
-            join(folder, `${item.id}.trim`),
-            `${before}\n[Pi Pocket: output before byte 4 dropped, the log passed 50 MB]\ntwo\n`,
-        );
-        writeFileSync(join(item.cwd, "go-early"), "");
         await until(async () => (await one(id)).status !== "running", "the end");
-
-        // Looked at twice: the same each time.
-        assert.equal((await app.background.read(id, item.id, memo()))?.text, "one\ntwo\nthree\n");
-        assert.equal(readFileSync(log, "utf8"), "one\ntwo\nthree\n", "nothing doubled");
-        assert.equal(existsSync(join(folder, `${item.id}.trim`)), false);
-        assert.equal((await app.background.read(id, item.id))?.text, "", "nothing new");
-    },
-);
+        assert.equal(segments(id, item.id).length, 2);
+        assert.equal((await app.background.read(id, item.id))?.text, "abcéd");
+    } finally {
+        sizes.segment = was;
+    }
+});
 
 test("a value split by a color code stays hidden across reads", { skip }, async () => {
     const id = await session();
@@ -665,7 +624,7 @@ test("a value split by a color code stays hidden across reads", { skip }, async 
         await until(async () => {
             seen += (await app.background.read(id, item.id))?.text ?? "";
 
-            return existsSync(join(dataDir, "background", String(id), `${item.id}.log`));
+            return hasLog(id, item.id);
         }, "a first read");
         await wait(200);
         seen += (await app.background.read(id, item.id))?.text ?? "";
@@ -770,13 +729,13 @@ test(
     },
 );
 
-test("a long log keeps its end, and reads go on across a trim", { skip }, async () => {
+test("a long log loses its oldest segments, and reads go on after them", { skip }, async () => {
     const id = await session();
     const sizes = app.background.sizes;
     const was = { ...sizes };
 
-    sizes.maxLog = 4000;
-    sizes.keep = 1000;
+    sizes.maxLog = 3000;
+    sizes.segment = 1000;
 
     try {
         const item = await app.background.start(id, {
@@ -785,22 +744,15 @@ test("a long log keeps its end, and reads go on across a trim", { skip }, async 
             notify: false,
         });
 
-        await until(
-            () => existsSync(join(dataDir, "background", String(id), `${item.id}.log`)),
-            "a log",
-        );
-        await until(async () => {
-            await app.background.sweep();
+        await until(() => segments(id, item.id).length >= 8, "a long log");
+        const first = segments(id, item.id)[0];
 
-            return readFileSync(
-                join(dataDir, "background", String(id), `${item.id}.log`),
-                "utf8",
-            ).startsWith("[Pi Pocket: output before byte");
-        }, "a trim");
+        await app.background.sweep();
+        assert.ok(!segments(id, item.id).includes(first!), "the oldest went");
 
         const read = (await app.background.read(id, item.id))!;
 
-        assert.ok(read.skipped > 0, "what the trim dropped is counted");
+        assert.ok(read.skipped > 0, "what the sweep removed is counted");
         assert.match(read.text, /line 400 of the log\n$/);
 
         writeFileSync(join(item.cwd, "go-trim"), "");
@@ -829,7 +781,7 @@ test("ended tasks past the last few go, with their files", { skip }, async () =>
                 (await items(id)).length === 1,
             "the first to go",
         );
-        assert.equal(existsSync(join(dataDir, "background", String(id), `${first.id}.log`)), false);
+        assert.deepEqual(segments(id, first.id), []);
     } finally {
         sizes.keepEnded = was;
     }

@@ -509,7 +509,9 @@ export type BackgroundTask = {
     taskId: TaskId;
     /** Set by the same call already, when a tool call is replayed: its `taskId:callId`. */
     key?: string;
-    /** How much of its output Pi has read, in bytes from its very start (counting what a trim dropped). */
+    /** The size of its log's segments, in bytes: a segment's place in the output follows from its number. */
+    segment?: number;
+    /** How much of its output Pi has read, in bytes from its very start (counting what a sweep removed). */
     read: number;
 };
 
