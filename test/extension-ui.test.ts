@@ -735,6 +735,19 @@ test(
                     "the extension's buttons wait while Pi works",
                 );
 
+                // Text that the browser's own font-size setting makes bigger (Firefox on a phone does): the labels of the
+                // three modes grow, and Stop still stays in.
+                await page.evaluate(`
+                    const sheet = new CSSStyleSheet();
+                    sheet.replaceSync(".composer .mode-switch button { font-size: 18px !important; }");
+                    window.__bigText = sheet;
+                    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+                `);
+                inside(width, "with the mode labels at 18 px", await fit());
+                await page.evaluate(
+                    `document.adoptedStyleSheets = document.adoptedStyleSheets.filter((each) => each !== window.__bigText)`,
+                );
+
                 // Something that nothing planned for: the row still keeps Stop.
                 await page.evaluate(`
                     const spacer = document.createElement("span");
