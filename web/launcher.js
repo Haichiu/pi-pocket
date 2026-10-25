@@ -13,6 +13,7 @@ import {
 } from "./commands.js";
 import { extensionLauncherItems, sessionWords } from "./extension-ui.js";
 import { filesAvailable, toggleFiles } from "./files-panel.js";
+import { useDragToClose } from "./gestures.js";
 import { togglePeeks } from "./peeks.js";
 import { modelRefreshAvailable, refreshModels } from "./model-refresh.js";
 import { openPip, pipAvailable } from "./pip.js";
@@ -55,7 +56,18 @@ import {
     varsStyle,
 } from "./theme.js";
 import { trustAvailable } from "./trust.js";
-import { APPLE, copyText, html, Icon, Keys, Marked, scrimPress, shortPath, timeAgo } from "./ui.js";
+import {
+    APPLE,
+    BOTTOM_SHEETS,
+    copyText,
+    html,
+    Icon,
+    Keys,
+    Marked,
+    scrimPress,
+    shortPath,
+    timeAgo,
+} from "./ui.js";
 
 /** How far a letter that does not begin a word may be from the one before it, in a match that is not contiguous. */
 const MAX_GAP = 3;
@@ -645,7 +657,15 @@ export function Launcher({ leaving, returnTo }) {
     const [announcement, setAnnouncement] = useState("");
     const input = useRef(null);
     const list = useRef(null);
+    const dialog = useRef(null);
     const chosen = useRef(false);
+
+    // Phones: a sheet from the bottom edge, which drags back down to close, as the app's other sheets do.
+    useDragToClose(dialog, {
+        dir: "down",
+        onClose: () => store.set({ launcher: false }),
+        enabled: BOTTOM_SHEETS.matches,
+    });
 
     const prefix = PREFIXES[query[0]];
     const needle = (prefix ? query.slice(1) : query).trim().toLowerCase();
@@ -764,6 +784,9 @@ export function Launcher({ leaving, returnTo }) {
         const overlay = input.current?.closest(".launcher-overlay");
         const parent = overlay?.parentElement;
         const blocked = new Map();
+        // Touch screens: the launcher takes focus, not its field, so no keyboard covers the results; a tap on the
+        // field brings it up. As Sheet does.
+        const home = matchMedia("(pointer: coarse)").matches ? dialog.current : input.current;
 
         const restore = (child, { attribute, value }) => {
             if (value === null) {
@@ -819,7 +842,7 @@ export function Launcher({ leaving, returnTo }) {
 
         const keepFocus = (event) => {
             if (!overlay?.contains(event.target)) {
-                input.current?.focus({ preventScroll: true });
+                home?.focus({ preventScroll: true });
             }
         };
 
@@ -828,7 +851,7 @@ export function Launcher({ leaving, returnTo }) {
 
         // Move focus out before hiding its old ancestor from AT (Chromium rejects aria-hidden on focused content).
         document.addEventListener("focusin", keepFocus);
-        input.current?.focus({ preventScroll: true });
+        home?.focus({ preventScroll: true });
         isolate();
 
         if (parent) {
@@ -853,7 +876,11 @@ export function Launcher({ leaving, returnTo }) {
             }
 
             const active = document.activeElement;
-            const lost = active === null || active === document.body || active === input.current;
+            const lost =
+                active === null ||
+                active === document.body ||
+                active === input.current ||
+                active === dialog.current;
             const sheet = document.querySelector(".sheet-host:not(.leaving) .sheet");
             const back = sheet?.contains(returnTo) ? returnTo : (sheet ?? returnTo);
 
@@ -961,8 +988,28 @@ export function Launcher({ leaving, returnTo }) {
             return;
         }
 
+        // A touch screen with a keyboard: the launcher holds focus, not its field (see `home` above). Typing goes to the
+        // field, which takes focus before the key lands; the keys that move and open work from the launcher too.
+        const onDialog = event.target === dialog.current;
+
+        if (
+            onDialog &&
+            (key.length === 1 || key === "Backspace") &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey
+        ) {
+            input.current?.focus({ preventScroll: true });
+
+            return;
+        }
+
         // Toolbar buttons keep their native Enter/Space behavior; options and the input share navigation.
-        if (event.target !== input.current && !event.target.closest(".launcher-item")) {
+        if (
+            !onDialog &&
+            event.target !== input.current &&
+            !event.target.closest(".launcher-item")
+        ) {
             return;
         }
 
@@ -1005,12 +1052,15 @@ export function Launcher({ leaving, returnTo }) {
             class="launcher"
             data-part="launcher"
             data-state=${leaving ? "closing" : undefined}
+            ref=${dialog}
             role="dialog"
             aria-modal="true"
             aria-label="Launcher"
+            tabindex="-1"
             onKeyDown=${onKey}
             onMouseDown=${(event) => event.target !== input.current && event.preventDefault()}
         >
+            <div class="grip" aria-hidden="true"></div>
             <div class="launcher-input" data-part="launcher-input">
                 <span class="prompt" aria-hidden="true">❯</span>
                 <input
