@@ -485,6 +485,47 @@ export const ScheduleDoc = defineDoc<{ items: Record<string, Schedule> }>({
     initial: () => ({ items: {} }),
 });
 
+/** A command Pi started in the background (`background.ts`), and how it ended. */
+export type BackgroundTask = {
+    /** Short and stable: what Pi uses to read, stop, or name it. */
+    id: string;
+    command: string;
+    cwd: string;
+    /** Its process, the leader of its own process group. */
+    pid: number;
+    /** When its process started, in the kernel's clock ticks since boot: with `pid`, what says it is still the same. */
+    startTicks?: number;
+    startedAt: number;
+    status: "running" | "exited" | "stopped" | "lost";
+    /** Its exit code, once it exited by itself. */
+    code?: number;
+    endedAt?: number;
+    /** Whether Pi gets a message when it ends. */
+    notify: boolean;
+    /** Whom Pi worked for when it started the command: its message goes out as their work. */
+    requestedBy?: string;
+    /** The durable task that watches it. */
+    taskId: TaskId;
+    /** Set by the same call already, when a tool call is replayed: its `taskId:callId`. */
+    key?: string;
+    /** How much of its log Pi has read, in bytes, and the last read, so a replayed read gets the same text. */
+    read: number;
+    lastRead?: { key: string; from: number; to: number };
+    /** How many times its log grew too long and lost its start. */
+    trimmed?: number;
+};
+
+/** Commands Pi runs in the background. A fork starts without them: their processes belong to the session they were started in. */
+export const BackgroundDoc = defineDoc<{ items: Record<string, BackgroundTask> }>({
+    kind: "pocket.background",
+    version: 1,
+    ...rebased,
+    scope: "conversation",
+    history: "latest",
+    fork: "initial",
+    initial: () => ({ items: {} }),
+});
+
 /** The last check of a goal: whether it passed, its exit code, and the end of its output. */
 export type GoalCheck = { passed: boolean; code: number; at: number; tail: string };
 

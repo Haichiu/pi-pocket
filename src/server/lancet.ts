@@ -75,7 +75,7 @@ export interface ToolJudgement {
     subject: string;
 }
 
-const SHELL_TOOLS = new Set(["bash"]);
+const SHELL_TOOLS = new Set(["bash", "background"]);
 const FILE_TOOLS = new Set(["write", "edit"]);
 
 export class LancetGuard {
@@ -347,6 +347,11 @@ export class LancetGuard {
         args: Record<string, unknown>,
         cwd: string,
     ): Promise<ToolJudgement | undefined> {
+        // A background task's command is judged as bash's is; reading or stopping one runs nothing.
+        if (tool === "background" && args.action !== "start") {
+            return undefined;
+        }
+
         if (!SHELL_TOOLS.has(tool) && !FILE_TOOLS.has(tool)) {
             return undefined;
         }
