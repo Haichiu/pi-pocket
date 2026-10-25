@@ -197,6 +197,8 @@ export default function setup(pocket) {
 
         // A tick for one release's warning is not one for the next.
         useEffect(() => setConfirmed(false), [version]);
+        // Contact lost, then a status came: the server answers again, so the words about it go.
+        useEffect(() => setError((shown) => (shown?.lost ? null : shown)), [current]);
 
         const run = async (label, work) => {
             setWorking(label);
@@ -212,8 +214,11 @@ export default function setup(pocket) {
                 // No status: the request got no answer (the phone slept, or the server is restarting).
                 setError(
                     failed.status === undefined
-                        ? "Lost contact with the server. An update may still go on: this sheet follows it."
-                        : failed.message,
+                        ? {
+                              text: "Lost contact with the server. An update may still go on: this sheet follows it.",
+                              lost: true,
+                          }
+                        : { text: failed.message, lost: false },
                 );
                 later();
             } finally {
@@ -247,6 +252,8 @@ export default function setup(pocket) {
         }
 
         const latest = current.latest;
+        // Notes that warn, or notes Pi Pocket could not read: the owner's word first.
+        const careful = latest !== undefined && (latest.warning || latest.unread === true);
         const step = current.step ?? working;
         const where = current.commit
             ? `${current.branch ?? "detached"} · ${current.commit.slice(0, 7)}`
@@ -336,7 +343,7 @@ export default function setup(pocket) {
                     }
                     ${
                         latest.notes &&
-                        html`<details class="updates-notes" open=${latest.warning}>
+                        html`<details class="updates-notes" open=${careful}>
                             <summary>Release notes</summary>
                             <div class="updates-notes-body">
                                 <${pocket.Markdown} text=${latest.notes} />
@@ -354,7 +361,7 @@ export default function setup(pocket) {
                             <${List} items=${current.cautions} tone="updates-cautions" />`
                     }
                     ${
-                        latest.warning &&
+                        careful &&
                         current.blockers.length === 0 &&
                         html`<label class="updates-confirm">
                             <input
@@ -362,10 +369,16 @@ export default function setup(pocket) {
                                 checked=${confirmed}
                                 onChange=${(event) => setConfirmed(event.currentTarget.checked)}
                             />
-                            <span>I read the warning in the release notes.</span>
+                            <span>
+                                ${
+                                    latest.warning
+                                        ? "I read the warning in the release notes."
+                                        : "I read the release notes on GitHub."
+                                }
+                            </span>
                         </label>`
                     }
-                    ${error && html`<div class="error-box">${error}</div>`}
+                    ${error && html`<div class="error-box">${error.text}</div>`}
                     ${
                         step
                             ? html`<div class="updates-step">
@@ -382,7 +395,7 @@ export default function setup(pocket) {
                                   }`
                             : html`<button
                                   class="button primary updates-go"
-                                  disabled=${current.blockers.length > 0 || (latest.warning && !confirmed)}
+                                  disabled=${current.blockers.length > 0 || (careful && !confirmed)}
                                   onClick=${update}
                               >
                                   Update to ${latest.version} and restart
