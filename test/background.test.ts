@@ -729,6 +729,63 @@ test(
     },
 );
 
+test("a log that fails is told, not hidden behind the command's code", { skip }, async () => {
+    const id = await session();
+    // A `split` that takes nothing and fails, first on the command's PATH.
+    const bin = join(root, "failing-split");
+    const { chmodSync, mkdirSync } = await import("node:fs");
+
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, "split"), "#!/bin/sh\nexit 3\n");
+    chmodSync(join(bin, "split"), 0o755);
+
+    const remove = app.commandEnvs.add(() => ({ PATH: `${bin}:${process.env.PATH ?? ""}` }));
+
+    try {
+        await app.background.start(id, { command: "echo lost; exit 0" });
+        await until(async () => (await one(id)).status !== "running", "the end");
+        assert.equal((await one(id)).code, 0);
+        assert.equal((await one(id)).logFailed, 3);
+        await until(
+            async () => (await userTexts(id)).some((text) => text.includes("Its log failed")),
+            "Pi told the log failed",
+        );
+    } finally {
+        remove();
+    }
+});
+
+test("a part whose segments are all gone is counted whole", { skip }, async () => {
+    const id = await session();
+    const sizes = app.background.sizes;
+    const was = sizes.segment;
+
+    sizes.segment = 100;
+
+    try {
+        const item = await app.background.start(id, {
+            command: "head -c 1000 /dev/zero | tr '\\0' x",
+            notify: false,
+        });
+
+        await until(async () => (await one(id)).status !== "running", "the end");
+
+        // A call pinned the first 300 bytes; the segments that held them are gone before it reads.
+        for (const name of segments(id, item.id).slice(0, 3)) {
+            const { rmSync } = await import("node:fs");
+
+            rmSync(join(dataDir, "background", String(id), name));
+        }
+
+        const read = await app.background.read(id, item.id, async () => ({ from: 0, to: 300 }));
+
+        assert.equal(read?.text, "");
+        assert.equal(read?.skipped, 300);
+    } finally {
+        sizes.segment = was;
+    }
+});
+
 test("a long log loses its oldest segments, and reads go on after them", { skip }, async () => {
     const id = await session();
     const sizes = app.background.sizes;

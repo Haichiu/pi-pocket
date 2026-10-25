@@ -16,7 +16,7 @@
  * each log under its limit. The background extension (`extensions/background.ts`) installs the task and gives Pi its
  * tool; while it is off, the watches wait.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
     closeSync,
@@ -71,18 +71,19 @@ const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
 
 /**
  * Runs the command in a child shell, so that an `exit` in it ends only that shell, with its output and errors through
- * `split` into segments of the log: `<id>.log.aaaa`, `.aaab`, … Old segments can then go whole, by a deletion, without
- * rewriting a file the command still writes to. The command's own exit code is written once the pipe ends. A stop
+ * `split` into segments of the log: `<id>.log.aaaaaa`, `.aaaaab`, … Old segments can then go whole, by a deletion,
+ * without rewriting a file the command still writes to. The command's exit code, and `split`'s, are written once the
+ * pipe ends: a log that failed (a full disk) is told, not hidden behind the command's code. A stop
  * signals the whole group, the wrapper too, so a stopped command leaves no exit code.
  */
 const WRAPPER =
-    'cmd=$PI_POCKET_BACKGROUND_COMMAND; out=$PI_POCKET_BACKGROUND_EXIT; log=$PI_POCKET_BACKGROUND_LOG; size=$PI_POCKET_BACKGROUND_SEGMENT; unset PI_POCKET_BACKGROUND_COMMAND PI_POCKET_BACKGROUND_EXIT PI_POCKET_BACKGROUND_LOG PI_POCKET_BACKGROUND_SEGMENT; bash -c "$cmd" 2>&1 | split -a 4 -b "$size" - "$log"; code=${PIPESTATUS[0]}; printf %s "$code" > "$out"';
+    'cmd=$PI_POCKET_BACKGROUND_COMMAND; out=$PI_POCKET_BACKGROUND_EXIT; log=$PI_POCKET_BACKGROUND_LOG; size=$PI_POCKET_BACKGROUND_SEGMENT; unset PI_POCKET_BACKGROUND_COMMAND PI_POCKET_BACKGROUND_EXIT PI_POCKET_BACKGROUND_LOG PI_POCKET_BACKGROUND_SEGMENT; bash -c "$cmd" 2>&1 | split -a 6 -b "$size" - "$log"; codes=("${PIPESTATUS[@]}"); printf "%s %s" "${codes[0]}" "${codes[1]}" > "$out"';
 /** The size of a log's segments, unless a test sets another; each task keeps the size it started with. */
 const SEGMENT_BYTES = 4 * 1024 * 1024;
-/** A segment's name after its task's prefix: four letters, `aaaa` the first. */
-const SEGMENT_NAME = /^[a-z]{4}$/;
+/** A segment's name after its task's prefix: six letters, `aaaaaa` the first (enough for 300 million segments). */
+const SEGMENT_NAME = /^[a-z]{6}$/;
 
-/** A segment's number from its four letters. */
+/** A segment's number from its letters. */
 function segmentIndex(name: string): number {
     let index = 0;
 
@@ -362,9 +363,9 @@ export class BackgroundTasks {
     /** Tests only: run before a process starts, and between its start and its record, to cut a start off there. */
     beforeSpawn: (() => Promise<void>) | undefined;
     beforeRecord: (() => Promise<void>) | undefined;
-    /** Exit codes of the processes this server started, as Node saw them end. */
-    readonly #ends = new Map<number, number | null>();
     #sweeper: ReturnType<typeof setInterval> | undefined;
+    /** Whether `split` was found. */
+    #split = false;
     /** Processes with a task's marker found outside its group, by marker. */
     readonly #strays = new Map<string, ProcInfo[]>();
     /** The durable task behind each background command; the background extension installs it. */
@@ -439,7 +440,7 @@ export class BackgroundTasks {
         return join(this.#app.dataDir, "background", String(conversationId));
     }
 
-    /** Where a task's log segments go: this, and four letters. */
+    /** Where a task's log segments go: this, and six letters. */
     #logPrefix(conversationId: ConversationId, id: string): string {
         return join(this.#dir(conversationId), `${id}.log.`);
     }
@@ -512,6 +513,11 @@ export class BackgroundTasks {
 
             parts.push(part);
             at += part.length;
+        }
+
+        // What is left up to `to` was there when the range was taken (a range never passes the output's end): gone.
+        if (at < to) {
+            gone += to - at;
         }
 
         return { bytes: Buffer.concat(parts), gone };
@@ -648,10 +654,9 @@ export class BackgroundTasks {
 
         stop();
 
-        // The wrapper's file, or what Node saw: a command killed by a signal leaves no file.
-        const code = this.#exitCode(conversationId, id) ?? this.#ends.get(watched.pid) ?? undefined;
+        // The wrapper's file: a command stopped or killed with its wrapper leaves none.
+        const codes = this.#exitCodes(conversationId, id);
 
-        this.#ends.delete(watched.pid);
         this.#strays.delete(this.#marker(conversationId, id));
 
         let pruned: string[] = [];
@@ -664,17 +669,11 @@ export class BackgroundTasks {
                 return finished;
             }
 
-            if (stored.status === "running") {
-                stored.status = code === undefined ? "lost" : "exited";
-
-                if (code !== undefined) {
-                    stored.code = code;
-                }
-
-                stored.endedAt = this.#app.now();
-            } else {
+            if (stored.status !== "running") {
                 return finished;
             }
+
+            this.#ended(stored, codes);
 
             pruned = this.#prune(doc.items);
 
@@ -686,12 +685,32 @@ export class BackgroundTasks {
         this.#removeFiles(conversationId, pruned);
     }
 
-    /** The exit code the wrapper wrote; undefined while there is none. */
-    #exitCode(conversationId: ConversationId, id: string): number | undefined {
+    /** Record how a task ended, from the codes its wrapper wrote; with none, it is lost. Runs inside a commit. */
+    #ended(stored: BackgroundTask, codes: { code: number; log: number } | undefined): void {
+        stored.status = codes === undefined ? "lost" : "exited";
+        stored.endedAt = this.#app.now();
+
+        if (codes !== undefined) {
+            stored.code = codes.code;
+
+            if (codes.log !== 0) {
+                stored.logFailed = codes.log;
+            }
+        }
+    }
+
+    /** The exit codes the wrapper wrote, the command's and its log's; undefined while there are none. */
+    #exitCodes(
+        conversationId: ConversationId,
+        id: string,
+    ): { code: number; log: number } | undefined {
         try {
             const text = readFileSync(this.#exitFile(conversationId, id), "utf8").trim();
+            const codes = /^(\d+)(?: (\d+))?$/.exec(text);
 
-            return /^\d+$/.test(text) ? Number(text) : undefined;
+            return codes === null
+                ? undefined
+                : { code: Number(codes[1]), log: Number(codes[2] ?? 0) };
         } catch {
             return undefined;
         }
@@ -731,7 +750,7 @@ export class BackgroundTasks {
             return false;
         }
 
-        const code = this.#exitCode(conversationId, item.id);
+        const codes = this.#exitCodes(conversationId, item.id);
         let pruned: string[] = [];
 
         await runtime.commit(async (tx) => {
@@ -742,13 +761,7 @@ export class BackgroundTasks {
                 return finished;
             }
 
-            stored.status = code === undefined ? "lost" : "exited";
-
-            if (code !== undefined) {
-                stored.code = code;
-            }
-
-            stored.endedAt = this.#app.now();
+            this.#ended(stored, codes);
             pruned = this.#prune(doc.items);
 
             return stored.notify
@@ -812,6 +825,12 @@ export class BackgroundTasks {
         ];
 
         const tail = this.#tail(conversationId, item, TELL_CHARS);
+
+        if (item.logFailed !== undefined) {
+            lines.push(
+                `Its log failed (split exited with code ${item.logFailed}; a full disk?): its output may stop short.`,
+            );
+        }
 
         if (tail.text.trim() === "") {
             lines.push("It printed nothing.");
@@ -920,7 +939,7 @@ export class BackgroundTasks {
             }
 
             const ids = new Set(
-                names.map((name) => /^(\w+)\.log\.[a-z]{4}$/.exec(name)?.[1]).filter(Boolean),
+                names.map((name) => /^(\w+)\.log\.[a-z]{6}$/.exec(name)?.[1]).filter(Boolean),
             );
 
             for (const id of ids) {
@@ -955,6 +974,8 @@ export class BackgroundTasks {
     #removeFiles(conversationId: ConversationId, ids: readonly string[] | undefined): void {
         for (const id of ids ?? []) {
             rmSync(this.#exitFile(conversationId, id), { force: true });
+            // A log of one file, as builds of 0.24.0 before its release wrote.
+            rmSync(join(this.#dir(conversationId), `${id}.log`), { force: true });
 
             for (const segment of this.#segments(conversationId, { id })) {
                 rmSync(segment.path, { force: true });
@@ -1088,6 +1109,7 @@ export class BackgroundTasks {
             }
 
             await this.beforeSpawn?.();
+            this.#needsSplit();
 
             const spawned = this.#spawn(conversationId, item, added);
 
@@ -1128,6 +1150,19 @@ export class BackgroundTasks {
         }
     }
 
+    /** Throws when `split`, which writes the logs, is not on this machine; looked for again until it is found. */
+    #needsSplit(): void {
+        this.#split ||=
+            spawnSync("bash", ["-c", "command -v split"], { stdio: "ignore" }).status === 0;
+
+        if (!this.#split) {
+            throw new HttpError(
+                500,
+                "Background tasks need the split command (coreutils), and it is not on this machine's PATH.",
+            );
+        }
+    }
+
     #spawn(conversationId: ConversationId, item: BackgroundTask, added: Record<string, string>) {
         mkdirSync(this.#dir(conversationId), { recursive: true });
 
@@ -1147,11 +1182,6 @@ export class BackgroundTasks {
         });
 
         child.on("error", () => {});
-        child.on("exit", (code) => {
-            if (child.pid !== undefined) {
-                this.#ends.set(child.pid, code);
-            }
-        });
         child.unref();
 
         if (child.pid === undefined) {

@@ -500,6 +500,8 @@ export type BackgroundTask = {
     status: "starting" | "running" | "exited" | "stopped" | "lost";
     /** Its exit code, once it exited by itself. */
     code?: number;
+    /** `split`'s exit code, when writing its log failed (a full disk): its output may stop short. */
+    logFailed?: number;
     endedAt?: number;
     /** Whether Pi gets a message when it ends. */
     notify: boolean;

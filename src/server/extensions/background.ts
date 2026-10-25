@@ -165,9 +165,11 @@ export default function createBackground(host: PocketHost, web: ExtensionWeb) {
                     ? `\n[${read.skipped} bytes before this not shown: past the 20,000 characters a read gives, or dropped from a log that grew too long]`
                     : "";
             const text =
-                read.text === ""
-                    ? `${state} Nothing new since the last read.`
-                    : `${state}${skipped}\n${read.text}`;
+                read.text !== ""
+                    ? `${state}${skipped}\n${read.text}`
+                    : read.skipped > 0
+                      ? `${state} ${read.skipped} bytes since the last read are gone: the log passed its limit, and its oldest part was removed.`
+                      : `${state} Nothing new since the last read.`;
 
             return reply(await api.memo(`background.output.${args.id}`, text, context));
         },
