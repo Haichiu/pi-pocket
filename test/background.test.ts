@@ -597,7 +597,9 @@ test("a trim a crash cut off is finished from its journal", { skip }, async () =
     // As a crash leaves it: the journal written, the log emptied, and the command writing on.
     const note = "[Pi Pocket: output before byte 100 dropped, the log passed 50 MB]\n";
 
-    writeFileSync(join(folder, `${item.id}.trim`), `${note}kept\n`);
+    const before = JSON.stringify({ size: 4, head: Buffer.from("old\n").toString("base64") });
+
+    writeFileSync(join(folder, `${item.id}.trim`), `${before}\n${note}kept\n`);
     writeFileSync(log, "");
     writeFileSync(join(item.cwd, "go-journal"), "");
     await until(async () => (await one(id)).status !== "running", "the end");
@@ -609,6 +611,44 @@ test("a trim a crash cut off is finished from its journal", { skip }, async () =
     assert.equal(readFileSync(log, "utf8"), `${note}kept\nnew\n`);
     assert.equal(existsSync(join(folder, `${item.id}.trim`)), false, "the journal is done");
 });
+
+test(
+    "a trim a crash cut off before the log changed leaves the log as it was",
+    { skip },
+    async () => {
+        const id = await session();
+        const item = await app.background.start(id, {
+            command: "echo one; echo two; while [ ! -f go-early ]; do sleep 0.05; done; echo three",
+            notify: false,
+        });
+        const folder = join(dataDir, "background", String(id));
+        const log = join(folder, `${item.id}.log`);
+
+        await until(
+            () => existsSync(log) && readFileSync(log, "utf8") === "one\ntwo\n",
+            "two lines",
+        );
+
+        // The journal is written, and the crash comes before the log is touched; the command writes on.
+        const before = JSON.stringify({
+            size: 8,
+            head: Buffer.from("one\ntwo\n").toString("base64"),
+        });
+
+        writeFileSync(
+            join(folder, `${item.id}.trim`),
+            `${before}\n[Pi Pocket: output before byte 4 dropped, the log passed 50 MB]\ntwo\n`,
+        );
+        writeFileSync(join(item.cwd, "go-early"), "");
+        await until(async () => (await one(id)).status !== "running", "the end");
+
+        // Looked at twice: the same each time.
+        assert.equal((await app.background.read(id, item.id, memo()))?.text, "one\ntwo\nthree\n");
+        assert.equal(readFileSync(log, "utf8"), "one\ntwo\nthree\n", "nothing doubled");
+        assert.equal(existsSync(join(folder, `${item.id}.trim`)), false);
+        assert.equal((await app.background.read(id, item.id))?.text, "", "nothing new");
+    },
+);
 
 test("a value split by a color code stays hidden across reads", { skip }, async () => {
     const id = await session();

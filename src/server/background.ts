@@ -882,17 +882,22 @@ export class BackgroundTasks {
         const journal = this.#journal(conversationId, id);
         const next = Buffer.concat([note, kept]);
 
-        // Kept aside first, whole (a rename is one step): a crash while the log is rewritten is finished from it.
-        writeFileSync(`${journal}.tmp`, next);
+        // Kept aside first, whole (a rename is one step), with how the log looked before: a crash while the log is
+        // rewritten is finished from it, and one before the log changed is told apart.
+        const before = JSON.stringify({ size, head: readBytes(path, 0, 64).toString("base64") });
+
+        writeFileSync(`${journal}.tmp`, Buffer.concat([Buffer.from(`${before}\n`), next]));
         renameSync(`${journal}.tmp`, journal);
         writeFileSync(path, next);
         rmSync(journal, { force: true });
     }
 
     /**
-     * Finish a trim a crash cut off: the log holds the start of what the journal keeps (none of it, when the crash came
-     * right after the log was emptied), and then what the command wrote since. It becomes the journal's whole, and then
-     * that. Done again after a crash in the middle of this, it comes to the same.
+     * Finish a trim a crash cut off. The log is in one of three states. Still as it was (at least as long, and starting
+     * the same): the trim never began, and the next sweep does it again. Holding the start of what the journal keeps
+     * (the rewrite stopped part way): that part, then what the command wrote since. Neither (emptied, then written to):
+     * what the command wrote since. The last two become the journal's whole, and then what was written since. Done
+     * again after a crash in the middle of this, it comes to the same.
      */
     #settle(conversationId: ConversationId, id: string): void {
         const journal = this.#journal(conversationId, id);
@@ -901,17 +906,38 @@ export class BackgroundTasks {
             return;
         }
 
-        const kept = readFileSync(journal);
-        const path = this.#log(conversationId, id);
-        const current = existsSync(path) ? readFileSync(path) : Buffer.alloc(0);
-        let same = 0;
+        const saved = readFileSync(journal);
+        const line = saved.indexOf(0x0a);
+        let before: { size?: unknown; head?: unknown } = {};
 
-        while (same < kept.length && same < current.length && kept[same] === current[same]) {
-            same++;
+        try {
+            before = JSON.parse(saved.subarray(0, line).toString()) as typeof before;
+        } catch {
+            // A journal without its first line is not one this wrote whole: the log is left as it is.
+            rmSync(journal, { force: true });
+
+            return;
         }
 
-        if (same < kept.length) {
-            writeFileSync(path, Buffer.concat([kept, current.subarray(same)]));
+        const kept = saved.subarray(line + 1);
+        const path = this.#log(conversationId, id);
+        const current = existsSync(path) ? readFileSync(path) : Buffer.alloc(0);
+        const head = Buffer.from(typeof before.head === "string" ? before.head : "", "base64");
+        const untouched =
+            typeof before.size === "number" &&
+            current.length >= before.size &&
+            current.subarray(0, head.length).equals(head);
+
+        if (!untouched) {
+            let same = 0;
+
+            while (same < kept.length && same < current.length && kept[same] === current[same]) {
+                same++;
+            }
+
+            if (same < kept.length) {
+                writeFileSync(path, Buffer.concat([kept, current.subarray(same)]));
+            }
         }
 
         rmSync(journal, { force: true });
