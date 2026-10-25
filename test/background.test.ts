@@ -23,6 +23,7 @@ import {
     BACKGROUND_MARKER,
     type BackgroundTask,
     type ByteRange,
+    outcome,
     StartCutOff,
     wait,
 } from "../src/server/background.ts";
@@ -535,6 +536,25 @@ test(
     },
 );
 
+test("a daemon that ended of itself is no longer said to run", { skip }, async () => {
+    const id = await session();
+    const item = await app.background.start(id, {
+        command: "setsid sleep 300 > /dev/null 2>&1 < /dev/null & echo $! > gone-daemon.pid",
+        notify: false,
+    });
+    const pidFile = join(item.cwd, "gone-daemon.pid");
+
+    await until(() => existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== "", "daemon");
+    const daemon = Number(readFileSync(pidFile, "utf8"));
+
+    await until(async () => (await one(id)).status === "exited", "the task to end");
+    assert.deepEqual((await app.background.list(id))[0]?.left, [daemon]);
+    process.kill(daemon, "SIGKILL");
+    await until(() => !running(daemon), "the daemon gone");
+    assert.equal((await app.background.list(id))[0]?.left, undefined);
+    assert.doesNotMatch(outcome((await app.background.list(id))[0]!), /still run/);
+});
+
 test(
     "a command that writes faster than its log can be kept is stopped, and Pi is told why",
     { skip },
@@ -546,11 +566,16 @@ test(
         sizes.runaway = 1024 * 1024;
 
         try {
-            await app.background.start(id, { command: "yes" });
+            // One that ignores a polite stop: it is killed at once, not after a grace period it would write through.
+            const item = await app.background.start(id, { command: "trap '' TERM; yes" });
+            const started = Date.now();
+
             await until(
                 async () => (await one(id)).status === "stopped",
                 "the runaway to be stopped",
             );
+            assert.ok(Date.now() - started < 3000, `stopped in ${Date.now() - started} ms`);
+            assert.equal(app.background.alive(id, item), false);
             assert.match((await one(id)).why ?? "", /faster than its log can be kept/);
             await until(
                 async () =>
@@ -559,6 +584,35 @@ test(
             );
         } finally {
             sizes.runaway = was;
+        }
+    },
+);
+
+test(
+    "a steady writer slower than a burst is stopped once it wrote more than its log keeps",
+    { skip },
+    async () => {
+        const id = await session();
+        const sizes = app.background.sizes;
+        const was = { ...sizes };
+
+        // A log of 100 KB, so 1 MB in 10 seconds is too much; no burst limit in the way.
+        Object.assign(sizes, { maxLog: 100 * 1024, segment: 20 * 1024, runaway: 1024 ** 3 });
+
+        try {
+            await app.background.start(id, {
+                command:
+                    "for i in $(seq 1 100); do head -c 60000 /dev/zero | tr '\\0' x; sleep 0.2; done",
+                notify: false,
+            });
+            await until(
+                async () => (await one(id)).status === "stopped",
+                "the steady writer to be stopped",
+                15_000,
+            );
+            assert.match((await one(id)).why ?? "", /in 10 seconds/);
+        } finally {
+            Object.assign(sizes, was);
         }
     },
 );

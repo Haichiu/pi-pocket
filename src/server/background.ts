@@ -82,6 +82,8 @@ const WRAPPER =
 const SEGMENT_BYTES = 4 * 1024 * 1024;
 /** How often a watch keeps its task's log short, whatever its looks at the processes. */
 const TICK_MS = 250;
+/** The time over which steady output is measured against `sizes.sustained`. */
+const SUSTAINED_MS = 10_000;
 /** A segment's name after its task's prefix: six letters, `aaaaaa` the first (enough for 300 million segments). */
 const SEGMENT_NAME = /^[a-z]{6}$/;
 
@@ -401,6 +403,8 @@ export class BackgroundTasks {
         keepEnded: 20,
         /** More output than this in one tick stops the task: about 800 MB a second. */
         runaway: 200 * 1024 * 1024,
+        /** More output than this many logs' worth in `SUSTAINED_MS` stops it too: 500 MB in 10 seconds. */
+        sustained: 10,
     };
     /** Tests only: run before a process starts, and between its start and its record, to cut a start off there. */
     beforeSpawn: (() => Promise<void>) | undefined;
@@ -677,6 +681,10 @@ export class BackgroundTasks {
         // the log can be kept (more than `runaway` bytes in a tick) is stopped, before it fills the disk.
         const tick = Math.min(TICK_MS, this.timing.look);
         let written = this.#end(conversationId, watched);
+        let measured = Date.now();
+        // How far its output got, over the last `SUSTAINED_MS`: a writer slower than a burst, but steady, is stopped
+        // once it wrote more than `sustained` times the log's limit in that time, whatever the machine's speed.
+        const history: { at: number; end: number }[] = [{ at: measured, end: written }];
         let looked = Date.now();
         let runaway: string | undefined;
 
@@ -684,15 +692,40 @@ export class BackgroundTasks {
             stop();
             this.#trimLog(conversationId, watched.id);
 
+            // How fast it writes, over the time that passed (a server slowed down makes a tick longer, not its output
+            // faster): more than `runaway` bytes in a tick's time is more than its log can be kept for.
             const now = this.#end(conversationId, watched);
+            const elapsed = Math.max(Date.now() - measured, tick);
 
-            if (now - written > this.sizes.runaway) {
-                runaway = `it wrote more than ${Math.round(this.sizes.runaway / 1024 / 1024)} MB of output in ${tick} ms, faster than its log can be kept`;
-                await this.#kill(conversationId, watched);
+            history.push({ at: Date.now(), end: now });
+
+            while (history.length > 1 && Date.now() - history[0]!.at > SUSTAINED_MS) {
+                history.shift();
+            }
+
+            const steady = now - history[0]!.end > this.sizes.maxLog * this.sizes.sustained;
+
+            if (steady || (now - written) / elapsed > this.sizes.runaway / tick) {
+                runaway = steady
+                    ? `it wrote more than ${Math.round((this.sizes.maxLog * this.sizes.sustained) / 1024 / 1024)} MB of output in ${SUSTAINED_MS / 1000} seconds, more than its log can keep`
+                    : `it wrote more than ${Math.round(this.sizes.runaway / 1024 / 1024)} MB of output in ${tick} ms, faster than its log can be kept`;
+                // At once, with no grace: a writer that took its time to stop would write on all the while.
+                this.#signal(conversationId, watched, "SIGKILL");
+
+                for (
+                    let wait_ = 0;
+                    wait_ < 20 && this.#alive(conversationId, watched, true);
+                    wait_++
+                ) {
+                    this.#trimLog(conversationId, watched.id);
+                    await wait(50);
+                }
+
                 break;
             }
 
             written = now;
+            measured = Date.now();
 
             if (Date.now() - looked >= this.timing.look) {
                 looked = Date.now();
@@ -1007,9 +1040,17 @@ export class BackgroundTasks {
 
             // Files of a task no longer recorded (a crash between its record going and its files): they go, once a
             // minute old, so a start whose files come just before its record is left alone.
-            const items =
-                (await this.#app.harness.snapshot(BackgroundDoc, conversationId, context))?.items ??
-                {};
+            // A document that cannot be read leaves every file alone: only trimming goes on.
+            let items: Record<string, BackgroundTask> | undefined;
+
+            try {
+                items =
+                    (await this.#app.harness.snapshot(BackgroundDoc, conversationId, context))
+                        ?.items ?? {};
+            } catch {
+                items = undefined;
+            }
+
             const ids = new Set<string>();
 
             for (const name of names) {
@@ -1021,7 +1062,7 @@ export class BackgroundTasks {
 
                 const path = join(root, folder, name);
 
-                if (!Object.hasOwn(items, id)) {
+                if (items !== undefined && !Object.hasOwn(items, id)) {
                     try {
                         if (Date.now() - statSync(path).mtimeMs > 60_000) {
                             rmSync(path, { force: true });
@@ -1378,7 +1419,11 @@ export class BackgroundTasks {
             text = text.slice(-READ_CHARS);
         }
 
-        return { item: { ...item, read: Math.max(item.read, range.to) }, text, skipped };
+        return {
+            item: { ...this.#current(conversationId, item), read: Math.max(item.read, range.to) },
+            text,
+            skipped,
+        };
     }
 
     /** Stop a task's processes. Returns it as it ends up; undefined when there is no such task. */
@@ -1440,9 +1485,28 @@ export class BackgroundTasks {
         const live = (item: BackgroundTask) =>
             Number(item.status === "running" || item.status === "starting");
 
-        return items.sort(
-            (a, b) => live(b) - live(a) || (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt),
-        );
+        return items
+            .map((item) => this.#current(conversationId, item))
+            .sort(
+                (a, b) =>
+                    live(b) - live(a) || (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt),
+            );
+    }
+
+    /**
+     * A task as it is now: of what it left running when it ended, only what still runs (by its marker, so a pid used
+     * again by another process does not count).
+     */
+    #current(conversationId: ConversationId, item: BackgroundTask): BackgroundTask {
+        if (item.left === undefined) {
+            return item;
+        }
+
+        const marker = this.#marker(conversationId, item.id);
+        const left = item.left.filter((pid) => marked(pid, marker));
+        const { left: _was, ...rest } = item;
+
+        return left.length === 0 ? rest : { ...item, left };
     }
 
     /** A task by its durable task's id, for Running now. */
