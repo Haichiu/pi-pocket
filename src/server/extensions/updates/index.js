@@ -255,16 +255,19 @@ export default function setup(pocket) {
         // Notes that warn, or notes Pi Pocket could not read: the owner's word first.
         const careful = latest !== undefined && (latest.warning || latest.unread === true);
         const step = current.step ?? working;
+        // While an update moves the checkout, the server does not read it: no commit then is no word on it.
         const where = current.commit
             ? `${current.branch ?? "detached"} · ${current.commit.slice(0, 7)}`
-            : "not a git checkout";
+            : current.step === undefined
+              ? "not a git checkout"
+              : null;
 
         return html`<div class="updates-sheet">
             <div class="updates-card">
                 <div class="updates-row">
                     <div>
                         <div class="updates-title">Pi Pocket ${current.version}</div>
-                        <div class="muted small mono">${where}</div>
+                        ${where && html`<div class="muted small mono">${where}</div>`}
                     </div>
                     <button
                         class="button"
