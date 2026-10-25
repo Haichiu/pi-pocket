@@ -1252,7 +1252,14 @@ export class PocketApp {
 
     /** A folder's environment, with what extensions add to each command and hide from its output in this session. */
     #wrapped(id: ConversationId, cwd: string): ExecutionEnv {
-        return wrapEnv(this.#env(cwd), Number(id), cwd, this.commandEnvs, this.hidden);
+        return wrapEnv(
+            this.#env(cwd),
+            Number(id),
+            cwd,
+            this.commandEnvs,
+            this.hidden,
+            Number(this.rootOf(id)),
+        );
     }
 
     #env(cwd: string): NodeExecutionEnv {

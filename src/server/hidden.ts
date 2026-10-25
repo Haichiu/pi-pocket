@@ -261,6 +261,8 @@ function deep(value: unknown, values: readonly Hidden[]): unknown {
 /** What a command-environment provider gets: the command, where it runs, and for which session. */
 export interface CommandRun {
     readonly conversationId: number;
+    /** The session the command's work is for: `conversationId` itself, or the session of the subagent it runs in. */
+    readonly sessionId: number;
     /** The command as the shell gets it, or the program and its arguments. */
     readonly command: string | readonly string[];
     readonly cwd: string;
@@ -386,6 +388,7 @@ export function wrapEnv(
     cwd: string,
     envs: CommandEnvs,
     hidden: HiddenValues,
+    sessionId = conversationId,
 ): ExecutionEnv {
     if (!envs.any && !hidden.any(conversationId)) {
         return base;
@@ -394,7 +397,7 @@ export function wrapEnv(
     const exec: ExecutionEnv["exec"] = async (command, options, context) => {
         const added = envs.any
             ? await envs.for(
-                  { conversationId, command, cwd: options?.cwd ?? cwd },
+                  { conversationId, sessionId, command, cwd: options?.cwd ?? cwd },
                   context.abortSignal,
               )
             : {};

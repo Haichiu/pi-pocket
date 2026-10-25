@@ -347,15 +347,18 @@ test("a provider that hangs adds nothing after its time, and the command runs", 
     envs.add(() => ({ AFTER: "yes" }));
 
     try {
-        assert.deepEqual(await envs.for({ conversationId: 1, command: "true", cwd: work }), {
-            AFTER: "yes",
-        });
+        assert.deepEqual(
+            await envs.for({ conversationId: 1, sessionId: 1, command: "true", cwd: work }),
+            {
+                AFTER: "yes",
+            },
+        );
 
         // One signal for many commands keeps no listener for those done.
         const signal = new AbortController().signal;
 
         for (let index = 0; index < 5; index += 1) {
-            await envs.for({ conversationId: 1, command: "true", cwd: work }, signal);
+            await envs.for({ conversationId: 1, sessionId: 1, command: "true", cwd: work }, signal);
         }
 
         assert.equal(getEventListeners(signal, "abort").length, 0);

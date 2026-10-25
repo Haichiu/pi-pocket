@@ -577,6 +577,7 @@ Since 0.22.0 · Experimental
 ```ts
 interface CommandRun {
     readonly conversationId: number;
+    readonly sessionId: number;
     readonly command: string | readonly string[];
     readonly cwd: string;
 }
@@ -584,7 +585,7 @@ interface CommandRun {
 
 Since 0.22.0 · Experimental
 
-A command about to run: its session, the command as the shell gets it (or a program and its arguments), and its folder.
+A command about to run: its conversation, the session its work is for (`sessionId`, since 0.23.0: the conversation itself, or a subagent's session), the command as the shell gets it (or a program and its arguments), and its folder. A module that runs on an older server checks that `sessionId` is there.
 
 ### `CommandEnvProvider`
 
