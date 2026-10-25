@@ -676,21 +676,9 @@ test("Lancet Guard stays on until its inline confirmation is accepted", real, as
 });
 
 test(
-    "buttons that extensions add to the message box step aside while Pi works, so Stop stays in a 320 px box",
+    "while Pi works, Stop stays inside the message box on every phone width, with extension buttons and with more",
     real,
     async () => {
-        await page.setViewport({ width: 320, height: 700, scale: 2, mobile: true });
-        await page.navigate(`${base}/s/${session}`);
-        await until(() => has(".composer-row"), "the message box");
-        await withMeter(`
-            for (const id of ["a", "b", "c"]) {
-                pocket.composerButton({ id, title: "Tool " + id, icon: "pulse", run: () => {} });
-            }
-
-            return "null";
-        `);
-        await until(() => has(".ext-composer-button"), "the extension's buttons");
-
         const busy = (on: boolean) =>
             page.evaluate(`
                 const { store } = await import("/store.js");
@@ -712,26 +700,57 @@ test(
                     shown: [...row.querySelectorAll(".ext-composer-button")].filter((each) => each.offsetWidth > 0).length,
                 });
             `);
+        const inside = (width: number, what: string, f: Awaited<ReturnType<typeof fit>>) => {
+            assert.ok(
+                f.scroll <= f.client,
+                `${what}: the row overflows at ${width} px: ${JSON.stringify(f)}`,
+            );
+            assert.ok(
+                f.stop > 0 && f.stop <= f.right,
+                `${what}: Stop is out of the row at ${width} px: ${JSON.stringify(f)}`,
+            );
+        };
 
         try {
-            await busy(true);
-            const working = await fit();
+            for (const width of [320, 360, 375, 390, 412, 430]) {
+                await page.setViewport({ width, height: 700, scale: 2, mobile: true });
+                await page.navigate(`${base}/s/${session}`);
+                await until(() => has(".composer-row"), "the message box");
+                await withMeter(`
+                    for (const id of ["a", "b", "c"]) {
+                        pocket.composerButton({ id, title: "Tool " + id, icon: "pulse", run: () => {} });
+                    }
 
-            assert.ok(
-                working.scroll <= working.client,
-                `the row overflows: ${JSON.stringify(working)}`,
-            );
-            assert.ok(
-                working.stop > 0 && working.stop <= working.right,
-                `Stop is out of the row: ${JSON.stringify(working)}`,
-            );
-            assert.equal(working.shown, 0, "the extension's buttons wait while Pi works");
+                    return "null";
+                `);
+                await until(() => has(".ext-composer-button"), "the extension's buttons");
+
+                await busy(true);
+                const working = await fit();
+
+                inside(width, "with three extension buttons", working);
+                assert.equal(
+                    working.shown,
+                    width <= 480 ? 0 : 3,
+                    "the extension's buttons wait while Pi works",
+                );
+
+                // Something that nothing planned for: the row still keeps Stop.
+                await page.evaluate(`
+                    const spacer = document.createElement("span");
+                    spacer.id = "stress";
+                    spacer.style.cssText = "flex: none; width: 140px; height: 10px";
+                    document.querySelector(".composer-row > .grow").before(spacer);
+                `);
+                inside(width, "with 140 px more in the row", await fit());
+                await page.evaluate(`document.getElementById("stress")?.remove()`);
+                await busy(false);
+                assert.equal((await fit()).shown, 3, "and the buttons are back when Pi stops");
+            }
         } finally {
             await busy(false);
+            await page.setViewport(DESKTOP);
         }
-
-        assert.equal((await fit()).shown, 3, "and are back when Pi stops");
-        await page.setViewport(DESKTOP);
     },
 );
 
