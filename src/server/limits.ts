@@ -74,9 +74,12 @@ const REASON_CHARS = 300;
 const SIGN_IN =
     /OAuth (?:refresh|auth derivation) failed|\b40[13]\b|unauthori[sz]ed|invalid[ _-]?(?:x-)?api[ _-]?key|authentication[ _-]?(?:error|failed)|permission[ _-]?denied|forbidden/i;
 
-/** Money: a balance, a budget, or a plan that must be topped up. Waiting does not fix it. */
+/**
+ * Money: a balance, a budget, or a plan that must be topped up. Waiting does not fix it. Only words that ask for money:
+ * "in good standing" alone says all is well, and "recharge" alone can be part of a model's name.
+ */
 const BILLING =
-    /insufficient[ _-]?(?:quota|credits?|funds|balance)|out of budget|quota exceeded|credit[ _-]?balance|used all available credits|spend(?:ing)?[ _-]?limit|enforced_spend_limit_reached|exceeded_current_quota|quota is insufficient|arrearage|good standing|recharge|FreeUsageLimitError|ServiceQuotaExceeded|usage_not_included|\b402\b|payment[ _-]?required|billing/i;
+    /insufficient[ _-]?(?:quota|credits?|funds|balance)|out of budget|quota exceeded|credit[ _-]?balance|used all available credits|spend(?:ing)?[ _-]?limit|enforced_spend_limit_reached|exceeded_current_quota|quota is insufficient|arrearage|not in good standing|please recharge|recharge your account|FreeUsageLimitError|ServiceQuotaExceeded|usage_not_included|\b402\b|payment[ _-]?required|billing/i;
 
 /** A request the provider refuses for what it says, not for load. */
 const REFUSED =

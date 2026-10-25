@@ -89,6 +89,25 @@ test("a person's problem, a refused request, or a monthly plan limit never waits
     assert.equal(ask("409 Conflict", 409, { "retry-after": "5" }).type, "limit");
 });
 
+test("words near billing that ask for no money do not stop a wait", () => {
+    // A rate limit that says the account is fine, or names a model with "recharge" in it, waits as any other.
+    for (const text of [
+        "429 Too Many Requests. Your account is in good standing; slow down.",
+        "429 rate limit reached for model recharge-7b",
+    ]) {
+        assert.equal(ask(text, 429, { "retry-after": "30" }).type, "limit", text);
+    }
+
+    // The words that do ask for money still stop it.
+    for (const text of [
+        "403 Your account is not in good standing.",
+        "429 Insufficient balance or no resource package. Please recharge.",
+        "Please recharge your account to continue.",
+    ]) {
+        assert.equal(ask(text, 429).type, "other", text);
+    }
+});
+
 test("OpenAI Subscription Sharing waits without a reset, but explicit long limits never do", () => {
     const message =
         "The ChatGPT user has reached their Subscription Sharing usage limit. " +
