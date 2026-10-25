@@ -3984,10 +3984,70 @@ pre.diff .del {
     min-height: 0;
     padding: calc(env(safe-area-inset-top) + 12px) 0 calc(env(safe-area-inset-bottom) + 12px);
     border-right: 1px solid var(--hair);
-    /* A short screen (a phone on its side) scrolls the rail rather than cut off its last buttons. */
+    /* A rail with more buttons than room (a short screen, many extensions) scrolls as a whole rather than cut off its
+       last buttons; its hidden scrollbar's place is taken by a fade at the edge where more is (below). */
     overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior: contain;
     scrollbar-width: none;
+}
+
+.rail::-webkit-scrollbar,
+.rail-items::-webkit-scrollbar {
+    display: none;
+}
+
+/*
+ * A scroller with more than it shows fades at that edge (`data-more`, set by `useScrollMore`): the buttons there melt
+ * away, so the rail says it scrolls though it has no scrollbar. The lines at its edges (the rail's on its right, the
+ * sessions' above and below them) do not fade.
+ */
+:is(.rail, .rail-items)[data-more] {
+    /* Long and steep enough that the button at the edge shows half faded: plainly cut off, still there. */
+    --more-fade: 64px;
+    mask-image: var(--more-mask), linear-gradient(#000, #000);
+    mask-size:
+        100% 100%,
+        1px 100%;
+    mask-position:
+        0 0,
+        right 0 top 0;
+    mask-repeat: no-repeat;
+}
+
+.rail-items[data-more] {
+    mask-image: var(--more-mask), linear-gradient(#000, #000), linear-gradient(#000, #000);
+    mask-size:
+        100% 100%,
+        100% 1px,
+        100% 1px;
+    mask-position:
+        0 0,
+        0 0,
+        0 100%;
+}
+
+:is(.rail, .rail-items)[data-more="down"] {
+    --more-mask: linear-gradient(
+        #000 calc(100% - var(--more-fade)),
+        rgb(0 0 0 / 0.25) calc(100% - 20px),
+        transparent
+    );
+}
+
+:is(.rail, .rail-items)[data-more="up"] {
+    --more-mask: linear-gradient(transparent, rgb(0 0 0 / 0.25) 20px, #000 var(--more-fade));
+}
+
+:is(.rail, .rail-items)[data-more="both"] {
+    --more-mask: linear-gradient(
+        transparent,
+        rgb(0 0 0 / 0.25) 20px,
+        #000 var(--more-fade),
+        #000 calc(100% - var(--more-fade)),
+        rgb(0 0 0 / 0.25) calc(100% - 20px),
+        transparent
+    );
 }
 
 .rail-brand,
@@ -4135,7 +4195,12 @@ pre.diff .del {
 .rail-items {
     position: relative;
     flex: 1;
-    min-height: 0;
+    /* The sessions come first: room for all of them (`--tiles`, their count), up to a third of the window. What does not
+       fit beside them, the rail scrolls as a whole, as it does unfolded. */
+    min-height: min(
+        calc(var(--tiles, 2) * 36px + 2 * 6px + 2px),
+        max(2 * 36px + 2 * 6px + 2px, 33vh)
+    );
     width: 100%;
     overflow-y: auto;
     overflow-x: hidden;
@@ -4147,10 +4212,6 @@ pre.diff .del {
     border-top: 1px solid var(--hair);
     border-bottom: 1px solid var(--hair);
     scrollbar-width: none;
-}
-
-.rail:has(.rail-items) {
-    overflow-y: hidden;
 }
 
 /* The open session's tile is lit by a soft fill that slides from tile to tile, under the numbers. */
@@ -14105,31 +14166,19 @@ textarea.notes {
 }
 
 /*
- * Extensions' rail buttons, together: four buttons' height at most, past which they scroll rather than push the app's
- * own buttons away. Beside the session list it keeps that height, and a short window scrolls the whole rail, as it does
- * the app's own buttons; in the folded rail it gives way first (to one button), so the sessions' tiles keep their room.
+ * Extensions' rail buttons, together, after the app's own tools: they take the room they need, and a rail with more
+ * buttons than room scrolls as a whole (above).
  */
 .rail-exts {
     flex: none;
-    max-height: calc(4 * 44px + 3 * 4px);
     width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 4px;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: none;
 }
 
-.rail:has(.rail-items) .rail-exts {
-    flex: 0 1 auto;
-    min-height: 44px;
-    max-height: max(44px, min(4 * 44px + 3 * 4px, 22vh));
-}
-
-/* Inside the button, where the group's edge does not cut it off. */
+/* Inside the button, where the rail's edge does not cut it off. */
 .rail-exts .rail-button:focus-visible {
     outline-offset: -1px;
 }
