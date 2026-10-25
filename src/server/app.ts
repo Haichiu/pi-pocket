@@ -625,6 +625,7 @@ export class PocketApp {
     pauseReloads(paused: boolean): void {
         this.reloadsPaused = paused;
         this.loader?.pause(paused);
+        this.themes?.pause(paused);
     }
 
     /** Write a line to the server log. */

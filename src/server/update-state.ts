@@ -264,27 +264,39 @@ function branchOf(appRoot: string): string | null | undefined {
     return gitSync(appRoot, ["rev-parse", "HEAD"]).ok ? null : undefined;
 }
 
-/** The paths a move from `from` to `to` changes: the ones it adds, and the others (changed or deleted). */
+/**
+ * The paths a move from `from` to `to` changes: the ones it adds, and the others (changed or deleted). `links` are the
+ * submodules among them: only their index entry changes, never their folder.
+ */
 export function switchPaths(
     appRoot: string,
     from: string,
     to: string,
-): { added: string[]; other: string[] } {
-    const diff = gitSync(appRoot, ["diff", "--name-status", "--no-renames", "-z", from, to]);
+): { added: string[]; other: string[]; links: Set<string> } {
+    const diff = gitSync(appRoot, ["diff", "--raw", "--no-renames", "--no-abbrev", "-z", from, to]);
 
     if (!diff.ok) {
         throw new Error(diff.out);
     }
 
+    // ":<mode> <mode> <hash> <hash> <status>", then the path.
     const parts = diff.out.split("\0").filter((each) => each !== "");
     const added: string[] = [];
     const other: string[] = [];
+    const links = new Set<string>();
 
     for (let at = 0; at + 1 < parts.length; at += 2) {
-        (parts[at] === "A" ? added : other).push(parts[at + 1]!);
+        const [before, after, , , status] = parts[at]!.replace(/^:/, "").split(" ");
+        const path = parts[at + 1]!;
+
+        (status === "A" ? added : other).push(path);
+
+        if (before === "160000" || after === "160000") {
+            links.add(path);
+        }
     }
 
-    return { added, other };
+    return { added, other, links };
 }
 
 /** Each file of a commit, by path: its blob. */
@@ -309,26 +321,50 @@ function blobs(appRoot: string, commit: string): Map<string, string> {
     return found;
 }
 
+/** What git prints, as bytes. */
+function gitBytes(cwd: string, args: string[]): Buffer | undefined {
+    const result = spawnSync("git", ["-c", "core.fsmonitor=false", ...args], {
+        cwd,
+        timeout: 60_000,
+        maxBuffer: 512 * 1024 * 1024,
+        env: { ...process.env, LC_ALL: "C" },
+    });
+
+    return result.status === 0 ? result.stdout : undefined;
+}
+
 /**
- * What the regular files under `root` hold, as git's blob hashes of their bytes as they are, with no filter: two files
- * get the same hash only when they hold the same bytes. A checkout whose filters change files (line endings, say) gets
- * hashes that match no blob, and so keeps more. One git for each file: recovery is rare, and a name may hold any
- * character.
+ * The file at `file` (moved aside from `path`) is git's own: its bytes are the very bytes one of `commits` has at
+ * `path`, as stored, or as git writes them in this checkout (line endings, a smudge filter). Anything else, even one
+ * that a clean filter would make look the same, is not.
  */
-function hashes(appRoot: string, root: string, paths: string[]): Map<string, string> {
-    const found = new Map<string, string>();
+function gitsOwn(appRoot: string, file: string, path: string, commits: string[]): boolean {
+    let bytes: Buffer;
 
-    for (const path of paths) {
-        const hashed = gitSync(appRoot, ["hash-object", "--no-filters", "--", join(root, path)]);
-
-        if (!hashed.ok) {
-            throw new Error(hashed.out);
+    try {
+        if (!lstatSync(file).isFile()) {
+            return false;
         }
 
-        found.set(path, hashed.out);
+        bytes = readFileSync(file);
+    } catch {
+        return false;
     }
 
-    return found;
+    for (const commit of commits) {
+        for (const args of [
+            ["cat-file", "blob", `${commit}:${path}`],
+            ["cat-file", "--filters", `${commit}:${path}`],
+        ]) {
+            const written = gitBytes(appRoot, args);
+
+            if (written !== undefined && written.equals(bytes)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 /** Remove the folders that `path` leaves empty, up to the checkout. */
@@ -354,9 +390,7 @@ export type Kept = { paths: string[]; folder?: string };
  * release changes or deletes come back from `from`, and the ones it adds leave the index. Throws when git cannot.
  */
 export function undoPartialSwitch(appRoot: string, pending: PendingUpdate): Kept {
-    const { added, other } = switchPaths(appRoot, pending.from, pending.to);
-    const before = blobs(appRoot, pending.from);
-    const after = blobs(appRoot, pending.to);
+    const { added, other, links } = switchPaths(appRoot, pending.from, pending.to);
     const parent = join(updatePaths(appRoot).dir, "kept");
 
     mkdirSync(parent, { recursive: true });
@@ -366,6 +400,11 @@ export function undoPartialSwitch(appRoot: string, pending: PendingUpdate): Kept
 
     // The release's new files first: a folder the version before has a file in place of may need their room.
     for (const path of [...added, ...other]) {
+        // A submodule's folder is its own checkout: only its index entry goes back.
+        if (links.has(path)) {
+            continue;
+        }
+
         try {
             lstatSync(join(appRoot, path));
         } catch {
@@ -384,18 +423,10 @@ export function undoPartialSwitch(appRoot: string, pending: PendingUpdate): Kept
     }
 
     // Looked at where nobody edits: what git wrote, or what was there before, goes; the rest is kept.
-    const now = hashes(
-        appRoot,
-        folder,
-        moved.filter((path) => lstatSync(join(folder, path)).isFile()),
-    );
     const kept: Kept = { paths: [], folder };
 
     for (const path of moved) {
-        const hash = now.get(path);
-        const known = hash !== undefined && (hash === after.get(path) || hash === before.get(path));
-
-        if (known) {
+        if (gitsOwn(appRoot, join(folder, path), path, [pending.to, pending.from])) {
             rmSync(join(folder, path), { force: true });
             removeEmptyParents(folder, path);
         } else {
@@ -475,7 +506,7 @@ export function setAsideForRollback(appRoot: string, pending: PendingUpdate): Ke
         mkdirSync(dirname(aside), { recursive: true });
         renameSync(join(appRoot, path), aside);
 
-        if (file && hashes(appRoot, kept.folder, [path]).get(path) === before.get(path)) {
+        if (file && gitsOwn(appRoot, aside, path, [pending.from])) {
             rmSync(aside, { force: true });
             removeEmptyParents(kept.folder, path);
         } else {
@@ -521,6 +552,14 @@ function gitSync(cwd: string, args: string[], input?: string): { ok: boolean; ou
 }
 
 /**
+ * For the launcher: a server that stopped this way, with an update under way, means the new version does not start. A
+ * restart it asked for (75) and a port or address it cannot listen on (78) do not: neither is the version's fault.
+ */
+export function stopMeansRollBack(ready: boolean, code: number | null): boolean {
+    return !ready && code !== 75 && code !== 78;
+}
+
+/**
  * For the launcher: a server it started after an update stopped before it was ready. Put the checkout and its packages
  * back as they were before the update, and say what was done; undefined when no update is under way. A release whose
  * notes warn of a one-way step (a database upgrade, say) is not undone: the version before may not read what the new
@@ -533,6 +572,60 @@ export function rollBackUpdate(appRoot: string, now = Date.now()): string | unde
         return undefined;
     }
 
+    try {
+        return rollBack(appRoot, pending, now);
+    } catch (error) {
+        // Never again on the next start: a lock git left, say, would fail each time, and the server never start.
+        return finishPending(
+            appRoot,
+            pending,
+            false,
+            `Going back from the update to ${pending.toVersion || pending.tag} failed: ${(error as Error).message}. Fix the checkout by hand (\`git status\` in it), then restart Pi Pocket.`,
+            now,
+        ).message;
+    }
+}
+
+/**
+ * The update stopped before git moved HEAD (between the new packages and the checkout, or while git wrote files): the
+ * files the release brought and its packages go back. One that cannot (a lock git left, say) is noted for the owner to
+ * fix by hand, never tried at each start.
+ */
+export function finishPartial(
+    appRoot: string,
+    pending: PendingUpdate,
+    now = Date.now(),
+): UpdateOutcome {
+    const to = pending.toVersion || pending.tag;
+    const from = pending.fromVersion || pending.from.slice(0, 12);
+
+    try {
+        const kept: Kept =
+            pending.phase === "switching" ? undoPartialSwitch(appRoot, pending) : { paths: [] };
+
+        if (pending.modules) {
+            restoreModules(appRoot);
+        }
+
+        return finishPending(
+            appRoot,
+            pending,
+            false,
+            `The update to ${to} did not finish, so Pi Pocket stays at ${from}.${keptNote(appRoot, kept)}`,
+            now,
+        );
+    } catch (error) {
+        return finishPending(
+            appRoot,
+            pending,
+            false,
+            `The update to ${to} did not finish, and putting the files of ${from} back failed: ${(error as Error).message}. Fix the checkout by hand (\`git status\` in it, and \`npm ci\`), then restart Pi Pocket. Anything set aside is in ${UPDATE_DIR}/kept/.`,
+            now,
+        );
+    }
+}
+
+function rollBack(appRoot: string, pending: PendingUpdate, now: number): string {
     const head = gitSync(appRoot, ["rev-parse", "HEAD"]);
     const to = pending.toVersion || pending.tag;
     const from = pending.fromVersion || pending.from.slice(0, 12);
@@ -603,21 +696,7 @@ export function rollBackUpdate(appRoot: string, now = Date.now()): string | unde
     }
 
     if (head.out === pending.from) {
-        // Stopped between the new packages and the checkout, or while git moved it: both go back.
-        const kept: Kept =
-            pending.phase === "switching" ? undoPartialSwitch(appRoot, pending) : { paths: [] };
-
-        if (pending.modules) {
-            restoreModules(appRoot);
-        }
-
-        return finishPending(
-            appRoot,
-            pending,
-            false,
-            `The update to ${to} did not finish, so Pi Pocket stays at ${from}.${keptNote(appRoot, kept)}`,
-            now,
-        ).message;
+        return finishPartial(appRoot, pending, now).message;
     }
 
     return finishPending(

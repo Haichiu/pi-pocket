@@ -27,7 +27,7 @@ import {
 } from "./access.ts";
 import { fail, parseArgs } from "./options.ts";
 // The one server module the launcher runs itself: it imports only Node's own, so an update cannot break the launcher.
-import { rollBackUpdate } from "../server/update-state.ts";
+import { readPending, rollBackUpdate, stopMeansRollBack } from "../server/update-state.ts";
 import {
     accent,
     bold,
@@ -51,6 +51,8 @@ const SERVER = fileURLToPath(new URL("../server/main.ts", import.meta.url));
 /** Pi Pocket's checkout, which an update from the app changes (`src/server/updates.ts`). */
 const APP_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const RESTART_CODE = 75;
+/** How long a server started with an update under way may take to be ready before it counts as not starting. */
+const UPDATE_START_LIMIT_MS = 5 * 60_000;
 
 // ─── Options ────────────────────────────────────────────────────────────
 
@@ -471,6 +473,19 @@ function startServer(first: boolean): void {
     });
     /** This start said it was ready: a stop after that is not a new version that cannot start. */
     let ready = false;
+    // A new version that hangs before it is ready never exits: stop it, so the exit goes back to the version before.
+    const watchdog = readPending(APP_ROOT)
+        ? setTimeout(() => {
+              if (!ready && child === proc) {
+                  log(
+                      yellow(
+                          `  The server did not get ready in ${UPDATE_START_LIMIT_MS / 60_000} minutes after an update: stopping it.`,
+                      ),
+                  );
+                  proc.kill("SIGKILL");
+              }
+          }, UPDATE_START_LIMIT_MS)
+        : undefined;
 
     child = proc;
     pipeLines(proc.stdout, (line) => log(line));
@@ -481,6 +496,7 @@ function startServer(first: boolean): void {
         }
 
         ready = true;
+        clearTimeout(watchdog);
 
         state.loginPath = message.loginPath;
         state.serverReady = true;
@@ -503,6 +519,8 @@ function startServer(first: boolean): void {
     });
 
     const exited = (code: number | null, signal: NodeJS.Signals | null) => {
+        clearTimeout(watchdog);
+
         if (child !== proc) {
             return;
         }
@@ -516,7 +534,7 @@ function startServer(first: boolean): void {
 
         // A server that stops before it is ready, with an update from the app under way: the new version does not
         // start. Go back to the version before, and start that one, also on a first start.
-        if (!ready && code !== RESTART_CODE) {
+        if (stopMeansRollBack(ready, code)) {
             let undone: string | undefined;
 
             try {

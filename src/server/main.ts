@@ -229,11 +229,9 @@ stopWatching = (() => {
 const token = encodeURIComponent(opened.config.ownerToken);
 
 // An update this process started for is done only now: a start that fails before here, the launcher undoes. One that
-// cannot be finished (files git left part way that cannot go back) must not run: the launcher tries to undo it.
-await opened.updates.recover().catch(async (error: unknown) => {
+// stopped part way is put back, and the server restarts on the files before.
+await opened.updates.recover().catch((error: unknown) => {
     console.error(`Pi Pocket could not finish its update: ${(error as Error).message}`);
-    await opened.close().catch(() => {});
-    process.exit(1);
 });
 
 if (launcher) {

@@ -23,8 +23,7 @@ import {
     recordOutcome,
     restoreModules,
     swapInModules,
-    undoPartialSwitch,
-    keptNote,
+    finishPartial,
     type UpdateOutcome,
     updatePaths,
     writePending,
@@ -122,6 +121,18 @@ export function repositoryOf(appRoot: string): string {
     }
 }
 
+/**
+ * Why a repository address is not one updates fetch from, or undefined. Only https, ssh, `git@host:path`, and a local
+ * path or `file://` address: never one git could read as an option, or a remote helper that runs a command.
+ */
+export function repositoryProblem(url: string): string | undefined {
+    const plain = /^(https:\/\/|ssh:\/\/|file:\/\/|git@[\w.-]+:[\w./~-]|\/)/.test(url);
+
+    return plain && !/[\s\0]/.test(url)
+        ? undefined
+        : `Updates do not fetch from ${JSON.stringify(url.slice(0, 80))}: give an https, ssh, or local address.`;
+}
+
 /** `owner` and `name` of a repository on GitHub, or undefined for one elsewhere. */
 export function githubRepository(url: string): { owner: string; name: string } | undefined {
     const match = /^(?:git\+)?https:\/\/github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(url);
@@ -212,7 +223,7 @@ async function githubRelease(
 
 /** The newest version tag of a repository anywhere git reaches, without notes. */
 async function tagRelease(repository: string, cwd: string): Promise<Release | undefined> {
-    const out = await git(cwd, ["ls-remote", "--tags", "--refs", repository], {
+    const out = await git(cwd, ["ls-remote", "--tags", "--refs", "--", repository], {
         timeoutMs: FETCH_TIMEOUT_MS,
     });
     let best: Release | undefined;
@@ -228,6 +239,30 @@ async function tagRelease(repository: string, cwd: string): Promise<Release | un
 
     return best;
 }
+
+/**
+ * The paths `git status --porcelain=v1 -z` names: "XY path", and for a rename or copy the path it came from after it,
+ * which is left out. Names come as they are, whatever characters they hold.
+ */
+export function changedFiles(status: string): string[] {
+    const parts = status.split("\0").filter((each) => each !== "");
+    const paths: string[] = [];
+
+    for (let at = 0; at < parts.length; at++) {
+        const entry = parts[at]!;
+
+        paths.push(entry.slice(3));
+
+        if (entry[0] === "R" || entry[0] === "C") {
+            at++;
+        }
+    }
+
+    return paths;
+}
+
+/** The oldest git updates work with: `--pathspec-from-file` came in 2.26. */
+const MIN_GIT = "2.26.0";
 
 /** The npm beside the Node.js that runs the server, else the one on `PATH`. */
 function npm(): { file: string; shell: boolean } {
@@ -365,10 +400,9 @@ export class Updates {
             (out) => out.trim() || null,
             () => null,
         );
-        const dirty = (await git(root, ["status", "--porcelain", "--untracked-files=no"]))
-            .split("\n")
-            .filter((line) => line.trim() !== "")
-            .map((line) => line.slice(3));
+        const dirty = changedFiles(
+            await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=no"]),
+        );
         const gitDir = (await git(root, ["rev-parse", "--git-dir"])).trim();
         const writable = await Promise.all([
             access(root, constants.W_OK),
@@ -379,6 +413,18 @@ export class Updates {
         );
 
         return { git: true, commit, branch, dirty, writable };
+    }
+
+    #git: Promise<string | undefined> | undefined;
+
+    /** The version of git here, as `2.45.1`; undefined when it does not say one. */
+    #gitVersion(): Promise<string | undefined> {
+        this.#git ??= git(this.#root, ["--version"]).then(
+            (out) => /(\d+\.\d+\.\d+)/.exec(out)?.[1],
+            () => undefined,
+        );
+
+        return this.#git;
     }
 
     async #isAncestor(older: string, younger: string): Promise<boolean> {
@@ -512,9 +558,15 @@ export class Updates {
                 );
             }
 
+            const gitVersion = await this.#gitVersion();
+
             if (!local.git) {
                 blockers.push(
                     "This copy of Pi Pocket is not a git checkout. Update it the way you installed it.",
+                );
+            } else if (gitVersion !== undefined && !atLeast(gitVersion, MIN_GIT)) {
+                blockers.push(
+                    `Updates need git ${MIN_GIT} or newer, and this machine has ${gitVersion}. Update git first.`,
                 );
             } else {
                 if (!local.writable) {
@@ -657,6 +709,12 @@ export class Updates {
     }
 
     async #findRelease(signal?: AbortSignal): Promise<Release | undefined> {
+        const problem = repositoryProblem(this.repository);
+
+        if (problem !== undefined) {
+            throw new Error(problem);
+        }
+
         if (this.#options.releases !== undefined) {
             return this.#options.releases(signal);
         }
@@ -702,6 +760,7 @@ export class Updates {
                     "fetch",
                     "--quiet",
                     "--no-tags",
+                    "--",
                     this.repository,
                     `+refs/tags/${release.tag}:${TARGET_REF}`,
                 ],
@@ -892,14 +951,14 @@ export class Updates {
                 // stay paused, and the restart puts the files before back (`recover`), or the launcher does.
                 const head = (await git(this.#root, ["rev-parse", "HEAD"]).catch(() => "")).trim();
                 const touched = new Set([...paths.added, ...paths.other]);
-                const left = (
-                    await git(this.#root, ["status", "--porcelain", "--untracked-files=no"]).catch(
-                        () => "?? unknown",
-                    )
-                )
-                    .split("\n")
-                    .filter((line) => line.trim() !== "")
-                    .map((line) => line.slice(3));
+                const left = changedFiles(
+                    await git(this.#root, [
+                        "status",
+                        "--porcelain=v1",
+                        "-z",
+                        "--untracked-files=no",
+                    ]).catch(() => "?? unknown\0"),
+                );
                 const clean =
                     head === status.commit &&
                     !left.some((path) => touched.has(path) || path === "unknown") &&
@@ -967,7 +1026,14 @@ export class Updates {
         const { file, shell } = npm();
 
         try {
-            await run(file, ["ci", "--no-audit", "--no-fund"], staging, NPM_TIMEOUT_MS, shell);
+            // Through a shell (Windows' npm.cmd), a path with spaces needs its quotes.
+            await run(
+                shell ? `"${file}"` : file,
+                ["ci", "--no-audit", "--no-fund"],
+                staging,
+                NPM_TIMEOUT_MS,
+                shell,
+            );
         } catch (error) {
             throw new HttpError(500, `Installing the new packages failed: ${describe(error)}`);
         }
@@ -994,6 +1060,7 @@ export class Updates {
 
         const head = (await git(this.#root, ["rev-parse", "HEAD"]).catch(() => "")).trim();
         let outcome: UpdateOutcome;
+        let restart = false;
 
         if (head === pending.to) {
             outcome = finishPending(
@@ -1005,22 +1072,10 @@ export class Updates {
             );
             void rm(paths.previous, { recursive: true, force: true }).catch(() => {});
         } else if (head === pending.from) {
-            const kept =
-                pending.phase === "switching"
-                    ? undoPartialSwitch(this.#root, pending)
-                    : { paths: [] };
-
-            if (pending.modules) {
-                restoreModules(this.#root);
-            }
-
-            outcome = finishPending(
-                this.#root,
-                pending,
-                false,
-                `The update to ${pending.toVersion} did not finish, so Pi Pocket stays at ${pending.fromVersion}.${keptNote(this.#root, kept)}`,
-                this.#now,
-            );
+            // Files change under a server that runs: nothing reloads them now, and a restart starts on the right ones.
+            this.#options.quiesce?.(true);
+            outcome = finishPartial(this.#root, pending, this.#now);
+            restart = true;
         } else {
             outcome = finishPending(
                 this.#root,
@@ -1033,6 +1088,10 @@ export class Updates {
 
         await rm(paths.staging, { recursive: true, force: true });
         this.#options.log(outcome.message);
+
+        if (restart) {
+            this.#options.restart();
+        }
 
         return outcome;
     }
