@@ -859,6 +859,23 @@ export class ExtensionLoader {
         }
     }
 
+    /** While an update moves the checkout, edits load nothing: the restart after it loads the new version. */
+    #paused = false;
+
+    /** Stop or start loading modules again when they change, as `watch` does (`updates.ts`). */
+    pause(paused: boolean): void {
+        this.#paused = paused;
+        this.#webs.pause(paused);
+
+        if (paused) {
+            for (const timer of this.#timers.values()) {
+                clearTimeout(timer);
+            }
+
+            this.#timers.clear();
+        }
+    }
+
     /** Watch both folders and reload a module shortly after it changes. Keeps the old code when the new one fails. */
     watch(): void {
         this.#webs.watch();
@@ -886,6 +903,10 @@ export class ExtensionLoader {
     }
 
     #changed(file: string, directory: string): void {
+        if (this.#paused) {
+            return;
+        }
+
         // A browser module's file, or its folder: tabs load the new version.
         this.#webs.touched(directory, file);
 
