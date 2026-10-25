@@ -739,7 +739,8 @@ test("a log that fails is told, not hidden behind the command's code", { skip },
     const remove = app.commandEnvs.add(() => ({ PATH: `${bin}:${process.env.PATH ?? ""}` }));
 
     try {
-        await app.background.start(id, { command: "echo lost; exit 0" });
+        // Commands that print nothing: one that writes would die of the broken pipe (141) before it exits.
+        await app.background.start(id, { command: "sleep 0.1; exit 0" });
         await until(async () => (await one(id)).status !== "running", "the end");
         assert.equal((await one(id)).code, 0);
         assert.equal((await one(id)).logFailed, 3);
@@ -749,7 +750,7 @@ test("a log that fails is told, not hidden behind the command's code", { skip },
         );
 
         // Without a message too: list and output say so.
-        const quiet = await app.background.start(id, { command: "echo lost", notify: false });
+        const quiet = await app.background.start(id, { command: "true", notify: false });
 
         await until(
             async () => (await items(id)).every((each) => each.status !== "running"),
