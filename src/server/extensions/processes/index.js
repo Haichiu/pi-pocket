@@ -155,7 +155,7 @@ export default function setup(pocket) {
 
             try {
                 const { left } = await pocket.api("stop", {
-                    processes: job.processes.map(({ pid, startedAt }) => ({ pid, startedAt })),
+                    processes: job.processes.map(({ pid, startTicks }) => ({ pid, startTicks })),
                 });
 
                 if (left > 0) {
@@ -225,7 +225,8 @@ export default function setup(pocket) {
 
         if (!list.supported) {
             return html`<p class="muted">
-                Pi Pocket finds background processes on Linux only, for now.
+                Pi Pocket finds background processes on Linux only, for now, and not when it runs as
+                a container's first process.
             </p>`;
         }
 

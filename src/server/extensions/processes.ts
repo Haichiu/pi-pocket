@@ -22,8 +22,10 @@ export type LeftProcess = {
     pid: number;
     ppid: number;
     pgid: number;
-    /** When it started, ms since the epoch: with `pid`, what says it is still the same process. */
+    /** When it started, ms since the epoch, to show. */
     startedAt: number;
+    /** When it started, in the kernel's clock ticks since boot: with `pid`, what says it is still the same process. */
+    startTicks: number;
     command: string;
     cwd?: string;
     session?: number;
@@ -38,7 +40,7 @@ export type Job = {
     cwd?: string;
     startedAt: number;
     ports: number[];
-    processes: { pid: number; startedAt: number; command: string }[];
+    processes: { pid: number; startTicks: number; command: string }[];
 };
 
 type Stat = { ppid: number; pgid: number; start: number };
@@ -160,13 +162,19 @@ export function scanProcesses(options: {
         const chain: number[] = [];
         let at: number | undefined = pid;
 
-        while (at !== undefined && at > 1 && !chain.includes(at)) {
+        while (at !== undefined && at > 0 && !chain.includes(at)) {
             if (skipped.has(at)) {
                 for (const each of chain) {
                     skipped.add(each);
                 }
 
                 return true;
+            }
+
+            // The top: init, or a process with no parent here. Checked for `under` first, so a server that is
+            // pid 1 is left out too.
+            if (at === 1) {
+                break;
             }
 
             chain.push(at);
@@ -221,6 +229,7 @@ export function scanProcesses(options: {
             ppid: stat.ppid,
             pgid: stat.pgid,
             startedAt: boot + (stat.start / TICKS) * 1000,
+            startTicks: stat.start,
             command,
             ...(cwd === undefined ? {} : { cwd }),
             ...(session === undefined ? {} : { session }),
@@ -256,34 +265,50 @@ export function jobsOf(processes: LeftProcess[]): Job[] {
             ...(top.cwd === undefined ? {} : { cwd: top.cwd }),
             startedAt: sorted[0]!.startedAt,
             ports: [...new Set(members.flatMap((each) => each.ports))].sort((a, b) => a - b),
-            processes: sorted.map(({ pid, startedAt, command }) => ({ pid, startedAt, command })),
+            processes: sorted.map(({ pid, startTicks, command }) => ({ pid, startTicks, command })),
         };
     });
 }
 
 /**
- * Stop processes, each only while it is still the one the owner saw (its pid and start time, and found by a scan of
+ * Whether `pid` is still the process the owner saw: the same start, in clock ticks, read again now. Read just before
+ * each signal, to keep the moment in which a pid could be used again as short as can be: Node has no way to send a
+ * signal to one process for sure (a pidfd), so this narrows the window, and does not close it.
+ */
+function stillSame(proc: string, pid: number, startTicks: number): boolean {
+    return readStat(proc, pid)?.start === startTicks;
+}
+
+function signal(proc: string, target: { pid: number; startTicks: number }, kind: NodeJS.Signals) {
+    if (!stillSame(proc, target.pid, target.startTicks)) {
+        return;
+    }
+
+    try {
+        process.kill(target.pid, kind);
+    } catch {
+        // Gone already.
+    }
+}
+
+/**
+ * Stop processes, each only while it is still the one the owner saw (its pid and exact start, and found by a scan of
  * this Pi Pocket's): first politely, then, for those still running after a moment, by force. Returns how many ended.
  */
 export async function stopProcesses(
-    wanted: { pid: number; startedAt: number }[],
+    wanted: { pid: number; startTicks: number }[],
     scan: () => LeftProcess[],
     forceAfterMs = FORCE_AFTER_MS,
+    proc = "/proc",
 ): Promise<{ stopped: number; left: number }> {
     const same = (list: LeftProcess[]) =>
         list.filter((each) =>
-            wanted.some(
-                (want) => want.pid === each.pid && Math.abs(want.startedAt - each.startedAt) < 1000,
-            ),
+            wanted.some((want) => want.pid === each.pid && want.startTicks === each.startTicks),
         );
     const targets = same(scan());
 
     for (const each of targets) {
-        try {
-            process.kill(each.pid, "SIGTERM");
-        } catch {
-            // Gone already.
-        }
+        signal(proc, each, "SIGTERM");
     }
 
     const deadline = Date.now() + forceAfterMs;
@@ -295,11 +320,7 @@ export async function stopProcesses(
     }
 
     for (const each of alive) {
-        try {
-            process.kill(each.pid, "SIGKILL");
-        } catch {
-            // Gone meanwhile.
-        }
+        signal(proc, each, "SIGKILL");
     }
 
     if (alive.length > 0) {
@@ -313,7 +334,8 @@ export async function stopProcesses(
 export default function createProcesses(host: PocketHost, web: ExtensionWeb) {
     web.client("processes", { access: "owner" });
 
-    const supported = scanSupported();
+    // A server that is pid 1 (a container's) adopts what its commands leave: they cannot be told from its own.
+    const supported = scanSupported() && process.pid !== 1;
     // The server's own tree, and the launcher's (cloudflared, and the server after a restart). The launcher is the
     // parent only with its channel open, as `main.ts` checks: the variable alone is inherited by what a session starts.
     const launched =
@@ -379,11 +401,11 @@ export default function createProcesses(host: PocketHost, web: ExtensionWeb) {
         const list = Array.isArray(body.processes) ? body.processes : [];
         const wanted = list
             .filter(
-                (each): each is { pid: number; startedAt: number } =>
+                (each): each is { pid: number; startTicks: number } =>
                     typeof each === "object" &&
                     each !== null &&
                     Number.isInteger((each as { pid?: unknown }).pid) &&
-                    typeof (each as { startedAt?: unknown }).startedAt === "number",
+                    Number.isInteger((each as { startTicks?: unknown }).startTicks),
             )
             .slice(0, 500);
 

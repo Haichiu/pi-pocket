@@ -4,7 +4,7 @@
 import { cleanUp, openApp, root, scriptedModel } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import {
@@ -111,6 +111,7 @@ test("a command's processes are one job, under the command at their top", () => 
             ppid: 1,
             pgid: 10,
             startedAt: at,
+            startTicks: 1,
             command: "npm run dev",
             session: 3,
             ports: [],
@@ -120,12 +121,22 @@ test("a command's processes are one job, under the command at their top", () => 
             ppid: 11,
             pgid: 10,
             startedAt: at + 5,
+            startTicks: 2,
             command: "node vite",
             session: 3,
             ports: [5173],
         },
-        { pid: 20, ppid: 1, pgid: 20, startedAt: at, command: "sleep 9", session: 3, ports: [] },
-        { pid: 30, ppid: 1, pgid: 10, startedAt: at, command: "sleep 9", ports: [] },
+        {
+            pid: 20,
+            ppid: 1,
+            pgid: 20,
+            startedAt: at,
+            startTicks: 1,
+            command: "sleep 9",
+            session: 3,
+            ports: [],
+        },
+        { pid: 30, ppid: 1, pgid: 10, startedAt: at, startTicks: 1, command: "sleep 9", ports: [] },
     ];
     const jobs = jobsOf(processes);
 
@@ -153,14 +164,9 @@ test(
         await until(() => scan().filter((each) => each.session === 8).length >= 2, "both run");
         const seen = scan().filter((each) => each.pid === polite || each.pid === stubborn);
 
-        // A pid with another start time is not the process the owner saw: it is left alone.
+        // A pid with another start, by one clock tick, is not the process the owner saw: it is left alone.
         const wrong = await stopProcesses(
-            [
-                {
-                    pid: polite,
-                    startedAt: seen.find((each) => each.pid === polite)!.startedAt - 60_000,
-                },
-            ],
+            [{ pid: polite, startTicks: seen.find((each) => each.pid === polite)!.startTicks + 1 }],
             () => scan(),
             200,
         );
@@ -169,7 +175,7 @@ test(
         assert.ok(scan().some((each) => each.pid === polite));
 
         const result = await stopProcesses(
-            seen.map(({ pid, startedAt }) => ({ pid, startedAt })),
+            seen.map(({ pid, startTicks }) => ({ pid, startTicks })),
             () => scan(),
             500,
         );
@@ -220,3 +226,37 @@ test(
         }
     },
 );
+
+test("the trees left out reach pid 1: a server that is pid 1 leaves out all it runs", () => {
+    const proc = join(root, "fake-proc");
+
+    const make = (pid: number, ppid: number, env: string) => {
+        mkdirSync(join(proc, String(pid)), { recursive: true });
+        writeFileSync(
+            join(proc, String(pid), "stat"),
+            `${pid} (a (b) c) S ${ppid} ${pid} ${pid} 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4242 0`,
+        );
+        writeFileSync(join(proc, String(pid), "environ"), `${env}\0`);
+        writeFileSync(join(proc, String(pid), "cmdline"), `cmd${pid}\0`);
+    };
+
+    mkdirSync(join(proc, "self"), { recursive: true });
+    writeFileSync(join(proc, "stat"), "btime 1000\n");
+    make(1, 0, `PI_POCKET_DIR=${dataDir}`);
+    make(50, 1, `PI_POCKET_DIR=${dataDir}`);
+    make(60, 50, `PI_POCKET_DIR=${dataDir}`);
+
+    assert.deepEqual(scanProcesses({ dataDir, under: [1], proc }), []);
+
+    const free = scanProcesses({ dataDir, under: [999], proc });
+
+    assert.deepEqual(
+        free.map((each) => [each.pid, each.startTicks]).sort(),
+        [
+            [1, 4242],
+            [50, 4242],
+            [60, 4242],
+        ],
+        "a name with spaces and parentheses is read past",
+    );
+});
