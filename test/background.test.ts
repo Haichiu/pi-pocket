@@ -68,15 +68,12 @@ before(async () => {
 const started = new Set<ConversationId>();
 
 after(async () => {
-    // Nothing a test started outlives it.
+    // Nothing a test started outlives it: what still runs is stopped as a stop does, checked to be the task's. (Killing
+    // the group of a task that ended long ago would hit whatever took its id since: another test's browser.)
     for (const id of started) {
         for (const item of await app.background.list(id).catch(() => [])) {
-            if (item.pid > 0) {
-                try {
-                    process.kill(-item.pid, "SIGKILL");
-                } catch {
-                    // Gone already.
-                }
+            if (item.status === "running" || item.status === "starting") {
+                await app.background.stop(id, item.id).catch(() => undefined);
             }
         }
     }
