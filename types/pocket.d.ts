@@ -526,12 +526,6 @@ export interface CommandRun {
      */
     readonly conversationId: number;
     /**
-     * The session the command's work is for: `conversationId` itself, or, for a subagent's command, its session.
-     * @since 0.23.0
-     * @experimental
-     */
-    readonly sessionId: number;
-    /**
      * The command as the shell gets it, or a program and its arguments.
      * @since 0.22.0
      * @experimental
