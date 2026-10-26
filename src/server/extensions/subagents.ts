@@ -10,8 +10,9 @@
  *
  * Models are a person's to choose: with no list of models for subagents (`subagentModels`), a subagent runs on its
  * session's model. With a list, a subagent runs only on a model on it: its session's model when that is listed and Pi
- * names none, else the one Pi names, which must be listed and is required when the session's is not. Thinking is never harder than the session's. A subagent its
- * model or provider failed is reported as such, and Pi is told to stop and tell the user, never to try another model.
+ * names none, else the one Pi names, which must be listed and is required when the session's is not. Thinking is the
+ * session's level unless Pi names another, of any height. A subagent its model or provider failed is reported as such,
+ * and Pi is told to stop and tell the user, never to try another model.
  */
 import type { AssistantMessage, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { Type } from "@earendil-works/pi-ai";
