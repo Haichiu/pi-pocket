@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { modulesWith } from "../src/server/config.ts";
+import { prepareDropInFolder } from "../src/server/reload.ts";
 
 const ROOT = new URL("..", import.meta.url);
 
@@ -87,4 +88,49 @@ test("the npm package has what Pi Pocket runs and reads, and not its tests", () 
     for (const left of ["test/app.test.ts", "site/index.html", "docs-site/package.json"]) {
         assert.ok(!packed(left), `${left} is in the package`);
     }
+});
+
+test("drop-ins can import dependencies split between nested and hoisted folders", (t) => {
+    const temp = mkdtempSync(join(tmpdir(), "pocket-npm-"));
+
+    t.after(() => rmSync(temp, { recursive: true, force: true }));
+
+    const hoisted = join(temp, "project", "node_modules");
+    const app = join(hoisted, "pi-pocket");
+    const own = join(app, "node_modules");
+    const dropIn = join(temp, "data", "extensions");
+    const packages = [
+        ["@review/nested", own, "nested"],
+        ["@review/hoisted", hoisted, "hoisted"],
+    ] as const;
+
+    for (const [name, modules, value] of packages) {
+        const folder = join(modules, name);
+
+        mkdirSync(folder, { recursive: true });
+        writeFileSync(
+            join(folder, "package.json"),
+            JSON.stringify({ name, type: "module", exports: "./index.js" }),
+        );
+        writeFileSync(join(folder, "index.js"), `export const value = "${value}";`);
+    }
+
+    prepareDropInFolder(
+        dropIn,
+        own,
+        Object.fromEntries(packages.map(([name]) => [name, modulesWith(name, app)])),
+    );
+
+    const entry = join(dropIn, "probe.mjs");
+
+    writeFileSync(
+        entry,
+        'import { value as a } from "@review/nested";\n' +
+            'import { value as b } from "@review/hoisted";\nconsole.log(a, b);\n',
+    );
+
+    const run = spawnSync(process.execPath, [entry], { encoding: "utf8" });
+
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stdout, "nested hoisted\n");
 });

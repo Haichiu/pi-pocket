@@ -90,7 +90,7 @@ import { takeLock } from "./lock.ts";
 import { Memory } from "./memory.ts";
 import { isThinkingLevel, modelInfo, modelList, resolveModel, THINKING_LEVELS } from "./models.ts";
 import { Updates } from "./updates.ts";
-import { pocketVersion } from "./versions.ts";
+import { pocketPackage, pocketVersion } from "./versions.ts";
 import { configureHttp } from "./net.ts";
 import { createPublicFetch } from "./public-fetch.ts";
 import { PiSessions } from "./pi-sessions.ts";
@@ -778,7 +778,16 @@ export class PocketApp {
         const dropIn = join(this.dataDir, "extensions");
 
         try {
-            prepareDropInFolder(dropIn, modulesWith("@earendil-works/pi-durable"));
+            prepareDropInFolder(
+                dropIn,
+                modulesWith("@earendil-works/pi-durable"),
+                Object.fromEntries(
+                    Object.keys(pocketPackage.dependencies ?? {}).map((name) => [
+                        name,
+                        modulesWith(name),
+                    ]),
+                ),
+            );
         } catch (error) {
             this.#log(`Drop-in extensions cannot import Pi Pocket's packages: ${describe(error)}`);
         }
