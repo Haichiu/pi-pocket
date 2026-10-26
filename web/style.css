@@ -7369,6 +7369,21 @@ button.session-chip {
     white-space: nowrap;
 }
 
+.subagent-models-legend {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: -6px;
+    padding: 0 18px;
+    font-size: 12px;
+    color: var(--faint);
+}
+
+.subagent-models-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
 .model-filters {
     align-self: flex-start;
 }

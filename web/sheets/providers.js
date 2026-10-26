@@ -25,7 +25,8 @@ function SubagentModels({ names }) {
     // What this tab asked for and has no answer to yet, by model: shown at once.
     const [asked, setAsked] = useState({});
     const [query, setQuery] = useState("");
-    const [favoritesOnly, setFavoritesOnly] = useState(false);
+    const [filter, setFilter] = useState("all");
+    const favoritesOnly = filter === "favorites";
     const favorites = new Set(favoriteModels());
 
     // A server that does not keep the choice sends none.
@@ -55,7 +56,7 @@ function SubagentModels({ names }) {
         const words = `${row.spec} ${row.model?.name ?? ""} ${names[provider] ?? ""}`;
 
         if (
-            (!favoritesOnly || favorites.has(row.spec)) &&
+            (filter === "all" || (favoritesOnly ? favorites.has(row.spec) : isOn(row.spec))) &&
             (needle === "" || words.toLowerCase().includes(needle))
         ) {
             groups.set(provider, [...(groups.get(provider) ?? []), row]);
@@ -98,23 +99,23 @@ function SubagentModels({ names }) {
             </span>
         </div>
         <p class="muted small">
-            Subagents and linked sessions use only checked models. With none checked, they use the session's model.
+            <strong>Checkbox:</strong> models subagents and linked sessions may use. With none checked, they use the
+            session's model. <strong>Star:</strong> only a shortcut in your model picker; it changes no permission.
         </p>
         <div class="segmented model-filters" role="group" aria-label="Filter models">
-            <button
-                class=${favoritesOnly ? "" : "on"}
-                aria-pressed=${!favoritesOnly}
-                onClick=${() => setFavoritesOnly(false)}
-            >
-                All models
-            </button>
-            <button
-                class=${favoritesOnly ? "on" : ""}
-                aria-pressed=${favoritesOnly}
-                onClick=${() => setFavoritesOnly(true)}
-            >
-                <${Icon} name="star" size=${15} /> Favorites
-            </button>
+            ${[
+                ["all", "All models", null],
+                ["allowed", "Allowed", "check"],
+                ["favorites", "Favorites", "star"],
+            ].map(
+                ([value, label, icon]) => html`<button
+                    class=${filter === value ? "on" : ""}
+                    aria-pressed=${filter === value}
+                    onClick=${() => setFilter(value)}
+                >
+                    ${icon && html`<${Icon} name=${icon} size=${15} />`} ${label}
+                </button>`,
+            )}
         </div>
         ${
             (rows.length > MODEL_SEARCH_AT || query !== "") &&
@@ -128,11 +129,15 @@ function SubagentModels({ names }) {
                 />
             </label>`
         }
+        <div class="subagent-models-legend" aria-hidden="true">
+            <span><${Icon} name="check" size=${13} /> Allowed for subagents</span>
+            <span>Favorite <${Icon} name="star" size=${13} /></span>
+        </div>
         <div class="subagent-models-list" role="group" aria-label="Models for subagents">
             ${
                 groups.size === 0 &&
                 html`<p class="muted small">
-                    ${rows.length === 0 ? "No models: sign in to a provider first." : favoritesOnly && needle === "" ? "Star models in All models to add favorites." : "No model matches."}
+                    ${rows.length === 0 ? "No models: sign in to a provider first." : needle === "" && filter !== "all" ? (favoritesOnly ? "Star models in All models to add favorites." : "No model is allowed yet: check some in All models.") : "No model matches."}
                 </p>`
             }
             ${[...groups].map(
@@ -162,9 +167,9 @@ function SubagentModels({ names }) {
                             </label>
                             <button
                                 class="icon-button model-favorite"
-                                aria-label=${`Favorite ${model?.name ?? spec}`}
+                                aria-label=${`Favorite ${model?.name ?? spec} (model picker shortcut)`}
                                 aria-pressed=${favorites.has(spec)}
-                                title=${favorites.has(spec) ? "Remove from favorites" : "Add to favorites"}
+                                title=${favorites.has(spec) ? "Remove from model picker favorites" : "Add to model picker favorites (does not allow it for subagents)"}
                                 onClick=${(event) => {
                                     if (favoritesOnly) {
                                         event.currentTarget
