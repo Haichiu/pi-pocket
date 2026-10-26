@@ -2306,6 +2306,8 @@ function Items({ items, results, slots, approvals, busy, past = false, conversat
             conversationId,
             after,
             prefs().showThinking === true,
+            // Keep activity folded: a group drawn before the switch moved opens or folds with it.
+            prefs().foldActivity === true,
         ];
 
         // The calls before the rows shown count in the group's line: their results, for its time.
