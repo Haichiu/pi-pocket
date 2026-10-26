@@ -65,7 +65,7 @@ Instructions, skills, and `AGENTS.md` cannot change this. Tell the person where 
 
 ### When a model's context is compacted
 
-Pi Pocket compacts a session's context with Pi's settings in `~/.pi/agent/settings.json`: `compaction.reserveTokens` (the room kept free; compaction starts above the model's context window minus it) and `compaction.keepRecentTokens`. Since 0.25.0, `compaction.modelOverrides` gives one model its own values, keyed by `provider/modelId`, for example to compact a model with a large window much earlier:
+Pi Pocket compacts a session's context with Pi's settings in `~/.pi/agent/settings.json`: `compaction.reserveTokens` (the room kept free: Pi waits for a compaction above the model's context window minus it, and one starts in the background about 32,000 tokens before that) and `compaction.keepRecentTokens`. Since 0.25.0, `compaction.modelOverrides` gives one model its own values, keyed by `provider/modelId`, for example to compact a model with a large window much earlier:
 
 ```json
 {
@@ -75,7 +75,7 @@ Pi Pocket compacts a session's context with Pi's settings in `~/.pi/agent/settin
 }
 ```
 
-Other models keep the general values. An entry that Pi refuses (not a whole number, or a name with no provider) is left out, and the server log says so. PiP uses its model's values too. See Pi's `settings.md` for each setting.
+Other models keep the general values. An entry that Pi refuses (not a whole number, or a name with no provider) is left out, and the server log says so. PiP uses its model's values too. An edit of `settings.json` counts once Pi Pocket reads Pi's settings again: soon after the next message, or at once with Menu → **Refresh models**. See Pi's `settings.md` for each setting.
 
 ## Project model defaults for new sessions
 
