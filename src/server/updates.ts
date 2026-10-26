@@ -582,7 +582,7 @@ export class Updates {
             if (!local.git) {
                 blockers.push(
                     this.#root.split(sep).includes("node_modules")
-                        ? "This copy of Pi Pocket came from npm. Update it with `npm install -g pi-pocket@latest` (or run `npx pi-pocket@latest`), then start it again."
+                        ? `This copy of Pi Pocket came from npm. When ${latest.tag} is on npm, update it with \`npm install -g pi-pocket@latest\` (or run \`npx pi-pocket@latest\`), then start it again.`
                         : "This copy of Pi Pocket is not a git checkout. Update it the way you installed it.",
                 );
             } else if (gitVersion !== undefined && !atLeast(gitVersion, MIN_GIT)) {
