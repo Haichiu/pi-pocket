@@ -242,11 +242,36 @@ function BackgroundReport({ match }) {
         <div class="report-head">
             <span class="report-name">${id}</span> ${outcome} · ${took}
         </div>
-        ${command !== undefined && html`<div class="muted small mono">${command}</div>`}
+        ${command !== undefined && html`<div class="background-command muted small mono">${command}</div>`}
         ${
             output === undefined
                 ? html`<div class="muted small">It printed nothing.</div>`
-                : html`<${Collapsible} text=${output} />`
+                : html`<${BackgroundOutput}
+                      text=${output}
+                      clipped=${/^The end of its output/m.test(rest)}
+                  />`
+        }
+    </div>`;
+}
+
+/** Lines of a background task's output shown while it is folded: its last ones, where an error usually is. */
+const OUTPUT_LINES = 8;
+
+/** A background task's output as it printed it, folded to its last lines; `clipped` when the task printed more. */
+function BackgroundOutput({ text, clipped }) {
+    const [open, setOpen] = useState(false);
+    const lines = text.split("\n");
+    const folds = lines.length > OUTPUT_LINES;
+    const shown = folds && !open ? lines.slice(-OUTPUT_LINES).join("\n") : text;
+
+    return html`<div class="background-output">
+        ${clipped && html`<div class="muted small">The end of its output:</div>`}
+        <pre>${shown}</pre>
+        ${
+            folds &&
+            html`<button class="link" onClick=${() => setOpen(!open)}>
+                ${open ? "Show less" : `Show all ${lines.length} lines`}
+            </button>`
         }
     </div>`;
 }

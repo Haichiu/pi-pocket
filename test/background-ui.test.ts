@@ -89,7 +89,7 @@ after(async () => {
     cleanUp();
 });
 
-test("a background task's end shows as a card with its output folded away", real, async () => {
+test("a background task's end shows as a card with its last lines", real, async () => {
     const id = await newSession(app);
 
     await page.setViewport(VIEWPORTS.desktop);
@@ -121,23 +121,32 @@ test("a background task's end shows as a card with its output folded away", real
             `return JSON.stringify(document.querySelector(".background-report")?.textContent.replace(/\\s+/g, " ").trim())`,
         );
 
-    // Its command, and the head of its output: the tail (and Pi's words about the tool) stay folded away.
+    // Its command, and the last lines of its output as printed: the rest (and Pi's words about the tool) stay folded.
     assert.match(await card(), /seq 1000 1200/);
-    assert.doesNotMatch(await card(), /1199/);
+    assert.match(await card(), /1193 1194 1195 1196 1197 1198 1199 1200/);
+    assert.doesNotMatch(await card(), /1192/);
     assert.doesNotMatch(await card(), /Read the rest with the background tool/);
+    assert.equal(
+        await inPage(
+            `return JSON.stringify(document.querySelector(".background-output pre")?.textContent.split("\\n").length)`,
+        ),
+        8,
+    );
+
+    const link = ".background-report .background-output .link";
 
     assert.equal(
         await inPage(
-            `return JSON.stringify(document.querySelector(".background-report .collapsible .link")?.textContent)`,
+            `return JSON.stringify(document.querySelector("${link}")?.textContent.trim())`,
         ),
-        "Show more",
+        "Show all 201 lines",
     );
 
-    // Show more opens the whole output.
-    await page.click({ selector: ".background-report .collapsible .link" });
+    // Show all opens the whole output.
+    await page.click({ selector: link });
     await see(
-        `return JSON.stringify(document.querySelector(".background-report .collapsible .link")?.textContent === "Show less")`,
+        `return JSON.stringify(document.querySelector("${link}")?.textContent.trim() === "Show less")`,
         "the output open",
     );
-    assert.match(await card(), /1199/);
+    assert.match(await card(), /^.*\b1000 1001\b/);
 });

@@ -2571,6 +2571,22 @@ pre.diff .del {
     color: var(--muted);
 }
 
+/* A background task's end: its command can be one long word, and its output keeps its lines as printed. */
+.background-command {
+    overflow-wrap: anywhere;
+}
+
+.background-output pre {
+    margin: 6px 0 0;
+    padding: 8px 10px;
+    overflow-x: auto;
+    border: 1px solid var(--hair);
+    border-radius: var(--r-card);
+    background: var(--code-bg);
+    font: calc(var(--text-size, 15px) * 5 / 6) / 1.5 var(--mono);
+    white-space: pre;
+}
+
 .report-name {
     color: var(--text);
     font-weight: 600;
