@@ -57,6 +57,8 @@ import {
     type ArtifactMeta,
     ArtifactsDoc,
     AuthorsDoc,
+    BackgroundDoc,
+    type BackgroundTask,
     BrowserDoc,
     ChatDoc,
     type ChatMessage,
@@ -363,6 +365,8 @@ export class PocketApp {
      * server started: the session list marks them until their next run starts.
      */
     readonly #failed = new Set<ConversationId>();
+    /** How many commands each session runs in the background now (`background.ts`): the list and status line show it. */
+    readonly #background = new Map<ConversationId, number>();
     readonly #agents = new Map<ConversationId, AgentState>();
 
     /** The newest chat message (not activity) of each conversation, for unread dots in the session list. */
@@ -924,6 +928,7 @@ export class PocketApp {
                 }
 
                 this.#noteSubagents(id, await this.harness.snapshot(SubagentsDoc, id, context));
+                this.#noteBackground(id, await this.harness.snapshot(BackgroundDoc, id, context));
             }
 
             cursor = page.next;
@@ -1025,6 +1030,17 @@ export class PocketApp {
         const kind = change.record.kind;
         const id = change.conversationId;
         let sessionsChanged = false;
+
+        if (
+            kind === BackgroundDoc.definition.kind &&
+            id !== undefined &&
+            this.#noteBackground(
+                id,
+                change.value as { items: Record<string, BackgroundTask> } | null,
+            )
+        ) {
+            sessionsChanged = true;
+        }
 
         if (kind === "pi.live" && id !== undefined) {
             const busy = (change.value as LiveState | null)?.run !== undefined;
@@ -1885,6 +1901,28 @@ export class PocketApp {
         return true;
     }
 
+    /** Count the commands a session runs in the background, starting ones too. True when the count changed. */
+    #noteBackground(
+        id: ConversationId,
+        doc: { items: Record<string, BackgroundTask> } | null | undefined,
+    ): boolean {
+        const running = Object.values(doc?.items ?? {}).filter(
+            (item) => item.status === "running" || item.status === "starting",
+        ).length;
+
+        if (running === (this.#background.get(id) ?? 0)) {
+            return false;
+        }
+
+        if (running === 0) {
+            this.#background.delete(id);
+        } else {
+            this.#background.set(id, running);
+        }
+
+        return true;
+    }
+
     #noteSubagents(id: ConversationId, doc: SubagentsValue | null | undefined): void {
         const agents = doc?.agents ?? {};
 
@@ -2243,6 +2281,7 @@ export class PocketApp {
                 const chat = this.#lastChat.get(id);
                 const endedAt = this.#endedAt.get(Number(id) as unknown as ConversationId);
                 const counts = countSubagents(subagents.get(id) ?? []);
+                const background = this.#background.get(Number(id) as unknown as ConversationId);
                 // Which of Pi's sessions it continues is the owner's to know (the Pi sessions sheet), not the list's.
                 const { fromPi: _fromPi, linkedFrom, ...shown } = meta;
                 // Linking does not share the origin: do not leak its id to someone who only sees the new chat.
@@ -2276,6 +2315,7 @@ export class PocketApp {
                     ...(here.length === 0 ? {} : { people: here }),
                     ...(chat === undefined ? {} : { chatAt: chat.at, chatBy: chat.userId }),
                     ...(counts === undefined ? {} : { subagents: counts }),
+                    ...(background === undefined ? {} : { background }),
                 };
             })
             .sort((a, b) => b.updatedAt - a.updatedAt);
