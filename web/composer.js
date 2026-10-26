@@ -1942,7 +1942,7 @@ defineItem("status", {
             >
                 <span class="dot" aria-hidden="true"></span>
                 <span class="num">${count}</span>
-                <span class="word">in background</span>
+                <span class="word">${" "}in background</span>
             </button>`
         );
     },
