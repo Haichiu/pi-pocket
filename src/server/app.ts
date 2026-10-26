@@ -51,7 +51,7 @@ import type { BrowserState } from "./browser/page.ts";
 import { Collab, REACTIONS } from "./collab.ts";
 import { Commands } from "./commands.ts";
 import { LinkedSessions } from "./linked-sessions.ts";
-import { APP_ROOT, ConfigStore, type User } from "./config.ts";
+import { APP_ROOT, ConfigStore, modulesWith, type User } from "./config.ts";
 import {
     ArtifactBodyDoc,
     type ArtifactMeta,
@@ -774,7 +774,7 @@ export class PocketApp {
         const dropIn = join(this.dataDir, "extensions");
 
         try {
-            prepareDropInFolder(dropIn, join(APP_ROOT, "node_modules"));
+            prepareDropInFolder(dropIn, modulesWith("@earendil-works/pi-durable"));
         } catch (error) {
             this.#log(`Drop-in extensions cannot import Pi Pocket's packages: ${describe(error)}`);
         }
