@@ -93,9 +93,9 @@ function SubagentModels({ names }) {
 
     return html`<div class="subagent-models">
         <div class="subagent-models-heading">
-            <div class="label">Models for subagents</div>
+            <div class="label">Models</div>
             <span class="small subagent-models-chosen" title=${summary} aria-live="polite">
-                ${chosen.length} allowed
+                ${chosen.length} for subagents
             </span>
         </div>
         <p class="muted small">
@@ -130,8 +130,8 @@ function SubagentModels({ names }) {
             </label>`
         }
         <div class="subagent-models-legend" aria-hidden="true">
-            <span><${Icon} name="check" size=${13} /> Allowed for subagents</span>
-            <span>Favorite <${Icon} name="star" size=${13} /></span>
+            <span><${Icon} name="check" size=${13} />${" "}Allowed for subagents</span>
+            <span>Favorite${" "}<${Icon} name="star" size=${13} /></span>
         </div>
         <div class="subagent-models-list" role="group" aria-label="Models for subagents">
             ${
