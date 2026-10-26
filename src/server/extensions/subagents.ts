@@ -825,7 +825,7 @@ export default function createSubagents(host: PocketHost) {
                 THINKING_LEVELS.map((level) => Type.Literal(level)),
                 {
                     description:
-                        "spawn only: its thinking level; left out, yours. One its model lacks becomes the nearest lower one it has.",
+                        "spawn only: its thinking level; left out, yours. One its model lacks becomes the nearest lower one it has, else its lowest.",
                 },
             ),
         ),
@@ -993,8 +993,7 @@ export default function createSubagents(host: PocketHost) {
             const notes: string[] = [];
             let thinking: ModelThinkingLevel | undefined;
 
-            // As the model picker does, but never up: the level wanted, and when its model lacks that level, the nearest
-            // lower one it has, else its lowest.
+            // The level wanted; when its model lacks that level, the nearest lower one it has, else its lowest.
             if (action === "spawn" && (asked !== undefined || model !== undefined)) {
                 const ref = model ?? parent.model;
                 const found =

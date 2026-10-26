@@ -54,7 +54,7 @@ export interface LinkedSession {
 export interface LinkedSessionsApi {
     /**
      * Start a session linked to `source`, in `cwd` or its folder, with a copy of its agent settings but not its history,
-     * and send it `message` as its first message. `model` is `provider/modelId`; `thinking` any level; a level the model lacks becomes its nearest lower one.
+     * and send it `message` as its first message. `model` is `provider/modelId`; `thinking` any level; one the model lacks becomes its nearest lower one, else its lowest.
      */
     start(
         source: ConversationId,
