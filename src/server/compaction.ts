@@ -41,7 +41,7 @@ export function compactionReader(
 
                 modelOverrides[name] = { reserveTokens, keepRecentTokens };
             } catch (error) {
-                const message = `Pi's compaction.modelOverrides["${name}"] is left out: ${describe(error)}`;
+                const message = `Pi's compaction.modelOverrides[${JSON.stringify(name)}] is left out: ${describe(error)}`;
 
                 if (!warned.has(message)) {
                     warned.add(message);

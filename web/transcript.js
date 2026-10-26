@@ -67,9 +67,22 @@ const REPORT = /^\[subagent (\S+) (answered|failed)([^\]]*)\]\s?([\s\S]*)$/;
 /** Where the next report starts, in a message of several that arrived together (`extensions/subagents.ts`). */
 const NEXT_REPORT = /\n\n(?=\[subagent \S+ (?:answered|failed))/;
 
-/** A background task's message to Pi (`background.ts`): its head line, its command, and the end of its output fenced. */
-const BACKGROUND = /^\[background\] Task (\S+) (.+?) after ([^.\n]+)\.\nCommand: (.*)\n([\s\S]*)$/;
-const BACKGROUND_OUTPUT = /<background-output>\n([\s\S]*?)\n<\/background-output>/;
+/**
+ * A background task's message to Pi (`background.ts`): its head line, its command, and the end of its output fenced.
+ * Its time is short ("2m 4s"), which keeps a long line that is not one quick to turn down.
+ */
+const BACKGROUND =
+    /^\[background\] Task (\S+) (.+?) after ([^.\n]{1,20})\.\nCommand: (.*)\n([\s\S]*)$/;
+const OUTPUT_OPEN = "<background-output>\n";
+const OUTPUT_CLOSE = "\n</background-output>";
+
+/** The output fenced in a background task's message, or undefined when it printed nothing. */
+function fencedOutput(rest) {
+    const start = rest.indexOf(OUTPUT_OPEN);
+    const end = start < 0 ? -1 : rest.indexOf(OUTPUT_CLOSE, start + OUTPUT_OPEN.length);
+
+    return end < 0 ? undefined : rest.slice(start + OUTPUT_OPEN.length, end);
+}
 
 /** How a scheduled message starts (see src/server/schedules.ts). */
 const SCHEDULED = "[scheduled] ";
@@ -236,7 +249,7 @@ function Report({ report, view, fresh }) {
 /** A background task that ended, as a card for people: its id and outcome, its command, and its output folded away. */
 function BackgroundReport({ match }) {
     const [, id, outcome, took, command, rest] = match;
-    const output = BACKGROUND_OUTPUT.exec(rest)?.[1];
+    const output = fencedOutput(rest);
 
     return html`<div class="report background-report">
         <div class="report-head">
