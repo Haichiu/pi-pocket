@@ -28,15 +28,16 @@ const real = {
     skip: chromium === undefined ? "no Chromium-based browser on this machine" : false,
 } as const;
 
-/** The owner asks for a background task; everything else answers "done". */
+/** The owner asks for a background task (`start a background task: <command>`); everything else answers "done". */
 const route: FauxResponseStep = (request) => {
     const { text } = lastText(request as never);
 
-    if (text?.startsWith("start a background")) {
-        return fauxAssistantMessage(
-            [fauxToolCall("background", { action: "start", command: "seq 1000 1200" })],
-            { stopReason: "toolUse" },
-        );
+    if (text?.startsWith("start a background task")) {
+        const command = text.split(": ")[1] ?? "seq 1000 1200";
+
+        return fauxAssistantMessage([fauxToolCall("background", { action: "start", command })], {
+            stopReason: "toolUse",
+        });
     }
 
     return fauxAssistantMessage([fauxText("done")]);
@@ -149,4 +150,34 @@ test("a background task's end shows as a card with its last lines", real, async 
         "the output open",
     );
     assert.match(await card(), /^.*\b1000 1001\b/);
+});
+
+test("output whose own line says it is the end is not taken for a cut one", real, async () => {
+    const id = await newSession(app);
+
+    await page.navigate(`${base}/s/${id}`);
+    await see(
+        `return JSON.stringify(document.querySelector(".composer textarea") !== null)`,
+        "the session",
+    );
+    await app.commands.submit(id, owner(app), {
+        text: "start a background task: printf 'one\\nThe end of its output\\n'",
+        requestId: `quiet-${id}`,
+    });
+    await see(
+        `return JSON.stringify(document.querySelector(".background-output pre") !== null)`,
+        "the background card",
+        20_000,
+    );
+    assert.equal(
+        await inPage(
+            `return JSON.stringify(document.querySelector(".background-output pre").textContent)`,
+        ),
+        "one\nThe end of its output",
+    );
+    // All of it reached Pi: no "The end of its output:" label above it.
+    assert.equal(
+        await inPage(`return JSON.stringify(document.querySelector(".background-output .muted"))`),
+        null,
+    );
 });

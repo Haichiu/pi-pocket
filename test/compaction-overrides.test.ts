@@ -53,6 +53,21 @@ test("each model's own values are read, and one that Pi refuses is left out once
     assert.match(warnings[1]!, /modelOverrides\["no-provider"\] is left out/);
 });
 
+test("a refused name with a line break stays on one line of the log", () => {
+    const warnings: string[] = [];
+    const read = compactionReader(
+        SettingsManager.inMemory({
+            compaction: { modelOverrides: { "bad\nline\u001b[2J": { reserveTokens: 1 } } },
+        }),
+        (line) => warnings.push(line),
+    );
+
+    read();
+    assert.equal(warnings.length, 1);
+    assert.doesNotMatch(warnings[0]!, /[\n\u001b]/);
+    assert.match(warnings[0]!, /modelOverrides\["bad\\nline\\u001b\[2J"\] is left out/);
+});
+
 test("with no model of its own, the settings are Pi's as before", () => {
     const read = compactionReader(
         SettingsManager.inMemory({ compaction: { reserveTokens: 9_000 } }),

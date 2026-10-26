@@ -261,7 +261,7 @@ function BackgroundReport({ match }) {
                 ? html`<div class="muted small">It printed nothing.</div>`
                 : html`<${BackgroundOutput}
                       text=${output}
-                      clipped=${/^The end of its output/m.test(rest)}
+                      clipped=${rest.startsWith("The end of its output")}
                   />`
         }
     </div>`;
