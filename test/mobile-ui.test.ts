@@ -582,6 +582,8 @@ test("a long open group draws its newest steps, and shows the rest when asked", 
             });
         `);
 
+    // Groups start folded (Appearance's Keep activity folded): a tap opens this one.
+    await tap(".transcript .activity-head");
     await until(async () => (await timeline()).steps > 0, "the open group");
     assert.deepEqual(await timeline(), { steps: 24, earlier: "Show 6 earlier steps" });
     await tap(".transcript .timeline-earlier");
@@ -921,6 +923,8 @@ test("a call's mark keeps its circle while it waits for an approval", real, asyn
     await fresh();
     await goTo(one);
     await app.commands.submit(one, owner(app), { text: "risky please", requestId: "mark-140" });
+    // Groups start folded: a tap opens the live one, where the call's mark is.
+    await tap(".transcript .activity-head");
 
     const mark = () =>
         inPage<Record<string, string> | null>(`
