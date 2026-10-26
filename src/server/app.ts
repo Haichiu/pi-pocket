@@ -91,6 +91,7 @@ import { Memory } from "./memory.ts";
 import { isThinkingLevel, modelInfo, modelList, resolveModel, THINKING_LEVELS } from "./models.ts";
 import { Updates } from "./updates.ts";
 import { pocketPackage, pocketVersion } from "./versions.ts";
+import { compactionReader } from "./compaction.ts";
 import { configureHttp } from "./net.ts";
 import { createPublicFetch } from "./public-fetch.ts";
 import { PiSessions } from "./pi-sessions.ts";
@@ -1210,6 +1211,7 @@ export class PocketApp {
 
         const registry = () => this.#registry;
         const stream = () => this.streamSettings();
+        const compaction = compactionReader(settings, (line) => this.#log(line));
 
         return {
             // A phase can wait for hours without changing state; repeated process kills must not park it.
@@ -1226,7 +1228,7 @@ export class PocketApp {
                 return stream();
             },
             get compaction() {
-                return safe(() => settings.getCompactionSettings()) ?? {};
+                return safe(compaction) ?? {};
             },
             get retry() {
                 return safe(() => settings.getRetrySettings()) ?? {};
