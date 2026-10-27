@@ -324,8 +324,9 @@ function appUrl(): string {
 
 /** The address a browser on this machine should open. */
 function localUrl(): string {
-    // A specific address, loopback or not, only answers on itself: keep it.
-    const host = wildcard(state.host) || state.host === "localhost" ? "127.0.0.1" : state.host;
+    // A specific address, loopback or not, only answers on itself: keep it. `localhost` too, since Node may listen
+    // for it on ::1 alone.
+    const host = wildcard(state.host) ? "127.0.0.1" : state.host;
 
     return `http://${host.includes(":") ? `[${host}]` : host}:${options.port}`;
 }

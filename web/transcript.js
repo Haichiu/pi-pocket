@@ -69,7 +69,7 @@ const NEXT_REPORT = /\n\n(?=\[subagent \S+ (?:answered|failed))/;
 
 /**
  * A background task's message to Pi (`background.ts`): its head line, its command, and the end of its output fenced.
- * Its time is short ("2m 4s"), which keeps a long line that is not one quick to turn down.
+ * Its time is short ("2m 04s"), which keeps a long line that is not one quick to turn down.
  */
 const BACKGROUND =
     /^\[background\] Task (\S+) (.+?) after ([^.\n]{1,20})\.\nCommand: (.*)\n([\s\S]*)$/;
