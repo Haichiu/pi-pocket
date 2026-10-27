@@ -5,9 +5,9 @@
  * send. The agent's side (tools, prompt guide, export) is in `../design/`; this module is the workspace.
  */
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { lstat, readFile, realpath } from "node:fs/promises";
-import { extname, join, sep } from "node:path";
+import { constants, existsSync } from "node:fs";
+import { open, realpath } from "node:fs/promises";
+import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
     defineExtension,
@@ -77,8 +77,11 @@ function body(value: unknown, max: number): string {
 const text = (value: unknown, max: number): string =>
     typeof value === "string" ? value.replace(/[\p{Cc}\p{Bidi_Control}]/gu, " ").slice(0, max) : "";
 
+/** A size or a place on the page: finite, within what a page can be, to a tenth. */
 const number = (value: unknown): number =>
-    typeof value === "number" && Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
+    typeof value === "number" && Number.isFinite(value)
+        ? Math.round(Math.max(-1e7, Math.min(1e7, value)) * 10) / 10
+        : 0;
 
 /**
  * The element a comment points at, as the page's inspector described it (the page is untrusted data): a fixed shape,
@@ -277,6 +280,20 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
         return doc.items[id]!;
     };
 
+    /** An item with no comments, tweaks, or restores keeps nothing: it goes, and its place with it. */
+    const dropIfEmpty = (doc: { items: Record<string, DesignItem> }, id: string) => {
+        const item = doc.items[id];
+
+        if (
+            item !== undefined &&
+            item.comments.length === 0 &&
+            Object.keys(item.tweaks ?? {}).length === 0 &&
+            Object.keys(item.restores ?? {}).length === 0
+        ) {
+            delete doc.items[id];
+        }
+    };
+
     /** The comments are everyone's; one person's tweaks are theirs alone. */
     const view = (item: DesignItem | undefined, person: string) => ({
         comments: item?.comments ?? [],
@@ -446,6 +463,7 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
                 }
 
                 item.comments.splice(at, 1);
+                dropIfEmpty(doc, id);
             });
             changed(request.conversation.id, id);
 
@@ -507,16 +525,21 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
             await request.commit(async (tx) => {
                 const doc = await tx.doc(DesignCommentsDoc, request.conversation.id);
 
-                if (!Object.hasOwn(doc.items, id) && values === null) {
+                const clearing = values === null || Object.keys(values).length === 0;
+
+                // Nothing to clear, and no item to make for it: an empty item would keep a place for nothing.
+                if (clearing && !Object.hasOwn(doc.items, id)) {
                     return;
                 }
 
                 const item = itemOf(doc, id);
 
-                if (values === null || Object.keys(values).length === 0) {
+                if (values === null || clearing) {
                     if (item.tweaks !== undefined) {
                         delete item.tweaks[request.user.id];
                     }
+
+                    dropIfEmpty(doc, id);
 
                     return;
                 }
@@ -688,25 +711,35 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
                     throw new Error("The exports folder is not inside the session's.");
                 }
 
-                const file = join(folder, name);
-                const info = await lstat(file);
+                // One open, with no following of a link: what is checked is what is read, and no more than the limit.
+                const handle = await open(
+                    join(folder, name),
+                    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+                );
+                let bytes: Buffer;
 
-                if (
-                    !info.isFile() ||
-                    info.isSymbolicLink() ||
-                    !(folder + sep).startsWith(root + sep)
-                ) {
-                    throw new Error("Not a plain file.");
+                try {
+                    const info = await handle.stat();
+
+                    if (!info.isFile()) {
+                        throw new Error("Not a plain file.");
+                    }
+
+                    if (info.size > MAX_DOWNLOAD) {
+                        throw web.error(
+                            413,
+                            "That export is too large to download here: it is in the session's exports folder.",
+                        );
+                    }
+
+                    bytes = Buffer.alloc(info.size);
+
+                    const { bytesRead } = await handle.read(bytes, 0, info.size, 0);
+
+                    bytes = bytes.subarray(0, bytesRead);
+                } finally {
+                    await handle.close();
                 }
-
-                if (info.size > MAX_DOWNLOAD) {
-                    throw web.error(
-                        413,
-                        "That export is too large to download here: it is in the session's exports folder.",
-                    );
-                }
-
-                const bytes = await readFile(file);
 
                 return {
                     name,

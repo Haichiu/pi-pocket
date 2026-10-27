@@ -386,6 +386,13 @@ test("what a page says about an element is cut to a fixed shape", () => {
     assert.equal(clean.text.length, 200);
     assert.equal(clean.html.length, 1000);
     assert.deepEqual(clean.rect, { x: 0, y: 0, width: 10.1, height: 2 });
+    // A number that is finite but huge stays finite once rounded: the document takes only plain JSON.
+    const huge = cleanTarget(web, {
+        selector: "a",
+        rect: { x: 1e308, y: -1e308, width: 1, height: 1 },
+    });
+
+    assert.ok(Number.isFinite(huge.rect.x * 10) && Number.isFinite(huge.rect.y * 10));
     assert.deepEqual(clean.styles, { color: "red" });
     assert.throws(() => cleanTarget(web, null), /points at an element/);
     assert.throws(() => cleanTarget(web, { selector: "" }), /points at an element/);
@@ -444,4 +451,33 @@ test("export says so when the agent's side is missing, and never answers 404 for
 
     // Either the agent side's route answers (a bad design: 4xx) or the fallback does (501).
     assert.notEqual(response.status, 404);
+});
+
+test("a design with nothing kept leaves no item behind, so empty ones never use up the places", async () => {
+    const items = async () =>
+        Object.keys(
+            (await app.harness.snapshot(DesignCommentsDoc, other, BACKGROUND_CONTEXT))?.items ?? {},
+        );
+    const path = `c/${other}/designs/elsewhere`;
+
+    // Clearing what was never saved makes nothing; saving and clearing leaves nothing.
+    assert.equal((await call("owner", `${path}/tweaks`, { values: {} })).status, 200);
+    assert.equal((await call("owner", `${path}/tweaks`, { values: null })).status, 200);
+    assert.deepEqual(await items(), []);
+    assert.equal((await call("owner", `${path}/tweaks`, { values: { a: 1 } })).status, 200);
+    assert.deepEqual(await items(), ["elsewhere"]);
+    assert.equal((await call("owner", `${path}/tweaks`, { values: {} })).status, 200);
+    assert.deepEqual(await items(), []);
+
+    // The last comment deleted takes the item with it.
+    const made = await call("owner", `${path}/comments`, { version: 1, text: "x", target: TARGET });
+
+    assert.deepEqual(await items(), ["elsewhere"]);
+    await call(
+        "owner",
+        `${path}/comments/${(made.data.comment as { id: string }).id}`,
+        undefined,
+        "DELETE",
+    );
+    assert.deepEqual(await items(), []);
 });
