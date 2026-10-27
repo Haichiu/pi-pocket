@@ -38,7 +38,9 @@ type StreamSimple = (
 
 /** Refresh at 90% of the lifetime, and never closer than 10 seconds to its end. */
 export function refreshDelayMs(ttlMs: number): number | undefined {
-    return ttlMs <= 10_000 ? undefined : Math.max(1, Math.floor(Math.min(ttlMs * 0.9, ttlMs - 10_000)));
+    return ttlMs <= 10_000
+        ? undefined
+        : Math.max(1, Math.floor(Math.min(ttlMs * 0.9, ttlMs - 10_000)));
 }
 
 /** Warming never goes on past this long after the real request that started it. */
@@ -68,14 +70,25 @@ export function decide(input: {
     const missCost = (promptTokens * (writeRate - rates.cacheRead)) / 1e6;
     const expectedSavings = hazard * missCost - warmCost;
 
-    return { action: expectedSavings > 0 ? "warm" : "stop", warmCost, missCost, hazard, expectedSavings };
+    return {
+        action: expectedSavings > 0 ? "warm" : "stop",
+        warmCost,
+        missCost,
+        hazard,
+        expectedSavings,
+    };
 }
 
 /** Whether a one-token replay leaves the cache entry alone: budget-based thinking would change `budget_tokens`. */
 export function isReplayable(model: Model<Api>, options: SimpleStreamOptions | undefined): boolean {
-    if (!options?.reasoning || model.api !== "anthropic-messages") {return true;}
+    if (!options?.reasoning || model.api !== "anthropic-messages") {
+        return true;
+    }
 
-    return (model.compat as { forceAdaptiveThinking?: boolean } | undefined)?.forceAdaptiveThinking === true;
+    return (
+        (model.compat as { forceAdaptiveThinking?: boolean } | undefined)?.forceAdaptiveThinking ===
+        true
+    );
 }
 
 function ttlMsOf(model: Model<Api>, options: SimpleStreamOptions | undefined): number | undefined {
@@ -84,7 +97,9 @@ function ttlMsOf(model: Model<Api>, options: SimpleStreamOptions | undefined): n
         (options?.cacheRetention === undefined &&
             (options?.env?.PI_CACHE_RETENTION ?? process.env.PI_CACHE_RETENTION) === "long");
 
-    if (options?.cacheRetention === "none") {return undefined;}
+    if (options?.cacheRetention === "none") {
+        return undefined;
+    }
 
     const seconds = model.promptCache?.[long ? "long" : "short"];
 
@@ -107,6 +122,15 @@ type Entry = {
     dueAt: number;
     timer?: ReturnType<typeof setTimeout>;
     abort?: AbortController;
+    deadline?: ReturnType<typeof setTimeout>;
+    account?: WarmAccount;
+};
+
+type WarmAccount = {
+    /** Check the captured payer's current spend limits immediately before each warm. */
+    check: () => boolean;
+    /** Count even failed, aborted, or superseded responses when the provider reports usage. */
+    recordUsage: (message: AssistantMessage) => Promise<void>;
 };
 
 export type KeeperStatus = { warming: number; warms: number; spent: number };
@@ -119,13 +143,18 @@ export type KeeperDeps = {
     conversationOf?: (sessionId: string) => Promise<number | undefined>;
     /** Whether a conversation is in a run now. */
     isRunning?: (conversationId: number) => boolean;
+    /** Capture who pays for this run, with its spend check and usage recorder. */
+    accountFor?: (conversationId: number) => WarmAccount | undefined;
     /** True turns the keeper off. Read at each decision. */
     disabled?: () => boolean;
 };
 
 export class CacheKeeper {
-    readonly #deps: Required<Omit<KeeperDeps, "conversationOf" | "isRunning">> & Pick<KeeperDeps, "conversationOf" | "isRunning">;
+    readonly #deps: Required<Omit<KeeperDeps, "conversationOf" | "isRunning" | "accountFor">> &
+        Pick<KeeperDeps, "conversationOf" | "isRunning" | "accountFor">;
     readonly #entries = new Map<string, Entry>();
+    readonly #requests = new Map<string, { conversationId?: number }>();
+    readonly #pending = new Set<Promise<void>>();
     #underlying: StreamSimple | undefined;
     #closed = false;
     #warms = 0;
@@ -153,17 +182,24 @@ export class CacheKeeper {
     }
 
     /** Shutdown: no warm goes out after this. */
-    close(): void {
+    async close(): Promise<void> {
         this.#closed = true;
+        this.#requests.clear();
 
-        for (const key of [...this.#entries.keys()]) {this.#drop(key);}
+        for (const key of [...this.#entries.keys()]) {
+            this.#drop(key);
+        }
+
+        // Keep the usage listener and storage open until aborted responses have been counted.
+        await Promise.allSettled([...this.#pending]);
     }
 
     install(models: { streamSimple: StreamSimple }): void {
         const underlying = models.streamSimple.bind(models);
 
         this.#underlying = underlying;
-        models.streamSimple = (model, context, options) => this.#stream(underlying, model, context, options);
+        models.streamSimple = (model, context, options) =>
+            this.#stream(underlying, model, context, options);
     }
 
     #stream(
@@ -175,15 +211,42 @@ export class CacheKeeper {
         const stream = underlying(model, context, options);
         const key = options?.sessionId;
 
-        if (key === undefined) {return stream;}
+        if (key === undefined) {
+            return stream;
+        }
 
         // A real request that writes the cache replaces the entry, so stop warming the old one. A request that
         // does not use the cache (a title, with `cacheRetention: "none"`) leaves it alone.
-        if (ttlMsOf(model, options) !== undefined) {this.#drop(key);}
+        if (ttlMsOf(model, options) === undefined) {
+            return stream;
+        }
 
-        void stream.result().then(
-            (message) => this.#onSettled(key, model, context, options, message),
+        this.#drop(key);
+        const request: { conversationId?: number } = {};
+
+        this.#requests.set(key, request);
+        void this.#deps.conversationOf?.(key).then(
+            (id) => {
+                if (id !== undefined) {
+                    request.conversationId = id;
+                }
+            },
             () => {},
+        );
+        void stream.result().then(
+            (message) => {
+                if (this.#requests.get(key) !== request) {
+                    return;
+                }
+
+                this.#requests.delete(key);
+                this.#onSettled(key, model, context, options, message);
+            },
+            () => {
+                if (this.#requests.get(key) === request) {
+                    this.#requests.delete(key);
+                }
+            },
         );
 
         return stream;
@@ -197,9 +260,13 @@ export class CacheKeeper {
         message: AssistantMessage,
     ): void {
         // Only a request that ended in a tool call is followed by another one soon.
-        if (message.stopReason !== "toolUse" || options === undefined) {return;}
+        if (message.stopReason !== "toolUse" || options === undefined) {
+            return;
+        }
 
-        if (this.#closed || this.#deps.disabled() || !isReplayable(model, options)) {return;}
+        if (this.#closed || this.#deps.disabled() || !isReplayable(model, options)) {
+            return;
+        }
 
         const ttlMs = ttlMsOf(model, options);
         const usage = message.usage;
@@ -207,7 +274,14 @@ export class CacheKeeper {
         const delay = ttlMs === undefined ? undefined : refreshDelayMs(ttlMs);
 
         // The first refresh must fall inside the cap: a longer cache outlives any wait the cap allows.
-        if (ttlMs === undefined || delay === undefined || delay >= MAX_AGE_MS || promptTokens === 0) {return;}
+        if (
+            ttlMs === undefined ||
+            delay === undefined ||
+            delay >= MAX_AGE_MS ||
+            promptTokens === 0
+        ) {
+            return;
+        }
 
         const now = this.#deps.now();
         const entry: Entry = {
@@ -228,12 +302,17 @@ export class CacheKeeper {
         // Which conversation it is, so that the run's end can stop it. It still warms when this is not known.
         void this.#deps.conversationOf?.(key).then(
             (id) => {
-                if (id === undefined || this.#entries.get(key) !== entry) {return;}
+                if (id === undefined || this.#entries.get(key) !== entry) {
+                    return;
+                }
 
                 entry.conversationId = id;
+                entry.account = this.#deps.accountFor?.(id);
 
                 // The run ended before the lookup came back: its end was missed, so stop now.
-                if (this.#deps.isRunning?.(id) === false) {this.#drop(key);}
+                if (this.#deps.isRunning?.(id) === false) {
+                    this.#drop(key);
+                }
             },
             () => {},
         );
@@ -241,43 +320,89 @@ export class CacheKeeper {
 
     /** A run ended or was stopped: no request follows its last tool call, so its warm stops. */
     runEnded(conversationId: number): void {
+        // An unresolved lookup cannot prove which run owns the request. Discard it rather than charge a later run.
+        for (const [key, request] of this.#requests) {
+            if (request.conversationId === undefined || request.conversationId === conversationId) {
+                this.#requests.delete(key);
+            }
+        }
+
         for (const [key, entry] of [...this.#entries]) {
-            if (entry.conversationId === conversationId) {this.#drop(key);}
+            if (entry.conversationId === undefined || entry.conversationId === conversationId) {
+                this.#drop(key);
+            }
         }
     }
 
     #schedule(key: string, entry: Entry, delay: number): void {
         entry.dueAt = this.#deps.now() + delay;
-        entry.timer = this.#deps.setTimer(() => void this.#tick(key, entry), delay);
+        entry.timer = this.#deps.setTimer(
+            () => {
+                const pending = this.#tick(key, entry);
+
+                this.#pending.add(pending);
+                void pending.finally(() => this.#pending.delete(pending));
+            },
+            Math.min(delay, Math.max(0, entry.endedAt + MAX_AGE_MS - this.#deps.now())),
+        );
     }
 
     #decision(entry: Entry): Decision {
         // Only the 5m tier is ever warmed (see `#onSettled`), which writes at the model's `cacheWrite` price.
         const writeRate = entry.model.cost.cacheWrite || entry.model.cost.input;
 
-        return decide({ promptTokens: entry.promptTokens, rates: entry.model.cost, writeRate, hazard: TOOL_HAZARD });
+        return decide({
+            promptTokens: entry.promptTokens,
+            rates: entry.model.cost,
+            writeRate,
+            hazard: TOOL_HAZARD,
+        });
     }
 
     async #tick(key: string, entry: Entry): Promise<void> {
-        if (this.#entries.get(key) !== entry) {return;}
+        if (this.#entries.get(key) !== entry) {
+            return;
+        }
 
         const now = this.#deps.now();
         const delay = refreshDelayMs(entry.ttlMs) as number;
         // A timer that fired late (the machine slept) would send its refresh after the entry expired.
         const slack = (entry.ttlMs - delay) / 2;
 
-        if (this.#deps.disabled() || now - entry.endedAt >= MAX_AGE_MS || now > entry.dueAt + slack) {
+        if (
+            this.#deps.disabled() ||
+            now - entry.endedAt >= MAX_AGE_MS ||
+            now > entry.dueAt + slack
+        ) {
             return this.#drop(key);
         }
 
-        if (this.#decision(entry).action === "stop") {return this.#drop(key);}
+        if (
+            this.#decision(entry).action === "stop" ||
+            (this.#deps.accountFor !== undefined && entry.account === undefined) ||
+            entry.account?.check() === false
+        ) {
+            return this.#drop(key);
+        }
 
-        const { signal: _signal, telemetry: _telemetry, ...rest } = entry.options as SimpleStreamOptions & {
+        const {
+            signal: _signal,
+            telemetry: _telemetry,
+            ...rest
+        } = entry.options as SimpleStreamOptions & {
             telemetry?: unknown;
         };
         const abort = new AbortController();
 
         entry.abort = abort;
+        entry.deadline = this.#deps.setTimer(
+            () => {
+                if (this.#entries.get(key) === entry) {
+                    this.#drop(key);
+                }
+            },
+            entry.endedAt + MAX_AGE_MS - now,
+        );
 
         try {
             // `noWait`: a warm request that meets a limit fails; it must not queue behind the limit gate.
@@ -288,33 +413,57 @@ export class CacheKeeper {
             );
             const message = await stream.result();
 
-            if (this.#entries.get(key) !== entry) {return;}
-
-            if (message.stopReason === "error" || message.stopReason === "aborted") {return this.#drop(key);}
-
+            // A request can cost money even when a new request or Stop superseded it.
+            await entry.account?.recordUsage(message);
             this.#warms++;
             this.#spent += message.usage.cost.total;
             entry.warms++;
             entry.spent += message.usage.cost.total;
+
+            if (this.#entries.get(key) !== entry) {
+                return;
+            }
+
+            if (message.stopReason === "error" || message.stopReason === "aborted") {
+                return this.#drop(key);
+            }
+
             this.#schedule(key, entry, delay);
         } catch (error) {
             this.#deps.log(
                 `Cache keeper stopped for a session: ${error instanceof Error ? error.message : String(error)}`,
             );
-            this.#drop(key);
+
+            if (this.#entries.get(key) === entry) {
+                this.#drop(key);
+            }
+        } finally {
+            if (entry.deadline !== undefined) {
+                this.#deps.clearTimer(entry.deadline);
+            }
         }
     }
 
     #drop(key: string): void {
         const entry = this.#entries.get(key);
 
-        if (entry === undefined) {return;}
+        if (entry === undefined) {
+            return;
+        }
 
-        if (entry.timer !== undefined) {this.#deps.clearTimer(entry.timer);}
+        if (entry.timer !== undefined) {
+            this.#deps.clearTimer(entry.timer);
+        }
 
-        // The cost of a warm is in no usage total, so say it here.
+        if (entry.deadline !== undefined) {
+            this.#deps.clearTimer(entry.deadline);
+        }
+
+        // A diagnostic only: production requests also count in the conversation's usage and spend.
         if (entry.warms > 0) {
-            this.#deps.log(`Cache keeper: ${String(entry.warms)} warm requests for one tool wait, $${entry.spent.toFixed(4)}.`);
+            this.#deps.log(
+                `Cache keeper: ${String(entry.warms)} warm requests for one tool wait, $${entry.spent.toFixed(4)}.`,
+            );
         }
 
         entry.abort?.abort();
