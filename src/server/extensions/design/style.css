@@ -324,8 +324,8 @@ button.dsn-chip {
     display: flex;
     flex: none;
     flex-direction: column;
-    height: 46%;
-    max-height: 380px;
+    height: 40%;
+    max-height: 340px;
     min-height: 0;
     border-top: 1px solid var(--dsn-hair);
     background: var(--bg);
@@ -1295,5 +1295,38 @@ button.dsn-chip {
 @media (prefers-reduced-motion: reduce) {
     .dsn-hint {
         animation: none;
+    }
+}
+
+/* Fingers: bigger targets for what is small. */
+@media (pointer: coarse) {
+    .dsn-zoom button {
+        min-width: 36px;
+        height: 36px;
+    }
+
+    .dsn-seg button {
+        min-width: 38px;
+        height: 36px;
+    }
+
+    .dsn-custom input,
+    .dsn-compare-pane select {
+        height: 38px;
+    }
+
+    .dsn .icon-button {
+        width: 38px;
+        height: 38px;
+    }
+
+    .dsn-comment-actions .icon-button,
+    .dsn-edit .icon-button {
+        width: 36px;
+        height: 36px;
+    }
+
+    .dsn-slide {
+        height: 36px;
     }
 }

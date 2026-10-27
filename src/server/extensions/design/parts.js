@@ -104,10 +104,19 @@ export function createParts(pocket) {
                 }
             };
 
+            // Focus goes in, and comes back to what opened it.
+            const opener = document.activeElement;
+
             document.addEventListener("keydown", onKey, true);
             card.current?.focus({ preventScroll: true });
 
-            return () => document.removeEventListener("keydown", onKey, true);
+            return () => {
+                document.removeEventListener("keydown", onKey, true);
+
+                if (opener instanceof HTMLElement && opener.isConnected) {
+                    opener.focus({ preventScroll: true });
+                }
+            };
         }, []);
 
         return html`<div class="dsn-pop-layer" data-sheet=${sheet}>

@@ -14,6 +14,8 @@ export const ALLOW = "fullscreen; clipboard-write; accelerometer; gyroscope";
 export const frameUrl = (conversation, id, version) =>
     `/a/${conversation}/${encodeURIComponent(id)}/${version}`;
 
+const NO_KNOBS = [];
+const NO_VALUES = {};
 const num = (value) => typeof value === "number" && Number.isFinite(value);
 
 export function createCanvas(env) {
@@ -99,7 +101,9 @@ export function createCanvas(env) {
         const roomSize = useSize(room);
         const [ready, setReady] = useState(0);
         const [loaded, setLoaded] = useState(false);
-        const sent = useRef({ at: -1, values: {} });
+        const sent = useRef({ at: "", values: {} });
+        // The slide to go back to once a page that loads again says it is a deck (`pocket-deck`).
+        const pendingSlide = useRef(0);
         // The zoom bar floats over the bottom of the room: the page fits above it.
         const scale = scaleOf(s.zoom, size, { w: roomSize.w, h: roomSize.h - 40 });
         const src = frameUrl(s.conversation, design.id, version);
@@ -107,8 +111,9 @@ export function createCanvas(env) {
         const notes = s.notes[design.id];
         const comments = notes?.comments ?? [];
         const pins = s.mode === "comment" || s.dock === "comments" ? pinsOf(comments, version) : [];
-        const knobs = s.knobs;
-        const values = s.tweaks[design.id] ?? {};
+        // The knobs are this frame's: a page that was just replaced has none until it says so.
+        const knobs = s.knobsKey === key ? s.knobs : NO_KNOBS;
+        const values = s.tweaks[design.id] ?? NO_VALUES;
 
         // What the page says: the module's own handlers, current at every call (the bridge keeps the latest ones).
         const hear = useRef(null);
@@ -146,19 +151,30 @@ export function createCanvas(env) {
                     },
                 }));
             } else if (message.type === "pocket-tweaks") {
-                store.set({ knobs: normalizeKnobs(message.knobs) });
+                store.set({ knobs: normalizeKnobs(message.knobs), knobsKey: key });
             } else if (
                 message.type === "pocket-deck" &&
                 num(message.slides) &&
                 message.slides > 0 &&
                 num(message.current)
             ) {
-                const current = Math.max(0, Math.round(message.current));
+                const slides = Math.min(500, Math.round(message.slides));
+                const want = pendingSlide.current;
+                let current = Math.max(0, Math.round(message.current));
 
-                store.set({
-                    deck: { slides: Math.min(500, Math.round(message.slides)), current },
-                    slide: current,
-                });
+                // A page that loaded again starts on its first slide: go back to the one the person was on, once.
+                pendingSlide.current = 0;
+
+                if (
+                    want > 0 &&
+                    want < slides &&
+                    current !== want &&
+                    send({ type: "pocket-goto", slide: want })
+                ) {
+                    current = want;
+                }
+
+                store.set({ deck: { slides, current }, slide: current });
             }
         };
 
@@ -185,15 +201,9 @@ export function createCanvas(env) {
         // A new page: what it said about itself is gone until it says it again.
         useEffect(() => {
             setLoaded(false);
+            pendingSlide.current = store.get().slide;
             store.set({ knobs: [], deck: null });
         }, [key]);
-
-        // Back from present mode or a reload: the slide the person was on.
-        useEffect(() => {
-            if (ready > 0 && store.get().slide > 0) {
-                send({ type: "pocket-goto", slide: store.get().slide });
-            }
-        }, [ready]);
 
         // The mode: the page's inspector for a comment, contenteditable text for an edit.
         useEffect(() => {
@@ -207,7 +217,7 @@ export function createCanvas(env) {
         useEffect(() => {
             send({
                 type: "pocket-highlight",
-                targets: pins.map((comment, index) => ({
+                targets: pins.slice(0, 100).map((comment, index) => ({
                     ...(comment.target.pid ? { pid: comment.target.pid } : {}),
                     selector: comment.target.selector,
                     label: index + 1,
@@ -226,8 +236,8 @@ export function createCanvas(env) {
 
         // Tweaks to the page: only what differs from what it was last told (a fresh page has been told nothing).
         useEffect(() => {
-            if (sent.current.at !== ready) {
-                sent.current = { at: ready, values: {} };
+            if (sent.current.at !== `${key}:${ready}`) {
+                sent.current = { at: `${key}:${ready}`, values: {} };
             }
 
             const out = {};
@@ -246,7 +256,7 @@ export function createCanvas(env) {
             if (Object.keys(out).length > 0 && send({ type: "pocket-tweak-set", values: out })) {
                 sent.current.values = next;
             }
-        }, [ready, knobs, values]);
+        }, [key, ready, knobs, values]);
 
         return html`<div
             class="dsn-canvas has-zoom"

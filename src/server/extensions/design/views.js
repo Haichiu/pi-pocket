@@ -302,6 +302,7 @@ export function createViews(env, canvas) {
         useEffect(() => {
             const onKey = (event) => {
                 if (event.key === "Escape") {
+                    event.stopPropagation();
                     leave();
                 } else if (
                     event.key === "ArrowRight" ||
@@ -330,6 +331,7 @@ export function createViews(env, canvas) {
         >
             <iframe
                 ref=${frame}
+                key=${frameUrl(s.conversation, design.id, version)}
                 class="dsn-present-frame"
                 src=${frameUrl(s.conversation, design.id, version)}
                 sandbox=${SANDBOX}

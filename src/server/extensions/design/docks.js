@@ -212,7 +212,8 @@ export function createDocks(env) {
 
     function CommentsDock({ s, design, shown, canEdit, me }) {
         const [showDone, setShowDone] = useState(false);
-        const [sent, setSent] = useState(null);
+        const sent = s.sent[design.id] ?? null;
+        const setSent = (ids) => store.set((now) => ({ sent: { ...now.sent, [design.id]: ids } }));
         const notes = s.notes[design.id];
         const comments = notes?.comments ?? [];
         const open = openOf(comments);
@@ -319,6 +320,7 @@ export function createDocks(env) {
                     draft &&
                     canEdit &&
                     html`<${Composer}
+                        key=${draft.target.selector}
                         design=${design}
                         draft=${draft}
                         onDone=${() => store.set({ draft: null })}
@@ -358,7 +360,7 @@ export function createDocks(env) {
                     ${
                         sent &&
                         html`<span class="muted small">
-                            In your message box. After Pi makes the new version,
+                            ${"In your message box. After Pi makes the new version, "}
                             <button
                                 type="button"
                                 class="dsn-link"
@@ -384,10 +386,13 @@ export function createDocks(env) {
         const at = `${design.id}@${shown}`;
         const edits = s.edits[at] ?? [];
 
-        const apply = () =>
+        const apply = () => {
             env.sendToBox(
                 editsMessage({ title: design.title, id: design.id, version: shown, edits }),
             );
+            // The message has them now: the list starts empty for the next ones.
+            store.set((now) => ({ edits: { ...now.edits, [at]: [] } }));
+        };
 
         const discard = () => {
             store.set((now) => ({ edits: { ...now.edits, [at]: [] } }));
@@ -609,6 +614,13 @@ export function createDocks(env) {
             }`;
     }
 
+    const DOCKS = {
+        versions: "Versions",
+        comments: "Comments",
+        edits: "Text edits",
+        tweaks: "Tweaks",
+    };
+
     /** The dock for `s.dock`, or nothing. */
     function Dock({ s, design, shown, canEdit, me }) {
         const props = { s, design, shown, canEdit, me };
@@ -623,7 +635,12 @@ export function createDocks(env) {
                       ? html`<${TweaksDock} ...${props} />`
                       : null;
 
-        return body && html`<aside class="dsn-dock" data-dock=${s.dock}>${body}</aside>`;
+        return (
+            body &&
+            html`<aside class="dsn-dock" data-dock=${s.dock} aria-label=${DOCKS[s.dock]}>
+                ${body}
+            </aside>`
+        );
     }
 
     return { Dock };

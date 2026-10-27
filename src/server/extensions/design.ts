@@ -187,6 +187,7 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
     // The app's reader of committed bundles (stream A's `PocketApp.artifactBundle`), which the host must hand on to modules.
     // Without it the agent's tools and export say what is missing, at the moment someone asks.
     const hosted = (host as PocketHost & { artifactBundle?: DesignBundleReader }).artifactBundle;
+
     const readBundle: DesignBundleReader =
         typeof hosted === "function"
             ? hosted.bind(host)

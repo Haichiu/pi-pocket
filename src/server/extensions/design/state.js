@@ -118,10 +118,14 @@ export function sessionState() {
         notes: {},
         /** A pick not yet saved as a comment: the element and the version it was made on. */
         draft: null,
+        /** The comments last put in the message box, by design: the ones "mark them done" is for. */
+        sent: {},
         /** Text edits by `artifact@version`, not yet sent. */
         edits: {},
         /** The page's own tweak knobs, and what was set (by artifact id). */
         knobs: [],
+        /** The frame (its address) the knobs came from. */
+        knobsKey: "",
         tweaks: {},
         deck: null,
         /** The slide the deck was last on (0 first): a page that loads again goes back to it. */

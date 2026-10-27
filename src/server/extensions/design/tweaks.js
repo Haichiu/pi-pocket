@@ -23,7 +23,11 @@ export function normalizeKnobs(raw) {
 
         const name = label(item.name, 100);
 
-        if (name === "" || seen.has(name) || !KNOB_TYPES.includes(item.type)) {
+        // A custom property the bridge would refuse (it refuses a whole batch for one) is not a knob.
+        const badName =
+            name.length > 80 || (name.startsWith("--") && !/^--[A-Za-z0-9_-]{1,78}$/.test(name));
+
+        if (name === "" || badName || seen.has(name) || !KNOB_TYPES.includes(item.type)) {
             continue;
         }
 

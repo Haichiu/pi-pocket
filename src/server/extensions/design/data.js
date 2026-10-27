@@ -46,6 +46,8 @@ export function siblingsOf(designs, artifact) {
 export function createData(pocket, store) {
     const conversationOf = () => store.get().conversation;
     let listing = 0;
+    /** The newest read of each design's notes: an older answer that comes later is dropped. */
+    const reading = {};
 
     /** Whether the answer to a call made in `conversation` still matters: the tab may have moved on. */
     const current = (conversation) => store.get().conversation === conversation;

@@ -95,7 +95,7 @@ export function createWorkspace(env) {
                     onInput=${(event) => setQuery(event.currentTarget.value)}
                 />`
             }
-            <ul class="dsn-list" role="listbox" aria-label="Designs">
+            <ul class="dsn-list" aria-label="Designs">
                 ${rows.map((row) =>
                     row.header
                         ? html`<li class="dsn-list-head" key=${`g:${row.header}`}>
@@ -104,8 +104,7 @@ export function createWorkspace(env) {
                         : html`<li key=${row.id}>
                               <button
                                   type="button"
-                                  role="option"
-                                  aria-selected=${row.id === design?.id}
+                                  aria-current=${row.id === design?.id}
                                   class=${`dsn-list-item ${row.id === design?.id ? "on" : ""} ${row.group ? "in-group" : ""}`}
                                   onClick=${() => {
                                       env.open(row.id);
@@ -395,15 +394,15 @@ export function createWorkspace(env) {
                 </button>
             </div>
             ${device === "custom" && html`<${CustomSize} s=${s} />`}
-            <div class="dsn-tabs" role="tablist" aria-label="Mode">
+            <div class="dsn-tabs" role="group" aria-label="Mode">
                 ${tabs.map(
                     (tab) =>
                         html`<button
                             type="button"
-                            role="tab"
                             key=${tab.id}
                             class=${`dsn-tab ${active === tab.id ? "on" : ""}`}
-                            aria-selected=${active === tab.id}
+                            aria-pressed=${active === tab.id}
+                            aria-label=${tab.label}
                             title=${tab.label}
                             onClick=${() => env.setTab(tab.id)}
                         >
@@ -523,6 +522,8 @@ export function createWorkspace(env) {
         const canEdit = me?.role !== undefined && me.role !== "viewer";
         const canShare = canEdit && me?.sessions === undefined;
         const seen = useRef(null);
+        const seenFor = useRef(null);
+        const lastLatest = useRef({ id: null, version: 0 });
 
         // The width classes, for the bars, the dock, and the compare view.
         useEffect(() => {
@@ -558,11 +559,17 @@ export function createWorkspace(env) {
 
             const ids = designs.map((each) => each.id);
 
-            if (seen.current === null) {
+            // The designs a session had when it opened are not new ones; only those after it are.
+            if (seenFor.current !== s.conversation) {
+                seenFor.current = s.conversation;
+                seen.current = null;
+            }
+
+            if (seen.current === null && designs.length > 0) {
                 seen.current = new Set(ids);
             }
 
-            const added = ids.filter((id) => !seen.current.has(id));
+            const added = seen.current === null ? [] : ids.filter((id) => !seen.current.has(id));
 
             for (const id of added) {
                 seen.current.add(id);
@@ -610,6 +617,27 @@ export function createWorkspace(env) {
                 : latest
             : 1;
         const group = design ? siblingsOf(designs, design) : [];
+
+        // Pi makes a new version while the person is in the middle of something (a mode, a draft, text edits): the page they
+        // work on stays, with the way to the new one, instead of loading under them.
+        useEffect(() => {
+            const before = lastLatest.current;
+
+            lastLatest.current = { id: design?.id ?? null, version: latest };
+
+            if (
+                design &&
+                before.id === design.id &&
+                latest > before.version &&
+                s.version === null &&
+                s.view === "canvas" &&
+                (s.mode !== "view" ||
+                    s.draft !== null ||
+                    s.edits[`${design.id}@${before.version}`]?.length > 0)
+            ) {
+                store.set({ version: before.version });
+            }
+        }, [design?.id, latest]);
         // Beside the canvas on a wide panel, or a narrower one that shows a tall page (a phone or a tablet): under it otherwise.
         const room = store.get().width || width;
         const side = room >= SIDE || (room >= STACK && size.h > size.w);
@@ -669,7 +697,7 @@ export function createWorkspace(env) {
                 shown !== latest &&
                 s.view === "canvas" &&
                 html`<div class="dsn-old">
-                    Version ${shown} of ${latest}.
+                    ${`Version ${shown} of ${latest}. `}
                     <button type="button" class="dsn-link" onClick=${() => env.showVersion(null)}>
                         Show the newest
                     </button>
