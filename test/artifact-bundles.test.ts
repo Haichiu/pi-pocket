@@ -26,8 +26,7 @@ import createArtifacts, {
     MAX_ASSETS_BYTES,
 } from "../src/server/extensions/artifacts.ts";
 import type { PocketHost } from "../src/server/host.ts";
-import { assetName, assetType, publicArtifactBundle } from "../src/server/http/artifact-assets.ts";
-import { HttpError } from "../src/server/errors.ts";
+import { assetName, assetType } from "../src/server/http/artifact-assets.ts";
 import { createHandler } from "../src/server/http.ts";
 
 let app: App;
@@ -325,45 +324,88 @@ test("every asset is sandboxed and nosniff; scoped capability serves opaque-orig
     assert.equal((await get(guestSigned + "assets/pixel.png", false)).status, 404);
 });
 
-test("published bundle responder serves only its share's assets and closes them with the share", async () => {
-    // This route adapter exercises the responder independently of core's integration patch.
-    const publicServer = createServer((request, response) => {
-        const parts = new URL(request.url!, "http://test").pathname.split("/").filter(Boolean);
+test("published bundle routes serve only their share's assets and close them with the share", async () => {
+    const share = await app.shares.create(session, owner(app), { id: "bundle", version: 1 });
+    const response = await get(share.path, false);
+    const html = await response.text();
 
-        void publicArtifactBundle(app, request, response, parts[1], parts.slice(2).join("/")).catch(
-            (error) => {
-                response.writeHead(error instanceof HttpError ? error.status : 500);
-                response.end(String(error));
-            },
-        );
+    assert.equal(response.status, 200);
+    assert.doesNotMatch(html, /pocket-bridge/);
+    assert.ok(html.includes(`<base href="${base}/pub/${share.token}/">`));
+    const nested = await get(share.path + "/nested/about.html", false);
+
+    assert.equal(nested.status, 200);
+    assert.doesNotMatch(await nested.text(), /pocket-bridge/);
+    assert.match(nested.headers.get("content-security-policy")!, /^sandbox /);
+    const asset = await get(share.path + "/assets/style.css", false);
+
+    assert.equal(await asset.text(), "body{color:red}");
+    assert.equal(asset.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(asset.headers.get("content-type"), "text/css; charset=utf-8");
+    assert.equal(
+        (await get(share.path + "/opaque.bin", false)).headers.get("content-type"),
+        "application/octet-stream",
+    );
+    assert.equal((await get(share.path + "/absent", false)).status, 404);
+    assert.equal((await get(share.path + "/bad%5cname", false)).status, 404);
+    assert.equal((await get(share.path + "/bad%00name", false)).status, 404);
+    await app.shares.revoke(owner(app), session, share.token);
+    assert.equal((await get(share.path, false)).status, 404);
+    assert.equal((await get(share.path + "/assets/style.css", false)).status, 404);
+    assert.equal((await get(share.path + "/nested/about.html", false)).status, 404);
+});
+
+test("published links select pinned or latest manifests, and expiry closes every asset", async () => {
+    await publish({
+        id: "public-versioned",
+        title: "Versioned",
+        content: "<h1>Version 1</h1>",
+        assets: [
+            { name: "value.txt", content: "one" },
+            { name: "removed.txt", content: "old" },
+        ],
+    });
+    const pinned = await app.shares.create(session, owner(app), {
+        id: "public-versioned",
+        version: 1,
+        hours: 24,
+    });
+    const latest = await app.shares.create(session, owner(app), {
+        id: "public-versioned",
+        hours: 24,
     });
 
-    await new Promise<void>((resolve) => publicServer.listen(0, "127.0.0.1", resolve));
-    const publicBase = `http://127.0.0.1:${(publicServer.address() as { port: number }).port}`;
-    const share = await app.shares.create(session, owner(app), { id: "bundle", version: 1 });
+    assert.equal(await (await get(latest.path + "/value.txt", false)).text(), "one");
+    await publish({
+        id: "public-versioned",
+        title: "Versioned",
+        content: "<h1>Version 2</h1>",
+        removeAssets: ["removed.txt"],
+        assets: [
+            { name: "value.txt", content: "two" },
+            { name: "added.txt", content: "new" },
+        ],
+    });
+    assert.match(await (await get(pinned.path, false)).text(), /Version 1/);
+    assert.match(await (await get(latest.path, false)).text(), /Version 2/);
+    assert.equal(await (await get(pinned.path + "/value.txt", false)).text(), "one");
+    assert.equal(await (await get(latest.path + "/value.txt", false)).text(), "two");
+    assert.equal((await get(pinned.path + "/removed.txt", false)).status, 200);
+    assert.equal((await get(latest.path + "/removed.txt", false)).status, 404);
+    assert.equal((await get(pinned.path + "/added.txt", false)).status, 404);
+    assert.equal((await get(latest.path + "/added.txt", false)).status, 200);
+    const before = clock;
 
     try {
-        const response = await fetch(publicBase + share.path);
-        const html = await response.text();
+        clock += 24 * 60 * 60 * 1000 + 1;
 
-        assert.equal(response.status, 200);
-        assert.doesNotMatch(html, /pocket-bridge/);
-        assert.match(html, new RegExp(`<base href="${publicBase}/pub/${share.token}/">`));
-        const nested = await fetch(publicBase + share.path + "/nested/about.html");
-
-        assert.equal(nested.status, 200);
-        assert.doesNotMatch(await nested.text(), /pocket-bridge/);
-        assert.match(nested.headers.get("content-security-policy")!, /^sandbox /);
-        const asset = await fetch(publicBase + share.path + "/assets/style.css");
-
-        assert.equal(await asset.text(), "body{color:red}");
-        assert.equal(asset.headers.get("x-content-type-options"), "nosniff");
-        assert.equal((await fetch(publicBase + share.path + "/absent")).status, 404);
-        await app.shares.revoke(owner(app), session, share.token);
-        assert.equal((await fetch(publicBase + share.path + "/assets/style.css")).status, 404);
+        for (const share of [pinned, latest]) {
+            for (const name of ["", "/value.txt", "/removed.txt", "/added.txt"]) {
+                assert.equal((await get(share.path + name, false)).status, 404);
+            }
+        }
     } finally {
-        publicServer.closeAllConnections();
-        publicServer.close();
+        clock = before;
     }
 });
 
@@ -475,6 +517,24 @@ test(
                         await page.evaluate("return JSON.stringify(Boolean(window.bundleResult))"),
                     ),
                 "own-tab assets",
+                30000,
+            );
+            assert.deepEqual(
+                JSON.parse(await page.evaluate("return JSON.stringify(bundleResult)")),
+                reports[0],
+            );
+            const published = await app.shares.create(session, owner(app), {
+                id: "real-bundle",
+                version: 1,
+            });
+
+            await page.navigate(base + published.path);
+            await until(
+                async () =>
+                    JSON.parse(
+                        await page.evaluate("return JSON.stringify(Boolean(window.bundleResult))"),
+                    ),
+                "published bundle assets",
                 30000,
             );
             assert.deepEqual(
