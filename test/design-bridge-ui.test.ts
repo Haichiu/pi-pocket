@@ -510,6 +510,23 @@ test(
     },
 );
 
+test("text edit in a deck also reaches the slide that comes into view", real, async () => {
+    await openDesign("deck");
+    await until(async () => (await gotOf("pocket-deck")).length >= 1, "the deck's slides", SLOW);
+
+    const editable = async (selector: string) =>
+        (await ask<{ count: number }>({ type: "count", selector })).count;
+
+    await send({ type: "pocket-edit-text", on: true });
+    await settle();
+    await send({ type: "pocket-goto", slide: 1 });
+    await settle();
+    assert.equal(await editable("section.slide:nth-child(2) [contenteditable]"), 1);
+    await send({ type: "pocket-edit-text", on: false });
+    await settle();
+    assert.equal(await editable("[contenteditable]"), 0);
+});
+
 test(
     "tweaks set custom properties and fire events; bad values are refused in the app",
     real,

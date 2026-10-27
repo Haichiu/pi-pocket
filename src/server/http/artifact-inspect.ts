@@ -636,6 +636,24 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         }
     };
 
+    /** Make the text blocks that show now editable: also those of a slide that came into view after the mode went on. */
+    const makeEditable = () => {
+        for (const el of textBlocks()) {
+            if (records.has(el)) {
+                continue;
+            }
+
+            records.set(el, { ce: el.getAttribute("contenteditable"), sc: el.getAttribute("spellcheck"), before: squash(el.textContent), last: squash(el.textContent), nodes: null });
+            el.setAttribute("contenteditable", "plaintext-only");
+            el.setAttribute("spellcheck", "false");
+
+            // A browser without plain-text editing makes it plain editing.
+            if (el.contentEditable !== "plaintext-only") {
+                el.setAttribute("contenteditable", "true");
+            }
+        }
+    };
+
     const setEdit = (on) => {
         hintEdits(on);
 
@@ -674,19 +692,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
         editOn = true;
 
-        if (records.size === 0) {
-            for (const el of textBlocks()) {
-                records.set(el, { ce: el.getAttribute("contenteditable"), sc: el.getAttribute("spellcheck"), before: squash(el.textContent), last: squash(el.textContent), nodes: null });
-                el.setAttribute("contenteditable", "plaintext-only");
-                el.setAttribute("spellcheck", "false");
-
-                // A browser without plain-text editing makes it plain editing.
-                if (el.contentEditable !== "plaintext-only") {
-                    el.setAttribute("contenteditable", "true");
-                }
-            }
-        }
-
+        makeEditable();
     };
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -909,6 +915,11 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                 priority: current.style.getPropertyPriority("display"),
             });
             current.style.setProperty("display", deck.display, "important");
+        }
+
+        // Text edit mode goes on to the slide that shows now.
+        if (editOn) {
+            makeEditable();
         }
     };
 
