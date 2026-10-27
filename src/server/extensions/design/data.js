@@ -213,7 +213,7 @@ export function createData(pocket, store) {
 
         /**
          * Make a file on the server (PNG, PDF, PPTX, or an HTML zip: `design/index.ts`'s export route writes it in the session's
-         * `exports/` folder) and save it through the browser.
+         * `exports/` folder), then save it through core's download route.
          */
         async download({ artifact, version, format, viewport }) {
             const conversation = conversationOf();
@@ -226,25 +226,15 @@ export function createData(pocket, store) {
                     format,
                     ...(viewport ? { viewport } : {}),
                 });
-                const file = await pocket.api(
-                    `download?${new URLSearchParams({ conversation: String(conversation), name: made.name })}`,
-                );
-                const binary = atob(file.base64);
-                const bytes = new Uint8Array(binary.length);
-
-                for (let at = 0; at < binary.length; at += 1) {
-                    bytes[at] = binary.charCodeAt(at);
-                }
-
+                // Core's download route sends the file as an attachment; a link to it saves it.
                 const link = document.createElement("a");
 
-                link.href = URL.createObjectURL(new Blob([bytes], { type: file.type }));
-                link.download = file.name;
+                link.href = `/api/c/${conversation}/download?${new URLSearchParams({ path: made.relative ?? made.path })}`;
+                link.download = made.name;
                 document.body.append(link);
                 link.click();
                 link.remove();
-                setTimeout(() => URL.revokeObjectURL(link.href), 30_000);
-                pocket.notify("info", `Saved ${file.name}. It is also at ${made.path}`);
+                pocket.notify("info", `Saved ${made.name}. It is also at ${made.path}`);
 
                 return true;
             } catch (error) {

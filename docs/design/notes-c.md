@@ -12,11 +12,11 @@ Server (`src/server/extensions/design.ts`, built in, on by default, title "Desig
     - `POST …/comments`, `POST …/comments/:id` (words, resolved), `DELETE …/comments/:id`, `POST …/resolve` (many ids): comments. Everyone who sees the session reads them; people who steer write them. Only the author or the owner changes the words or deletes.
     - `POST …/tweaks`: this person's tweak values for the design, replaced as a whole (`values: null` clears).
     - `POST …/restore` (`{ version, key }`): "Go back to this one", see below.
-    - `GET download?conversation&name` and (from stream D) `POST export`: see "Export".
+    - `POST export` (stream D's route, registered by `designRoutes`): see "Export".
 - The `/design-open [artifact]` command. It is `design-open`, not `design`: a command's name must have a dash (`COMMAND_NAME` in `extension-web.ts`). It sends `open` to the tab of the person who ran it, which opens the panel.
 - Events to browsers: `comments` (`{ conversation, artifact }`, after any comment change) and `open`.
 - Registered in `reload.ts`: `ORDER`, `TITLES`, and `design_preview`, `design_export`, `design_system` in `BUILT_IN_TOOLS`.
-- Tools and the prompt guide come from `../design/index.ts` (stream D). It is loaded with a dynamic `import()` when this module loads, and only if the file exists, so this branch works without it. After the merge the integrator may turn it into a static import.
+- Tools, the prompt guide, and the export route come from `../design/index.ts` (stream D), by a static import.
 
 Document (`src/server/docs.ts`, appended at the end): `pocket.design-comments`, scope `conversation`, history `latest`, fork `current`. By artifact id: `comments[]`, `tweaks` (by person id), `restores` (new version → copied version). It is one kind for comments, tweaks, and restores; the name is the plan's.
 
@@ -52,11 +52,9 @@ Uses `useArtifactBridge(ref, { artifact, source, enabled, onMessage, onReady })`
 - Viewers see the canvas, versions, and comments, and have no Edit text or Tweaks tab, no comment actions, no send buttons, and no "Go back". The server enforces it: the write routes are for those who steer, so a viewer gets the 404 that any person gets for a route that is not theirs.
 - Download of an export: see below.
 
-## Export (an integration point)
+## Export
 
-Stream D's route is `POST /api/x/design/export` with `{ conversation, id, version?, format, viewport }`; it writes `exports/<id>-v<n>.<ext>` in the session folder and answers `{ path, name, size }`. Routes answer JSON only, and D's notes expect "a core download route". There is none, so this module has `GET download?conversation&name`: it serves only a plain file named like an export (`^[a-z0-9-]+-v\d+\.(png|pdf|pptx|zip)$`) from the session's `exports/`, no path or link, up to 40 MB, as JSON with base64. The buttons POST the export, then GET the download, then save a blob. If the integrator adds a core streaming route, replace `download()` in `data.js` and delete the route.
-
-**Needed from the integrator (not my files):** D's `designTools(host, readBundle)` and `designRoutes(web, host, readBundle)` take a reader of committed bundles. `design.ts` takes it from `host.artifactBundle` and, when the host has none, uses a reader that fails with a clear message. So `PocketHost` needs `artifactBundle(id, artifact, version?)`: in `host.ts` the member (type as A's `PocketApp.artifactBundle`'s result: `{ meta, version, content, assets }`), and in `app.ts`, in the host object (near `updates: this.updates`), `artifactBundle: (id, artifact, version) => this.artifactBundle(id, artifact, version)`. `test/public-types.ts` then asks for the member in `types/pocket.d.ts` (the check lists host members). D's routes and tools check access to the conversation before they call it. I checked the whole path (design with assets exported as PNG, PDF, PPTX, and HTML zip, then downloaded) in a scratch tree with streams A, B, C, and D merged and this one change.
+Stream D's route is `POST /api/x/design/export` with `{ conversation, id, version?, format, viewport }`; it writes the file in the session's `exports/` folder and answers `{ path, relative, name, size }`. The buttons POST it, then save the file through core's `GET /api/c/<conversation>/download?path=<relative>` (a link with `download`; no header needed), and say where it is saved.
 
 ## What the docs must say
 
@@ -65,15 +63,15 @@ Stream D's route is `POST /api/x/design/export` with `{ conversation, id, versio
 - Design mode: a canvas panel; versions with compare and "go back to this one"; comments shared with the session, pinned to elements, sent to Pi as one message; edit text and apply; tweaks kept per person and kept into the design by Pi; variations as a grid ("use this one"); decks with a slide strip and present mode; export (PNG, PDF, PPTX, HTML zip); share; "Open in Design" in the artifact viewer; `/design-open`.
 - Who: everyone who sees every session loads it; people who steer write; viewers read; people invited to one session never load it (a module is for the whole app). While "take turns" is on, only the driver comments (core checks it for routes bound to a session).
 
-`map.md`: `extensions/design.ts` (routes, document, command, loads `../design/index.ts` if there), `extensions/design/` (the folder, what each file does), `docs.ts`' `DesignCommentsDoc`, `reload.ts`' entries, `viewers.js` (the button and `back`). Mention that the module imports `/store.js` and `/artifact-bridge.js`.
+`map.md`: `extensions/design.ts` (routes, document, command; installs `../design/index.ts`'s tools, guide, and export route), `extensions/design/` (the folder, what each file does), `docs.ts`' `DesignCommentsDoc`, `reload.ts`' entries, `viewers.js` (the button and `back`). Mention that the module imports `/store.js` and `/artifact-bridge.js`.
 
 Release notes: Design mode; "go back to this one" makes a copy as a new version; comments are shared and durable; tweaks stay with the person.
 
-`docs/extensions/built-in.md` or `architecture.md`: the module's document, its use of `host.artifactBundle`, the dynamic import of `../design/index.ts`.
+`docs/extensions/built-in.md` or `architecture.md`: the module's document and its use of `../design/index.ts`.
 
 ## Tests
 
-`test/design-routes.test.ts` (HTTP: access, shape cutting, limits, restore, tweaks, download), `test/design-parts.test.ts` (the pure helpers), `test/design-ui.test.ts` (a real Chromium: panel, sizes, picker and groups, grid, versions, restore, compare, comments and the message, viewer button, `/design-open`, share, viewer role, phone layout; pointing, tweaks, and decks run when this copy has stream B's bridge). `test/design-fixtures.ts` makes the designs (a landing page in three versions, a deck, three variations) and is also what I used to look at it by hand.
+`test/design-routes.test.ts` (HTTP: access, shape cutting, limits, restore, tweaks, export), `test/design-parts.test.ts` (the pure helpers), `test/design-ui.test.ts` (a real Chromium: panel, sizes, picker and groups, grid, versions, restore, compare, comments and the message, viewer button, `/design-open`, share, viewer role, phone layout; pointing, tweaks, and decks run when this copy has stream B's bridge). `test/design-fixtures.ts` makes the designs (a landing page in three versions, a deck, three variations) and is also what I used to look at it by hand.
 
 ## Changes to files outside my stream
 
@@ -88,7 +86,6 @@ Release notes: Design mode; "go back to this one" makes a copy as a new version;
 - `/design` itself cannot be a command (names need a dash); core could add a one-word client command in `web/commands.js` that calls `openExtPanel("design", "design")`.
 - Comments are tied to the version they were made on. A comment's pin shows only on that version. Nothing moves a comment to a newer version when Pi makes one: "mark them done" is manual (a button after "Send to Pi").
 - Writes to a design's notes need the turn when "take turns" is on, because core checks it for any route bound to a session.
-- `download` sends a file as base64 in JSON, up to 40 MB. A core streaming route would be better.
 - On a phone, a 1280 px page at "fit" is about 28% (a deck slide too). Zoom and custom sizes are there; there is no pinch zoom.
 - The present mode uses the browser's full screen when it can; inside it Esc is the browser's and ends it.
 - The module imports two app files (`/store.js`, `/artifact-bridge.js`). Both are served by the same server; if either moves, the module fails to load (and the Extensions sheet says so).
