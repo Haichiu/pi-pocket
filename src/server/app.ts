@@ -67,6 +67,7 @@ import {
     MemoryDoc,
     type SessionMeta,
     SessionsDoc,
+    SpendDoc,
     type SubagentRecord,
     SubagentsDoc,
     TurnsDoc,
@@ -433,6 +434,29 @@ export class PocketApp {
             log: (line) => this.#log(line),
             conversationOf: (sessionId) => this.#conversationOfSession(sessionId),
             isRunning: (conversationId) => this.#busy.has(conversationId as ConversationId),
+            accountFor: (conversationId) => {
+                const id = conversationId as ConversationId;
+                const payer = this.spend.payer(id);
+
+                return {
+                    check: () => {
+                        const person = this.config.userById(payer);
+
+                        if (person === undefined || !this.#busy.has(id)) {
+                            return false;
+                        }
+
+                        try {
+                            this.spend.check(person, id);
+
+                            return true;
+                        } catch {
+                            return false;
+                        }
+                    },
+                    recordUsage: (message) => this.spend.recordModelUsage(id, payer, message),
+                };
+            },
         });
         this.limits = new LimitGate({
             hours: () => this.config.limitWaitHours,
@@ -963,6 +987,20 @@ export class PocketApp {
     /** Every commit, as Pi Durable publishes it: what the app keeps in memory follows it, and so do the open views. */
     #committed(publication: CommitPublication): void {
         let sessionsChanged = false;
+        let alreadyPaid = false;
+
+        // Auxiliary requests pay their captured person in the same commit as usage, in either document order.
+        // A commit with both documents must pay every usage change. Normal spend counts never change UsageDoc.
+        for (const change of publication.changes) {
+            if (
+                change.type === "document" &&
+                change.record.kind === SpendDoc.definition.kind &&
+                change.value !== null
+            ) {
+                this.spend.countedChanged(change.value as { people: Record<string, number> });
+                alreadyPaid = true;
+            }
+        }
 
         // Usage in a commit is from the work that was going on before it: it is counted before a message the same
         // commit places changes whom Pi works for.
@@ -972,7 +1010,11 @@ export class PocketApp {
                 change.record.kind === UsageDoc.definition.kind &&
                 change.conversationId !== undefined
             ) {
-                this.spend.usageChanged(change.conversationId, change.value as UsageState | null);
+                this.spend.usageChanged(
+                    change.conversationId,
+                    change.value as UsageState | null,
+                    alreadyPaid,
+                );
 
                 // A team's top session with a limit shows the team's spend: it follows a linked session's too.
                 const root = this.rootOf(change.conversationId);
@@ -3427,9 +3469,9 @@ export class PocketApp {
             clearTimeout(this.#sessionsTimer);
             this.alerts.close();
             this.themes.close();
+            await this.cacheKeeper.close();
             this.spend.close();
             this.limits.close();
-            this.cacheKeeper.close();
             this.background.close();
             this.#unsubscribeCommits?.();
             this.#unsubscribeApprovals?.();
