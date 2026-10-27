@@ -353,9 +353,15 @@ export function restorePackage(appRoot: string): boolean {
     const pending = npmPending(appRoot);
     const paths = updatePaths(appRoot);
 
+    // Staging can fail before a swap starts. An older one-way update may have left an unrelated
+    // previous package: the live version is already right, so leave both packages untouched.
+    // This also handles a stop after the final restore rename.
+    if (packageVersion(appRoot) === pending.fromVersion) {
+        return true;
+    }
+
     if (!existsSync(paths.previous)) {
-        // A stop after the final rename must not turn a completed restore into an error.
-        return packageVersion(appRoot) === pending.fromVersion;
+        return false;
     }
 
     if (packageVersion(paths.previous) !== pending.fromVersion) {

@@ -195,6 +195,22 @@ test("npm stage failures leave the live package and pending state unchanged", as
     finishNpmPending(root, readPending(root)!);
     assert.equal(readOutcome(root)?.ok, false);
     assert.equal(readPending(root), undefined);
+
+    // A one-way 1 -> 2 update can retain version 1. A later 2 -> 3 staging failure must not
+    // treat that unrelated backup as the package it needs to restore.
+    manifest(root, "2.0.0");
+    const previous = updatePaths(root).previous;
+
+    manifest(previous, "1.0.0");
+    pending(root, { fromVersion: "2.0.0", toVersion: "3.0.0" });
+    await assert.rejects(
+        stageNpmUpdate(root, "3.0.0", { spec: failing, env }),
+        /npm staging failed/,
+    );
+    assert.equal(finishNpmPending(root, readPending(root)!).ok, false);
+    assert.equal(version(root), "2.0.0");
+    assert.equal(version(previous), "1.0.0", "the unrelated retained backup stays untouched");
+    assert.equal(readPending(root), undefined);
 });
 
 test("npm ignores the dot sibling during ls, another global install, and uninstall", (t) => {
