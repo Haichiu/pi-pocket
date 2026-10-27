@@ -209,46 +209,35 @@ export function createData(pocket, store) {
             }
         },
 
-        /** Render a file on the server and save it: PNG, PDF, PPTX, or an HTML zip (`design/index.ts`'s routes). */
-        async download({ artifact, version, format, viewport, slide }) {
+        /**
+         * Make a file on the server (PNG, PDF, PPTX, or an HTML zip: `design/index.ts`'s export route writes it in the session's
+         * `exports/` folder) and save it through the browser.
+         */
+        async download({ artifact, version, format, viewport }) {
             const conversation = conversationOf();
-            const query = new URLSearchParams({
-                conversation: String(conversation),
-                id: artifact,
-                version: String(version),
-                format,
-                ...(viewport ? { viewport } : {}),
-                ...(slide === undefined ? {} : { slide: String(slide) }),
-            });
 
             try {
-                const response = await fetch(`/api/x/design/export?${query}`, {
-                    headers: { "X-Pocket": "1" },
+                const made = await pocket.api("export", {
+                    conversation,
+                    id: artifact,
+                    version,
+                    format,
+                    ...(viewport ? { viewport } : {}),
                 });
+                const file = await pocket.api(
+                    `download?${new URLSearchParams({ conversation: String(conversation), name: made.name })}`,
+                );
+                const binary = atob(file.base64);
+                const bytes = new Uint8Array(binary.length);
 
-                if (!response.ok) {
-                    const text = await response.text();
-                    let message = text;
-
-                    try {
-                        message = JSON.parse(text).error ?? text;
-                    } catch {
-                        // Not JSON: the words as they are.
-                    }
-
-                    throw new Error(message.slice(0, 300) || `Export failed (${response.status})`);
+                for (let at = 0; at < binary.length; at += 1) {
+                    bytes[at] = binary.charCodeAt(at);
                 }
 
-                const blob = await response.blob();
-                const named = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(
-                    response.headers.get("content-disposition") ?? "",
-                )?.[1];
                 const link = document.createElement("a");
 
-                link.href = URL.createObjectURL(blob);
-                link.download = named
-                    ? decodeURIComponent(named)
-                    : `${artifact}-v${version}.${format === "html" ? "zip" : format}`;
+                link.href = URL.createObjectURL(new Blob([bytes], { type: file.type }));
+                link.download = file.name;
                 document.body.append(link);
                 link.click();
                 link.remove();

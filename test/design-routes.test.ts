@@ -2,8 +2,9 @@
 // one person's tweaks, "go back to this one" (a new version in one commit, once for each key), what the module registers, and
 // that the page it points at is untrusted data.
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { cleanUp, newSession, openApp, owner, root, scriptedModel } from "./helpers.ts";
+import { cleanUp, newSession, openApp, owner, root, scriptedModel, work } from "./helpers.ts";
 import assert from "node:assert/strict";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -396,9 +397,51 @@ test("what a page says about an element is cut to a fixed shape", () => {
     assert.throws(() => cleanTweaks(web, { a: null }), /text, a number/);
 });
 
-test("without the agent's side, export says so; this copy has none yet", async () => {
-    const response = await call("owner", "export?conversation=1&id=x&format=png");
+test("an export is looked up by its name in the session's exports folder, as a plain file, and never by a path", async () => {
+    const folder = join(work, "exports");
 
-    // Either D's route answers (a bad design: 4xx) or the fallback does (501): never a 404.
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "landing-v3.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]));
+    writeFileSync(join(root, "secret.png"), "secret");
+    symlinkSync(join(root, "secret.png"), join(folder, "linked-v1.png"));
+
+    const get = (who: string, id: number, name: string) =>
+        call(who, `download?conversation=${id}&name=${encodeURIComponent(name)}`);
+    const ok = await get("owner", session, "landing-v3.png");
+
+    assert.equal(ok.status, 200);
+    assert.equal(ok.data.type, "image/png");
+    assert.equal(ok.data.size, 7);
+    assert.equal(ok.data.base64, Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]).toString("base64"));
+
+    // A guest who steers may; a viewer, and a stranger to the session, may not.
+    assert.equal((await get("Gale", session, "landing-v3.png")).status, 200);
+    assert.equal((await get("Vic", session, "landing-v3.png")).status, 404);
+    assert.equal((await get("owner", 99999, "landing-v3.png")).status, 404);
+
+    // Only names an export gives: no path, no link, nothing that is not there.
+    for (const name of [
+        "../secret.png",
+        "exports/landing-v3.png",
+        "landing-v3.txt",
+        "LANDING-v3.png",
+        "landing.png",
+        "",
+    ]) {
+        assert.equal((await get("owner", session, name)).status, 400, name);
+    }
+
+    assert.equal((await get("owner", session, "linked-v1.png")).status, 404);
+    assert.equal((await get("owner", session, "missing-v1.png")).status, 404);
+});
+
+test("export says so when the agent's side is missing, and never answers 404 for its own route", async () => {
+    const response = await call("owner", "export", {
+        conversation: session,
+        id: "landing",
+        format: "png",
+    });
+
+    // Either the agent side's route answers (a bad design: 4xx) or the fallback does (501).
     assert.notEqual(response.status, 404);
 });
