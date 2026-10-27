@@ -1283,6 +1283,8 @@ function ActivityGroup({
     // A thought alone is the group's own line, not a step under a line that says the same: it opens to its words,
     // which stay folded until asked for, as a thought on the timeline does.
     const lone = all.length === 1 && all[0].block.type === "thinking" ? all[0] : null;
+    // Show thinking on: thoughts show their words once written.
+    const reading = prefs().showThinking === true;
     const open = activityOpen({
         chosen: openedGroups.get(id),
         lone: lone && {
@@ -1292,8 +1294,7 @@ function ActivityGroup({
         },
         live,
         newest,
-        // Show thinking on: thoughts show their words once written.
-        reading: prefs().showThinking === true,
+        reading,
         // Appearance's Keep activity folded.
         fold: prefs().foldActivity === true,
     });
