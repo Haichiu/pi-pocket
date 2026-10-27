@@ -324,9 +324,10 @@ function appUrl(): string {
 
 /** The address a browser on this machine should open. */
 function localUrl(): string {
-    return wildcard(state.host) || loopback(state.host)
-        ? `http://127.0.0.1:${options.port}`
-        : appUrl();
+    // A specific address, loopback or not, only answers on itself: keep it.
+    const host = wildcard(state.host) || state.host === "localhost" ? "127.0.0.1" : state.host;
+
+    return `http://${host.includes(":") ? `[${host}]` : host}:${options.port}`;
 }
 
 function modeLabel(): string {
