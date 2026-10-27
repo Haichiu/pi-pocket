@@ -27,6 +27,11 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
     const fire = (event) => win.dispatchEvent(event);
     const CustomEvt = (name, detail) => new win.CustomEvent(name, { detail });
     const now = performance.now.bind(performance);
+    // The page's own scripts have not run yet: keep the native listener functions, so a page that replaces
+    // addEventListener cannot get hold of the handlers and call them with events it made up.
+    const real = typeof EventTarget === "function" && win instanceof EventTarget;
+    const addListener = real ? EventTarget.prototype.addEventListener.bind(win) : (...args) => win.addEventListener(...args);
+    const removeListener = real ? EventTarget.prototype.removeEventListener.bind(win) : (...args) => win.removeEventListener(...args);
     const ACCENT = "#7aa2f7";
     const SLIDE_W = ${DECK_SLIDE_SIZE.width};
     const SLIDE_H = ${DECK_SLIDE_SIZE.height};
@@ -45,18 +50,18 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         return el;
     };
 
-    /** Window listeners that one part sets and clears together; capture phase, so they run before the page's own. */
+    /** Window listeners that one part sets and clears together. */
     const group = () => {
         const held = [];
 
         return {
             add(type, handler, options) {
-                win.addEventListener(type, handler, options);
+                addListener(type, handler, options);
                 held.push([type, handler, options]);
             },
             clear() {
                 for (const [type, handler, options] of held.splice(0)) {
-                    win.removeEventListener(type, handler, options);
+                    removeListener(type, handler, options);
                 }
             },
         };
@@ -423,13 +428,12 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
     // ---------------------------------------------------------------------------------------------------------------
     // Inspect mode: outline the element under the pointer; a click or tap picks it, and the page's handlers do not run.
 
-    const inspecting = group();
     let inspectOn = false;
 
     const BLOCKED = ["click", "dblclick", "auxclick", "contextmenu", "mousedown", "mouseup", "pointerdown", "pointerup", "submit"];
 
     const onInspect = (event) => {
-        if (!event.isTrusted) {
+        if (!inspectOn || !event.isTrusted) {
             return;
         }
 
@@ -459,17 +463,10 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
     };
 
     const setInspect = (on) => {
-        inspecting.clear();
         inspectOn = on;
 
         if (on) {
             setEdit(false);
-            inspecting.add("pointermove", onInspect, true);
-            inspecting.add("pointerover", onInspect, true);
-
-            for (const type of BLOCKED) {
-                inspecting.add(type, onInspect, true);
-            }
         } else {
             hoverEl = null;
             pickedEl = null;
@@ -480,7 +477,6 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
     // ---------------------------------------------------------------------------------------------------------------
     // Text edit mode: text blocks become editable (plain text only); a change is reported when the block loses focus.
 
-    const editing = group();
     let editOn = false;
     let hint = null;
 
@@ -501,6 +497,10 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
     };
 
     const editableOf = (node) => {
+        if (records.size === 0) {
+            return null;
+        }
+
         for (let el = isEl(node) ? node : node && node.parentElement; el; el = el.parentElement) {
             if (records.has(el)) {
                 return el;
@@ -618,7 +618,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
     };
 
     const onEditPointer = (event) => {
-        if (!event.isTrusted) {
+        if (!editOn || !event.isTrusted) {
             return;
         }
 
@@ -637,7 +637,6 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
     };
 
     const setEdit = (on) => {
-        editing.clear();
         hintEdits(on);
 
         if (!on) {
@@ -688,16 +687,46 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
             }
         }
 
-        for (const type of ["keydown", "keyup", "keypress"]) {
-            editing.add(type, onEditKey, true);
+    };
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // The listeners of both modes sit on the window in the capture phase from the start, so they run before any the page
+    // adds. Each does nothing, and changes nothing, until its mode is on.
+
+    const always = group();
+
+    const onTouch = (event) => {
+        if (deck) {
+            onDeckTouch(event);
         }
 
-        editing.add("focusin", onEditFocus, true);
-        editing.add("focusout", onEditBlur, true);
-        editing.add("paste", onEditPaste, true);
+        // A touch handler of the page does not run while inspecting; scrolling is not touched.
+        if (inspectOn && event.isTrusted) {
+            event.stopImmediatePropagation();
+        }
+    };
+
+    const install = () => {
+        always.clear();
+
+        for (const type of ["pointermove", "pointerover", ...BLOCKED]) {
+            always.add(type, onInspect, true);
+        }
+
+        for (const type of ["keydown", "keyup", "keypress"]) {
+            always.add(type, onEditKey, true);
+        }
+
+        always.add("focusin", onEditFocus, true);
+        always.add("focusout", onEditBlur, true);
+        always.add("paste", onEditPaste, true);
 
         for (const type of ["pointermove", "pointerover", "click", "dblclick", "auxclick", "submit", "drop", "dragstart"]) {
-            editing.add(type, onEditPointer, true);
+            always.add(type, onEditPointer, true);
+        }
+
+        for (const type of ["touchstart", "touchend"]) {
+            always.add(type, onTouch, { capture: true, passive: true });
         }
     };
 
@@ -839,7 +868,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
             (deck.bare ? "html{background:#000}" : "") +
             "section.slide:not([data-pocket-current]){display:none!important}" +
             "section.slide[data-pocket-current]{position:fixed!important;left:50%!important;top:50%!important;width:" + width + "px!important;height:" + height +
-            "px!important;min-height:0!important;max-height:none!important;margin:0!important;box-sizing:border-box!important;overflow:hidden!important;" +
+            "px!important;min-width:0!important;max-width:none!important;min-height:0!important;max-height:none!important;margin:0!important;box-sizing:border-box!important;overflow:hidden!important;" +
             "transform-origin:center center!important;transform:translate(-50%,-50%) scale(" + scale + ")!important}" +
             "@media print{@page{size:" + width + "px " + height + "px;margin:0}html,body{overflow:visible!important;height:auto!important}" +
             "section.slide:not([data-pocket-current]),section.slide[data-pocket-current]{display:block!important;position:relative!important;left:auto!important;top:auto!important;" +
@@ -1000,8 +1029,6 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
             }
 
             deckEvents.add("keydown", onDeckKey);
-            deckEvents.add("touchstart", onDeckTouch, { passive: true });
-            deckEvents.add("touchend", onDeckTouch, { passive: true });
             deckEvents.add("resize", paintDeck);
         } else {
             deck.slides = slides;
@@ -1043,6 +1070,47 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         }
     };
 
+    // What the app asked for, so a replaced document (a reply's HTML run again) can be given it again.
+    const desired = { inspect: false, edit: false, targets: [], tweaks: {} };
+    // The app may speak before the page is parsed (it says hello as the page starts): what needs the page waits.
+    let ready = false;
+    let backlog = [];
+
+    const apply = (data) => {
+        switch (data.type) {
+            case "pocket-inspect":
+                desired.inspect = data.on === true;
+                desired.edit = desired.edit && !desired.inspect;
+                setInspect(desired.inspect);
+                break;
+            case "pocket-edit-text":
+                desired.edit = data.on === true;
+                desired.inspect = desired.inspect && !desired.edit;
+                setEdit(desired.edit);
+                break;
+            case "pocket-tweak-set":
+                if (typeof data.values === "object" && data.values !== null) {
+                    for (const name of Object.keys(data.values).slice(0, 100)) {
+                        if (data.values[name] === null) {
+                            delete desired.tweaks[name];
+                        } else {
+                            desired.tweaks[name] = data.values[name];
+                        }
+                    }
+                }
+
+                setTweaks(data.values);
+                break;
+            case "pocket-highlight":
+                desired.targets = Array.isArray(data.targets) ? data.targets : [];
+                highlight(desired.targets);
+                break;
+            case "pocket-goto":
+                goTo(data.slide);
+                break;
+        }
+    };
+
     const begin = () => {
         if (!standalone) {
             readTweaks();
@@ -1050,13 +1118,23 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
         syncDeck();
         start();
+        ready = true;
+
+        for (const data of backlog.splice(0)) {
+            apply(data);
+        }
     };
 
-    if (doc.readyState === "loading") {
-        win.addEventListener("DOMContentLoaded", begin, { once: true });
-    } else {
-        begin();
-    }
+    const whenParsed = () => {
+        if (doc.readyState === "loading") {
+            addListener("DOMContentLoaded", begin, { once: true });
+        } else {
+            begin();
+        }
+    };
+
+    install();
+    whenParsed();
 
     return {
         /** True when the message is one of the app's design messages (it is then not the page's to see). */
@@ -1065,67 +1143,58 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                 return false;
             }
 
-            switch (data.type) {
-                case "pocket-inspect":
-                    setInspect(data.on === true);
-
-                    return true;
-                case "pocket-edit-text":
-                    setEdit(data.on === true);
-
-                    return true;
-                case "pocket-tweak-set":
-                    setTweaks(data.values);
-
-                    return true;
-                case "pocket-highlight":
-                    highlight(data.targets);
-
-                    return true;
-                case "pocket-goto":
-                    goTo(data.slide);
-
-                    return true;
-                default:
-                    return false;
+            if (
+                !["pocket-inspect", "pocket-edit-text", "pocket-tweak-set", "pocket-highlight", "pocket-goto"].includes(data.type)
+            ) {
+                return false;
             }
+
+            if (ready) {
+                apply(data);
+            } else {
+                backlog.push(data);
+            }
+
+            return true;
         },
 
-        /** The page's document was replaced (a reply's HTML run again): put the listeners back. */
+        /** The page's document was replaced (a reply's HTML run again): put the listeners back, and what was asked for. */
         restart() {
             if (pending !== null) {
                 unlater(pending);
                 pending = null;
             }
 
-            deckEvents.clear();
-            deck = null;
-            manifestText = null;
-            watcher = null;
-            overlay = null;
-            looping = false;
+            if (watcher !== null) {
+                watcher.disconnect();
+                watcher = null;
+            }
 
-            const wasInspect = inspectOn;
-            const wasEdit = editOn;
+            if (overlay) {
+                overlay.host.remove();
+                overlay = null;
+            }
 
+            stopDeck();
+            hintEdits(false);
             records.clear();
-            inspecting.clear();
-            editing.clear();
-            hint = null;
+            manifestText = null;
+            knobs = [];
+            hoverEl = null;
+            pickedEl = null;
+            pins = [];
             inspectOn = false;
             editOn = false;
-
-            if (doc.readyState === "loading") {
-                win.addEventListener("DOMContentLoaded", begin, { once: true });
-            } else {
-                begin();
-            }
-
-            if (wasInspect) {
-                setInspect(true);
-            } else if (wasEdit) {
-                setEdit(true);
-            }
+            ready = false;
+            touch = null;
+            backlog = [
+                { type: "pocket-tweak-set", values: { ...desired.tweaks } },
+                { type: "pocket-highlight", targets: desired.targets },
+                { type: "pocket-inspect", on: desired.inspect },
+                { type: "pocket-edit-text", on: desired.edit },
+            ];
+            install();
+            whenParsed();
         },
     };
 }`;

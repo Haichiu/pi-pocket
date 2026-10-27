@@ -42,7 +42,8 @@ Only the inspector can send those four: the stand-in `parent` in the page sends 
 - **Decks** are laid out at 1920×1080 and scaled to fit (letterboxed in black unless the page paints its own ground). `<meta name="pocket-slide-size" content="1280x720">` changes the size. The page side adds a viewport meta when a deck has none (a phone would lay it out at 980 pixels). Keys: arrows, PageUp/Down, Home, End, Space (Shift+Space back). Swipes: horizontal, over 50 pixels. Keys and swipes are off while text edit is on.
 - **A deck as a page of its own** (a tab, a published link: no bridge there) also shows one slide at a time with keys and swipes: `withDeck` puts in the same script with no line to an app. Printing it shows every slide, one for each page (`@page` is the slide size), so a PDF export of a deck needs nothing more.
 - **The overlay** (outlines, pins) is a `<pocket-overlay>` element at the end of `<html>`, in a closed shadow root, `pointer-events: none`. It is in the page only while it shows something. Styles go in with CSSOM and constructable stylesheets, never markup, so a page's CSP or Trusted Types does not stop it.
-- **The page-side listeners** for a mode are added when it turns on, at the window in the capture phase. A handler the page put on the window in the capture phase before that still runs first.
+- **The page-side listeners** of the modes (window, capture phase) are added when the page starts, with the native `addEventListener` kept before the page's scripts run, so they run before any the page adds, and a page that replaces `addEventListener` cannot get a handler and call it with invented events. Each does nothing until its mode is on. Inspect also stops the page's touch handlers (not scrolling).
+- **Early messages**: the app may speak as soon as the page starts. Design messages that arrive before the page is parsed wait, and run when it is (so a unit finds its manifest, and text edit finds its body). In the run frame, whose document is replaced, the last modes, pins, and tweak values are given to the new document.
 - **Limit on messages** from one page: 60 a second; the rest are dropped.
 
 ## The app side: for stream C
@@ -112,7 +113,7 @@ Pi needs to be told, in `designGuide`:
 
 ## Open problems
 
-- A deck's slides are forced to 1920×1080. A page that already scales its own slides (100vw) gets the same result, but its own scaling script and this fight if it moves slides itself.
+- A deck's slides are forced to 1920×1080 (width, height, and the min and max of each). A page that already scales its own slides (100vw) gets the same result, but its own scaling script and this fight if it moves slides itself.
 - Inspect and pins cannot reach inside an iframe or a closed shadow root in the page. A `<canvas>` is one element.
 - A page that navigates itself (a link, `location`) loses the line: its next page is not heard. C must show a new version in a new iframe, as written above.
 - Text edit does not reach text in an element that also has a block element inside it (`li` with a nested list), or text that is longer than 2,000 characters.

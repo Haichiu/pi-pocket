@@ -96,9 +96,44 @@ const DESIGN = `<!doctype html><html><head><meta charset="utf-8"><title>Design</
 ${TEST_HOOKS}</body></html>`;
 
 const DECK = `<!doctype html><html><head><meta charset="utf-8"><title>Deck</title><meta name="pocket-kind" content="deck">
-<style>body{margin:8px}.slide{width:1920px;height:1080px;background:#123;color:#fff;font-size:80px}</style></head>
+<style>body{margin:8px}.slide{width:1920px;max-width:100%;min-width:10px;height:1080px;background:#123;color:#fff;font-size:80px}</style></head>
 <body><section class="slide"><h1>One</h1></section><section class="slide"><h1>Two</h1></section><section class="slide"><h1>Three</h1></section>
 ${TEST_HOOKS}</body></html>`;
+
+/** Replaces addEventListener at once to collect every handler, then calls them all with an invented trusted click. */
+const INTERCEPT = `<!doctype html><html><body><h1 id="t">Hi</h1><script>
+const stolen = [];
+const original = EventTarget.prototype.addEventListener;
+EventTarget.prototype.addEventListener = function (type, handler, options) {
+    stolen.push([type, handler]);
+    return original.call(this, type, handler, options);
+};
+addEventListener("message", (event) => {
+    if (!event.data || event.data.type !== "steal") return;
+    const fake = { isTrusted: true, type: "click", target: document.body, preventDefault() {}, stopImmediatePropagation() {} };
+    for (const [, handler] of stolen) { try { handler(fake); } catch {} }
+    parent.postMessage({ id: event.data.id, stolen: stolen.length }, "*");
+});
+</script></body></html>`;
+
+/** A slow script holds up the parser; the app speaks before the page is there. */
+const SLOW_PAGE = (
+    src: string,
+) => `<!doctype html><html><head><meta charset="utf-8"><title>Slow</title>
+<script src="${src}"></script></head><body><h1 id="t" data-pid="title">Late title</h1>
+<script type="application/json" id="pocket-tweaks">[{"name":"--radius","type":"range","value":8,"unit":"px"}]</script>
+${TEST_HOOKS}</body></html>`;
+
+/** A deck whose slides carry the usual width limits, under a policy that allows no style but the page's own and requires Trusted Types. */
+const CSP_DECK = `<!doctype html><html><head><meta charset="utf-8"><meta name="pocket-kind" content="deck">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'none'; require-trusted-types-for 'script'">
+<title>CSP deck</title></head><body>
+<section class="slide">A</section><section class="slide">B</section>
+${TEST_HOOKS}</body></html>`;
+
+const CSP_PAGE = `<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'none'; require-trusted-types-for 'script'">
+<title>CSP page</title></head><body><h1 id="t">Policy</h1>${TEST_HOOKS}</body></html>`;
 
 let app: App;
 let server: Server;
@@ -107,6 +142,8 @@ let page: BrowserPage;
 let base = "";
 let session: ConversationId;
 let calls = 0;
+let late: Server;
+let lateBase = "";
 const SLOW = 30_000;
 
 async function inPage<T>(script: string): Promise<T> {
@@ -213,6 +250,18 @@ before(async () => {
     ({ id: session } = await app.commands.createSession(owner(app), { cwd: work }));
     await publish("design", DESIGN);
     await publish("deck", DECK);
+    await publish("intercept", INTERCEPT);
+    await publish("cspdeck", CSP_DECK);
+    await publish("csppage", CSP_PAGE);
+    late = createServer((_request, response) => {
+        setTimeout(
+            () => response.writeHead(200, { "content-type": "text/javascript" }).end(""),
+            700,
+        );
+    });
+    await new Promise<void>((resolve) => late.listen(0, "127.0.0.1", resolve));
+    lateBase = `http://127.0.0.1:${(late.address() as { port: number }).port}`;
+    await publish("slow", SLOW_PAGE(`${lateBase}/late.js`));
     server = createServer(
         createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} }),
     );
@@ -238,6 +287,8 @@ before(async () => {
 });
 
 after(async () => {
+    late?.closeAllConnections();
+    late?.close();
     await browsers?.closeAll({ final: true });
     server?.closeAllConnections();
     server?.close();
@@ -787,5 +838,121 @@ test(
         });
         assert.equal(await send({ type: "pocket-goto", slide: 1 }), true);
         await until(async () => (await gotOf("pocket-deck")).at(-1)?.current === 1, "goto", SLOW);
+    },
+);
+
+test(
+    "a page that replaces addEventListener cannot get a handler and forge a pick",
+    real,
+    async () => {
+        await openDesign("intercept");
+        await send({ type: "pocket-inspect", on: true });
+        await send({ type: "pocket-edit-text", on: true });
+        await send({ type: "pocket-inspect", on: true });
+
+        const answer = await ask<{ stolen: number }>({ type: "steal" });
+
+        assert.equal(answer.stolen, 1, "only the page's own message handler was ever seen by it");
+        await settle();
+        assert.equal((await gotOf("pocket-picked")).length, 0);
+        assert.equal((await gotOf("pocket-text-edited")).length, 0);
+    },
+);
+
+test("what the app says before the page is parsed waits for it", real, async () => {
+    await openDesign("slow", [
+        { type: "pocket-edit-text", on: true },
+        { type: "pocket-tweak-set", values: { "--radius": 5 } },
+        { type: "pocket-highlight", targets: [{ selector: "#t" }] },
+    ]);
+    // Its line opens as the page starts; the page is still waiting for its script.
+    await until(async () => (await gotOf("pocket-tweaks")).length === 1, "the page parsed", SLOW);
+    await settle();
+
+    const seen = await dump();
+
+    assert.match(seen.html, /<h1 id="t" data-pid="title" contenteditable="plaintext-only"/);
+    assert.equal(seen.radius, "5px", "the unit of a manifest that was not there yet");
+    assert.equal(seen.overlay, true);
+});
+
+test(
+    "a deck with width limits, and a policy with no style and Trusted Types, still works",
+    real,
+    async () => {
+        await openDesign("cspdeck");
+        await until(async () => (await gotOf("pocket-deck")).length >= 1, "the deck", SLOW);
+
+        const seen = await dump();
+
+        assert.ok(Math.abs(seen.slides[0]!.width - 800) <= 1, String(seen.slides[0]!.width));
+        assert.deepEqual(
+            seen.slides.map((slide) => slide.shown),
+            [true, false],
+        );
+
+        await openDesign("csppage");
+        await send({ type: "pocket-edit-text", on: true });
+        await send({ type: "pocket-highlight", targets: [{ selector: "#t" }] });
+        await settle();
+        assert.match((await dump()).html, /contenteditable="plaintext-only"/);
+        assert.equal((await dump()).overlay, true);
+        await send({ type: "pocket-edit-text", on: false });
+        await send({ type: "pocket-highlight", targets: [] });
+        await settle();
+        assert.equal((await dump()).overlay, false);
+    },
+);
+
+test(
+    "a run frame that replaces its document gets its modes, pins, and tweaks again",
+    real,
+    async () => {
+        const html = `<!doctype html><html><head><meta name="pocket-kind" content="deck"></head><body><section class="slide"><p id="t">second</p></section>${TEST_HOOKS}</body></html>`;
+
+        await inPage(`
+        document.querySelector("#design-frame")?.remove();
+        const { attachBridge } = await import("/artifact-bridge.js");
+        const frame = document.createElement("iframe");
+        frame.id = "design-frame";
+        frame.setAttribute("sandbox", "allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads");
+        frame.style.cssText = "position:fixed;left:0;top:0;width:800px;height:600px;border:0;z-index:99999;background:#fff";
+        window.__got = [];
+        window.__ready = 0;
+        window.__bridge = attachBridge({ current: frame }, { source: "a reply", onMessage: (message) => window.__got.push(message), onReady: () => (window.__ready += 1) });
+        window.__send = (message) => __bridge.send(message);
+        window.__frame = frame;
+        frame.src = "/a/frame";
+        document.body.append(frame);
+        return "null";
+    `);
+        await until(
+            async () => (await inPage<number>(`return JSON.stringify(window.__ready)`)) === 1,
+            "the run frame's line",
+            SLOW,
+        );
+        // The app asks for its modes while the frame still holds no page of the reply's.
+        await send({ type: "pocket-edit-text", on: true });
+        await send({ type: "pocket-highlight", targets: [{ selector: "#t" }] });
+        await send({ type: "pocket-tweak-set", values: { "--k": "7px" } });
+        await inPage(
+            `__frame.contentWindow.postMessage({ type: "pocket-run", html: ${JSON.stringify(html)} }, "*"); return "null"`,
+        );
+        await until(async () => (await gotOf("pocket-deck")).length >= 1, "the reply's page", SLOW);
+        await settle();
+
+        const seen = await dump();
+
+        assert.match(seen.html, /<p id="t" contenteditable="plaintext-only"[^>]*>second<\/p>/);
+        assert.match(seen.html, /--k: 7px/);
+        assert.equal(seen.overlay, true, "the pins are on the new page");
+        assert.deepEqual(
+            seen.slides.map((slide) => slide.shown),
+            [true],
+        );
+        await send({ type: "pocket-edit-text", on: false });
+        await send({ type: "pocket-highlight", targets: [] });
+        await settle();
+        assert.equal((await dump()).overlay, false);
     },
 );
