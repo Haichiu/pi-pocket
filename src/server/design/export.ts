@@ -1,5 +1,7 @@
 /** Portable bundle, screenshot, print, and image-slide presentation exports. */
+import { basename } from "node:path";
 import type { PocketHost } from "../host.ts";
+import { writeExport } from "./files.ts";
 import type { DesignBundle } from "./bundle.ts";
 import { pptx } from "./pptx.ts";
 import { type DesignViewport, viewportOf, withRender } from "./render.ts";
@@ -15,6 +17,38 @@ export const EXPORT_TYPES = {
     },
     html: { extension: "zip", mime: "application/zip" },
 } as const;
+
+export type SaveDesignOptions = {
+    id: string;
+    format: ExportFormat;
+    cwd: string;
+    viewport?: string | DesignViewport;
+    path?: string;
+    signal?: AbortSignal;
+};
+
+/** Shared file preparation for the agent tool and JSON workspace route. */
+export async function saveDesignExport(
+    bundle: DesignBundle,
+    options: SaveDesignOptions,
+    host: PocketHost,
+): Promise<{ path: string; name: string; size: number }> {
+    const bytes = await exportDesign(
+        bundle,
+        options.format,
+        options.viewport,
+        host,
+        options.signal,
+    );
+
+    options.signal?.throwIfAborted();
+    const target =
+        options.path ??
+        `exports/${options.id}-v${bundle.version}.${EXPORT_TYPES[options.format].extension}`;
+    const path = await writeExport(options.cwd, target, bytes);
+
+    return { path, name: basename(path), size: bytes.length };
+}
 
 export async function exportDesign(
     bundle: DesignBundle,

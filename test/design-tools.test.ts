@@ -129,6 +129,14 @@ test("the workspace POST export writes a visible session's default file and retu
     });
     assert.equal(bytes.readUInt32LE(0), 0x04034b50);
     assert.equal(JSON.parse(JSON.stringify(result)).name, "test-v1.zip");
+    const toolResult = await call(
+        designTools(host, readBundle).find((tool) => tool.name === "design_export")!,
+        { id: "test", format: "html" },
+    );
+    const toolFile = toolResult.details as { path: string; bytes: number };
+
+    assert.equal(toolFile.path, result.path);
+    assert.equal(toolFile.bytes, result.size);
     await assert.rejects(async () => handler!({ ...request, sessions: () => [] }), /No session/);
     await assert.rejects(
         async () => handler!({ ...request, body: { ...request.body, format: "exe" } }),
