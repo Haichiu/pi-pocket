@@ -23,6 +23,7 @@ import {
     BACKGROUND_MARKER,
     type BackgroundTask,
     type ByteRange,
+    duration,
     outcome,
     StartCutOff,
     wait,
@@ -535,6 +536,16 @@ test(
         assert.equal((await one(id)).left, undefined);
     },
 );
+
+test("a duration pads its seconds and minutes as the app does", () => {
+    assert.deepEqual([5_000, 600_000, 185_000, 3_720_000, 7_205_000].map(duration), [
+        "5s",
+        "10m 00s",
+        "3m 05s",
+        "1h 02m",
+        "2h 00m",
+    ]);
+});
 
 test("a daemon that ended of itself is no longer said to run", { skip }, async () => {
     const id = await session();
