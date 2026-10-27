@@ -17,6 +17,8 @@ Status: bundle implementation is complete on `design/bundles`. Core published-ro
 - `PocketApp.artifactBundle(conversation, artifact, version?)` returns `{ meta, version, content, assets: { name, type, bytes }[] }`.
 - `PocketApp.artifactAsset(conversation, artifact, version, name)` reads only one manifest asset.
 - Both readers require the caller to check conversation access.
+- `http/artifact-assets.ts` exports `ASSET_TYPES`, the frozen extension-to-MIME table, and `assetName(name)`, the safe path check.
+- That module also exports `assetType(name)` with the binary fallback and `ARTIFACT_CSP` for isolated renderers.
 - `zip(entries: { name: string; bytes: Buffer }[]): Buffer` writes ZIP32, with CRC32, UTF-8 names, and deflate when smaller.
 
 ## Serving choice and security

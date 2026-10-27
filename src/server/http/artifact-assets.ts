@@ -92,38 +92,39 @@ export function assetName(name: string): boolean {
     );
 }
 
+/** Safe bundle MIME types, shared with isolated design rendering. Unknown extensions must remain binary. */
+export const ASSET_TYPES: Readonly<Record<string, string>> = Object.freeze({
+    ".html": "text/html; charset=utf-8",
+    ".htm": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".json": "application/json",
+    ".txt": "text/plain; charset=utf-8",
+    ".csv": "text/csv; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".avif": "image/avif",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
+    ".otf": "font/otf",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".pdf": "application/pdf",
+    ".wasm": "application/wasm",
+});
+
 /** The extension, never file bytes or model input, decides the response type. */
 export function assetType(name: string): string {
-    const types: Record<string, string> = {
-        ".html": "text/html; charset=utf-8",
-        ".htm": "text/html; charset=utf-8",
-        ".css": "text/css; charset=utf-8",
-        ".js": "text/javascript; charset=utf-8",
-        ".mjs": "text/javascript; charset=utf-8",
-        ".json": "application/json",
-        ".txt": "text/plain; charset=utf-8",
-        ".csv": "text/csv; charset=utf-8",
-        ".svg": "image/svg+xml",
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".gif": "image/gif",
-        ".webp": "image/webp",
-        ".avif": "image/avif",
-        ".ico": "image/x-icon",
-        ".woff": "font/woff",
-        ".woff2": "font/woff2",
-        ".ttf": "font/ttf",
-        ".otf": "font/otf",
-        ".mp3": "audio/mpeg",
-        ".wav": "audio/wav",
-        ".mp4": "video/mp4",
-        ".webm": "video/webm",
-        ".pdf": "application/pdf",
-        ".wasm": "application/wasm",
-    };
-
-    return types[posix.extname(name).toLowerCase()] ?? "application/octet-stream";
+    return ASSET_TYPES[posix.extname(name).toLowerCase()] ?? "application/octet-stream";
 }
 
 /** A published bundle keeps its existing share token as the sole access capability. */
