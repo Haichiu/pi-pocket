@@ -104,6 +104,7 @@ import { loadPromptTemplates, type PromptTemplate, type SkillCommand } from "./p
 import { BASE_THEME, Themes } from "./themes.ts";
 import { THEME_ID } from "./themes/format.ts";
 import { LimitGate, type LimitTuning } from "./limit-gate.ts";
+import { CacheKeeper } from "./cache-keeper.ts";
 import { measureModelStreams } from "./timing.ts";
 import { Providers } from "./providers.ts";
 import { PushStore } from "./push.ts";
@@ -300,6 +301,8 @@ export class PocketApp {
     readonly providers = new Providers(this);
     /** Model requests that hit a limit wait for it to clear, then go on (`limit-gate.ts`). */
     readonly limits: LimitGate;
+    /** Keeps the prompt cache warm while a run waits on a tool call (`cache-keeper.ts`). */
+    readonly cacheKeeper: CacheKeeper;
     readonly schedules = new Schedules(this);
     /** Commands Pi runs in the background, watched until they end (`background.ts`). */
     readonly background = new BackgroundTasks(this);
@@ -426,6 +429,11 @@ export class PocketApp {
         this.config = new ConfigStore(options.dataDir);
         this.#lockFile = join(options.dataDir, "harness.lock");
         this.#log = options.log ?? ((line) => console.log(line));
+        this.cacheKeeper = new CacheKeeper({
+            log: (line) => this.#log(line),
+            conversationOf: (sessionId) => this.#conversationOfSession(sessionId),
+            isRunning: (conversationId) => this.#busy.has(conversationId as ConversationId),
+        });
         this.limits = new LimitGate({
             hours: () => this.config.limitWaitHours,
             epoch: (provider) => this.providers.signInEpoch(provider),
@@ -685,6 +693,8 @@ export class PocketApp {
         measureModelStreams(this.models);
         // Outside the timing wrapper: each attempt is timed on its own, not the wait before it.
         this.limits.install(this.models);
+        // Outermost: it sees each real request finish, and replays it through the wrappers below.
+        this.cacheKeeper.install(this.models);
         await this.models.getAvailable().catch(() => []);
 
         const registry = createRegistry();
@@ -1091,6 +1101,8 @@ export class PocketApp {
 
                 if (!busy) {
                     this.spend.runEnded(id);
+                    // No request follows the last tool call of a run that ended or was stopped (PiP's runs too).
+                    this.cacheKeeper.runEnded(Number(id));
                     this.pipCompaction.runEnded(id);
 
                     if (this.#sessions[String(id)] !== undefined) {
@@ -3417,6 +3429,7 @@ export class PocketApp {
             this.themes.close();
             this.spend.close();
             this.limits.close();
+            this.cacheKeeper.close();
             this.background.close();
             this.#unsubscribeCommits?.();
             this.#unsubscribeApprovals?.();
