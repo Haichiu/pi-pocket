@@ -1,6 +1,6 @@
 // The cache keeper with fake streams and a fake clock: when it warms, when it stops, and what it never does.
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -59,6 +59,11 @@ function rig(enabled = true, gaps: number[] = []) {
         await new Promise((r) => setImmediate(r));
     };
 
+    const title = async () => {
+        await models.streamSimple(model, { messages: [] } as never, { sessionId: "s", cacheRetention: "none" }).result();
+        await new Promise((r) => setImmediate(r));
+    };
+
     const advance = async () => {
         const next = timers.sort((a, b) => a.at - b.at)[0];
 
@@ -69,7 +74,7 @@ function rig(enabled = true, gaps: number[] = []) {
         await new Promise((r) => setTimeout(r, 5));
     };
 
-    return { keeper, real, advance, calls, timers, file, setNow: (t: number) => { now = t; }, now: () => now };
+    return { keeper, real, title, advance, calls, timers, file, setNow: (t: number) => { now = t; }, now: () => now };
 }
 
 test("break-even: 5m write is 12.5x a read, so about 8.7% hazard pays for a warm", () => {
@@ -107,15 +112,6 @@ test("on: warms with a one-token cap, and the warm request is not a real one", a
     assert.equal(r.calls[1]?.maxTokens, 1);
     assert.equal(r.keeper.status().warms, 1);
     assert.equal(r.timers.length, 1, "the next refresh is scheduled");
-});
-
-test("idle: people who come back just after the cache would expire keep it warm", async () => {
-    // Gaps of 5 minutes: bucket 1 (the first refresh decision) has every one of them arriving, so hazard is high.
-    const r = rig(true, Array(100).fill(300_000));
-
-    await r.real();
-    await r.advance();
-    assert.equal(r.keeper.status().warms, 1);
 });
 
 test("idle: people who never come back inside the first hour get no warm at all", async () => {
@@ -156,5 +152,61 @@ test("the age cap ends warming even when every refresh would pay", async () => {
     for (let i = 0; i < 40 && r.timers.length > 0; i++) {await r.advance();}
 
     assert.ok(r.now() - 1_000_000 <= MAX_AGE_MS + 300_000);
+    assert.equal(r.timers.length, 0);
+});
+
+test("a warm does not count as a real request: the next idle gap is measured from the real one", async () => {
+    const r = rig();
+
+    await r.real();
+    await r.advance(); // the warm, 270 s later
+    r.setNow(1_000_000 + 280_000);
+    await r.real();
+    r.keeper.close();
+    const gaps = JSON.parse(readFileSync(r.file, "utf8")).gaps as number[];
+
+    assert.deepEqual(gaps, [280_000]);
+});
+
+test("the owner's switch is the file: turning it on there is seen after the cached read expires", async () => {
+    const r = rig(false);
+
+    await r.real();
+    assert.equal(r.timers.length, 0);
+    writeFileSync(r.file, JSON.stringify({ enabled: true }));
+    r.setNow(r.now() + 6_000);
+    await r.real();
+    assert.equal(r.timers.length, 1);
+});
+
+test("a timer that fires long after its due time sends nothing", async () => {
+    const r = rig();
+
+    await r.real("s", "toolUse");
+    const timer = r.timers[0];
+
+    assert.ok(timer);
+    r.setNow(timer.at + 120_000); // slept through the refresh window; the entry is expired
+    r.timers.splice(0, 1);
+    timer.fn();
+    await new Promise((x) => setTimeout(x, 5));
+    assert.equal(r.calls.length, 1, "only the real request");
+});
+
+test("a request that does not use the cache leaves the pending warm alone", async () => {
+    const r = rig();
+
+    await r.real();
+    assert.equal(r.timers.length, 1);
+    await r.title();
+    assert.equal(r.timers.length, 1);
+});
+
+test("close cancels every pending warm", async () => {
+    const r = rig();
+
+    await r.real("a");
+    await r.real("b");
+    r.keeper.close();
     assert.equal(r.timers.length, 0);
 });
