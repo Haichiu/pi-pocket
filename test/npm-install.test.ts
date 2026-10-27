@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
+import {
+    chmodSync,
+    mkdirSync,
+    mkdtempSync,
+    realpathSync,
+    renameSync,
+    rmSync,
+    symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { npmInstallKind } from "../src/server/npm-install.ts";
+import { npmInstallKind, npmWritable } from "../src/server/npm-install.ts";
 import { npmRelease, Updates } from "../src/server/updates.ts";
 
 // The npm beside Node reads this prefix too. No global package outside this temporary folder changes.
@@ -145,4 +153,20 @@ test("npm latest chooses the version; GitHub supplies that tag's notes, or an un
         "a registry failure does not offer a GitHub-only release",
     );
     mocked.mock.restore();
+});
+
+test("an update state folder that the server cannot write stops an npm update before it starts", async (t) => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-npm-writable-"));
+    const root = join(dir, "lib", "node_modules", "pi-pocket");
+    const state = join(dir, "lib", "node_modules", ".pi-pocket-update");
+
+    t.after(() => {
+        chmodSync(state, 0o755);
+        rmSync(dir, { recursive: true, force: true });
+    });
+    mkdirSync(root, { recursive: true });
+    mkdirSync(state);
+    assert.equal(await npmWritable(root), true);
+    chmodSync(state, 0o555);
+    assert.equal(await npmWritable(root), process.getuid?.() === 0);
 });

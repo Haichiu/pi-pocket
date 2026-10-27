@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { constants, existsSync } from "node:fs";
 import { access, realpath } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
+import { updatePaths } from "./update-state.ts";
 
 export type InstallKind = "git" | "npm-global" | "npm-local" | "npx" | "unknown";
 
@@ -63,11 +64,17 @@ export async function npmInstallKind(appRoot: string): Promise<InstallKind> {
     return parts.includes("node_modules") ? "npm-local" : "unknown";
 }
 
-/** Both renames need the parent, and an install owned by another user must not be replaced. */
+/**
+ * Both renames need the parent, and an install owned by another user must not be replaced. The update's state folder
+ * beside the package must take its files too, when an earlier update left it.
+ */
 export async function npmWritable(appRoot: string): Promise<boolean> {
+    const state = updatePaths(appRoot).dir;
+
     return Promise.all([
         access(appRoot, constants.W_OK),
         access(dirname(appRoot), constants.W_OK),
+        ...(existsSync(state) ? [access(state, constants.W_OK)] : []),
     ]).then(
         () => true,
         () => false,
