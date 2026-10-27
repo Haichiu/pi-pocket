@@ -227,6 +227,37 @@ test("npm ignores the dot sibling during ls, another global install, and uninsta
     );
 });
 
+test("npm state remembers a canonical global root without node_modules in its path", (t) => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-npm-alias-"));
+    const root = join(dir, "packages", "pi-pocket");
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    manifest(root, "1.0.0");
+    assert.equal(updatePaths(root).dir, join(root, ".pocket-update"));
+    pending(`${root}/`);
+    const paths = updatePaths(root);
+
+    assert.equal(paths.dir, join(dirname(root), ".pi-pocket-update"));
+    assert.equal(
+        updatePaths(join(dirname(root), "checkout")).dir,
+        join(dirname(root), "checkout", ".pocket-update"),
+        "an npm marker does not change a nearby checkout's paths",
+    );
+    manifest(stagedPackagePath(root), "2.0.0");
+    swapInPackage(root);
+    assert.equal(version(root), "2.0.0");
+    renameSync(root, paths.failed);
+    assert.equal(
+        readPending(root)?.phase,
+        "switching",
+        "the marker works without the live package",
+    );
+    assert.match(rollBackUpdate(root) ?? "", /went back/);
+    assert.equal(version(root), "1.0.0");
+    assert.equal(readOutcome(root)?.ok, false);
+    assert.equal(updatePaths(root).dir, paths.dir, "the marker survives clearing pending state");
+});
+
 test("npm state handles interrupted swaps and restores, one-way releases, and changed packages", (t) => {
     const { dir, root } = sandbox();
 

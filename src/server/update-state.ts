@@ -63,8 +63,12 @@ export function updatePaths(appRoot: string) {
     const npmPackage =
         basename(parent) === "node_modules" ||
         (basename(parent).startsWith("@") && basename(dirname(parent)) === "node_modules");
+    const sibling = join(parent, ".pi-pocket-update");
+    // A global root can resolve through a symlink to a folder not named node_modules. The writer
+    // marks that exact package root; the launcher needs neither npm nor the live package to find it.
+    const markedGlobal = readJson(join(sibling, "npm-global.json"))?.appRoot === appRoot;
     // npm ignores dot-prefixed siblings. State must survive replacement or removal of the package.
-    const dir = npmPackage ? join(parent, ".pi-pocket-update") : join(appRoot, UPDATE_DIR);
+    const dir = npmPackage || markedGlobal ? sibling : join(appRoot, UPDATE_DIR);
 
     return {
         dir,
@@ -137,6 +141,13 @@ export function readPending(appRoot: string): PendingUpdate | undefined {
 }
 
 export function writePending(appRoot: string, pending: PendingUpdate): void {
+    if (pending.kind === "npm-global") {
+        const root = resolve(appRoot);
+        const marker = join(dirname(root), ".pi-pocket-update", "npm-global.json");
+
+        writeJson(marker, { v: 1, appRoot: root });
+    }
+
     writeJson(updatePaths(appRoot).pending, pending);
 }
 
