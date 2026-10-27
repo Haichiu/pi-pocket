@@ -257,11 +257,14 @@ export async function artifactResponse(
     // a proxy that drops it), it goes in too, or a page could say hello itself and send follow-ups with no tap. Outside
     // a frame, it does nothing.
     const dest = response.req?.headers["sec-fetch-dest"];
-    // A deck as a page of its own still shows one slide at a time (`withDeck`).
+    // A deck as a page of its own still shows one slide at a time (`withDeck`). A script's fetch (the inline card) gets
+    // the page as it was written: the card shows it as code, and runs it in the run frame, which has the bridge.
     const content =
-        !bridge || dest === "document" || dest === "empty"
-            ? withDeck(found.content)
-            : withBridge(found.content);
+        dest === "empty"
+            ? found.content
+            : !bridge || dest === "document"
+              ? withDeck(found.content)
+              : withBridge(found.content);
 
     return send(response, 200, content, "text/html; charset=utf-8", headers);
 }
