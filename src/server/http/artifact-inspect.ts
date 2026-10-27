@@ -855,9 +855,12 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
     const slideSize = () => {
         const meta = doc.querySelector('meta[name="pocket-slide-size"]');
-        const match = meta && /^(\d{3,4})x(\d{3,4})$/.exec(meta.getAttribute("content") || "");
+        const match = meta && /^\s*(\d{3,4})\s*[x×]\s*(\d{3,4})\s*$/i.exec(meta.getAttribute("content") || "");
+        const width = match ? Number(match[1]) : 0;
+        const height = match ? Number(match[2]) : 0;
 
-        return match ? { width: Number(match[1]), height: Number(match[2]) } : { width: SLIDE_W, height: SLIDE_H };
+        // The same sizes as the exports take (parseSlideSize in design/render.ts): 320 to 3840 on each side.
+        return width >= 320 && height >= 320 && width <= 3840 && height <= 3840 ? { width, height } : { width: SLIDE_W, height: SLIDE_H };
     };
 
     const deckSheet = () => {
@@ -886,6 +889,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                 slide.setAttribute("data-pocket-current", "");
             } else {
                 slide.removeAttribute("data-pocket-current");
+                unshow(slide);
             }
         });
 
@@ -893,6 +897,35 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
             deck.sheet.replaceSync(deckSheet());
         } else {
             deck.node.textContent = deckSheet();
+        }
+
+        // A page that hides its other slides itself (".slide:not(:first-child){display:none}"): the current one must
+        // still show, in the layout the page gives its slides (flex, grid), so it gets that display inline until it goes.
+        const current = deck.slides[deck.index];
+
+        if (current && !deck.shownInline.has(current) && win.getComputedStyle(current).display === "none") {
+            deck.shownInline.set(current, {
+                value: current.style.getPropertyValue("display"),
+                priority: current.style.getPropertyPriority("display"),
+            });
+            current.style.setProperty("display", deck.display, "important");
+        }
+    };
+
+    /** Give back a slide's own inline display, if the deck changed it to show the slide. */
+    const unshow = (slide) => {
+        const before = deck && deck.shownInline.get(slide);
+
+        if (!before) {
+            return;
+        }
+
+        deck.shownInline.delete(slide);
+
+        if (before.value === "") {
+            slide.style.removeProperty("display");
+        } else {
+            slide.style.setProperty("display", before.value, before.priority);
         }
     };
 
@@ -971,6 +1004,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
         for (const slide of deck.slides) {
             slide.removeAttribute("data-pocket-current");
+            unshow(slide);
         }
 
         if (deck.sheet) {
@@ -1009,7 +1043,20 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                 return color === "rgba(0, 0, 0, 0)" || color === "transparent";
             });
 
-            deck = { slides, index: 0, size: slideSize(), bare, sheet: null, node: null, view: null };
+            // The display the page gives its slides, read before the sheet is in: the first one that shows, else block.
+            const shown = slides.map((slide) => win.getComputedStyle(slide).display).find((each) => each !== "none");
+
+            deck = {
+                slides,
+                index: 0,
+                size: slideSize(),
+                bare,
+                sheet: null,
+                node: null,
+                view: null,
+                display: shown || "block",
+                shownInline: new Map(),
+            };
 
             // A phone lays a page with no viewport out at 980 pixels wide: a deck needs the real width to fit it.
             if (!doc.querySelector('meta[name="viewport"]') && doc.head) {

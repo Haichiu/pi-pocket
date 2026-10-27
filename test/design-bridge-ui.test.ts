@@ -124,6 +124,13 @@ const SLOW_PAGE = (
 <script type="application/json" id="pocket-tweaks">[{"name":"--radius","type":"range","value":8,"unit":"px"}]</script>
 ${TEST_HOOKS}</body></html>`;
 
+/** A deck that hides all its slides but the first itself, and lays them out as flex. */
+const HIDDEN_DECK = `<!doctype html><html><head><meta charset="utf-8"><meta name="pocket-kind" content="deck">
+<style>.slide{display:flex;align-items:center}.slide:not(:first-child){display:none}</style>
+<title>Hidden deck</title></head><body>
+<section class="slide">One</section><section class="slide">Two</section><section class="slide">Three</section>
+</body></html>`;
+
 /** A deck whose slides carry the usual width limits, under a policy that allows no style but the page's own and requires Trusted Types. */
 const CSP_DECK = `<!doctype html><html><head><meta charset="utf-8"><meta name="pocket-kind" content="deck">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'none'; require-trusted-types-for 'script'">
@@ -253,6 +260,7 @@ before(async () => {
     await publish("intercept", INTERCEPT);
     await publish("cspdeck", CSP_DECK);
     await publish("csppage", CSP_PAGE);
+    await publish("hiddendeck", HIDDEN_DECK);
     late = createServer((_request, response) => {
         setTimeout(
             () => response.writeHead(200, { "content-type": "text/javascript" }).end(""),
@@ -675,6 +683,41 @@ test("a deck in a tab of its own also shows one slide at a time", real, async ()
         SLOW,
     );
 });
+
+test(
+    "a deck that hides its own slides still shows the current one, in its own layout",
+    real,
+    async () => {
+        await page.navigate(`${base}/a/${session}/hiddendeck/latest`);
+        const shown = () =>
+            inPage<string[]>(
+                `return JSON.stringify([...document.querySelectorAll("section.slide")].filter((slide) => getComputedStyle(slide).display !== "none").map((slide) => slide.textContent + ":" + getComputedStyle(slide).display))`,
+            );
+
+        await until(async () => (await shown()).join() === "One:flex", "the first slide", SLOW);
+        await page.click({ x: 300, y: 300 });
+        await page.press("ArrowRight");
+        await until(async () => (await shown()).join() === "Two:flex", "the second slide", SLOW);
+        await page.press("ArrowLeft");
+        await until(async () => (await shown()).join() === "One:flex", "back to the first", SLOW);
+        // The second slide got its own inline display back.
+        assert.equal(
+            await inPage<string>(
+                `return JSON.stringify(document.querySelectorAll("section.slide")[1].style.display)`,
+            ),
+            "",
+        );
+        await page.navigate(`${base}/s/${session}`);
+        await until(
+            async () =>
+                await inPage<boolean>(
+                    `return JSON.stringify(Boolean(document.querySelector(".composer textarea")))`,
+                ),
+            "the message box",
+            SLOW,
+        );
+    },
+);
 
 test("the page cannot send the inspector's messages itself", real, async () => {
     await openDesign("design");

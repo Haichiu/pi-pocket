@@ -186,7 +186,7 @@ export function createWorkspace(env) {
               </button>`;
     }
 
-    function Menu({ s, device, size, design, shown, group, deck, canShare, onClose }) {
+    function Menu({ s, device, size, design, shown, group, deck, canShare, canEdit, onClose }) {
         const [busy, setBusy] = useState(null);
 
         const run = async (format) => {
@@ -281,11 +281,15 @@ export function createWorkspace(env) {
                         }}
                     />`
                 }
-                <div class="dsn-menu-label">Export and share</div>
-                ${exporting("png", "PNG image", `v${shown}`)}
-                ${exporting("pdf", "PDF", `v${shown}`)}
-                ${deck && exporting("pptx", "PowerPoint (PPTX)", `${s.deck?.slides ?? ""} slides`)}
-                ${exporting("html", "HTML bundle (zip)", "for code")}
+                <div class="dsn-menu-label">${canEdit ? "Export and share" : "Open"}</div>
+                ${canEdit && exporting("png", "PNG image", `v${shown}`)}
+                ${canEdit && exporting("pdf", "PDF", `v${shown}`)}
+                ${
+                    canEdit &&
+                    deck &&
+                    exporting("pptx", "PowerPoint (PPTX)", `${s.deck?.slides ?? ""} slides`)
+                }
+                ${canEdit && exporting("html", "HTML bundle (zip)", "for code")}
                 ${
                     canShare &&
                     html`<${MenuItem}
@@ -471,6 +475,7 @@ export function createWorkspace(env) {
                     group=${group}
                     deck=${deck}
                     canShare=${canShare}
+                    canEdit=${canEdit}
                     onClose=${() => setOpen(null)}
                 />`
             }

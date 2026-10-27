@@ -358,8 +358,11 @@ export class DesignPage {
     async screenshot(viewport: DesignViewport, fullPage = false, preview = false): Promise<string> {
         const metrics = fullPage ? await this.send("Page.getLayoutMetrics") : undefined;
         const content = metrics?.cssContentSize;
-        const width = Math.min(2560, Math.ceil(content?.width ?? viewport.width));
-        const height = Math.min(16000, Math.ceil(content?.height ?? viewport.height));
+        // A full page is cut at a bound; a viewport (a slide up to 3840 a side) is taken whole.
+        const width =
+            content === undefined ? viewport.width : Math.min(2560, Math.ceil(content.width));
+        const height =
+            content === undefined ? viewport.height : Math.min(16000, Math.ceil(content.height));
         const scale = preview ? Math.min(1, 2000 / Math.max(width, height)) : 1;
         const result = await this.send("Page.captureScreenshot", {
             format: "png",

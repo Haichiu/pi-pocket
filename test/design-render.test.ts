@@ -281,6 +281,16 @@ test(
         );
 
         assert.deepEqual(size(small), [1280, 720]);
+
+        // The largest size a deck may name is taken whole, not cut at a bound.
+        const large = await exportDesign(
+            { ...bundle, content: slide('<meta name="pocket-slide-size" content="3840x2160">') },
+            "png",
+            undefined,
+            host,
+        );
+
+        assert.deepEqual(size(large), [3840, 2160]);
     },
 );
 
