@@ -28,6 +28,9 @@ export default function setup(pocket) {
     const data = createData(pocket, store);
     const parts = createParts(pocket);
     const canEdit = () => app.state.me?.role !== undefined && app.state.me.role !== "viewer";
+    /** The mode goes off, so an editor's comments or edits dock goes too, or its tab stays lit. */
+    const modeless = () =>
+        canEdit() && ["comments", "edits"].includes(store.get().dock) ? { dock: null } : {};
 
     const env = {
         pocket,
@@ -93,6 +96,7 @@ export default function setup(pocket) {
                 view: "canvas",
                 compare: null,
                 mode: "view",
+                ...modeless(),
                 draft: null,
                 present: false,
                 ...(same ? {} : { slide: 0 }),
@@ -109,6 +113,7 @@ export default function setup(pocket) {
                 view: "compare",
                 compare: { a: a ?? Math.max(1, latest - 1), b: b ?? latest },
                 mode: "view",
+                ...modeless(),
                 draft: null,
             });
         },
