@@ -275,6 +275,17 @@ What a browser shows is its person's choice of theme (`look`) and colors (`theme
 - Extensions' API: `web` on the server and `pocket` in the browser, at `POCKET_API`. Modules outside this repository depend on them: add to them freely, and change what they do only with a new version.
 - `ATTACHMENTS_HEADING` and `splitAttachments` (which also reads the form sent before 0.14.0), which `ui.js` repeats from `entry-format.ts`.
 
+## Updates of Pi Pocket itself
+
+`Updates` (`updates.ts`, `app.updates`) works out `installKind` from where the server's files are: a git checkout (`git`), the global package folder of the Node.js that runs it, as `npm root -g` gives it (`npm-global`), another `node_modules` folder (`npm-local`), the npx cache (`npx`), or none of these (`unknown`; `npm-install.ts` does the npm kinds). Every kind shares one status (`UpdateStatus`), one set of checks (the launcher runs the server, no sessions busy, the warning tick), the two settings of the `updates` extension, and the outcome in `.pocket-update/`. What differs is where the newest version comes from and how it goes in:
+
+- **The newest version.** An npm kind reads the registry's `latest` tag, and takes the notes, link, and date from the GitHub release of that version; if GitHub does not answer, the version stands without notes and is treated as one with a warning. A git checkout reads GitHub's newest release, or the version tags.
+- **Git.** The release's commit is fetched under `refs/pocket-update/target`, packages install in `.pocket-update/staging/`, and the branch moves forward.
+- **Global npm.** Only when the server's user can write the folder that holds the package. The new version installs in a staging folder beside it, and a swap puts it in place of the running copy, keeping that copy. The launcher swaps the kept copy back when the server does not start; this needs no network. The restart is the same as for git.
+- **Local npm and npx.** Nothing in the app can change these. Their status has a blocker with the command to run (`npm install pi-pocket@latest`, or `npx pi-pocket@latest`).
+
+A release with a warning (or notes that could not be read) is never installed by itself and is not rolled back by itself, whatever the kind. The browser module (`extensions/updates/index.js`) only shows `installKind` in words and the blockers the server gives: it holds no rule of its own.
+
 ## Checking a change
 
 - **Every change:** `npm run check` (types, and no unused imports or locals in the TypeScript), `npm run lint`, and `npm test`.
