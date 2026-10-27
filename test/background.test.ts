@@ -733,6 +733,31 @@ test("a stop while the environment is made keeps the command from starting", { s
     }
 });
 
+test(
+    "with the extension off after a restart, a task whose process died is not counted as running",
+    { skip },
+    async () => {
+        const id = await session();
+        const item = await app.background.start(id, { command: "sleep 300", notify: false });
+        const listed = () => app.sessions().find((entry) => entry.id === Number(id))?.background;
+
+        await until(() => listed() === 1, "1 listed");
+        await app.setExtensionEnabled(owner(app), "background.ts", false);
+        await app.close();
+        process.kill(-item.pid, "SIGKILL");
+        await until(() => !running(item.pid), "the command to die");
+
+        app = await openApp(model, dataDir);
+        quick();
+        assert.equal((await one(id)).status, "running", "nothing watches it to settle it");
+        assert.equal(listed(), undefined);
+
+        await app.setExtensionEnabled(owner(app), "background.ts", true);
+        await until(async () => (await one(id)).status === "lost", "the watch to settle it");
+        assert.equal(listed(), undefined);
+    },
+);
+
 test("a start cut off before its process is told, also after a restart", { skip }, async () => {
     const id = await session();
 

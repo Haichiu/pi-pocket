@@ -1913,13 +1913,19 @@ export class PocketApp {
         return true;
     }
 
-    /** Count the commands a session runs in the background, starting ones too. True when the count changed. */
+    /**
+     * Count the commands a session runs in the background, starting ones too. While their extension is off no watch
+     * settles a task whose process died, so only a task with a live process counts. True when the count changed.
+     */
     #noteBackground(
         id: ConversationId,
         doc: { items: Record<string, BackgroundTask> } | null | undefined,
     ): boolean {
+        const watched = this.background.running;
         const running = Object.values(doc?.items ?? {}).filter(
-            (item) => item.status === "running" || item.status === "starting",
+            (item) =>
+                (item.status === "running" || item.status === "starting") &&
+                (watched || this.background.alive(id, item)),
         ).length;
 
         if (running === (this.#background.get(id) ?? 0)) {
