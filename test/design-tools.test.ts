@@ -8,7 +8,7 @@ import { findBrowser } from "../src/server/browser/discovery.ts";
 import { readBundle } from "../src/server/design/bundle.ts";
 import { designRoutes, designTools } from "../src/server/design/index.ts";
 import createArtifacts from "../src/server/extensions/artifacts.ts";
-import type { ExtensionWeb, PocketHost, WebHandler, WebRequest } from "../src/server/host.ts";
+import type { ConversationWebRequest, ExtensionWeb, PocketHost } from "../src/server/host.ts";
 import { createPublicFetch } from "../src/server/public-fetch.ts";
 
 let app: Awaited<ReturnType<typeof openApp>>;
@@ -118,17 +118,17 @@ test("design_export writes a real HTML bundle to the default session-local path"
 });
 
 test("the workspace export writes the file in a visible session's folder and answers its path", async () => {
-    let handler: WebHandler | undefined;
+    let handler: ((request: ConversationWebRequest) => unknown) | undefined;
     let method: string | undefined;
 
-    const route: ExtensionWeb["route"] = (asked, _path, handle) => {
+    const route: ExtensionWeb["conversationRoute"] = (asked, _path, handle) => {
         method = asked;
         handler = handle;
     };
 
     designRoutes(
         {
-            route,
+            conversationRoute: route,
             error: (status: number, message: string) =>
                 Object.assign(new Error(message), { status }),
         } as unknown as ExtensionWeb,
@@ -136,12 +136,12 @@ test("the workspace export writes the file in a visible session's folder and ans
     );
     assert.equal(method, "POST");
     const request = {
-        body: { conversation, id: "test", format: "html" },
-        sessions: () => [{ id: conversation, cwd: work }],
+        body: { id: "test", format: "html" },
+        conversation: { id: conversation, cwd: work },
         snapshot: app.harness.snapshot.bind(app.harness),
         signal: new AbortController().signal,
         context,
-    } as unknown as WebRequest;
+    } as unknown as ConversationWebRequest;
     const answer = (await handler!(request)) as {
         path: string;
         relative: string;
@@ -156,13 +156,12 @@ test("the workspace export writes the file in a visible session's folder and ans
 
     assert.equal(bytes.length, answer.size);
     assert.equal(bytes.readUInt32LE(0), 0x04034b50);
-    await assert.rejects(async () => handler!({ ...request, sessions: () => [] }), /No session/);
     await assert.rejects(
         async () =>
             handler!({
                 ...request,
-                body: { conversation, id: "test", format: "exe" },
-            } as unknown as WebRequest),
+                body: { id: "test", format: "exe" },
+            } as unknown as ConversationWebRequest),
         /Choose/,
     );
 });
