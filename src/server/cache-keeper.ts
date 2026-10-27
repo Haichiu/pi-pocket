@@ -11,7 +11,9 @@
  *   - `warmCost`  a cache read of the whole prompt plus one output token.
  *   - `missCost`  what the next real request pays more if the entry is gone: a cache write instead of a read.
  *   - `hazard`    the chance that the run's next request comes in the next interval (`TOOL_HAZARD`).
- * A new real request, the run being stopped, an error, shutdown, or the age cap (`MAX_AGE_MS`, 30 minutes) stops it.
+ * A new real request, the run ending or being stopped (`runEnded`), an error, shutdown, or the age cap (`MAX_AGE_MS`,
+ * 30 minutes) stops it. An entry whose first refresh would fall after the cap (the 1h tier) is never started: a
+ * 30-minute tool wait does not outlive a 1h cache.
  * The cap is the best of 10 to 60 minutes on the owner's own tool-call gaps, and it bounds the loss when a tool waits
  * on a person (an approval).
  *
@@ -76,7 +78,7 @@ export function isReplayable(model: Model<Api>, options: SimpleStreamOptions | u
     return (model.compat as { forceAdaptiveThinking?: boolean } | undefined)?.forceAdaptiveThinking === true;
 }
 
-function ttlMsOf(model: Model<Api>, options: SimpleStreamOptions | undefined): { ms: number; long: boolean } | undefined {
+function ttlMsOf(model: Model<Api>, options: SimpleStreamOptions | undefined): number | undefined {
     const long =
         options?.cacheRetention === "long" ||
         (options?.cacheRetention === undefined &&
@@ -86,7 +88,7 @@ function ttlMsOf(model: Model<Api>, options: SimpleStreamOptions | undefined): {
 
     const seconds = model.promptCache?.[long ? "long" : "short"];
 
-    return seconds === undefined ? undefined : { ms: seconds * 1000, long };
+    return seconds === undefined ? undefined : seconds * 1000;
 }
 
 type Entry = {
@@ -95,7 +97,10 @@ type Entry = {
     options: SimpleStreamOptions;
     promptTokens: number;
     ttlMs: number;
-    long: boolean;
+    /** The conversation this session belongs to, once known. */
+    conversationId?: number;
+    warms: number;
+    spent: number;
     /** When the real request ended; the age cap counts from here, not from a refresh. */
     endedAt: number;
     /** When the next refresh should go out; a refresh later than the slack after it would pay a full rewrite. */
@@ -110,12 +115,14 @@ export type KeeperDeps = {
     setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
     clearTimer?: (timer: ReturnType<typeof setTimeout>) => void;
     log?: (line: string) => void;
+    /** The conversation that sends requests under a provider session id, so `runEnded` can find its warm. */
+    conversationOf?: (sessionId: string) => Promise<number | undefined>;
     /** True turns the keeper off. Read at each decision. */
     disabled?: () => boolean;
 };
 
 export class CacheKeeper {
-    readonly #deps: Required<KeeperDeps>;
+    readonly #deps: Required<Omit<KeeperDeps, "conversationOf">> & Pick<KeeperDeps, "conversationOf">;
     readonly #entries = new Map<string, Entry>();
     #underlying: StreamSimple | undefined;
     #closed = false;
@@ -192,15 +199,13 @@ export class CacheKeeper {
 
         if (this.#closed || this.#deps.disabled() || !isReplayable(model, options)) {return;}
 
-        // The run was stopped (or a tool failed it): no request follows.
-        if (options.signal?.aborted === true) {return;}
-
-        const ttl = ttlMsOf(model, options);
+        const ttlMs = ttlMsOf(model, options);
         const usage = message.usage;
         const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
-        const delay = ttl === undefined ? undefined : refreshDelayMs(ttl.ms);
+        const delay = ttlMs === undefined ? undefined : refreshDelayMs(ttlMs);
 
-        if (ttl === undefined || delay === undefined || promptTokens === 0) {return;}
+        // The first refresh must fall inside the cap: a longer cache outlives any wait the cap allows.
+        if (ttlMs === undefined || delay === undefined || delay >= MAX_AGE_MS || promptTokens === 0) {return;}
 
         const now = this.#deps.now();
         const entry: Entry = {
@@ -208,18 +213,30 @@ export class CacheKeeper {
             context,
             options,
             promptTokens,
-            ttlMs: ttl.ms,
-            long: ttl.long,
+            ttlMs,
             endedAt: now,
             dueAt: now + delay,
+            warms: 0,
+            spent: 0,
         };
 
         this.#entries.set(key, entry);
         this.#schedule(key, entry, delay);
-        // The run is stopped while the tool runs: nothing follows, so stop warming.
-        options.signal?.addEventListener("abort", () => {
-            if (this.#entries.get(key) === entry) {this.#drop(key);}
-        }, { once: true });
+
+        // Which conversation it is, so that the run's end can stop it. It still warms when this is not known.
+        void this.#deps.conversationOf?.(key).then(
+            (id) => {
+                if (id !== undefined && this.#entries.get(key) === entry) {entry.conversationId = id;}
+            },
+            () => {},
+        );
+    }
+
+    /** A run ended or was stopped: no request follows its last tool call, so its warm stops. */
+    runEnded(conversationId: number): void {
+        for (const [key, entry] of [...this.#entries]) {
+            if (entry.conversationId === conversationId) {this.#drop(key);}
+        }
     }
 
     #schedule(key: string, entry: Entry, delay: number): void {
@@ -228,10 +245,8 @@ export class CacheKeeper {
     }
 
     #decision(entry: Entry): Decision {
-        // The 1h tier writes at twice the input price; the 5m tier at the model's own `cacheWrite` price.
-        const writeRate = entry.long
-            ? entry.model.cost.input * 2
-            : entry.model.cost.cacheWrite || entry.model.cost.input;
+        // Only the 5m tier is ever warmed (see `#onSettled`), which writes at the model's `cacheWrite` price.
+        const writeRate = entry.model.cost.cacheWrite || entry.model.cost.input;
 
         return decide({ promptTokens: entry.promptTokens, rates: entry.model.cost, writeRate, hazard: TOOL_HAZARD });
     }
@@ -272,6 +287,8 @@ export class CacheKeeper {
 
             this.#warms++;
             this.#spent += message.usage.cost.total;
+            entry.warms++;
+            entry.spent += message.usage.cost.total;
             this.#schedule(key, entry, delay);
         } catch (error) {
             this.#deps.log(
@@ -287,6 +304,11 @@ export class CacheKeeper {
         if (entry === undefined) {return;}
 
         if (entry.timer !== undefined) {this.#deps.clearTimer(entry.timer);}
+
+        // The cost of a warm is in no usage total, so say it here.
+        if (entry.warms > 0) {
+            this.#deps.log(`Cache keeper: ${String(entry.warms)} warm requests for one tool wait, $${entry.spent.toFixed(4)}.`);
+        }
 
         entry.abort?.abort();
         this.#entries.delete(key);

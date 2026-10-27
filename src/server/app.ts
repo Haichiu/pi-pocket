@@ -428,7 +428,12 @@ export class PocketApp {
         this.config = new ConfigStore(options.dataDir);
         this.#lockFile = join(options.dataDir, "harness.lock");
         this.#log = options.log ?? ((line) => console.log(line));
-        this.cacheKeeper = new CacheKeeper({ log: (line) => this.#log(line) });
+        this.cacheKeeper = new CacheKeeper({
+            log: (line) => this.#log(line),
+            conversationOf: (sessionId) => this.#conversationOfSession(sessionId),
+        });
+        // No request follows the last tool call of a run that ended or was stopped.
+        this.events.on("run.ended", ({ conversationId }) => this.cacheKeeper.runEnded(conversationId));
         this.limits = new LimitGate({
             hours: () => this.config.limitWaitHours,
             epoch: (provider) => this.providers.signInEpoch(provider),

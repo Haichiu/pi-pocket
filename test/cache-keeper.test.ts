@@ -36,6 +36,7 @@ function rig(disabled = false) {
     };
     const keeper = new CacheKeeper({
         now: () => now,
+        conversationOf: async (sessionId) => ({ a: 1, b: 2, s: 3 })[sessionId],
         disabled: () => off,
         setTimer: ((fn: () => void, ms: number) => { const t = { at: now + ms, fn };
 
@@ -190,25 +191,6 @@ test("close cancels every pending warm", async () => {
     assert.equal(r.timers.length, 0);
 });
 
-test("the run being stopped while a tool runs ends the warm", async () => {
-    const r = rig();
-    const abort = new AbortController();
-
-    await r.send("s", "toolUse", "short", abort.signal);
-    assert.equal(r.timers.length, 1);
-    abort.abort();
-    assert.equal(r.timers.length, 0);
-});
-
-test("a request whose run is already stopped starts no warm", async () => {
-    const r = rig();
-    const abort = new AbortController();
-
-    abort.abort();
-    await r.send("s", "toolUse", "short", abort.signal);
-    assert.equal(r.timers.length, 0);
-});
-
 test("a request with no session id is never warmed", async () => {
     const r = rig();
 
@@ -234,15 +216,43 @@ test("a request that ends after close starts no new warm", async () => {
     assert.equal(r.timers.length, 0);
 });
 
-test("the 1h tier writes at twice the input price: break-even moves up", () => {
-    const ratio = (writeRate: number) => decide({ promptTokens: 50_000, rates: COST, writeRate, hazard: 0.9 }).missCost;
 
-    assert.ok(ratio(COST.input * 2) > ratio(COST.cacheWrite));
+test("the end of a run stops its warm and leaves the warm of another conversation", async () => {
+    const r = rig();
+
+    await r.send("a", "toolUse");
+    await r.send("b", "toolUse");
+    await new Promise((x) => setImmediate(x)); // the conversation of each session is found
+    r.keeper.runEnded(1);
+    assert.equal(r.timers.length, 1);
+    r.keeper.runEnded(2);
+    assert.equal(r.timers.length, 0);
 });
 
-test("a one hour entry is warmed at 90% of its lifetime", async () => {
+test("a signal that aborts after the request, as Durable's does when an invocation ends, does not stop the warm", async () => {
+    const r = rig();
+    const abort = new AbortController();
+
+    await r.send("s", "toolUse", "short", abort.signal);
+    abort.abort(new Error("invocation has ended"));
+    assert.equal(r.timers.length, 1);
+    await r.advance();
+    assert.equal(r.keeper.status().warms, 1);
+});
+
+test("a one hour cache is never warmed: a 30 minute tool wait does not outlive it", async () => {
     const r = rig();
 
     await r.send("s", "toolUse", "long");
-    assert.equal(r.timers[0]?.at, r.now() + 3_240_000);
+    assert.equal(r.timers.length, 0);
+});
+
+test("a tool that waits for a person is bounded by the cap: about six warms, not more", async () => {
+    const r = rig();
+
+    await r.send("s", "toolUse");
+
+    for (let i = 0; i < 40 && r.timers.length > 0; i++) {await r.advance();}
+
+    assert.ok(r.keeper.status().warms <= 7, "30 minutes at 270 s is at most 7 warms");
 });
