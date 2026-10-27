@@ -37,7 +37,7 @@ npm install -g pi-pocket
 pi-pocket
 ```
 
-Or try it with `npx pi-pocket`. To change Pi Pocket's code, or to update it from the app, run a git checkout instead:
+Or try it with `npx pi-pocket`. To change Pi Pocket's code, run a git checkout instead:
 
 ```bash
 git clone https://github.com/TannerMidd/pi-pocket.git
@@ -50,7 +50,7 @@ The launcher asks how your devices should connect, then prints a sign-in link an
 
 While it runs: **q** quit · **r** restart server · **a** change access · **o** open in browser · **s** show QR code.
 
-**Updating:** Menu → **Update Pi Pocket** updates a git checkout run with `npm start` and restarts, and goes back by itself if the new version does not start ([features](docs/features.md)). By hand: stop the server, back up `~/.pi-pocket`, pull, run `npm install`, and start again. An npm install updates with `npm install -g pi-pocket@latest`. Read the [release notes](https://github.com/TannerMidd/pi-pocket/releases) first: 0.21.0 upgrades the database one way, so going back needs the backup.
+**Updating:** Menu → **Update Pi Pocket** updates a git checkout run with `npm start`, or a global npm install (`npm install -g pi-pocket`) that your user can write, and restarts. It goes back by itself if the new version does not start ([features](docs/features.md)). A local install (`npm install pi-pocket` in a project) and `npx pi-pocket` do not update from the app: the sheet says what to run, `npm install pi-pocket@latest` or `npx pi-pocket@latest`. By hand: stop the server, back up `~/.pi-pocket`, pull, run `npm install`, and start again; for a global install, run `npm install -g pi-pocket@latest`, which also puts a global install back if the machine stopped in the middle of an update. Read the [release notes](https://github.com/TannerMidd/pi-pocket/releases) first: 0.21.0 upgrades the database one way, so going back needs the backup.
 
 ### Other ways to run it
 

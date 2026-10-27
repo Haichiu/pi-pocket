@@ -477,6 +477,7 @@ function startServer(first: boolean): void {
             PI_POCKET_SUPERVISED: "1",
             PI_POCKET_LAUNCHER: "1",
             PI_POCKET_ROLLBACK: "1",
+            PI_POCKET_NPM_ROLLBACK: "1",
         },
     });
     /** This start said it was ready: a stop after that is not a new version that cannot start. */
