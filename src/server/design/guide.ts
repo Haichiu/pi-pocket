@@ -28,7 +28,11 @@ const WITHOUT = `${GUIDE}\n\nThe project has no design system (${SYSTEM_FILE}) y
  */
 export function designGuide(host: PocketHost): PromptSection {
     return section("design_mode", (input) => {
-        const cwd = input.env?.cwd ?? input.agent.cwd ?? process.cwd();
+        const cwd = input.env?.cwd ?? input.agent.cwd;
+
+        if (cwd === undefined) {
+            return WITHOUT;
+        }
 
         let system: { text: string; truncated: boolean } | undefined;
 

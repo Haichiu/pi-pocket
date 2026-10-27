@@ -82,6 +82,14 @@ test("design_export writes a real HTML bundle to the default session-local path"
         call(tool, { id: "test", format: "html", path: "../escape.zip" }),
         /inside/,
     );
+    await assert.rejects(
+        tool.execute(
+            { id: "test", format: "html" },
+            { ...api(), agent: async () => ({}) } as never,
+            context,
+        ),
+        /no working directory/,
+    );
 });
 
 test("the workspace export returns binary bytes only for a visible session", async () => {

@@ -128,7 +128,12 @@ export function designTools(host: PocketHost): ToolRegistration[] {
                 args.version,
                 context,
             );
-            const cwd = (await api.agent(context)).cwd ?? process.cwd();
+            const cwd = (await api.agent(context)).cwd;
+
+            if (cwd === undefined) {
+                throw new Error("This session has no working directory for the export.");
+            }
+
             const bytes = await exportDesign(
                 bundle,
                 args.format,
