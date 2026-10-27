@@ -37,6 +37,8 @@ npm install -g pi-pocket
 pi-pocket
 ```
 
+Newer npm may print "install-scripts ... not yet covered by allowScripts" for `@google/genai` and `protobufjs`, which come from Pi's model library. The warning is expected: Pi Pocket needs neither script, and `npm config set allow-scripts=@google/genai,protobufjs --location=user` quiets it.
+
 Or try it with `npx pi-pocket`. To change Pi Pocket's code, run a git checkout instead:
 
 ```bash
