@@ -65,10 +65,11 @@ C passes the reader to the tools and route. It currently looks for optional `hos
 
 ## Checks and remaining work
 
-- Focused Design tests: 39 pass, including real Chromium, token-scoped assets, allowed public HTTPS, blocked public HTTP, private HTTPS/metadata ranges, private UDP, external navigation, preserved hidden-slide layout, device fitting, cancellation cleanup, file bounds, links, FIFO rejection, prompt fencing, ZIP structure, injected readers, and JSON POST export contracts.
+- Focused D tests: 40 pass after the real-asset integration test was added, including real Chromium, token-scoped assets, allowed public HTTPS, blocked public HTTP, private HTTPS/metadata ranges, private UDP, external navigation, preserved hidden-slide layout, device fitting, cancellation cleanup, file bounds, links, FIFO rejection, prompt fencing, ZIP structure, injected readers, and JSON POST export contracts.
 - `npm run format`: passed.
 - After merging `feat/design`, `npm run check` and `npm run lint` pass without local baseline changes. The committed brace fix in `prompt.ts` came from the integrator's branch. The earlier local check-only fix is gone.
-- The merge-specific renderer, tools, PPTX, real asset reader, and shared ZIP checks passed all 26 tests. The complete merged-suite result follows in the final report.
+- The merge-specific renderer, tools, PPTX, real asset reader, and shared ZIP checks passed all 26 tests.
+- The complete merged suite ran with concurrency 4: 853 of 855 tests passed. `artifact-bridge-ui.test.ts:347` timed out on saved-state reopening. `design-bridge-ui.test.ts:577` timed out on slide fitting. No D test failed. A serial retry of both complete UI test files passed all 26 tests.
 - Before the final contract changes, full `npm test` passed all 788 tests twice. Later unbounded runs had changing timing failures in existing UI and background tests outside D. The isolated mobile, extension UI, and artifact bridge retries passed. The final complete suite passed with `node --test --test-concurrency=4 test/*.test.ts`: 789 passed, 0 failed, 0 skipped, exit 0.
 - The throwaway copy ran with `node test/serve.ts 8904 127.0.0.2`. The mobile page loaded without console errors. The copy was stopped. C's canvas was not present in this isolated branch.
 - Generated and visually inspected a deck PNG. Chromium PDF has 2 widescreen pages with searchable text. LibreOffice 26.8 opened the generated PPTX and exported 2 widescreen PDF pages. `unzip -t` passed. PowerPoint and Keynote were not available for direct checks.
