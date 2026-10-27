@@ -147,7 +147,7 @@ The agent's side of Design mode. `extensions/design.ts` installs it (see Extensi
 | `design/render.ts` | Private headless Chromium renders: a process and profile for each render, a loopback endpoint under a random path that serves one bundle, public fetches only, limits (2 at once, 90 s); deck slide size and slides |
 | `design/export.ts` | `saveDesignExport` (shared by the tool and the route): PNG, PDF, PPTX, and the HTML zip, written to `exports/` by default                                                                                           |
 | `design/files.ts`  | Where an export may be written: inside the session folder, never through a link, replaced atomically                                                                                                                |
-| `design/pptx.ts`   | The PPTX writer: one image for each slide, 16:9, with the slide's text as speaker notes, through `zip.ts`                                                                                                           |
+| `design/pptx.ts`   | The PPTX writer: one image for each slide, at the deck's slide size (16:9 by default), with the slide's text as speaker notes, through `zip.ts`                                                                     |
 | `design/system.ts` | `design_system`: the project's `.pi/design-system.md`, bounded, read and written without following links                                                                                                            |
 | `design/guide.ts`  | The prompt section: how to make designs, and the design system as fenced, untrusted data                                                                                                                            |
 
