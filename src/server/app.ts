@@ -67,6 +67,7 @@ import {
     MemoryDoc,
     type SessionMeta,
     SessionsDoc,
+    SpendDoc,
     type SubagentRecord,
     SubagentsDoc,
     TurnsDoc,
@@ -104,6 +105,7 @@ import { loadPromptTemplates, type PromptTemplate, type SkillCommand } from "./p
 import { BASE_THEME, Themes } from "./themes.ts";
 import { THEME_ID } from "./themes/format.ts";
 import { LimitGate, type LimitTuning } from "./limit-gate.ts";
+import { CacheKeeper } from "./cache-keeper.ts";
 import { measureModelStreams } from "./timing.ts";
 import { Providers } from "./providers.ts";
 import { PushStore } from "./push.ts";
@@ -300,6 +302,8 @@ export class PocketApp {
     readonly providers = new Providers(this);
     /** Model requests that hit a limit wait for it to clear, then go on (`limit-gate.ts`). */
     readonly limits: LimitGate;
+    /** Keeps the prompt cache warm while a run waits on a tool call (`cache-keeper.ts`). */
+    readonly cacheKeeper: CacheKeeper;
     readonly schedules = new Schedules(this);
     /** Commands Pi runs in the background, watched until they end (`background.ts`). */
     readonly background = new BackgroundTasks(this);
@@ -426,6 +430,34 @@ export class PocketApp {
         this.config = new ConfigStore(options.dataDir);
         this.#lockFile = join(options.dataDir, "harness.lock");
         this.#log = options.log ?? ((line) => console.log(line));
+        this.cacheKeeper = new CacheKeeper({
+            log: (line) => this.#log(line),
+            conversationOf: (sessionId) => this.#conversationOfSession(sessionId),
+            isRunning: (conversationId) => this.#busy.has(conversationId as ConversationId),
+            accountFor: (conversationId) => {
+                const id = conversationId as ConversationId;
+                const payer = this.spend.payer(id);
+
+                return {
+                    check: () => {
+                        const person = this.config.userById(payer);
+
+                        if (person === undefined || !this.#busy.has(id)) {
+                            return false;
+                        }
+
+                        try {
+                            this.spend.check(person, id);
+
+                            return true;
+                        } catch {
+                            return false;
+                        }
+                    },
+                    recordUsage: (message) => this.spend.recordModelUsage(id, payer, message),
+                };
+            },
+        });
         this.limits = new LimitGate({
             hours: () => this.config.limitWaitHours,
             epoch: (provider) => this.providers.signInEpoch(provider),
@@ -685,6 +717,8 @@ export class PocketApp {
         measureModelStreams(this.models);
         // Outside the timing wrapper: each attempt is timed on its own, not the wait before it.
         this.limits.install(this.models);
+        // Outermost: it sees each real request finish, and replays it through the wrappers below.
+        this.cacheKeeper.install(this.models);
         await this.models.getAvailable().catch(() => []);
 
         const registry = createRegistry();
@@ -953,6 +987,20 @@ export class PocketApp {
     /** Every commit, as Pi Durable publishes it: what the app keeps in memory follows it, and so do the open views. */
     #committed(publication: CommitPublication): void {
         let sessionsChanged = false;
+        let alreadyPaid = false;
+
+        // Auxiliary requests pay their captured person in the same commit as usage, in either document order.
+        // A commit with both documents must pay every usage change. Normal spend counts never change UsageDoc.
+        for (const change of publication.changes) {
+            if (
+                change.type === "document" &&
+                change.record.kind === SpendDoc.definition.kind &&
+                change.value !== null
+            ) {
+                this.spend.countedChanged(change.value as { people: Record<string, number> });
+                alreadyPaid = true;
+            }
+        }
 
         // Usage in a commit is from the work that was going on before it: it is counted before a message the same
         // commit places changes whom Pi works for.
@@ -962,7 +1010,11 @@ export class PocketApp {
                 change.record.kind === UsageDoc.definition.kind &&
                 change.conversationId !== undefined
             ) {
-                this.spend.usageChanged(change.conversationId, change.value as UsageState | null);
+                this.spend.usageChanged(
+                    change.conversationId,
+                    change.value as UsageState | null,
+                    alreadyPaid,
+                );
 
                 // A team's top session with a limit shows the team's spend: it follows a linked session's too.
                 const root = this.rootOf(change.conversationId);
@@ -1091,6 +1143,8 @@ export class PocketApp {
 
                 if (!busy) {
                     this.spend.runEnded(id);
+                    // No request follows the last tool call of a run that ended or was stopped (PiP's runs too).
+                    this.cacheKeeper.runEnded(Number(id));
                     this.pipCompaction.runEnded(id);
 
                     if (this.#sessions[String(id)] !== undefined) {
@@ -3415,6 +3469,7 @@ export class PocketApp {
             clearTimeout(this.#sessionsTimer);
             this.alerts.close();
             this.themes.close();
+            await this.cacheKeeper.close();
             this.spend.close();
             this.limits.close();
             this.background.close();
