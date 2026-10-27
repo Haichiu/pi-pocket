@@ -35,7 +35,9 @@ The renderer closes Chromium and the endpoint on success, failure, or cancellati
 
 Both tools and routes require this reader as an explicit argument. They have no host, document, or asset-free fallback. A small wrapper validates the artifact ID, selected version, HTML type, and returned version. C passes the reader from `design.ts`; the integrator connects it to `PocketApp.artifactBundle` from A.
 
-`src/server/design/zip.ts` is a temporary dependency-free ZIP adapter. The integrator must replace its imports in `pptx.ts` and `export.ts` with A's `src/server/zip.ts`, then remove the adapter. Both implement `zip(entries: { name: string; bytes: Buffer }[]): Buffer`.
+After merging `feat/design`, both `pptx.ts` and `export.ts` use A's real `src/server/zip.ts`. The temporary `src/server/design/zip.ts` adapter is removed. The shared signature is `zip(entries: { name: string; bytes: Buffer }[]): Buffer`.
+
+The merge preserves the required injected-reader contract, rather than restoring the earlier document-reader fallback. The added asset test uses the real `PocketApp.artifactBundle` and verifies stored binary assets byte for byte.
 
 ### Stream C and the HTTP layer
 
@@ -51,7 +53,9 @@ Register the returned tools and prompt section in C's `design.ts` module.
 
 The route writes `exports/<id>-v<version>.<ext>` in the visible session's authoritative working folder. It returns JSON `{ path, name, size }`, where `path` is absolute and `size` is bytes. It ignores any supplied output path, so browsers cannot select arbitrary files to replace.
 
-Extension routes remain JSON-only. The integrator adds a separate core download route for session-folder files, with normal session access and file checks. C first posts to the export route with `X-Pocket`, then downloads the resulting path through that core route.
+Extension routes remain JSON-only. The merged core includes `GET /api/c/:conversation/download?path=...` for session-folder files, with normal session access and file checks. C's current browser still uses its own JSON/base64 download-by-name route. The integrator can switch it to the core route.
+
+C passes the reader to the tools and route. It currently looks for optional `host.artifactBundle`. The merged host does not expose that method yet, so C's reader reports an unavailable integration. The integrator must connect A's real reader to that capability before workspace exports work.
 
 ## Documentation to merge
 
@@ -62,12 +66,12 @@ Extension routes remain JSON-only. The integrator adds a separate core download 
 ## Checks and remaining work
 
 - Focused Design tests: 39 pass, including real Chromium, token-scoped assets, allowed public HTTPS, blocked public HTTP, private HTTPS/metadata ranges, private UDP, external navigation, preserved hidden-slide layout, device fitting, cancellation cleanup, file bounds, links, FIFO rejection, prompt fencing, ZIP structure, injected readers, and JSON POST export contracts.
-- `npm run format`: passed. It also fixed an inherited, unrelated unbraced `if` in `src/server/extensions/prompt.ts:123`.
-- `npm run check`: passed. Scoped ESLint on all Design source and tests passed.
-- `npm run lint`: passes with that 1 local brace fix. The coordinator approved the local fix for checks only. It is not committed on this branch. The integrator applies it once on `feat/design`.
+- `npm run format`: passed.
+- After merging `feat/design`, `npm run check` and `npm run lint` pass without local baseline changes. The committed brace fix in `prompt.ts` came from the integrator's branch. The earlier local check-only fix is gone.
+- The merge-specific renderer, tools, PPTX, real asset reader, and shared ZIP checks passed all 26 tests. The complete merged-suite result follows in the final report.
 - Before the final contract changes, full `npm test` passed all 788 tests twice. Later unbounded runs had changing timing failures in existing UI and background tests outside D. The isolated mobile, extension UI, and artifact bridge retries passed. The final complete suite passed with `node --test --test-concurrency=4 test/*.test.ts`: 789 passed, 0 failed, 0 skipped, exit 0.
 - The throwaway copy ran with `node test/serve.ts 8904 127.0.0.2`. The mobile page loaded without console errors. The copy was stopped. C's canvas was not present in this isolated branch.
 - Generated and visually inspected a deck PNG. Chromium PDF has 2 widescreen pages with searchable text. LibreOffice 26.8 opened the generated PPTX and exported 2 widescreen PDF pages. `unzip -t` passed. PowerPoint and Keynote were not available for direct checks.
 - A strong-model read-only review found 3 defects. The implementation and regression tests address all 3. A follow-up review reproduced a navigation-based TURN-over-TCP bypass. The final review repeated that probe after the fix: 0 public document fetches, 0 private TCP connections, and 0 bytes. It found no remaining blocker. A further review of the injected reader, JSON POST export, public HTTPS restriction, and combined CSP policies also found no blocker. The final shared-export refactor passed another read-only review and all 4 tool-contract tests.
 
-Open integration requirements are the injected complete bundle reader, shared ZIP import, core session-file download route, and C's module registration. No npm dependencies, live-server changes, restart, push, or pull request are part of this stream.
+The remaining integration requirement is exposing the real bundle reader to C. The shared ZIP, core download route, and C's module registration are now present after the merge. No npm dependencies, live-server changes, restart, push, or pull request are part of this stream.
