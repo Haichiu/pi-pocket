@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { npmInstallKind } from "../src/server/npm-install.ts";
 import { npmRelease, Updates } from "../src/server/updates.ts";
@@ -77,6 +77,16 @@ test("only the exact global npm root can update; local and npx installs show the
                 await assert.rejects(updates.apply(), { status: 409 });
             }
         }
+
+        const packages = join(root, "packages");
+
+        renameSync(dirname(global), packages);
+        symlinkSync(packages, dirname(global), "dir");
+        assert.equal(
+            await npmInstallKind(realpathSync(global)),
+            "npm-global",
+            "the global node_modules folder can itself be a symbolic link",
+        );
     } finally {
         if (before === undefined) {
             delete process.env.npm_config_prefix;
