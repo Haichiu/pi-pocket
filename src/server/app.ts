@@ -413,6 +413,7 @@ export class PocketApp {
             supervised: options.supervised && options.restart !== undefined,
             // The launcher says so when it goes back to the version before a new one that does not start.
             rollback: process.env.PI_POCKET_ROLLBACK === "1",
+            npmRollback: process.env.PI_POCKET_NPM_ROLLBACK === "1",
             restart: () => options.restart?.(),
             quiesce: (paused) => this.pauseReloads(paused),
             busy: () => this.#busy.size,

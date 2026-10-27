@@ -805,6 +805,7 @@ test("a server that starts on an update stopped part way puts it back, without r
 test("the install by itself takes only a release that needs no question, and the launcher goes back only for the version's fault", () => {
     const ready = {
         version: "1.0.0",
+        installKind: "git",
         repository: "x",
         available: true,
         blockers: [],
