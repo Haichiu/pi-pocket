@@ -9,6 +9,7 @@ import type { PocketApp } from "../app.ts";
 import type { User } from "../config.ts";
 import type { ArtifactType } from "../docs.ts";
 import { HttpError } from "../errors.ts";
+import { ARTIFACT_INSPECT, withDeck } from "./artifact-inspect.ts";
 import { conversationId, escapeHtml, send } from "./io.ts";
 
 /** Artifacts get an opaque origin even when opened in their own tab: no cookies, no access to the app. */
@@ -76,7 +77,12 @@ function markdownTheme(query: URLSearchParams): string {
  * press, a finger's or pen's lift, a key's press but not its repeats), or a page could spend the tap in one event and
  * get it back from the next of the same tap (mousedown after pointerdown, touchend after pointerup). The message is copied before it is read,
  * so a getter cannot show one type to this check and another to the app. Runs outside a frame or a sandbox: nothing.
- * `rearm` puts the tap listeners back, for a page that wipes them with `document.open()`.
+ * `rearm` puts the tap listeners back, and design mode's too, for a page that wipes them with `document.open()`.
+ *
+ * Design mode's page side (`ARTIFACT_INSPECT`, `artifact-inspect.ts`) starts here too, with the line to the app: the
+ * app's design messages (inspect, text edit, tweaks, pins, goto) go to it and not to the page, and it sends the app
+ * what a person picks or edits, the page's tweaks manifest, and a deck's slides. Only it can send them: the stand-in
+ * `parent` passes the page's own messages for follow-ups and saved state, and nothing more down the line.
  */
 const ARTIFACT_BRIDGE = `
     const realParent = window.parent;
@@ -113,7 +119,13 @@ const ARTIFACT_BRIDGE = `
 
     const tell = (data) => fire(new Heard("message", { data, source: stand, origin: address }));
 
-    line.onmessage = (event) => tell(event.data);
+    const design = (${ARTIFACT_INSPECT})(toApp, false);
+
+    line.onmessage = (event) => {
+        if (!design.message(event.data)) {
+            tell(event.data);
+        }
+    };
     Object.defineProperty(stand, "postMessage", {
         value: (message, ...rest) => {
             const copy = clone(message);
@@ -139,7 +151,14 @@ const ARTIFACT_BRIDGE = `
     rearm();
     realPost({ type: "pocket-bridge" }, "*", [channel.port2]);
 
-    return { realParent, realPost, rearm };
+    return {
+        realParent,
+        realPost,
+        rearm: () => {
+            rearm();
+            design.restart();
+        },
+    };
 `;
 
 /** The bridge as a script tag, for the start of an HTML artifact. */
@@ -227,9 +246,10 @@ export async function artifactResponse(
     // a proxy that drops it), it goes in too, or a page could say hello itself and send follow-ups with no tap. Outside
     // a frame, it does nothing.
     const dest = response.req?.headers["sec-fetch-dest"];
+    // A deck as a page of its own still shows one slide at a time (`withDeck`).
     const content =
         !bridge || dest === "document" || dest === "empty"
-            ? found.content
+            ? withDeck(found.content)
             : withBridge(found.content);
 
     return send(response, 200, content, "text/html; charset=utf-8", headers);
