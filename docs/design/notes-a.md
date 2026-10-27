@@ -90,7 +90,7 @@ The reported full format and lint checks include that local brace fix.
 ## Checks
 
 - `npm run format`, `npm run check`, and `npm run lint` passed.
-- The final complete `npm test` run passed after public routing: 762 tests, 0 failures, 0 skips, about 84 seconds.
+- The final complete `npm test` run passed after the 12-hour capability change: 762 tests, 0 failures, 0 skips, about 90 seconds.
 - The bundle and ZIP tests passed together, including a real Chromium test.
 - Tests cover inheritance, replacement, removal, hash storage, replay, unsafe sources, limits, capability scope, expiry, and revocation.
 - Capability tests reject reuse across conversations, artifacts, and versions. They reject changed signatures and verify the 12-hour boundary.
