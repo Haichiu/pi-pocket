@@ -47,7 +47,13 @@ test("the private endpoint serves only its token-scoped snapshot", async () => {
         const page = await fetch(endpoint.url);
 
         assert.equal(await page.text(), bundle.content);
-        assert.match(page.headers.get("content-security-policy")!, /sandbox/);
+        assert.match(
+            page.headers.get("content-security-policy")!,
+            /sandbox allow-scripts allow-forms allow-modals allow-popups/,
+        );
+        assert.match(page.headers.get("content-security-policy")!, /frame-ancestors 'self'/);
+        assert.match(page.headers.get("content-security-policy")!, /frame-src 'none'/);
+        assert.equal(page.headers.get("x-content-type-options"), "nosniff");
         assert.equal(page.headers.get("cache-control"), "no-store");
         const asset = await fetch(`${endpoint.url}assets/test.svg`);
 
@@ -100,7 +106,7 @@ test("HTML export includes the main page and binary assets", async () => {
 });
 
 test("design tools and export route expose the required contracts", async () => {
-    const tools = designTools(host);
+    const tools = designTools(host, async () => bundle);
 
     assert.deepEqual(
         tools.map((tool) => tool.name),
@@ -125,13 +131,14 @@ test("design tools and export route expose the required contracts", async () => 
                 Object.assign(new Error(message), { status }),
         } as unknown as ExtensionWeb,
         host,
+        async () => bundle,
     );
     assert.equal(routes[0]!.path, "export");
     assert.equal(routes[0]!.access, "steer");
     await assert.rejects(
         async () =>
             routes[0]!.handle({
-                query: new URLSearchParams("conversation=10&id=test&format=html"),
+                body: { conversation: 10, id: "test", format: "html" },
                 sessions: () => [],
             }),
         /No session/,
@@ -176,12 +183,13 @@ test(
 
         await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
         const address = server.address() as { port: number };
-        const content = `<h1>Private request check</h1><img src="http://127.0.0.1:${address.port}/secret">`;
+        const content = `<h1>Private request check</h1><img src="http://127.0.0.1:${address.port}/secret"><img src="https://127.0.0.1:${address.port}/secret"><img src="https://10.0.0.1/secret"><img src="https://169.254.169.254/latest/meta-data/"><img src="https://[::1]/secret">`;
 
         try {
             await withRender({ ...bundle, content }, host, undefined, async (page) => {
                 await page.load(viewportOf("desktop"));
                 assert.equal(received, 0);
+                assert.ok(page.failedRequests.some((error) => error.includes("public HTTPS")));
                 assert.ok(
                     page.failedRequests.some((error) => error.includes("not a public address")),
                 );
@@ -190,6 +198,32 @@ test(
             server.closeAllConnections();
             await new Promise<void>((resolve) => server.close(() => resolve()));
         }
+    },
+);
+
+test(
+    "public HTTPS resources use the guarded fetch, but public HTTP resources are refused",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        const calls: string[] = [];
+        const guarded = {
+            fetchPublic: async (url: string | URL) => {
+                calls.push(String(url));
+
+                return new Response(new Uint8Array(bundle.assets[0]!.bytes), {
+                    headers: { "content-type": "image/svg+xml" },
+                });
+            },
+        } as unknown as PocketHost;
+        const content =
+            '<img id="secure" src="https://cdn.example/test.svg"><img src="http://cdn.example/insecure.svg">';
+
+        await withRender({ ...bundle, content }, guarded, undefined, async (page) => {
+            await page.load(viewportOf("desktop"));
+            assert.deepEqual(calls, ["https://cdn.example/test.svg"]);
+            assert.equal(await page.evaluate("document.getElementById('secure').naturalWidth"), 20);
+            assert.ok(page.failedRequests.some((error) => error.includes("public HTTPS")));
+        });
     },
 );
 

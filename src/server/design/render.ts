@@ -18,6 +18,11 @@ export const VIEWPORTS = {
 export type ViewportName = keyof typeof VIEWPORTS;
 export type DesignViewport = { width: number; height: number };
 const LIMIT_MS = 90_000;
+// Keep the /a/ page policy and add a separate, stricter render-only policy. CSP policies intersect.
+const ARTIFACT_CSP =
+    "sandbox allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-pointer-lock allow-downloads; frame-ancestors 'self'";
+const RENDER_CSP =
+    "sandbox allow-scripts allow-modals; frame-src 'none'; worker-src 'none'; object-src 'none'; connect-src http: https:;";
 let active = 0;
 
 export function viewportOf(value: string | DesignViewport = "desktop"): DesignViewport {
@@ -90,8 +95,7 @@ export async function serveBundle(bundle: DesignBundle) {
             "access-control-allow-origin": "*",
             "x-content-type-options": "nosniff",
             // No popups, workers, frames, or sockets can bypass the page's request interception.
-            "content-security-policy":
-                "sandbox allow-scripts allow-modals; frame-src 'none'; worker-src 'none'; object-src 'none'; connect-src http: https:;",
+            "content-security-policy": `${ARTIFACT_CSP}, ${RENDER_CSP}`,
         });
         response.end(request.method === "HEAD" ? undefined : (asset?.bytes ?? bundle.content));
     });
@@ -201,6 +205,10 @@ export class DesignPage {
                 throw new Error(
                     "External document navigation is disabled during design rendering.",
                 );
+            }
+
+            if (new URL(url).protocol !== "https:") {
+                throw new Error("External design resources must use public HTTPS addresses.");
             }
 
             if (!/^(GET|HEAD)$/.test(params.request.method)) {

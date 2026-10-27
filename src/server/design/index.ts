@@ -2,13 +2,14 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ConversationId, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { ExtensionWeb, PocketHost } from "../host.ts";
-import { readBundle } from "./bundle.ts";
+import { loadBundle, type DesignBundleReader } from "./bundle.ts";
 import { EXPORT_TYPES, exportDesign, type ExportFormat } from "./export.ts";
 import { writeExport } from "./files.ts";
 import { VIEWPORTS, viewportOf, withRender } from "./render.ts";
 import { designSystemTool } from "./system.ts";
 
 export { designGuide } from "./guide.ts";
+export type { DesignBundle, DesignBundleReader } from "./bundle.ts";
 
 const version = Type.Optional(Type.Integer({ minimum: 1 }));
 const preset = Type.Union([
@@ -23,7 +24,7 @@ const formatSchema = Type.Union([
     Type.Literal("html"),
 ]);
 
-export function designTools(host: PocketHost): ToolRegistration[] {
+export function designTools(host: PocketHost, readBundle: DesignBundleReader): ToolRegistration[] {
     const preview = Object.assign(
         defineTool({
             name: "design_preview",
@@ -40,13 +41,11 @@ export function designTools(host: PocketHost): ToolRegistration[] {
             }),
             replay: "safe",
             execute: async (args, api, context) => {
-                const bundle = await readBundle(
-                    host,
-                    api.snapshot,
+                const bundle = await loadBundle(
+                    readBundle,
                     api.conversationId,
                     args.id,
                     args.version,
-                    context,
                 );
                 const views = args.viewports ?? ["mobile", "desktop"];
 
@@ -120,14 +119,7 @@ export function designTools(host: PocketHost): ToolRegistration[] {
             path: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
         }),
         execute: async (args, api, context) => {
-            const bundle = await readBundle(
-                host,
-                api.snapshot,
-                api.conversationId,
-                args.id,
-                args.version,
-                context,
-            );
+            const bundle = await loadBundle(readBundle, api.conversationId, args.id, args.version);
             const cwd = (await api.agent(context)).cwd;
 
             if (cwd === undefined) {
@@ -168,24 +160,29 @@ export function designTools(host: PocketHost): ToolRegistration[] {
     return [preview, exportTool, designSystemTool()];
 }
 
-/** Download bytes directly; the workspace never supplies a server-local output path. */
-export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
+/** Prepare a session-local export. Core's file download route serves it after its own access checks. */
+export function designRoutes(
+    web: ExtensionWeb,
+    host: PocketHost,
+    readBundle: DesignBundleReader,
+): void {
     web.route(
-        "GET",
+        "POST",
         "export",
         async (request) => {
-            const conversation = Number(request.query.get("conversation"));
+            const conversation = Number(request.body.conversation);
             const session = request.sessions().find((item) => item.id === conversation);
 
             if (session === undefined) {
                 throw web.error(404, "No session");
             }
 
-            const id = request.query.get("id") ?? "";
-            const format = request.query.get("format") ?? "";
-            const rawVersion = request.query.get("version");
-            const selectedVersion = rawVersion === null ? undefined : Number(rawVersion);
-            const viewport = request.query.get("viewport") ?? "desktop";
+            const id = typeof request.body.id === "string" ? request.body.id : "";
+            const format = typeof request.body.format === "string" ? request.body.format : "";
+            const rawVersion = request.body.version;
+            const selectedVersion = rawVersion === undefined ? undefined : Number(rawVersion);
+            const viewport =
+                typeof request.body.viewport === "string" ? request.body.viewport : "desktop";
 
             if (!Object.hasOwn(EXPORT_TYPES, format)) {
                 throw web.error(400, "Choose png, pdf, pptx, or html.");
@@ -193,13 +190,11 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
 
             try {
                 viewportOf(viewport);
-                const bundle = await readBundle(
-                    host,
-                    request.snapshot,
+                const bundle = await loadBundle(
+                    readBundle,
                     conversation as ConversationId,
                     id,
                     selectedVersion,
-                    request.context,
                 );
                 const bytes = await exportDesign(
                     bundle,
@@ -210,14 +205,11 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
                 );
                 const type = EXPORT_TYPES[format as ExportFormat];
 
-                return new Response(new Uint8Array(bytes), {
-                    headers: {
-                        "content-type": type.mime,
-                        "content-disposition": `attachment; filename="${id}-v${bundle.version}.${type.extension}"`,
-                        "cache-control": "no-store",
-                        "x-content-type-options": "nosniff",
-                    },
-                });
+                request.signal.throwIfAborted();
+                const name = `${id}-v${bundle.version}.${type.extension}`;
+                const path = await writeExport(session.cwd, `exports/${name}`, bytes);
+
+                return { path, name, size: bytes.length };
             } catch (error) {
                 if (request.signal.aborted) {
                     throw error;

@@ -1,11 +1,11 @@
-// Agent tools use the same committed artifact versions as the viewer, scoped to the calling conversation.
+// Design tools receive a committed bundle reader from the integration, never a host or snapshot fallback.
 import { cleanUp, context, newSession, openApp, scriptedModel, work } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { after, before, test } from "node:test";
 import type { ConversationId, ToolRegistration } from "@earendil-works/pi-durable";
 import { findBrowser } from "../src/server/browser/discovery.ts";
-import { readBundle } from "../src/server/design/bundle.ts";
+import { loadBundle, type DesignBundleReader } from "../src/server/design/bundle.ts";
 import { designRoutes, designTools } from "../src/server/design/index.ts";
 import createArtifacts from "../src/server/extensions/artifacts.ts";
 import type { ExtensionWeb, PocketHost, WebHandler, WebRequest } from "../src/server/host.ts";
@@ -16,6 +16,10 @@ let conversation: ConversationId;
 const host = { fetchPublic: createPublicFetch() } as PocketHost;
 const content =
     '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><h1 data-pid="title">Design</h1>';
+const readBundle: DesignBundleReader = async (id, artifact, version) => ({
+    ...(await app.artifactBody(id, artifact, version)),
+    assets: [],
+});
 
 function api(id = conversation) {
     return {
@@ -36,6 +40,12 @@ before(async () => {
     app = await openApp(scriptedModel());
     conversation = await newSession(app);
     await call(createArtifacts(host).tools![0]!, { id: "test", title: "Test", content });
+    await call(createArtifacts(host).tools![0]!, {
+        id: "notes",
+        title: "Notes",
+        type: "markdown",
+        content: "# Notes",
+    });
 });
 
 after(async () => {
@@ -43,34 +53,26 @@ after(async () => {
     cleanUp();
 });
 
-test("the bundle reader reads the committed version and refuses missing, foreign, or non-HTML artifacts", async () => {
-    const snapshot = app.harness.snapshot.bind(app.harness);
-    const found = await readBundle(host, snapshot, conversation, "test", undefined, context);
+test("the injected bundle reader receives the conversation, artifact, and selected version", async () => {
+    const found = await loadBundle(readBundle, conversation, "test", undefined);
 
     assert.equal(found.content, content);
     assert.equal(found.version, 1);
+    await assert.rejects(loadBundle(readBundle, conversation, "../test"), /kebab/);
+    await assert.rejects(loadBundle(readBundle, conversation, "test", 99), /version/i);
+    await assert.rejects(loadBundle(readBundle, conversation, "test", NaN), /positive/);
+    await assert.rejects(loadBundle(readBundle, conversation, "notes"), /HTML/);
     await assert.rejects(
-        readBundle(host, snapshot, conversation, "../test", undefined, context),
-        /kebab/,
-    );
-    await assert.rejects(
-        readBundle(host, snapshot, conversation, "test", 99, context),
-        /does not exist/,
-    );
-    await assert.rejects(
-        readBundle(host, snapshot, conversation, "test", NaN, context),
-        /positive/,
+        loadBundle(async () => ({ ...found, version: 0 }), conversation, "test"),
+        /invalid version/,
     );
     const other = await newSession(app);
 
-    await assert.rejects(
-        readBundle(host, snapshot, other, "test", undefined, context),
-        /does not exist/,
-    );
+    await assert.rejects(loadBundle(readBundle, other, "test"), /artifact/i);
 });
 
 test("design_export writes a real HTML bundle to the default session-local path", async () => {
-    const tool = designTools(host).find((item) => item.name === "design_export")!;
+    const tool = designTools(host, readBundle).find((item) => item.name === "design_export")!;
     const result = await call(tool, { id: "test", format: "html" });
     const details = result.details as { path: string; version: number };
     const bytes = await readFile(details.path);
@@ -92,10 +94,13 @@ test("design_export writes a real HTML bundle to the default session-local path"
     );
 });
 
-test("the workspace export returns binary bytes only for a visible session", async () => {
+test("the workspace POST export writes a visible session's default file and returns JSON metadata", async () => {
     let handler: WebHandler | undefined;
 
-    const route: ExtensionWeb["route"] = (_method, _path, handle) => {
+    const route: ExtensionWeb["route"] = (method, path, handle, options) => {
+        assert.equal(method, "POST");
+        assert.equal(path, "export");
+        assert.equal(options?.access, "steer");
         handler = handle;
     };
 
@@ -106,35 +111,32 @@ test("the workspace export returns binary bytes only for a visible session", asy
                 Object.assign(new Error(message), { status }),
         } as unknown as ExtensionWeb,
         host,
+        readBundle,
     );
     const request = {
-        query: new URLSearchParams({
-            conversation: String(conversation),
-            id: "test",
-            format: "html",
-        }),
-        sessions: () => [{ id: conversation }],
-        snapshot: app.harness.snapshot.bind(app.harness),
+        body: { conversation, id: "test", format: "html", path: "../ignored.zip" },
+        sessions: () => [{ id: conversation, cwd: work }],
         signal: new AbortController().signal,
         context,
     } as unknown as WebRequest;
-    const response = (await handler!(request)) as Response;
+    const result = (await handler!(request)) as { path: string; name: string; size: number };
+    const bytes = await readFile(result.path);
 
-    assert.equal(response.headers.get("content-type"), "application/zip");
-    assert.match(response.headers.get("content-disposition")!, /test-v1.zip/);
-    assert.equal(Buffer.from(await response.arrayBuffer()).readUInt32LE(0), 0x04034b50);
+    assert.deepEqual(result, {
+        path: `${work}/exports/test-v1.zip`,
+        name: "test-v1.zip",
+        size: bytes.length,
+    });
+    assert.equal(bytes.readUInt32LE(0), 0x04034b50);
+    assert.equal(JSON.parse(JSON.stringify(result)).name, "test-v1.zip");
     await assert.rejects(async () => handler!({ ...request, sessions: () => [] }), /No session/);
     await assert.rejects(
-        async () =>
-            handler!({
-                ...request,
-                query: new URLSearchParams({
-                    conversation: String(conversation),
-                    id: "test",
-                    format: "exe",
-                }),
-            }),
+        async () => handler!({ ...request, body: { ...request.body, format: "exe" } }),
         /Choose/,
+    );
+    await assert.rejects(
+        async () => handler!({ ...request, body: { ...request.body, version: 0 } }),
+        /positive/,
     );
 });
 
@@ -143,7 +145,7 @@ test(
     { skip: findBrowser() === undefined, timeout: 120_000 },
     async () => {
         const result = await call(
-            designTools(host).find((item) => item.name === "design_preview")!,
+            designTools(host, readBundle).find((item) => item.name === "design_preview")!,
             { id: "test" },
         );
         const images = result.output?.filter((item) => item.type === "image") ?? [];
