@@ -26,7 +26,7 @@ import createArtifacts, {
     MAX_ASSETS_BYTES,
 } from "../src/server/extensions/artifacts.ts";
 import type { PocketHost } from "../src/server/host.ts";
-import { assetName, assetType } from "../src/server/http/artifact-assets.ts";
+import { assetName, assetType, assetRoot, assetUser } from "../src/server/http/artifact-assets.ts";
 import { createHandler } from "../src/server/http.ts";
 
 let app: App;
@@ -281,6 +281,14 @@ test("every asset is sandboxed and nosniff; scoped capability serves opaque-orig
 
     assert.ok(signed.startsWith(`${base}/a/${session}/bundle/1~`));
     assert.match(html, /pocket-bridge/);
+    assert.equal((await app.artifactBody(session, "bundle", 1)).content, PAGE);
+    assert.equal((await app.artifactBundle(session, "bundle", 1)).content, PAGE);
+    const result = await publish({ id: "bundle", title: "Replay", content: PAGE }, "first");
+
+    assert.ok(
+        !JSON.stringify(result).includes("~"),
+        "Tool results must not expose an asset capability",
+    );
 
     for (const name of [
         "assets/pixel.png",
@@ -294,6 +302,7 @@ test("every asset is sandboxed and nosniff; scoped capability serves opaque-orig
         assert.match(response.headers.get("content-security-policy")!, /^sandbox /);
         assert.equal(response.headers.get("x-content-type-options"), "nosniff");
         assert.equal(response.headers.get("access-control-allow-origin"), "*");
+        assert.equal(response.headers.get("referrer-policy"), "no-referrer");
 
         if (name.endsWith(".html")) {
             assert.match(await response.text(), /pocket-bridge/);
@@ -308,6 +317,28 @@ test("every asset is sandboxed and nosniff; scoped capability serves opaque-orig
         401,
     );
     assert.equal((await get(signed.replace("/1~", "/2~") + "assets/pixel.png", false)).status, 401);
+    const { id: otherConversation } = await app.commands.createSession(owner(app), { cwd: work });
+
+    assert.equal(
+        (
+            await get(
+                signed.replace(`/a/${session}/`, `/a/${otherConversation}/`) + "assets/pixel.png",
+                false,
+            )
+        ).status,
+        401,
+    );
+    const changed = signed.replace(
+        /([0-9a-f])\/$/,
+        (match, digit: string) => `${digit === "0" ? "1" : "0"}/`,
+    );
+
+    assert.ok(changed !== signed, "The test must change the signature");
+    const rejected = await get(changed + "assets/pixel.png", false);
+
+    assert.equal(rejected.status, 401);
+    assert.ok(!(await rejected.text()).includes(changed), "Errors must not echo a capability");
+    assert.equal(page.headers.get("referrer-policy"), "no-referrer");
     assert.equal(
         (await get(root + "/opaque.bin")).headers.get("content-type"),
         "application/octet-stream",
@@ -419,8 +450,13 @@ test("capability-authenticated HTML assets cannot renew their own expiry", async
         const nested = await get(signed + "nested/about.html", false);
         const nestedBase = /<base href="([^"]+)">/.exec(await nested.text())![1]!;
 
-        assert.equal(nestedBase, signed + "nested/");
-        clock = before + 24 * 60 * 60 * 1000 + 1;
+        assert.ok(
+            nestedBase === signed + "nested/",
+            "An HTML asset must keep the original capability",
+        );
+        clock = before + 12 * 60 * 60 * 1000 - 1;
+        assert.equal((await get(signed + "assets/pixel.png", false)).status, 200);
+        clock = before + 12 * 60 * 60 * 1000 + 1;
         assert.equal((await get(signed + "nested/about.html", false)).status, 401);
     } finally {
         clock = before;
@@ -555,8 +591,14 @@ test("a fork and a server restart keep manifests and globally stored bytes", asy
     const forked = await app.artifactBundle(fork.id, "bundle", 1);
 
     assert.deepEqual(forked.assets, original.assets);
+    const capability = assetRoot(app, String(session), "bundle", 1, owner(app)).split("/")[4]!;
+
     await app.close();
     app = await openApp(scriptedModel(), undefined, () => clock);
+    assert.ok(
+        assetUser(app, String(session), "bundle", capability) !== undefined,
+        "The signing key must survive a restart",
+    );
     assert.deepEqual((await app.artifactBundle(session, "bundle", 1)).assets, original.assets);
     assert.deepEqual((await app.artifactBundle(fork.id, "bundle", 1)).assets, original.assets);
 });
