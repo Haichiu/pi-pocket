@@ -10,7 +10,12 @@ import type { DesignBundle } from "../src/server/design/bundle.ts";
 import { exportDesign } from "../src/server/design/export.ts";
 import { writeExport } from "../src/server/design/files.ts";
 import { designRoutes, designTools } from "../src/server/design/index.ts";
-import { serveBundle, viewportOf, withRender } from "../src/server/design/render.ts";
+import {
+    parseSlideSize,
+    serveBundle,
+    viewportOf,
+    withRender,
+} from "../src/server/design/render.ts";
 import type { ExtensionWeb, PocketHost } from "../src/server/host.ts";
 import { createPublicFetch } from "../src/server/public-fetch.ts";
 
@@ -47,7 +52,13 @@ test("the private endpoint serves only its token-scoped snapshot", async () => {
         const page = await fetch(endpoint.url);
 
         assert.equal(await page.text(), bundle.content);
-        assert.match(page.headers.get("content-security-policy")!, /sandbox/);
+        assert.match(
+            page.headers.get("content-security-policy")!,
+            /sandbox allow-scripts allow-forms allow-modals allow-popups/,
+        );
+        assert.match(page.headers.get("content-security-policy")!, /frame-ancestors 'self'/);
+        assert.match(page.headers.get("content-security-policy")!, /frame-src 'none'/);
+        assert.equal(page.headers.get("x-content-type-options"), "nosniff");
         assert.equal(page.headers.get("cache-control"), "no-store");
         const asset = await fetch(`${endpoint.url}assets/test.svg`);
 
@@ -176,12 +187,13 @@ test(
 
         await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
         const address = server.address() as { port: number };
-        const content = `<h1>Private request check</h1><img src="http://127.0.0.1:${address.port}/secret">`;
+        const content = `<h1>Private request check</h1><img src="http://127.0.0.1:${address.port}/secret"><img src="https://127.0.0.1:${address.port}/secret"><img src="https://10.0.0.1/secret"><img src="https://169.254.169.254/latest/meta-data/"><img src="https://[::1]/secret">`;
 
         try {
             await withRender({ ...bundle, content }, host, undefined, async (page) => {
                 await page.load(viewportOf("desktop"));
                 assert.equal(received, 0);
+                assert.ok(page.failedRequests.some((error) => error.includes("public HTTPS")));
                 assert.ok(
                     page.failedRequests.some((error) => error.includes("not a public address")),
                 );
@@ -190,6 +202,32 @@ test(
             server.closeAllConnections();
             await new Promise<void>((resolve) => server.close(() => resolve()));
         }
+    },
+);
+
+test(
+    "public HTTPS resources use the guarded fetch, but public HTTP resources are refused",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        const calls: string[] = [];
+        const guarded = {
+            fetchPublic: async (url: string | URL) => {
+                calls.push(String(url));
+
+                return new Response(new Uint8Array(bundle.assets[0]!.bytes), {
+                    headers: { "content-type": "image/svg+xml" },
+                });
+            },
+        } as unknown as PocketHost;
+        const content =
+            '<img id="secure" src="https://cdn.example/test.svg"><img src="http://cdn.example/insecure.svg">';
+
+        await withRender({ ...bundle, content }, guarded, undefined, async (page) => {
+            await page.load(viewportOf("desktop"));
+            assert.deepEqual(calls, ["https://cdn.example/test.svg"]);
+            assert.equal(await page.evaluate("document.getElementById('secure').naturalWidth"), 20);
+            assert.ok(page.failedRequests.some((error) => error.includes("public HTTPS")));
+        });
     },
 );
 
@@ -205,6 +243,44 @@ test(
         assert.equal(output.readUInt32LE(0), 0x04034b50);
         assert.ok(output.includes(Buffer.from("ppt/slides/slide2.xml")));
         assert.ok(output.includes(Buffer.from("ppt/notesSlides/notesSlide2.xml")));
+    },
+);
+
+test(
+    "a deck exports at the size the canvas lays it out: 1920×1080, or its pocket-slide-size",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        // A slide written at 1920×1080 with a mark in its bottom-right corner: it must be in the picture, not cut off.
+        const slide = (meta: string) =>
+            `<!doctype html><meta name="pocket-kind" content="deck">${meta}<style>body{margin:0}section.slide{position:relative;background:#00f}i{position:absolute;right:0;bottom:0;width:40px;height:40px;background:#f00}</style><section class="slide"><i></i></section>`;
+        const size = (png: Buffer) => [png.readUInt32BE(16), png.readUInt32BE(20)];
+
+        assert.deepEqual(parseSlideSize(""), { width: 1920, height: 1080 });
+        assert.deepEqual(parseSlideSize("1280x720"), { width: 1280, height: 720 });
+        assert.deepEqual(parseSlideSize("99999x1"), { width: 1920, height: 1080 });
+
+        const big = await exportDesign({ ...bundle, content: slide("") }, "png", undefined, host);
+
+        assert.deepEqual(size(big), [1920, 1080]);
+
+        await withRender({ ...bundle, content: slide("") }, host, undefined, async (page) => {
+            await page.load(viewportOf("desktop"));
+            await page.showSlide(1);
+            const corner = await page.evaluate(
+                "(() => { const r = document.querySelector('i').getBoundingClientRect(); return [r.right, r.bottom]; })()",
+            );
+
+            assert.deepEqual(corner, [1920, 1080]);
+        });
+
+        const small = await exportDesign(
+            { ...bundle, content: slide('<meta name="pocket-slide-size" content="1280x720">') },
+            "png",
+            undefined,
+            host,
+        );
+
+        assert.deepEqual(size(small), [1280, 720]);
     },
 );
 

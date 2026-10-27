@@ -3,8 +3,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ConversationId, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { ExtensionWeb, PocketHost } from "../host.ts";
 import { readBundle } from "./bundle.ts";
-import { EXPORT_TYPES, exportDesign, type ExportFormat } from "./export.ts";
-import { writeExport } from "./files.ts";
+import { EXPORT_TYPES, type ExportFormat, saveDesignExport } from "./export.ts";
 import { VIEWPORTS, viewportOf, withRender } from "./render.ts";
 import { designSystemTool } from "./system.ts";
 
@@ -134,32 +133,32 @@ export function designTools(host: PocketHost): ToolRegistration[] {
                 throw new Error("This session has no working directory for the export.");
             }
 
-            const bytes = await exportDesign(
+            const saved = await saveDesignExport(
                 bundle,
-                args.format,
-                args.viewport,
+                {
+                    id: args.id,
+                    format: args.format,
+                    cwd,
+                    viewport: args.viewport,
+                    path: args.path,
+                    signal: context.abortSignal,
+                },
                 host,
-                context.abortSignal,
-            );
-
-            context.abortSignal?.throwIfAborted();
-            const path = await writeExport(
-                cwd,
-                args.path ??
-                    `exports/${args.id}-v${bundle.version}.${EXPORT_TYPES[args.format].extension}`,
-                bytes,
             );
 
             return {
                 output: [
-                    { type: "text", text: `Exported ${args.id} v${bundle.version} to ${path}` },
+                    {
+                        type: "text",
+                        text: `Exported ${args.id} v${bundle.version} to ${saved.path}`,
+                    },
                 ],
                 details: {
-                    path,
+                    path: saved.path,
                     id: args.id,
                     version: bundle.version,
                     format: args.format,
-                    bytes: bytes.length,
+                    bytes: saved.size,
                 },
             };
         },
@@ -208,17 +207,19 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
                     selectedVersion,
                     request.context,
                 );
-                const bytes = await exportDesign(
+                const saved = await saveDesignExport(
                     bundle,
-                    format as ExportFormat,
-                    viewport,
+                    {
+                        id,
+                        format: format as ExportFormat,
+                        cwd: session.cwd,
+                        viewport,
+                        signal: request.signal,
+                    },
                     host,
-                    request.signal,
                 );
-                const name = `${id}-v${bundle.version}.${EXPORT_TYPES[format as ExportFormat].extension}`;
-                const path = await writeExport(session.cwd, `exports/${name}`, bytes);
 
-                return { path, relative: `exports/${name}`, name, size: bytes.length };
+                return { ...saved, relative: `exports/${saved.name}` };
             } catch (error) {
                 if (request.signal.aborted) {
                     throw error;
