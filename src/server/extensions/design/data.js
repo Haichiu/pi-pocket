@@ -244,6 +244,7 @@ export function createData(pocket, store) {
                 link.click();
                 link.remove();
                 setTimeout(() => URL.revokeObjectURL(link.href), 30_000);
+                pocket.notify("info", `Saved ${file.name}. It is also at ${made.path}`);
 
                 return true;
             } catch (error) {
