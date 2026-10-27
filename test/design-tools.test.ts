@@ -16,10 +16,8 @@ let conversation: ConversationId;
 const host = { fetchPublic: createPublicFetch() } as PocketHost;
 const content =
     '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><h1 data-pid="title">Design</h1>';
-const readBundle: DesignBundleReader = async (id, artifact, version) => ({
-    ...(await app.artifactBody(id, artifact, version)),
-    assets: [],
-});
+const readBundle: DesignBundleReader = (id, artifact, version) =>
+    app.artifactBundle(id, artifact, version);
 
 function api(id = conversation) {
     return {
@@ -69,6 +67,30 @@ test("the injected bundle reader receives the conversation, artifact, and select
     const other = await newSession(app);
 
     await assert.rejects(loadBundle(readBundle, other, "test"), /artifact/i);
+});
+
+test("the bundle reader returns the version's stored assets, byte for byte", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1, 2, 255]);
+    const { writeFile } = await import("node:fs/promises");
+
+    await writeFile(`${work}/logo.png`, png);
+    await call(createArtifacts(host).tools![0]!, {
+        id: "assets",
+        title: "Assets",
+        content,
+        assets: [
+            { name: "img/logo.png", path: `${work}/logo.png` },
+            { name: "css/site.css", content: "h1 { color: red; }" },
+        ],
+    });
+
+    const found = await loadBundle(readBundle, conversation, "assets");
+    const byName = new Map(found.assets.map((asset) => [asset.name, asset]));
+
+    assert.deepEqual([...byName.keys()].sort(), ["css/site.css", "img/logo.png"]);
+    assert.deepEqual(byName.get("img/logo.png")!.bytes, png);
+    assert.match(byName.get("img/logo.png")!.type, /^image\/png/);
+    assert.equal(byName.get("css/site.css")!.bytes.toString(), "h1 { color: red; }");
 });
 
 test("design_export writes a real HTML bundle to the default session-local path", async () => {

@@ -187,6 +187,10 @@ export function designRoutes(
                 throw web.error(400, "Choose png, pdf, pptx, or html.");
             }
 
+            if (session.cwd === undefined) {
+                throw web.error(400, "This session has no folder for the export.");
+            }
+
             try {
                 viewportOf(viewport);
                 const bundle = await loadBundle(
