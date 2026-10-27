@@ -582,8 +582,6 @@ test("a long open group draws its newest steps, and shows the rest when asked", 
             });
         `);
 
-    // Groups start folded (Appearance's Keep activity folded): a tap opens this one.
-    await tap(".transcript .activity-head");
     await until(async () => (await timeline()).steps > 0, "the open group");
     assert.deepEqual(await timeline(), { steps: 24, earlier: "Show 6 earlier steps" });
     await tap(".transcript .timeline-earlier");
@@ -627,22 +625,22 @@ test("Keep activity folded opens and folds groups already on screen", real, asyn
             (await import("/theme.js")).setPrefs({ foldActivity: ${on} });
         })()`);
 
-    await until(async () => (await groupOpen()) === false, "the group, folded by default");
+    await until(async () => (await groupOpen()) === true, "the group, open by default");
 
     try {
         // Without a redraw, the group keeps the state it was drawn with until a reload.
-        await fold(false);
-        await until(
-            async () => (await groupOpen()) === true,
-            "the group opens with the switch off",
-        );
         await fold(true);
         await until(
             async () => (await groupOpen()) === false,
             "the group folds with the switch on",
         );
+        await fold(false);
+        await until(
+            async () => (await groupOpen()) === true,
+            "the group opens with the switch off",
+        );
     } finally {
-        await fold(true);
+        await fold(false);
     }
 });
 
@@ -978,8 +976,6 @@ test("a call's mark keeps its circle while it waits for an approval", real, asyn
     await fresh();
     await goTo(one);
     await app.commands.submit(one, owner(app), { text: "risky please", requestId: "mark-140" });
-    // Groups start folded: a tap opens the live one, where the call's mark is.
-    await tap(".transcript .activity-head");
 
     const mark = () =>
         inPage<Record<string, string> | null>(`
