@@ -141,7 +141,7 @@ test("design tools and export route expose the required contracts", async () => 
 
     designRoutes(
         {
-            route: (
+            conversationRoute: (
                 _method: string,
                 path: string,
                 handle: (request: unknown) => unknown,
@@ -152,15 +152,15 @@ test("design tools and export route expose the required contracts", async () => 
         } as unknown as ExtensionWeb,
         host,
     );
-    assert.equal(routes[0]!.path, "export");
+    assert.equal(routes[0]!.path, "c/:conversation/export");
     assert.equal(routes[0]!.access, "steer");
     await assert.rejects(
         async () =>
             routes[0]!.handle({
-                body: { conversation: 10, id: "test", format: "html" },
-                sessions: () => [],
+                body: { id: "test", format: "html" },
+                conversation: { id: 10, cwd: "" },
             }),
-        /No session/,
+        /no folder/,
     );
 });
 

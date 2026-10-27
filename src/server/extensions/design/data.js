@@ -219,8 +219,7 @@ export function createData(pocket, store) {
             const conversation = conversationOf();
 
             try {
-                const made = await pocket.api("export", {
-                    conversation,
+                const made = await pocket.api(`c/${conversation}/export`, {
                     id: artifact,
                     version,
                     format,

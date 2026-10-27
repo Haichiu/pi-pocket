@@ -142,7 +142,7 @@ The agent's side of Design mode. `extensions/design.ts` installs it (see Extensi
 
 | File               | Owns                                                                                                                                                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `design/index.ts`  | `designTools(host)` (`design_preview`, `design_export`, `design_system`), `designGuide(host)` (the prompt section), and `designRoutes(web, host)` (`POST /api/x/design/export`, steer access)                       |
+| `design/index.ts`  | `designTools(host)` (`design_preview`, `design_export`, `design_system`), `designGuide(host)` (the prompt section), and `designRoutes(web, host)` (`POST /api/x/design/c/:conversation/export`, steer access)       |
 | `design/bundle.ts` | `readBundle`: a version's page and assets from the artifact documents, by hash, in a tool call or a route (no `PocketApp` reader)                                                                                   |
 | `design/render.ts` | Private headless Chromium renders: a process and profile for each render, a loopback endpoint under a random path that serves one bundle, public fetches only, limits (2 at once, 90 s); deck slide size and slides |
 | `design/export.ts` | `saveDesignExport` (shared by the tool and the route): PNG, PDF, PPTX, and the HTML zip, written to `exports/` by default                                                                                           |

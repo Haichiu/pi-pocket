@@ -407,14 +407,20 @@ test("what a page says about an element is cut to a fixed shape", () => {
 });
 
 test("export is the agent side's route, there for people who steer and not for a viewer", async () => {
-    const body = { conversation: session, id: "no-such-design", format: "png" };
+    const body = { id: "no-such-design", format: "png" };
+    const path = `c/${session}/export`;
 
     // A design that is not there: a 4xx from its own route, never a 404 for the route.
-    const owned = await call("owner", "export", body);
+    const owned = await call("owner", path, body);
 
     assert.ok(owned.status >= 400 && owned.status < 500);
     assert.notEqual(owned.data.error, "Unknown extension route");
-    assert.equal((await call("Vic", "export", body)).status, 404);
+    assert.equal((await call("Vic", path, body)).status, 404);
+
+    // While people take turns, only the driver exports.
+    await app.collab.turns(session, owner(app), { action: "on" });
+    assert.equal((await call("Gale", path, body)).status, 409);
+    await app.collab.turns(session, owner(app), { action: "off" });
 });
 
 test("a design with nothing kept leaves no item behind, so empty ones never use up the places", async () => {

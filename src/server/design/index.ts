@@ -1,6 +1,6 @@
 /** Agent-facing Design tools and workspace export routes. Registered by the Design module. */
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type ConversationId, type ToolRegistration } from "@earendil-works/pi-durable";
+import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { ExtensionWeb, PocketHost } from "../host.ts";
 import { readBundle } from "./bundle.ts";
 import { EXPORT_TYPES, type ExportFormat, saveDesignExport } from "./export.ts";
@@ -168,21 +168,17 @@ export function designTools(host: PocketHost): ToolRegistration[] {
 }
 
 /**
- * `POST export` for the workspace: the same export as `design_export`, written in the session folder at its default
+ * `POST c/:conversation/export` for the workspace: the same export as `design_export`, written in the session folder at its default
  * path. It answers `{ path, name, size }`; the browser downloads the file through the core file route.
  */
 export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
-    web.route(
+    web.conversationRoute(
         "POST",
-        "export",
+        "c/:conversation/export",
         async (request) => {
             const body = request.body;
-            const conversation = Number(body.conversation);
-            const session = request.sessions().find((item) => item.id === conversation);
-
-            if (session === undefined) {
-                throw web.error(404, "No session");
-            }
+            const conversation = request.conversation.id;
+            const cwd = request.conversation.cwd;
 
             const id = typeof body.id === "string" ? body.id : "";
             const format = typeof body.format === "string" ? body.format : "";
@@ -193,7 +189,7 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
                 throw web.error(400, "Choose png, pdf, pptx, or html.");
             }
 
-            if (session.cwd === undefined) {
+            if (!cwd) {
                 throw web.error(400, "This session has no folder for the export.");
             }
 
@@ -202,7 +198,7 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
                 const bundle = await readBundle(
                     host,
                     request.snapshot,
-                    conversation as ConversationId,
+                    conversation,
                     id,
                     selectedVersion,
                     request.context,
@@ -212,7 +208,7 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
                     {
                         id,
                         format: format as ExportFormat,
-                        cwd: session.cwd,
+                        cwd,
                         viewport,
                         signal: request.signal,
                     },
@@ -231,6 +227,6 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
                 );
             }
         },
-        { access: "steer" },
+        { conversation: "conversation", access: "steer" },
     );
 }
