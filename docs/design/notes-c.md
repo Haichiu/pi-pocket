@@ -75,7 +75,15 @@ Release notes: Design mode; "go back to this one" makes a copy as a new version;
 
 `test/design-routes.test.ts` (HTTP: access, shape cutting, limits, restore, tweaks, download), `test/design-parts.test.ts` (the pure helpers), `test/design-ui.test.ts` (a real Chromium: panel, sizes, picker and groups, grid, versions, restore, compare, comments and the message, viewer button, `/design-open`, share, viewer role, phone layout; pointing, tweaks, and decks run when this copy has stream B's bridge). `test/design-fixtures.ts` makes the designs (a landing page in three versions, a deck, three variations) and is also what I used to look at it by hand.
 
+## Changes to files outside my stream
+
+- `test/extension-commands.test.ts`: one assertion expected no commands at all after a drop-in went; the built-in `design-open` command is now always there, so it filters that name out.
+- `web/sheets/viewers.js`: see above.
+
 ## Open problems
+
+- A page inside the frame that goes on to another page (`about.html`) has no bridge, so comment, edit, pins, and tweaks go quiet on it with no message.
+- While Pi makes a new version, the person in a mode, with a draft, or with text edits stays on the version they work on and sees "Version N of M" with a way to the newest. Otherwise the canvas follows the newest.
 
 - `/design` itself cannot be a command (names need a dash); core could add a one-word client command in `web/commands.js` that calls `openExtPanel("design", "design")`.
 - Comments are tied to the version they were made on. A comment's pin shows only on that version. Nothing moves a comment to a newer version when Pi makes one: "mark them done" is manual (a button after "Send to Pi").
