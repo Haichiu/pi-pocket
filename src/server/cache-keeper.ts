@@ -20,6 +20,7 @@
  * `install` wraps `models.streamSimple` in place, as `timing.ts` and `limit-gate.ts` do. The warm request goes to the
  * wrapped function, so it is not recorded as a real request. Deleting this module and its install line removes it.
  */
+import { createHash } from "node:crypto";
 import { noWait } from "./limit-gate.ts";
 import type {
     Api,
@@ -35,6 +36,51 @@ type StreamSimple = (
     context: TranscriptContext,
     options?: SimpleStreamOptions,
 ) => AssistantMessageEventStream;
+
+const FINAL_PAYLOAD = Symbol("cache-keeper-final-payload");
+
+type ObservedOptions = SimpleStreamOptions & { [FINAL_PAYLOAD]?: (payload: unknown) => void };
+
+/** Hash the JSON sent to the provider. Only provider output-cap fields may differ on a warm. */
+function payloadHash(payload: unknown): string {
+    const caps = new Set(
+        [
+            ["max_tokens"],
+            ["max_completion_tokens"],
+            ["max_output_tokens"],
+            ["maxTokens"],
+            ["options", "maxTokens"],
+            ["config", "maxOutputTokens"],
+            ["inferenceConfig", "maxTokens"],
+            ["generationConfig", "maxOutputTokens"],
+        ].map((path) => JSON.stringify(path)),
+    );
+
+    const canonical = (value: unknown, path: string[] = []): unknown => {
+        if (Array.isArray(value)) {
+            return value.map((item, index) => canonical(item, [...path, String(index)]));
+        }
+
+        if (value !== null && typeof value === "object") {
+            return Object.fromEntries(
+                Object.entries(value)
+                    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+                    .flatMap(([key, item]) => {
+                        const next = [...path, key];
+
+                        return caps.has(JSON.stringify(next)) ? [] : [[key, canonical(item, next)]];
+                    }),
+            );
+        }
+
+        return value;
+    };
+
+    // Match wire JSON semantics (undefined fields, toJSON), without retaining another prompt copy.
+    return createHash("sha256")
+        .update(JSON.stringify(canonical(JSON.parse(JSON.stringify(payload)))))
+        .digest("hex");
+}
 
 /** Refresh at 90% of the lifetime, and never closer than 10 seconds to its end. */
 export function refreshDelayMs(ttlMs: number): number | undefined {
@@ -112,6 +158,7 @@ type Entry = {
     options: SimpleStreamOptions;
     promptTokens: number;
     ttlMs: number;
+    payloadHash: string;
     /** The conversation this session belongs to, once known. */
     conversationId?: number;
     warms: number;
@@ -194,6 +241,30 @@ export class CacheKeeper {
         await Promise.allSettled([...this.#pending]);
     }
 
+    /** Install before request shaping, so this callback sees its final output at the adapter boundary. */
+    installPayloadObserver(models: { streamSimple: StreamSimple }): void {
+        const underlying = models.streamSimple.bind(models);
+
+        models.streamSimple = (model, context, options) => {
+            const observe = (options as ObservedOptions | undefined)?.[FINAL_PAYLOAD];
+
+            if (observe === undefined) {
+                return underlying(model, context, options);
+            }
+
+            return underlying(model, context, {
+                ...options,
+                onPayload: async (payload, payloadModel) => {
+                    const shaped = await options?.onPayload?.(payload, payloadModel);
+
+                    observe(shaped === undefined ? payload : shaped);
+
+                    return shaped;
+                },
+            });
+        };
+    }
+
     install(models: { streamSimple: StreamSimple }): void {
         const underlying = models.streamSimple.bind(models);
 
@@ -208,19 +279,36 @@ export class CacheKeeper {
         context: TranscriptContext,
         options: SimpleStreamOptions | undefined,
     ): AssistantMessageEventStream {
-        const stream = underlying(model, context, options);
         const key = options?.sessionId;
+        const ttlMs = ttlMsOf(model, options);
 
-        if (key === undefined) {
-            return stream;
+        // Uncached calls leave an existing entry alone and need no payload bookkeeping.
+        if (key === undefined || ttlMs === undefined) {
+            return underlying(model, context, options);
         }
 
-        // A real request that writes the cache replaces the entry, so stop warming the old one. A request that
-        // does not use the cache (a title, with `cacheRetention: "none"`) leaves it alone.
-        if (ttlMsOf(model, options) === undefined) {
-            return stream;
-        }
+        const delay = refreshDelayMs(ttlMs);
+        const eligible =
+            !this.#closed &&
+            !this.#deps.disabled() &&
+            isReplayable(model, options) &&
+            delay !== undefined &&
+            delay < MAX_AGE_MS;
+        let fingerprint: string | undefined;
+        const observed: ObservedOptions = {
+            ...options,
+            [FINAL_PAYLOAD]: (payload) => {
+                try {
+                    fingerprint = payloadHash(payload);
+                } catch {
+                    // A payload we cannot compare can serve the real request, but must never be warmed.
+                    fingerprint = undefined;
+                }
+            },
+        };
+        const stream = underlying(model, context, eligible ? observed : options);
 
+        // A real request that writes the cache replaces the entry, so stop warming the old one.
         this.#drop(key);
         const request: { conversationId?: number } = {};
 
@@ -240,7 +328,7 @@ export class CacheKeeper {
                 }
 
                 this.#requests.delete(key);
-                this.#onSettled(key, model, context, options, message);
+                this.#onSettled(key, model, context, options, message, fingerprint);
             },
             () => {
                 if (this.#requests.get(key) === request) {
@@ -258,9 +346,14 @@ export class CacheKeeper {
         context: TranscriptContext,
         options: SimpleStreamOptions | undefined,
         message: AssistantMessage,
+        fingerprint: string | undefined,
     ): void {
         // Only a request that ended in a tool call is followed by another one soon.
-        if (message.stopReason !== "toolUse" || options === undefined) {
+        if (
+            message.stopReason !== "toolUse" ||
+            options === undefined ||
+            fingerprint === undefined
+        ) {
             return;
         }
 
@@ -290,6 +383,7 @@ export class CacheKeeper {
             options,
             promptTokens,
             ttlMs,
+            payloadHash: fingerprint,
             endedAt: now,
             dueAt: now + delay,
             warms: 0,
@@ -404,14 +498,53 @@ export class CacheKeeper {
             entry.endedAt + MAX_AGE_MS - now,
         );
 
+        let rejected = true;
+        const options: ObservedOptions = {
+            ...rest,
+            maxTokens: 1,
+            maxRetries: 0,
+            signal: abort.signal,
+            [FINAL_PAYLOAD]: (payload) => {
+                rejected = true;
+                abort.signal.throwIfAborted();
+
+                let matches = false;
+
+                try {
+                    matches = payloadHash(payload) === entry.payloadHash;
+                } catch {
+                    // Fail closed when the shaped payload no longer has a comparable JSON representation.
+                }
+
+                if (!matches) {
+                    if (this.#entries.get(key) === entry) {
+                        this.#drop(key);
+                    }
+
+                    // This callback runs after all shapers, outside their error handlers, before transmission.
+                    throw new Error("The warm payload differs from the cached request.");
+                }
+
+                rejected = false;
+            },
+        };
+
         try {
             // `noWait`: a warm request that meets a limit fails; it must not queue behind the limit gate.
             const stream = (this.#underlying as StreamSimple)(
                 entry.model,
                 entry.context,
-                noWait({ ...rest, maxTokens: 1, maxRetries: 0, signal: abort.signal }),
+                noWait(options),
             );
             const message = await stream.result();
+
+            if (rejected) {
+                if (this.#entries.get(key) === entry) {
+                    this.#drop(key);
+                }
+
+                return;
+            }
 
             // A request can cost money even when a new request or Stop superseded it.
             await entry.account?.recordUsage(message);

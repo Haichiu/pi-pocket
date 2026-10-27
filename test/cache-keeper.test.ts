@@ -55,7 +55,10 @@ function rig(disabled = false) {
                 timestamp: now,
             };
 
-            queueMicrotask(() => stream.push({ type: "done", reason: "stop", message } as never));
+            queueMicrotask(async () => {
+                await options?.onPayload?.({ model: m.id, max_tokens: options.maxTokens }, m);
+                stream.push({ type: "done", reason: "stop", message } as never);
+            });
 
             return stream;
         },
@@ -81,6 +84,7 @@ function rig(disabled = false) {
         }) as never,
     });
 
+    keeper.installPayloadObserver(models);
     keeper.install(models);
 
     const send = async (

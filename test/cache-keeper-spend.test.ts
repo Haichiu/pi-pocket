@@ -80,17 +80,25 @@ test("warm usage counts in the session and captured person's spend, including a 
 
                 calls++;
 
-                if (options?.maxTokens === 1) {
-                    finish = (result) =>
-                        stream.push({ type: "done", reason: "stop", message: result });
-                } else {
-                    queueMicrotask(() => stream.push({ type: "done", reason: "toolUse", message }));
-                }
+                queueMicrotask(async () => {
+                    await options?.onPayload?.(
+                        { model: model.id, max_tokens: options.maxTokens },
+                        model,
+                    );
+
+                    if (options?.maxTokens === 1) {
+                        finish = (result) =>
+                            stream.push({ type: "done", reason: "stop", message: result });
+                    } else {
+                        stream.push({ type: "done", reason: "toolUse", message });
+                    }
+                });
 
                 return stream;
             },
         };
 
+        app.cacheKeeper.installPayloadObserver(models);
         app.cacheKeeper.install(models);
         await models.streamSimple(model, {}, { sessionId }).result();
         await until(() => calls === 2, "a warm request", 4000);
@@ -174,7 +182,7 @@ test("the keeper sends no warm after its payer reaches a spend limit", async () 
         const sessionId = (await app.harness.snapshot(ProviderDoc, id, context))!.sessionId;
         let calls = 0;
         const models = {
-            streamSimple(_model: Model<Api>, _context: unknown, _options?: SimpleStreamOptions) {
+            streamSimple(_model: Model<Api>, _context: unknown, options?: SimpleStreamOptions) {
                 const stream = createAssistantMessageEventStream();
                 const message = {
                     role: "assistant",
@@ -188,12 +196,19 @@ test("the keeper sends no warm after its payer reaches a spend limit", async () 
                 } as AssistantMessage;
 
                 calls++;
-                queueMicrotask(() => stream.push({ type: "done", reason: "toolUse", message }));
+                queueMicrotask(async () => {
+                    await options?.onPayload?.(
+                        { model: model.id, max_tokens: options.maxTokens },
+                        model,
+                    );
+                    stream.push({ type: "done", reason: "toolUse", message });
+                });
 
                 return stream;
             },
         };
 
+        app.cacheKeeper.installPayloadObserver(models);
         app.cacheKeeper.install(models);
         await models.streamSimple(model, {}, { sessionId }).result();
         await until(() => app.cacheKeeper.status().warming === 1, "a pending warm");

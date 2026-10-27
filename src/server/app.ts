@@ -711,6 +711,8 @@ export class PocketApp {
         }
 
         this.models = await ModelRuntime.create();
+        // Innermost: observe the adapter payload only after the caller and all extension shapers finish.
+        this.cacheKeeper.installPayloadObserver(this.models);
         installRequestShaping(this.models, this.#shapers, this.#log);
         this.providers.modelRefresh.watch(this.models);
         this.#configureModels?.(this.models);

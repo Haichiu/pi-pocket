@@ -104,8 +104,18 @@ function rig(deps: KeeperDeps = {}) {
                 },
             };
 
+            const payload = options?.onPayload?.(
+                { model: current.id, messages: request.messages, max_tokens: options.maxTokens },
+                current,
+            );
+
             // Keep real event streams, but permit a controlled rejection from result().
-            stream.result = () => result.promise;
+            stream.result = async () => {
+                await payload;
+
+                return result.promise;
+            };
+
             calls.push(call);
 
             return stream;
@@ -129,6 +139,7 @@ function rig(deps: KeeperDeps = {}) {
         ...deps,
     });
 
+    keeper.installPayloadObserver(models);
     keeper.install(models);
 
     const send = (text: string) => {
