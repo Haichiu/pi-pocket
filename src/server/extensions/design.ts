@@ -99,7 +99,10 @@ export function cleanTarget(web: Pick<ExtensionWeb, "error">, value: unknown) {
     return clean;
 }
 
-/** Tweak values as kept: at most `MAX_KNOBS`, a name that is a CSS custom property or a plain word, a short value. */
+/**
+ * Tweak values as kept: at most `MAX_KNOBS`, a name that is a CSS custom property or a plain word (any other name is
+ * left out), a short value.
+ */
 export function cleanTweaks(web: Pick<ExtensionWeb, "error">, value: unknown) {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
         throw web.error(400, "Tweaks are a set of names and values.");
@@ -115,7 +118,8 @@ export function cleanTweaks(web: Pick<ExtensionWeb, "error">, value: unknown) {
 
     for (const [name, each] of entries) {
         if (!/^(?:--)?[A-Za-z][\w.-]{0,99}$/.test(name) && !/^--[\w.-]{1,98}$/.test(name)) {
-            throw web.error(400, "A tweak's name is letters, digits, and - _ .");
+            // A name the server does not keep (a page may name an event "dark mode") is left out, not the whole set.
+            continue;
         }
 
         if (typeof each === "string") {

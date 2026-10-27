@@ -296,10 +296,13 @@ test("tweaks are each person's own, replaced as a whole, and checked", async () 
     assert.equal((await notes("Vic")).tweaks, null);
     assert.equal((await call("Vic", path, { values: { a: 1 } })).status, 404);
 
-    // Not a value, not a name, too many.
+    // Not a value, too many. A name that is not kept is left out, and the rest stay.
     assert.equal((await call("owner", path, { values: { a: { b: 1 } } })).status, 400);
-    assert.equal((await call("owner", path, { values: { "bad name": 1 } })).status, 400);
-    assert.equal((await call("owner", path, { values: { "--": 1 } })).status, 400);
+    assert.equal(
+        (await call("owner", path, { values: { "bad name": 1, "--": 1, "--ok": 2 } })).status,
+        200,
+    );
+    assert.deepEqual((await notes("owner")).tweaks, { "--ok": 2 });
     assert.equal(
         (
             await call("owner", path, {
