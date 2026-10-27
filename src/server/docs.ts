@@ -133,6 +133,8 @@ export const AuthorsDoc = defineDoc<{
 
 export type ArtifactType = "html" | "markdown" | "svg";
 
+export type ArtifactAsset = { hash: string; size: number; type: string };
+
 export type ArtifactVersion = {
     version: number;
     /** The tool task that wrote it; a replayed call finds its version instead of writing another. */
@@ -149,11 +151,15 @@ export type ArtifactVersion = {
      * artifact, and would change every version's page).
      */
     inline?: true;
+    /** Bundle paths map to immutable, content-addressed bytes. */
+    assets?: Record<string, ArtifactAsset>;
 };
 
 export type ArtifactMeta = {
     title: string;
     type: ArtifactType;
+    group?: string;
+    kind?: "page" | "deck";
     versions: ArtifactVersion[];
 };
 
@@ -178,6 +184,16 @@ export const ArtifactBodyDoc = defineDocFamily<{ content: string }, { content: s
     history: "latest",
     fork: "current",
     initial: (seed) => ({ content: seed.content }),
+});
+
+/** Immutable asset bytes, shared across conversations and keyed by their SHA-256 hash. */
+export const ArtifactAssetDoc = defineDocFamily<{ base64: string }, { base64: string }>({
+    kind: "pocket.artifact-asset",
+    version: 1,
+    ...rebased,
+    family: true,
+    scope: "session",
+    initial: (seed) => ({ base64: seed.base64 }),
 });
 
 /** What one person saved for one artifact (`artifact-state.ts`): a JSON value, the page's schema label, and when. */

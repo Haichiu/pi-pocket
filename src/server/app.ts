@@ -53,6 +53,7 @@ import { Commands } from "./commands.ts";
 import { LinkedSessions } from "./linked-sessions.ts";
 import { APP_ROOT, ConfigStore, modulesWith, type User } from "./config.ts";
 import {
+    ArtifactAssetDoc,
     ArtifactBodyDoc,
     type ArtifactMeta,
     ArtifactsDoc,
@@ -2690,7 +2691,7 @@ export class PocketApp {
         }
     }
 
-    async artifactBody(id: ConversationId, artifact: string, version: number | undefined) {
+    async artifactBody(id: ConversationId, artifact: string, version?: number) {
         const index = await this.harness.snapshot(ArtifactsDoc, id, context);
         // Its own entries only: `__proto__` and the like name no artifact.
         const meta =
@@ -2723,6 +2724,50 @@ export class PocketApp {
         }
 
         return { meta, version: chosen.version, content: body.content };
+    }
+
+    /** One manifest asset. Missing names must not load the rest of a potentially large bundle. */
+    async artifactAsset(id: ConversationId, artifact: string, version: number, name: string) {
+        const found = await this.artifactBody(id, artifact, version);
+        const manifest = found.meta.versions.find((each) => each.version === found.version)!.assets;
+        const asset =
+            manifest !== undefined && Object.hasOwn(manifest, name) ? manifest[name] : undefined;
+
+        if (asset === undefined) {
+            throw new HttpError(404, "No such asset");
+        }
+
+        const stored = await this.harness.snapshot(ArtifactAssetDoc, asset.hash, context);
+
+        if (stored === undefined) {
+            throw new HttpError(404, "Artifact asset is missing");
+        }
+
+        return {
+            name,
+            type: asset.type,
+            bytes: Buffer.from(stored.base64, "base64"),
+            title: found.meta.title,
+        };
+    }
+
+    /** A complete bundle for rendering and export. Callers must check conversation access first. */
+    async artifactBundle(id: ConversationId, artifact: string, version?: number) {
+        const found = await this.artifactBody(id, artifact, version);
+        const manifest = found.meta.versions.find((each) => each.version === found.version)!.assets;
+        const assets = await Promise.all(
+            Object.entries(manifest ?? {}).map(async ([name, asset]) => {
+                const stored = await this.harness.snapshot(ArtifactAssetDoc, asset.hash, context);
+
+                if (stored === undefined) {
+                    throw new HttpError(404, "Artifact asset is missing");
+                }
+
+                return { name, type: asset.type, bytes: Buffer.from(stored.base64, "base64") };
+            }),
+        );
+
+        return { ...found, assets };
     }
 
     /** The folder a conversation works in. */
