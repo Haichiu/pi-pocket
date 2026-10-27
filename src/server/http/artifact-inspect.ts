@@ -21,11 +21,11 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
     const doc = document;
     const win = window;
-    const raf = win.requestAnimationFrame.bind(win);
-    const later = win.setTimeout.bind(win);
-    const unlater = win.clearTimeout.bind(win);
-    const fire = win.dispatchEvent.bind(win);
-    const CustomEvt = win.CustomEvent;
+    const raf = (callback) => win.requestAnimationFrame(callback);
+    const later = (callback, ms) => win.setTimeout(callback, ms);
+    const unlater = (id) => win.clearTimeout(id);
+    const fire = (event) => win.dispatchEvent(event);
+    const CustomEvt = (name, detail) => new win.CustomEvent(name, { detail });
     const now = performance.now.bind(performance);
     const ACCENT = "#7aa2f7";
     const SLIDE_W = ${DECK_SLIDE_SIZE.width};
@@ -807,7 +807,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                 }
             }
 
-            fire(new CustomEvt("pocket:tweak", { detail: { name, value } }));
+            fire(CustomEvt("pocket:tweak", { name, value }));
         }
     };
 
@@ -869,7 +869,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
     const tellDeck = () => {
         send({ type: "pocket-deck", slides: deck.slides.length, current: deck.index });
-        fire(new CustomEvt("pocket:slide", { detail: { index: deck.index, count: deck.slides.length } }));
+        fire(CustomEvt("pocket:slide", { index: deck.index, count: deck.slides.length }));
     };
 
     const goTo = (index) => {

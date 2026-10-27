@@ -271,7 +271,7 @@ test(
         ]);
         await until(async () => (await gotOf("pocket-tweaks")).length === 1, "the manifest", SLOW);
 
-        const [message] = await gotOf("pocket-tweaks");
+        const message = (await gotOf("pocket-tweaks"))[0]!;
 
         assert.deepEqual(
             message.knobs.map((knob: { name: string }) => knob.name),
@@ -316,7 +316,7 @@ test(
         await page.click(click);
         await until(async () => (await gotOf("pocket-picked")).length === 1, "the pick", SLOW);
 
-        const [picked] = await gotOf("pocket-picked");
+        const picked = (await gotOf("pocket-picked"))[0]!;
 
         assert.equal(picked.target.tag, "button");
         assert.equal(picked.target.pid, "cta");
@@ -349,7 +349,7 @@ test(
             SLOW,
         );
 
-        const second = (await gotOf("pocket-picked"))[1];
+        const second = (await gotOf("pocket-picked"))[1]!;
 
         assert.equal(second.target.tag, "li");
         assert.equal(
