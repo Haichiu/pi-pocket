@@ -746,7 +746,7 @@ export class Updates {
                 }
             }
 
-            if (readPending(this.#root) !== undefined && this.#step === undefined) {
+            if (readPending(this.#root) !== undefined) {
                 blockers.push("An update is under way. Restart the server to finish it.");
             }
         }
@@ -964,6 +964,10 @@ export class Updates {
     ): Promise<{ restarting: true; version: string }> {
         if (this.#step !== undefined) {
             throw new HttpError(409, `An update is under way: ${this.#step.toLowerCase()}.`);
+        }
+
+        if (readPending(this.#root) !== undefined) {
+            throw new HttpError(409, "An update is under way. Restart the server to finish it.");
         }
 
         this.#setStep("Checking");
