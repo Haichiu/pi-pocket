@@ -644,6 +644,38 @@ test("Keep activity folded opens and folds groups already on screen", real, asyn
     }
 });
 
+test("an open activity group draws a thought step", real, async () => {
+    await fresh();
+    await goTo(first);
+    await until(
+        async () =>
+            await inPage<boolean>(`
+                return JSON.stringify((await import("/store.js")).store.state.view.conversation?.id === ${first});
+            `),
+        "the session view",
+    );
+    await page.evaluate(`
+        const { store } = await import("/store.js");
+        const blocks = [{ type: "thinking", text: "Hmm." },
+            { type: "toolCall", id: "think1", name: "bash", args: { command: "echo 1" } }];
+        const entries = [{ id: 930000, kind: "user", text: "go", images: 0, at: Date.now() },
+            { id: 930001, kind: "assistant", stopReason: "toolUse", at: Date.now(), blocks },
+            { id: 930002, kind: "toolResult", callId: "think1", text: "1", at: Date.now() }];
+
+        store.set({ view: { ...store.state.view,
+            entries: new Map(entries.map((entry) => [entry.id, entry])),
+            order: entries.map((entry) => entry.id),
+        } });
+    `);
+    await until(
+        async () =>
+            await inPage<boolean>(
+                `return JSON.stringify(!!document.querySelector('.activity.open [data-part="thinking"]'))`,
+            ),
+        "the thought step in the open group",
+    );
+});
+
 test("earlier history does not repeat a message kept after compaction", real, async () => {
     await compactedView();
     await page.evaluate(`
