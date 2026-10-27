@@ -258,15 +258,13 @@ test("anyone who steers marks a comment done; only its author or the owner delet
 test("a design keeps up to 200 comments", async () => {
     const path = `c/${session}/designs/pitch/comments`;
 
-    for (let count = 0; count < 200; count += 1) {
-        // A commit each: done in groups, to keep the test quick.
-        if (count % 50 === 0) {
-            await Promise.all(
-                Array.from({ length: 50 }, (_, at) =>
-                    call("owner", path, { version: 1, text: `c${count + at}`, target: TARGET }),
-                ),
-            );
-        }
+    // In groups of 50 at once, to keep the test quick: each is a commit of its own.
+    for (let first = 0; first < 200; first += 50) {
+        await Promise.all(
+            Array.from({ length: 50 }, (_, at) =>
+                call("owner", path, { version: 1, text: `c${first + at}`, target: TARGET }),
+            ),
+        );
     }
 
     assert.equal((await notes("owner", "pitch")).comments.length, 200);
