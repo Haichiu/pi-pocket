@@ -335,17 +335,61 @@ export function swapInPackage(appRoot: string): void {
     }
 
     writePending(appRoot, { ...pending, phase: "switching" });
-    renameSync(appRoot, paths.previous);
 
+    // Keep these renames synchronous and adjacent: only a whole-process stop can interrupt them.
     try {
+        renameSync(appRoot, paths.previous);
         renameSync(fresh, appRoot);
     } catch (error) {
-        renameSync(paths.previous, appRoot);
+        if (!existsSync(appRoot) && existsSync(paths.previous)) {
+            renameSync(paths.previous, appRoot);
+        }
 
         throw error;
     }
 
     writePending(appRoot, { ...pending, phase: "switching", modules: true });
+}
+
+/** Repair a missing live package before the launcher spawns a server or the server loads its app modules. */
+export function restoreMissingNpmPackage(appRoot: string): boolean {
+    const pending = readPending(appRoot);
+
+    if (pending?.kind !== "npm-global" || existsSync(appRoot)) {
+        return false;
+    }
+
+    const paths = updatePaths(appRoot);
+    const fresh = stagedPackagePath(appRoot);
+    const previous = packageVersion(paths.previous);
+    const failed = packageVersion(paths.failed);
+
+    if (existsSync(paths.previous) && previous !== pending.fromVersion) {
+        throw new Error("The previous npm package changed; it was kept for manual recovery.");
+    }
+
+    // Do not restore an older version after a warning release may have changed the data.
+    const keepNew = pending.oneWay && (pending.modules || failed === pending.toVersion);
+    const source =
+        !keepNew && previous === pending.fromVersion
+            ? paths.previous
+            : keepNew && failed === pending.toVersion
+              ? paths.failed
+              : packageVersion(fresh) === pending.toVersion
+                ? fresh
+                : undefined;
+
+    if (source === undefined) {
+        throw new Error("The live npm package is missing, with no safe copy to restore.");
+    }
+
+    if (source !== paths.previous) {
+        writePending(appRoot, { ...pending, phase: "switching", modules: true });
+    }
+
+    renameSync(source, appRoot);
+
+    return true;
 }
 
 /** Restore a whole npm package, including its dependencies, without invoking npm or a network. */
@@ -391,7 +435,20 @@ export function finishNpmPending(
         throw new Error("This is not an npm global update.");
     }
 
-    if (pending.phase === "switching" && packageVersion(appRoot) === pending.toVersion) {
+    const current = packageVersion(appRoot);
+
+    // A manual npm reinstall can bring a newer release than the interrupted update targeted.
+    if (current !== undefined && current !== pending.fromVersion && current !== pending.toVersion) {
+        return finishPending(
+            appRoot,
+            pending,
+            false,
+            `The npm package changed during the update to ${pending.toVersion}. Pi Pocket started at ${current}, so no package was replaced during recovery.`,
+            now,
+        );
+    }
+
+    if (pending.phase === "switching" && current === pending.toVersion) {
         return finishPending(
             appRoot,
             pending,
