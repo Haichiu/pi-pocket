@@ -226,10 +226,10 @@ export function createData(pocket, store) {
                     format,
                     ...(viewport ? { viewport } : {}),
                 });
-                // Core's download route sends the file as an attachment; a link to it saves it.
+                // The core route streams the file from the session's folder as an attachment.
                 const link = document.createElement("a");
 
-                link.href = `/api/c/${conversation}/download?${new URLSearchParams({ path: made.relative ?? made.path })}`;
+                link.href = `/api/c/${encodeURIComponent(conversation)}/download?${new URLSearchParams({ path: made.relative })}`;
                 link.download = made.name;
                 document.body.append(link);
                 link.click();
