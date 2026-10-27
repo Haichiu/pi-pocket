@@ -120,7 +120,9 @@ export default function createPrompt(host: PocketHost) {
 
                 // Off by default: a date in the system prompt changes once a day and rewrites the whole prompt cache.
                 // PI_POCKET_PROMPT_DATE=1 adds the local date back.
-                if (process.env.PI_POCKET_PROMPT_DATE !== "1") return base;
+                if (process.env.PI_POCKET_PROMPT_DATE !== "1") {
+                    return base;
+                }
 
                 const now = new Date();
                 const pad = (n: number) => String(n).padStart(2, "0");
