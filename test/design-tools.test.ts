@@ -69,6 +69,31 @@ test("the bundle reader reads the committed version and refuses missing, foreign
     );
 });
 
+test("the bundle reader returns the version's stored assets, byte for byte", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1, 2, 255]);
+    const { writeFile } = await import("node:fs/promises");
+
+    await writeFile(`${work}/logo.png`, png);
+    await call(createArtifacts(host).tools![0]!, {
+        id: "assets",
+        title: "Assets",
+        content,
+        assets: [
+            { name: "img/logo.png", path: `${work}/logo.png` },
+            { name: "css/site.css", content: "h1 { color: red; }" },
+        ],
+    });
+
+    const snapshot = app.harness.snapshot.bind(app.harness);
+    const found = await readBundle(host, snapshot, conversation, "assets", undefined, context);
+    const byName = new Map(found.assets.map((asset) => [asset.name, asset]));
+
+    assert.deepEqual([...byName.keys()].sort(), ["css/site.css", "img/logo.png"]);
+    assert.deepEqual(byName.get("img/logo.png")!.bytes, png);
+    assert.match(byName.get("img/logo.png")!.type, /^image\/png/);
+    assert.equal(byName.get("css/site.css")!.bytes.toString(), "h1 { color: red; }");
+});
+
 test("design_export writes a real HTML bundle to the default session-local path", async () => {
     const tool = designTools(host).find((item) => item.name === "design_export")!;
     const result = await call(tool, { id: "test", format: "html" });
@@ -92,10 +117,12 @@ test("design_export writes a real HTML bundle to the default session-local path"
     );
 });
 
-test("the workspace export returns binary bytes only for a visible session", async () => {
+test("the workspace export writes the file in a visible session's folder and answers its path", async () => {
     let handler: WebHandler | undefined;
+    let method: string | undefined;
 
-    const route: ExtensionWeb["route"] = (_method, _path, handle) => {
+    const route: ExtensionWeb["route"] = (asked, _path, handle) => {
+        method = asked;
         handler = handle;
     };
 
@@ -107,33 +134,35 @@ test("the workspace export returns binary bytes only for a visible session", asy
         } as unknown as ExtensionWeb,
         host,
     );
+    assert.equal(method, "POST");
     const request = {
-        query: new URLSearchParams({
-            conversation: String(conversation),
-            id: "test",
-            format: "html",
-        }),
-        sessions: () => [{ id: conversation }],
+        body: { conversation, id: "test", format: "html" },
+        sessions: () => [{ id: conversation, cwd: work }],
         snapshot: app.harness.snapshot.bind(app.harness),
         signal: new AbortController().signal,
         context,
     } as unknown as WebRequest;
-    const response = (await handler!(request)) as Response;
+    const answer = (await handler!(request)) as {
+        path: string;
+        relative: string;
+        name: string;
+        size: number;
+    };
 
-    assert.equal(response.headers.get("content-type"), "application/zip");
-    assert.match(response.headers.get("content-disposition")!, /test-v1.zip/);
-    assert.equal(Buffer.from(await response.arrayBuffer()).readUInt32LE(0), 0x04034b50);
+    assert.equal(answer.path, `${work}/exports/test-v1.zip`);
+    assert.equal(answer.relative, "exports/test-v1.zip");
+    assert.equal(answer.name, "test-v1.zip");
+    const bytes = await readFile(answer.path);
+
+    assert.equal(bytes.length, answer.size);
+    assert.equal(bytes.readUInt32LE(0), 0x04034b50);
     await assert.rejects(async () => handler!({ ...request, sessions: () => [] }), /No session/);
     await assert.rejects(
         async () =>
             handler!({
                 ...request,
-                query: new URLSearchParams({
-                    conversation: String(conversation),
-                    id: "test",
-                    format: "exe",
-                }),
-            }),
+                body: { conversation, id: "test", format: "exe" },
+            } as unknown as WebRequest),
         /Choose/,
     );
 });

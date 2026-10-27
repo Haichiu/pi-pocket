@@ -3,7 +3,7 @@ import type { PocketHost } from "../host.ts";
 import type { DesignBundle } from "./bundle.ts";
 import { pptx } from "./pptx.ts";
 import { type DesignViewport, viewportOf, withRender } from "./render.ts";
-import { zip } from "./zip.ts";
+import { zip } from "../zip.ts";
 
 export type ExportFormat = "png" | "pdf" | "pptx" | "html";
 export const EXPORT_TYPES = {

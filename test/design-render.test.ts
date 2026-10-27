@@ -131,7 +131,7 @@ test("design tools and export route expose the required contracts", async () => 
     await assert.rejects(
         async () =>
             routes[0]!.handle({
-                query: new URLSearchParams("conversation=10&id=test&format=html"),
+                body: { conversation: 10, id: "test", format: "html" },
                 sessions: () => [],
             }),
         /No session/,

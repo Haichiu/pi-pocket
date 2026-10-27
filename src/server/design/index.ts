@@ -168,27 +168,34 @@ export function designTools(host: PocketHost): ToolRegistration[] {
     return [preview, exportTool, designSystemTool()];
 }
 
-/** Download bytes directly; the workspace never supplies a server-local output path. */
+/**
+ * `POST export` for the workspace: the same export as `design_export`, written in the session folder at its default
+ * path. It answers `{ path, name, size }`; the browser downloads the file through the core file route.
+ */
 export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
     web.route(
-        "GET",
+        "POST",
         "export",
         async (request) => {
-            const conversation = Number(request.query.get("conversation"));
+            const body = request.body;
+            const conversation = Number(body.conversation);
             const session = request.sessions().find((item) => item.id === conversation);
 
             if (session === undefined) {
                 throw web.error(404, "No session");
             }
 
-            const id = request.query.get("id") ?? "";
-            const format = request.query.get("format") ?? "";
-            const rawVersion = request.query.get("version");
-            const selectedVersion = rawVersion === null ? undefined : Number(rawVersion);
-            const viewport = request.query.get("viewport") ?? "desktop";
+            const id = typeof body.id === "string" ? body.id : "";
+            const format = typeof body.format === "string" ? body.format : "";
+            const selectedVersion = body.version === undefined ? undefined : Number(body.version);
+            const viewport = typeof body.viewport === "string" ? body.viewport : "desktop";
 
             if (!Object.hasOwn(EXPORT_TYPES, format)) {
                 throw web.error(400, "Choose png, pdf, pptx, or html.");
+            }
+
+            if (session.cwd === undefined) {
+                throw web.error(400, "This session has no folder for the export.");
             }
 
             try {
@@ -208,16 +215,10 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
                     host,
                     request.signal,
                 );
-                const type = EXPORT_TYPES[format as ExportFormat];
+                const name = `${id}-v${bundle.version}.${EXPORT_TYPES[format as ExportFormat].extension}`;
+                const path = await writeExport(session.cwd, `exports/${name}`, bytes);
 
-                return new Response(new Uint8Array(bytes), {
-                    headers: {
-                        "content-type": type.mime,
-                        "content-disposition": `attachment; filename="${id}-v${bundle.version}.${type.extension}"`,
-                        "cache-control": "no-store",
-                        "x-content-type-options": "nosniff",
-                    },
-                });
+                return { path, relative: `exports/${name}`, name, size: bytes.length };
             } catch (error) {
                 if (request.signal.aborted) {
                     throw error;

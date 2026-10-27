@@ -1,5 +1,5 @@
 /** Image-backed widescreen PowerPoint decks with searchable speaker notes. */
-import { zip } from "./zip.ts";
+import { zip } from "../zip.ts";
 
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 const P = "http://schemas.openxmlformats.org/presentationml/2006/main";
