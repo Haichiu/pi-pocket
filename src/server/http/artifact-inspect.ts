@@ -482,6 +482,23 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
     const editing = group();
     let editOn = false;
+    let hint = null;
+
+    /** A faint dashed line round what can be edited, so a phone (which has no hover) shows it. A constructable sheet, so a page CSP cannot stop it. */
+    const hintEdits = (on) => {
+        if (on && hint === null) {
+            try {
+                hint = new CSSStyleSheet();
+                hint.replaceSync("[contenteditable]:not(:focus){outline:1px dashed rgba(122,162,247,.8)!important;outline-offset:2px!important}");
+                doc.adoptedStyleSheets = [...doc.adoptedStyleSheets, hint];
+            } catch {
+                hint = null;
+            }
+        } else if (!on && hint !== null) {
+            doc.adoptedStyleSheets = doc.adoptedStyleSheets.filter((sheet) => sheet !== hint);
+            hint = null;
+        }
+    };
 
     const editableOf = (node) => {
         for (let el = isEl(node) ? node : node && node.parentElement; el; el = el.parentElement) {
@@ -621,6 +638,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
     const setEdit = (on) => {
         editing.clear();
+        hintEdits(on);
 
         if (!on) {
             for (const [el, record] of [...records]) {
@@ -932,6 +950,10 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
             deck.node.remove();
         }
 
+        if (deck.view) {
+            deck.view.remove();
+        }
+
         deck = null;
     };
 
@@ -958,7 +980,15 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                 return color === "rgba(0, 0, 0, 0)" || color === "transparent";
             });
 
-            deck = { slides, index: 0, size: slideSize(), bare, sheet: null, node: null };
+            deck = { slides, index: 0, size: slideSize(), bare, sheet: null, node: null, view: null };
+
+            // A phone lays a page with no viewport out at 980 pixels wide: a deck needs the real width to fit it.
+            if (!doc.querySelector('meta[name="viewport"]') && doc.head) {
+                deck.view = doc.createElement("meta");
+                deck.view.setAttribute("name", "viewport");
+                deck.view.setAttribute("content", "width=device-width, initial-scale=1");
+                doc.head.append(deck.view);
+            }
 
             try {
                 deck.sheet = new CSSStyleSheet();
@@ -1081,6 +1111,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
             records.clear();
             inspecting.clear();
             editing.clear();
+            hint = null;
             inspectOn = false;
             editOn = false;
 

@@ -224,16 +224,9 @@ export function checkPageMessage(data) {
         case "pocket-text-edited": {
             const target = checkTarget(data.target);
 
-            return (
-                target &&
-                isText(data.before, LIMITS.edit) &&
-                isText(data.after, LIMITS.edit) && {
-                    type: data.type,
-                    target,
-                    before: data.before,
-                    after: data.after,
-                }
-            );
+            return target && isText(data.before, LIMITS.edit) && isText(data.after, LIMITS.edit)
+                ? { type: data.type, target, before: data.before, after: data.after }
+                : null;
         }
 
         case "pocket-tweaks": {
