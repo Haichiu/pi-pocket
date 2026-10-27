@@ -38,7 +38,7 @@ function signature(
         .digest("hex");
 }
 
-/** Opaque-origin subrequests have no SameSite cookie. This capability grants only one version's assets for 24 hours. */
+/** Opaque-origin subrequests have no SameSite cookie. This capability grants only one version's assets for 12 hours. */
 export function assetRoot(
     app: PocketApp,
     conversation: string,
@@ -46,7 +46,7 @@ export function assetRoot(
     version: number,
     user: User,
 ): string {
-    const until = String(app.now() + 24 * 60 * 60 * 1000);
+    const until = String(app.now() + 12 * 60 * 60 * 1000);
     const signed = `${version}~${user.id}~${until}~${signature(app, conversation, artifact, String(version), user, until)}`;
 
     return `/a/${encodeURIComponent(conversation)}/${encodeURIComponent(artifact)}/${encodeURIComponent(signed)}/`;

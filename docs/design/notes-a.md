@@ -33,11 +33,18 @@ CORS allows opaque-origin module scripts and fonts. It does not grant access to 
 
 Sandbox subrequests have no SameSite sign-in cookie.
 Authenticated pages therefore receive a signed, version-scoped asset base: `/a/:conversation/:artifact/:version~person~expiry~signature/`.
-The capability lasts 24 hours. It permits only manifest assets, not the main page, APIs, or arbitrary hashes.
+The capability lasts 12 hours. It permits only manifest assets, not the main page, APIs, or arbitrary hashes.
+HMAC-SHA256 signs the conversation, artifact, version, expiry, person, and person's token hash.
+The existing persistent `ConfigStore.ownerToken` supplies the server key. No new data file is needed.
+The signature input has a purpose label. `timingSafeEqual` compares the fixed-length signature bytes.
 Every request rechecks the person's current session access. Removing the person or rotating a token revokes access.
 A capability-authenticated HTML asset preserves the original expiry. It cannot renew its capability.
 The usual authenticated `/a/:conversation/:artifact/:version/<name>` also works.
-Long-open pages can need a reload after 24 hours to fetch assets again.
+A page open for more than 12 hours loads new assets only after a reload.
+The server creates capabilities only in HTTP responses. It does not store them in documents, tool results, or transcripts.
+`artifactBody` and `artifactBundle` return raw content without injected capabilities, so normal agent readers do not receive them.
+The capability code does not log URLs. Its errors use fixed messages and never include the capability.
+Pages and assets send `Referrer-Policy: no-referrer`, so CDN requests do not receive the capability through `Referer`.
 
 ## Published routes
 
@@ -62,6 +69,12 @@ Inline Run loads bundle assets correctly. Static Preview keeps its existing rest
 If static Preview must show bundle assets before Run, the integrator must add a safe preview path in `web/rich.js`.
 Stream A does not own that file. The browser tests check inline Run, not static Preview.
 
+The capability code does not send capabilities to Pi or logs, but generic output paths need an integration review.
+`browser/page.ts` can log a signed URL after navigation to a bundled HTML asset.
+An artifact can also explicitly include its base URI in a follow-up or saved value.
+Absolute exclusion from all agent context, transcripts, and logs needs redaction in those browser and bridge paths.
+Stream A does not own those files. The integrator received this limitation.
+
 `npm run format` also fixes an existing unbraced `if` in `src/server/extensions/prompt.ts`.
 This unrelated formatting change stays uncommitted in this worktree. The integrator must keep the brace fix for lint.
 The reported full format and lint checks include that local brace fix.
@@ -80,6 +93,8 @@ The reported full format and lint checks include that local brace fix.
 - The final complete `npm test` run passed after public routing: 762 tests, 0 failures, 0 skips, about 84 seconds.
 - The bundle and ZIP tests passed together, including a real Chromium test.
 - Tests cover inheritance, replacement, removal, hash storage, replay, unsafe sources, limits, capability scope, expiry, and revocation.
+- Capability tests reject reuse across conversations, artifacts, and versions. They reject changed signatures and verify the 12-hour boundary.
+- Restart tests verify that the existing signing key stays valid. Raw readers and tool results contain no injected capabilities.
 - Tests cover sandbox headers, MIME types, public route revocation and expiry, pinned and latest manifests, nested pages, fonts, images, CSS, module imports, inline RunFrame, own-tab rendering, and published rendering.
 - The focused bundle and share suites passed after the routing change: 19 tests, 0 failures.
 - A fresh security review of the core routing changes found no concrete bugs.
