@@ -582,11 +582,68 @@ test("a long open group draws its newest steps, and shows the rest when asked", 
             });
         `);
 
+    // Groups start folded (Appearance's Keep activity folded): a tap opens this one.
+    await tap(".transcript .activity-head");
     await until(async () => (await timeline()).steps > 0, "the open group");
     assert.deepEqual(await timeline(), { steps: 24, earlier: "Show 6 earlier steps" });
     await tap(".transcript .timeline-earlier");
     await until(async () => (await timeline()).steps === 30, "all 30 steps");
     assert.equal((await timeline()).earlier, null);
+});
+
+test("Keep activity folded opens and folds groups already on screen", real, async () => {
+    await fresh();
+    await goTo(first);
+    await until(
+        async () =>
+            await inPage<boolean>(`
+                return JSON.stringify((await import("/store.js")).store.state.view.conversation?.id === ${first});
+            `),
+        "the session view",
+    );
+    // The newest turn: a person's message, then one call of Pi's and its result.
+    await page.evaluate(`
+        const { store } = await import("/store.js");
+        const entries = [
+            { id: 920000, kind: "user", text: "go", images: 0, at: Date.now() },
+            { id: 920001, kind: "assistant", stopReason: "toolUse", at: Date.now(),
+                blocks: [{ type: "toolCall", id: "fold1", name: "bash", args: { command: "echo 1" } }] },
+            { id: 920002, kind: "toolResult", callId: "fold1", text: "1", at: Date.now() },
+        ];
+
+        store.set({ view: { ...store.state.view,
+            entries: new Map(entries.map((entry) => [entry.id, entry])),
+            order: entries.map((entry) => entry.id),
+        } });
+    `);
+    const groupOpen = () =>
+        inPage<boolean | null>(`
+            const group = document.querySelector(".transcript .activity");
+
+            return JSON.stringify(group === null ? null : group.classList.contains("open"));
+        `);
+    const fold = (on: boolean) =>
+        page.evaluate(`(async () => {
+            (await import("/theme.js")).setPrefs({ foldActivity: ${on} });
+        })()`);
+
+    await until(async () => (await groupOpen()) === false, "the group, folded by default");
+
+    try {
+        // Without a redraw, the group keeps the state it was drawn with until a reload.
+        await fold(false);
+        await until(
+            async () => (await groupOpen()) === true,
+            "the group opens with the switch off",
+        );
+        await fold(true);
+        await until(
+            async () => (await groupOpen()) === false,
+            "the group folds with the switch on",
+        );
+    } finally {
+        await fold(true);
+    }
 });
 
 test("earlier history does not repeat a message kept after compaction", real, async () => {
@@ -921,6 +978,8 @@ test("a call's mark keeps its circle while it waits for an approval", real, asyn
     await fresh();
     await goTo(one);
     await app.commands.submit(one, owner(app), { text: "risky please", requestId: "mark-140" });
+    // Groups start folded: a tap opens the live one, where the call's mark is.
+    await tap(".transcript .activity-head");
 
     const mark = () =>
         inPage<Record<string, string> | null>(`
