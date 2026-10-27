@@ -386,3 +386,29 @@ test("npm state handles interrupted swaps and restores, one-way releases, and ch
         join(dir, "node_modules", "@scope", ".pi-pocket-update"),
     );
 });
+
+test("a manual target install clears staging state without replacing packages", (t) => {
+    const { dir, root } = sandbox();
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    for (const backup of [undefined, "1.0.0", "0.9.0"]) {
+        const paths = updatePaths(root);
+
+        rmSync(paths.dir, { recursive: true, force: true });
+        manifest(root, "2.0.0");
+        const value = pending(root);
+
+        if (backup !== undefined) {
+            manifest(paths.previous, backup);
+        }
+
+        assert.equal(finishNpmPending(root, value).ok, false);
+        assert.equal(version(root), "2.0.0");
+        assert.equal(readPending(root), undefined);
+
+        if (backup !== undefined) {
+            assert.equal(version(paths.previous), backup);
+        }
+    }
+});

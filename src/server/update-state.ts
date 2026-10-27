@@ -437,8 +437,13 @@ export function finishNpmPending(
 
     const current = packageVersion(appRoot);
 
-    // A manual npm reinstall can bring a newer release than the interrupted update targeted.
-    if (current !== undefined && current !== pending.fromVersion && current !== pending.toVersion) {
+    // A manual npm reinstall can finish before a staged update switches packages. Keep any
+    // unrelated backup, and clear that stale record without replacing the running package.
+    if (
+        current !== undefined &&
+        current !== pending.fromVersion &&
+        (current !== pending.toVersion || pending.phase === "packages")
+    ) {
         return finishPending(
             appRoot,
             pending,
