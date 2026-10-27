@@ -403,15 +403,15 @@ test("what a page says about an element is cut to a fixed shape", () => {
     assert.throws(() => cleanTweaks(web, { a: null }), /text, a number/);
 });
 
-test("export says so when the agent's side is missing, and never answers 404 for its own route", async () => {
-    const response = await call("owner", "export", {
-        conversation: session,
-        id: "landing",
-        format: "png",
-    });
+test("export is the agent side's route, there for people who steer and not for a viewer", async () => {
+    const body = { conversation: session, id: "no-such-design", format: "png" };
 
-    // Either the agent side's route answers (a bad design: 4xx) or the fallback does (501).
-    assert.notEqual(response.status, 404);
+    // A design that is not there: a 4xx from its own route, never a 404 for the route.
+    const owned = await call("owner", "export", body);
+
+    assert.ok(owned.status >= 400 && owned.status < 500);
+    assert.notEqual(owned.data.error, "Unknown extension route");
+    assert.equal((await call("Vic", "export", body)).status, 404);
 });
 
 test("a design with nothing kept leaves no item behind, so empty ones never use up the places", async () => {

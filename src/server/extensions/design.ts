@@ -5,13 +5,8 @@
  * send. The agent's side (tools, prompt guide, export) is in `../design/`; this module is the workspace.
  */
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import {
-    defineExtension,
-    type PromptSection,
-    type ToolRegistration,
-} from "@earendil-works/pi-durable";
+import { defineExtension } from "@earendil-works/pi-durable";
+import { designGuide, designRoutes, designTools } from "../design/index.ts";
 import {
     type ArtifactMeta,
     ArtifactBodyDoc,
@@ -21,13 +16,6 @@ import {
     type DesignItem,
 } from "../docs.ts";
 import type { ConversationWebRequest, ExtensionWeb, PocketHost } from "../host.ts";
-
-/** What this module needs of the agent's side (`src/server/design/index.ts`, stream D of Design mode). */
-type DesignAgent = {
-    designTools(host: PocketHost): ToolRegistration[];
-    designGuide(host: PocketHost): PromptSection;
-    designRoutes(web: ExtensionWeb, host: PocketHost): void;
-};
 
 /** An artifact as the index keeps it, with the fields of bundles (`group`, `kind`) that an older index lacks. */
 type DesignArtifact = ArtifactMeta & { group?: string; kind?: string };
@@ -145,23 +133,11 @@ export function cleanTweaks(web: Pick<ExtensionWeb, "error">, value: unknown) {
     return values;
 }
 
-/** The agent's side, if this copy has it: loaded when this module loads, so the module still works without it. */
-async function loadAgent(): Promise<DesignAgent | undefined> {
-    const url = new URL("../design/index.ts", import.meta.url);
-
-    if (!existsSync(fileURLToPath(url))) {
-        return undefined;
-    }
-
-    return (await import(url.href)) as DesignAgent;
-}
-
 export default async function createDesign(host: PocketHost, web?: ExtensionWeb) {
-    const agent = await loadAgent();
     const extension = defineExtension({
         name: "pocket-design",
-        tools: agent?.designTools(host) ?? [],
-        sections: agent === undefined ? [] : [agent.designGuide(host)],
+        tools: designTools(host),
+        sections: [designGuide(host)],
     });
 
     if (web === undefined) {
@@ -633,19 +609,8 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
         },
     });
 
-    if (agent === undefined) {
-        // Export is the agent side's; without it the buttons say so instead of finding nothing.
-        web.route(
-            "POST",
-            "export",
-            () => {
-                throw web.error(501, "Export is not in this copy of Pi Pocket.");
-            },
-            { access: "steer" },
-        );
-    } else {
-        agent.designRoutes(web, host);
-    }
+    // Export (`POST export`) is the agent side's; the file comes through core's download route.
+    designRoutes(web, host);
 
     return extension;
 }

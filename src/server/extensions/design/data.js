@@ -213,7 +213,7 @@ export function createData(pocket, store) {
 
         /**
          * Make a file on the server (PNG, PDF, PPTX, or an HTML zip: `design/index.ts`'s export route writes it in the session's
-         * `exports/` folder) and save it through the browser.
+         * `exports/` folder), then save it through core's download route.
          */
         async download({ artifact, version, format, viewport }) {
             const conversation = conversationOf();
@@ -234,6 +234,7 @@ export function createData(pocket, store) {
                 document.body.append(link);
                 link.click();
                 link.remove();
+                pocket.notify("info", `Saved ${made.name}. It is also at ${made.path}`);
 
                 return true;
             } catch (error) {
