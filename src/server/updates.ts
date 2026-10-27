@@ -20,6 +20,7 @@ import { describe, HttpError } from "./errors.ts";
 import { stageNpmUpdate } from "./npm-update.ts";
 import { git, GitError } from "./git.ts";
 import {
+    clearPending,
     finishPending,
     finishNpmPending,
     restorePackage,
@@ -1195,6 +1196,10 @@ export class Updates {
         this.#options.log(
             `Updating Pi Pocket from ${pending.fromVersion} to ${pending.toVersion}${by === undefined ? "" : ` (${by})`}.`,
         );
+        // Someone started to work while npm staged the package: nothing failed, so no outcome is noted (as for git),
+        // and an install by itself tries this release again once the sessions are quiet.
+        let declined = false;
+
         writePending(this.#root, pending);
 
         try {
@@ -1203,6 +1208,7 @@ export class Updates {
             const reason = stillWanted();
 
             if (reason !== undefined) {
+                declined = true;
                 throw new HttpError(409, reason);
             }
 
@@ -1217,13 +1223,18 @@ export class Updates {
                     throw new Error("The previous npm package is missing.");
                 }
 
-                finishPending(
-                    this.#root,
-                    pending,
-                    false,
-                    `The update to ${latest.version} failed, so Pi Pocket stays at ${pending.fromVersion}: ${describe(error)}`,
-                    this.#now,
-                );
+                if (declined) {
+                    clearPending(this.#root);
+                } else {
+                    finishPending(
+                        this.#root,
+                        pending,
+                        false,
+                        `The update to ${latest.version} failed, so Pi Pocket stays at ${pending.fromVersion}: ${describe(error)}`,
+                        this.#now,
+                    );
+                }
+
                 this.#options.quiesce?.(false);
             } catch (restoreError) {
                 throw new HttpError(
