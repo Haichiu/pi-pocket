@@ -1,22 +1,21 @@
 /**
- * The cache keeper: while the owner has it on, it re-sends a finished model request with a one-token output cap
- * just before its prompt cache entry expires, but only when that costs less than the expected rebill. Pi's own
- * cache warmer (`cache-warmer.ts` in pi-coding-agent) does this for Pi's CLI; Pi Durable has none, so this does
- * the same for Pocket.
+ * The cache keeper: while a run waits on a tool call, it re-sends the last model request with a one-token output cap
+ * just before its prompt cache entry expires, when that costs less than the expected rebill. Pi's own cache warmer
+ * (`cache-warmer.ts` in pi-coding-agent, its "streaming" mode) does this for Pi's CLI; Pi Durable has none.
  *
- * One rule, no modes. At each refresh point it asks: is `hazard * missCost` greater than `warmCost`?
- *   - `warmCost`  is a cache read of the whole prompt plus one output token.
- *   - `missCost`  is what the next real request pays more if the entry is gone: a cache write instead of a read.
- *   - `hazard`    is the chance that a real request arrives in the next refresh interval. After a tool call it is
- *                 high (the run goes on). While idle it is learned from this server's own idle gaps by age, with a
- *                 prior, so a quiet session stops being warmed and a busy one keeps going.
- * It stops at the first "no" and starts again at the next real request. A hard age cap bounds the spend.
+ * It warms only between the requests of one run: a request that ended in a tool call will be followed by another when
+ * the tool ends, so the chance of a real request is high. It never warms an idle session: in the owner's own history
+ * a warm during idle time costs about what it saves. It is on by default; `PI_POCKET_CACHE_KEEPER=off` turns it off.
  *
- * `install` wraps `models.streamSimple` in place, as `timing.ts` and `limit-gate.ts` do. The warm request goes to
- * the wrapped function, so it is not recorded as a real request. The switch is a file: `{ "enabled": true }`.
- * Nothing else in the app reads it, so deleting this module and its install line removes the feature.
+ * At each refresh point: warm when `hazard * missCost > warmCost`.
+ *   - `warmCost`  a cache read of the whole prompt plus one output token.
+ *   - `missCost`  what the next real request pays more if the entry is gone: a cache write instead of a read.
+ *   - `hazard`    the chance that the run's next request comes in the next interval (`TOOL_HAZARD`).
+ * A new real request, the run ending, an error, or the age cap (`MAX_AGE_MS`) stops it.
+ *
+ * `install` wraps `models.streamSimple` in place, as `timing.ts` and `limit-gate.ts` do. The warm request goes to the
+ * wrapped function, so it is not recorded as a real request. Deleting this module and its install line removes it.
  */
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { noWait } from "./limit-gate.ts";
 import type {
     Api,
@@ -41,15 +40,7 @@ export function refreshDelayMs(ttlMs: number): number | undefined {
 /** Warming never goes on past this long after the real request that started it. */
 export const MAX_AGE_MS = 60 * 60_000;
 /** Chance of a real request in the next interval after a tool call: the run goes on when the tool ends. */
-const TOOL_HAZARD = 0.9;
-/** The idle hazard before there is data, and how many observations that prior is worth. */
-const PRIOR_HAZARD = 0.15;
-const PRIOR_WEIGHT = 5;
-const MAX_GAPS = 500;
-/** How long a read of the switch file is trusted. */
-const ENABLED_CACHE_MS = 5_000;
-/** The learned gaps reach the file at most this often. */
-const SAVE_EVERY_MS = 30_000;
+export const TOOL_HAZARD = 0.9;
 
 export type Rates = { input: number; output: number; cacheRead: number; cacheWrite: number };
 export type Decision = {
@@ -76,26 +67,6 @@ export function decide(input: {
     return { action: expectedSavings > 0 ? "warm" : "stop", warmCost, missCost, hazard, expectedSavings };
 }
 
-/**
- * Chance that a real request arrives in the interval starting at `ageMs`, given that none has by then. It is
- * learned from past gaps (`gaps`, in ms) in buckets of one interval, pulled toward the prior with few data.
- */
-export function idleHazard(gaps: readonly number[], ageMs: number, intervalMs: number): number {
-    const bucket = Math.floor(ageMs / intervalMs);
-    let atRisk = 0;
-    let arrived = 0;
-
-    for (const gap of gaps) {
-        if (gap < bucket * intervalMs) {continue;}
-
-        atRisk++;
-
-        if (gap < (bucket + 1) * intervalMs) {arrived++;}
-    }
-
-    return (arrived + PRIOR_HAZARD * PRIOR_WEIGHT) / (atRisk + PRIOR_WEIGHT);
-}
-
 /** Whether a one-token replay leaves the cache entry alone: budget-based thinking would change `budget_tokens`. */
 export function isReplayable(model: Model<Api>, options: SimpleStreamOptions | undefined): boolean {
     if (!options?.reasoning || model.api !== "anthropic-messages") {return true;}
@@ -106,7 +77,8 @@ export function isReplayable(model: Model<Api>, options: SimpleStreamOptions | u
 function ttlMsOf(model: Model<Api>, options: SimpleStreamOptions | undefined): { ms: number; long: boolean } | undefined {
     const long =
         options?.cacheRetention === "long" ||
-        (options?.cacheRetention === undefined && (options?.env?.PI_CACHE_RETENTION ?? process.env.PI_CACHE_RETENTION) === "long");
+        (options?.cacheRetention === undefined &&
+            (options?.env?.PI_CACHE_RETENTION ?? process.env.PI_CACHE_RETENTION) === "long");
 
     if (options?.cacheRetention === "none") {return undefined;}
 
@@ -122,35 +94,32 @@ type Entry = {
     promptTokens: number;
     ttlMs: number;
     long: boolean;
-    toolNext: boolean;
-    /** When the real request ended; the age of a warm run counts from here. */
+    /** When the real request ended; the age cap counts from here, not from a refresh. */
     endedAt: number;
     /** When the next refresh should go out; a refresh later than the slack after it would pay a full rewrite. */
-    dueAt?: number;
+    dueAt: number;
     timer?: ReturnType<typeof setTimeout>;
     abort?: AbortController;
 };
 
-export type KeeperStatus = { enabled: boolean; warming: number; warms: number; spent: number };
+export type KeeperStatus = { warming: number; warms: number; spent: number };
 export type KeeperDeps = {
-    /** The switch file, `{ "enabled": true }`, read at every decision. A missing or bad file means off. */
-    file: string;
     now?: () => number;
     setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
     clearTimer?: (timer: ReturnType<typeof setTimeout>) => void;
     log?: (line: string) => void;
+    /** True turns the keeper off. Read at each decision. */
+    disabled?: () => boolean;
 };
 
 export class CacheKeeper {
-    readonly #deps: Required<Omit<KeeperDeps, "file">> & { file: string };
+    readonly #deps: Required<KeeperDeps>;
     readonly #entries = new Map<string, Entry>();
-    /** When each session's last real request ended, to learn the idle gaps from the next one. */
-    readonly #idleSince = new Map<string, number>();
-    #gaps: number[] = [];
+    #underlying: StreamSimple | undefined;
     #warms = 0;
     #spent = 0;
 
-    constructor(deps: KeeperDeps) {
+    constructor(deps: KeeperDeps = {}) {
         this.#deps = {
             now: Date.now,
             setTimer: (fn, ms) => {
@@ -162,61 +131,17 @@ export class CacheKeeper {
             },
             clearTimer: clearTimeout,
             log: () => {},
+            disabled: () => process.env.PI_POCKET_CACHE_KEEPER === "off",
             ...deps,
         };
-        this.#gaps = this.#loadGaps();
-    }
-
-    /** The switch. The file is read at most every few seconds, not on each request. */
-    enabled(): boolean {
-        const now = this.#deps.now();
-
-        if (this.#enabledAt === undefined || now - this.#enabledAt >= ENABLED_CACHE_MS) {
-            this.#enabled = this.#readFile().enabled === true;
-            this.#enabledAt = now;
-        }
-
-        return this.#enabled;
-    }
-
-    setEnabled(on: boolean): void {
-        this.#enabled = on;
-        this.#enabledAt = this.#deps.now();
-        this.#save(on);
-
-        if (!on) {this.cancelAll();}
-    }
-
-    /** Shutdown: no warm goes out after this, and the learned gaps reach the file. */
-    close(): void {
-        this.cancelAll();
-
-        if (this.#saveTimer !== undefined) {
-            clearTimeout(this.#saveTimer);
-            this.#saveTimer = undefined;
-        }
-
-        if (this.#dirty) {this.#save(this.#readFile().enabled === true);}
-    }
-
-    #enabled = false;
-    #enabledAt: number | undefined;
-    #dirty = false;
-    #saveTimer: ReturnType<typeof setTimeout> | undefined;
-
-    #readFile(): { enabled?: unknown; gaps?: unknown } {
-        try {
-            return JSON.parse(readFileSync(this.#deps.file, "utf8")) as { enabled?: unknown; gaps?: unknown };
-        } catch {
-            return {};
-        }
     }
 
     status(): KeeperStatus {
-        return { enabled: this.enabled(), warming: this.#entries.size, warms: this.#warms, spent: this.#spent };
+        return { warming: this.#entries.size, warms: this.#warms, spent: this.#spent };
     }
 
-    cancelAll(): void {
+    /** Shutdown: no warm goes out after this. */
+    close(): void {
         for (const key of [...this.#entries.keys()]) {this.#drop(key);}
     }
 
@@ -226,8 +151,6 @@ export class CacheKeeper {
         this.#underlying = underlying;
         models.streamSimple = (model, context, options) => this.#stream(underlying, model, context, options);
     }
-
-    #underlying: StreamSimple | undefined;
 
     #stream(
         underlying: StreamSimple,
@@ -244,14 +167,6 @@ export class CacheKeeper {
         // does not use the cache (a title, with `cacheRetention: "none"`) leaves it alone.
         if (ttlMsOf(model, options) !== undefined) {this.#drop(key);}
 
-        const started = this.#deps.now();
-        const since = this.#idleSince.get(key);
-
-        if (since !== undefined) {
-            this.#recordGap(started - since);
-            this.#idleSince.delete(key);
-        }
-
         void stream.result().then(
             (message) => this.#onSettled(key, model, context, options, message),
             () => {},
@@ -267,22 +182,19 @@ export class CacheKeeper {
         options: SimpleStreamOptions | undefined,
         message: AssistantMessage,
     ): void {
-        if (message.stopReason === "error" || message.stopReason === "aborted") {return;}
+        // Only a request that ended in a tool call is followed by another one soon.
+        if (message.stopReason !== "toolUse" || options === undefined) {return;}
 
-        const endedAt = this.#deps.now();
-
-        // Only a gap after a finished answer is a person's idle time; after a tool call the run just goes on.
-        if (message.stopReason === "toolUse") {this.#idleSince.delete(key);}
-        else {this.#idleSince.set(key, endedAt);}
-
-        if (!this.enabled() || options === undefined || !isReplayable(model, options)) {return;}
+        if (this.#deps.disabled() || !isReplayable(model, options)) {return;}
 
         const ttl = ttlMsOf(model, options);
         const usage = message.usage;
         const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+        const delay = ttl === undefined ? undefined : refreshDelayMs(ttl.ms);
 
-        if (ttl === undefined || promptTokens === 0 || refreshDelayMs(ttl.ms) === undefined) {return;}
+        if (ttl === undefined || delay === undefined || promptTokens === 0) {return;}
 
+        const now = this.#deps.now();
         const entry: Entry = {
             model,
             context,
@@ -290,46 +202,41 @@ export class CacheKeeper {
             promptTokens,
             ttlMs: ttl.ms,
             long: ttl.long,
-            toolNext: message.stopReason === "toolUse",
-            endedAt,
+            endedAt: now,
+            dueAt: now + delay,
         };
 
         this.#entries.set(key, entry);
-        this.#schedule(key, entry);
+        this.#schedule(key, entry, delay);
     }
 
-    #schedule(key: string, entry: Entry): void {
-        const delay = refreshDelayMs(entry.ttlMs) as number;
-
+    #schedule(key: string, entry: Entry, delay: number): void {
         entry.dueAt = this.#deps.now() + delay;
         entry.timer = this.#deps.setTimer(() => void this.#tick(key, entry), delay);
     }
 
     #decision(entry: Entry): Decision {
-        const interval = refreshDelayMs(entry.ttlMs) as number;
-        const age = this.#deps.now() - entry.endedAt;
-        const hazard = entry.toolNext ? TOOL_HAZARD : idleHazard(this.#gaps, age, interval);
         // The 1h tier writes at twice the input price; the 5m tier at the model's own `cacheWrite` price.
-        const writeRate = entry.long ? entry.model.cost.input * 2 : entry.model.cost.cacheWrite || entry.model.cost.input;
+        const writeRate = entry.long
+            ? entry.model.cost.input * 2
+            : entry.model.cost.cacheWrite || entry.model.cost.input;
 
-        return decide({ promptTokens: entry.promptTokens, rates: entry.model.cost, writeRate, hazard });
+        return decide({ promptTokens: entry.promptTokens, rates: entry.model.cost, writeRate, hazard: TOOL_HAZARD });
     }
 
     async #tick(key: string, entry: Entry): Promise<void> {
         if (this.#entries.get(key) !== entry) {return;}
 
-        const age = this.#deps.now() - entry.endedAt;
-
-        if (!this.enabled() || age >= MAX_AGE_MS) {return this.#drop(key);}
-
+        const now = this.#deps.now();
+        const delay = refreshDelayMs(entry.ttlMs) as number;
         // A timer that fired late (the machine slept) would send its refresh after the entry expired.
-        const slack = (entry.ttlMs - (refreshDelayMs(entry.ttlMs) as number)) / 2;
+        const slack = (entry.ttlMs - delay) / 2;
 
-        if (entry.dueAt !== undefined && this.#deps.now() > entry.dueAt + slack) {return this.#drop(key);}
+        if (this.#deps.disabled() || now - entry.endedAt >= MAX_AGE_MS || now > entry.dueAt + slack) {
+            return this.#drop(key);
+        }
 
-        const decision = this.#decision(entry);
-
-        if (decision.action === "stop") {return this.#drop(key);}
+        if (this.#decision(entry).action === "stop") {return this.#drop(key);}
 
         const { signal: _signal, telemetry: _telemetry, ...rest } = entry.options as SimpleStreamOptions & {
             telemetry?: unknown;
@@ -353,9 +260,11 @@ export class CacheKeeper {
 
             this.#warms++;
             this.#spent += message.usage.cost.total;
-            this.#schedule(key, entry);
+            this.#schedule(key, entry, delay);
         } catch (error) {
-            this.#deps.log(`Cache keeper stopped for a session: ${error instanceof Error ? error.message : String(error)}`);
+            this.#deps.log(
+                `Cache keeper stopped for a session: ${error instanceof Error ? error.message : String(error)}`,
+            );
             this.#drop(key);
         }
     }
@@ -369,39 +278,5 @@ export class CacheKeeper {
 
         entry.abort?.abort();
         this.#entries.delete(key);
-    }
-
-    #recordGap(ms: number): void {
-        this.#gaps.push(ms);
-
-        if (this.#gaps.length > MAX_GAPS) {this.#gaps.splice(0, this.#gaps.length - MAX_GAPS);}
-
-        this.#dirty = true;
-
-        if (this.#saveTimer === undefined) {
-            this.#saveTimer = setTimeout(() => {
-                this.#saveTimer = undefined;
-                this.#save(this.#readFile().enabled === true);
-            }, SAVE_EVERY_MS);
-            this.#saveTimer.unref();
-        }
-    }
-
-    #loadGaps(): number[] {
-        const gaps = this.#readFile().gaps;
-
-        return Array.isArray(gaps) ? gaps.filter((gap): gap is number => typeof gap === "number") : [];
-    }
-
-    #save(enabled: boolean): void {
-        try {
-            const temporary = `${this.#deps.file}.tmp`;
-
-            writeFileSync(temporary, JSON.stringify({ enabled, gaps: this.#gaps }));
-            renameSync(temporary, this.#deps.file);
-            this.#dirty = false;
-        } catch (error) {
-            this.#deps.log(`Cache keeper could not save its file: ${error instanceof Error ? error.message : String(error)}`);
-        }
     }
 }

@@ -301,7 +301,7 @@ export class PocketApp {
     readonly providers = new Providers(this);
     /** Model requests that hit a limit wait for it to clear, then go on (`limit-gate.ts`). */
     readonly limits: LimitGate;
-    /** Keeps prompt caches warm while the owner has it on (`cache-keeper.ts`). */
+    /** Keeps the prompt cache warm while a run waits on a tool call (`cache-keeper.ts`). */
     readonly cacheKeeper: CacheKeeper;
     readonly schedules = new Schedules(this);
     /** Commands Pi runs in the background, watched until they end (`background.ts`). */
@@ -428,10 +428,7 @@ export class PocketApp {
         this.config = new ConfigStore(options.dataDir);
         this.#lockFile = join(options.dataDir, "harness.lock");
         this.#log = options.log ?? ((line) => console.log(line));
-        this.cacheKeeper = new CacheKeeper({
-            file: join(options.dataDir, "cache-keeper.json"),
-            log: (line) => this.#log(line),
-        });
+        this.cacheKeeper = new CacheKeeper({ log: (line) => this.#log(line) });
         this.limits = new LimitGate({
             hours: () => this.config.limitWaitHours,
             epoch: (provider) => this.providers.signInEpoch(provider),

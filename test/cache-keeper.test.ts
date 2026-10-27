@@ -1,38 +1,32 @@
 // The cache keeper with fake streams and a fake clock: when it warms, when it stops, and what it never does.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test } from "node:test";
 import { type Api, createAssistantMessageEventStream, type Model, type SimpleStreamOptions } from "@earendil-works/pi-ai";
-import { CacheKeeper, decide, idleHazard, MAX_AGE_MS, refreshDelayMs } from "../src/server/cache-keeper.ts";
+import { CacheKeeper, decide, MAX_AGE_MS, refreshDelayMs } from "../src/server/cache-keeper.ts";
 
 // Claude Sonnet prices per million tokens, with a 5 minute cache.
 const COST = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
 const model = {
     id: "m", provider: "anthropic", api: "anthropic-messages", cost: COST, promptCache: { short: 300, long: 3600 },
 } as unknown as Model<Api>;
-const usage = (stop: string) => ({
+const usage = {
     input: 10, output: 5, cacheRead: 50_000, cacheWrite: 0, totalTokens: 50_015,
-    cost: { input: 0, output: 0, cacheRead: 0.015, cacheWrite: 0, total: 0.015 }, stop,
-});
+    cost: { input: 0, output: 0, cacheRead: 0.015, cacheWrite: 0, total: 0.015 },
+};
 
-/** A model runtime plus a clock. `timers` are the keeper's pending timers; `run` fires the next one. */
-function rig(enabled = true, gaps: number[] = []) {
-    const dir = mkdtempSync(join(tmpdir(), "keeper-"));
-    const file = join(dir, "cache-keeper.json");
-
-    writeFileSync(file, JSON.stringify({ enabled, gaps }));
+/** A model runtime plus a clock. `timers` are the keeper's pending timers; `advance` fires the next one. */
+function rig(disabled = false) {
     let now = 1_000_000;
+    let off = disabled;
     const timers: { at: number; fn: () => void }[] = [];
-    const calls: { maxTokens?: number; aborted: () => boolean; signal?: AbortSignal }[] = [];
+    const calls: { maxTokens?: number; maxRetries?: number }[] = [];
     let stopReason = "stop";
     const models = {
         streamSimple(m: Model<Api>, _c: unknown, options?: SimpleStreamOptions) {
             const stream = createAssistantMessageEventStream();
 
-            calls.push({ ...(options?.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }), aborted: () => options?.signal?.aborted === true, ...(options?.signal === undefined ? {} : { signal: options.signal }) });
-            const message = { role: "assistant", content: [], api: m.api, provider: m.provider, model: m.id, usage: usage(stopReason), stopReason, timestamp: now };
+            calls.push({ ...(options?.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }), ...(options?.maxRetries === undefined ? {} : { maxRetries: options.maxRetries }) });
+            const message = { role: "assistant", content: [], api: m.api, provider: m.provider, model: m.id, usage, stopReason, timestamp: now };
 
             queueMicrotask(() => stream.push({ type: "done", reason: "stop", message } as never));
 
@@ -40,7 +34,8 @@ function rig(enabled = true, gaps: number[] = []) {
         },
     };
     const keeper = new CacheKeeper({
-        file, now: () => now,
+        now: () => now,
+        disabled: () => off,
         setTimer: ((fn: () => void, ms: number) => { const t = { at: now + ms, fn };
 
  timers.push(t);
@@ -53,14 +48,9 @@ function rig(enabled = true, gaps: number[] = []) {
 
     keeper.install(models);
 
-    const real = async (sessionId = "s", stop = "stop") => {
+    const send = async (sessionId: string, stop: string, cacheRetention: "short" | "none" = "short") => {
         stopReason = stop;
-        await models.streamSimple(model, { messages: [] } as never, { sessionId, cacheRetention: "short" }).result();
-        await new Promise((r) => setImmediate(r));
-    };
-
-    const title = async () => {
-        await models.streamSimple(model, { messages: [] } as never, { sessionId: "s", cacheRetention: "none" }).result();
+        await models.streamSimple(model, { messages: [] } as never, { sessionId, cacheRetention }).result();
         await new Promise((r) => setImmediate(r));
     };
 
@@ -74,14 +64,18 @@ function rig(enabled = true, gaps: number[] = []) {
         await new Promise((r) => setTimeout(r, 5));
     };
 
-    return { keeper, real, title, advance, calls, timers, file, setNow: (t: number) => { now = t; }, now: () => now };
+    return { keeper, send, advance, calls, timers, setNow: (t: number) => { now = t; }, now: () => now, setOff: (v: boolean) => { off = v; } };
 }
 
-test("break-even: 5m write is 12.5x a read, so about 8.7% hazard pays for a warm", () => {
+test("break-even: a 5m write costs 12.5x a read, so a 0.9 hazard pays and a 0.05 one does not", () => {
     const at = (hazard: number) => decide({ promptTokens: 50_000, rates: COST, writeRate: COST.cacheWrite, hazard }).action;
 
     assert.equal(at(0.05), "stop");
-    assert.equal(at(0.15), "warm");
+    assert.equal(at(0.9), "warm");
+});
+
+test("a small prompt is not worth a warm: the output token costs more than the saving", () => {
+    assert.equal(decide({ promptTokens: 1, rates: COST, writeRate: COST.cacheWrite, hazard: 0.9 }).action, "stop");
 });
 
 test("refresh delay is 90% of the lifetime, 10 seconds early at least", () => {
@@ -89,100 +83,79 @@ test("refresh delay is 90% of the lifetime, 10 seconds early at least", () => {
     assert.equal(refreshDelayMs(5_000), undefined);
 });
 
-test("idle hazard follows the gaps: no data gives the prior, a busy bucket raises it", () => {
-    assert.equal(idleHazard([], 0, 270_000), 0.15);
-    assert.ok(idleHazard(Array(50).fill(100_000), 0, 270_000) > 0.9);
-    assert.ok(idleHazard(Array(50).fill(100_000), 270_000, 270_000) < 0.2);
-});
-
-test("off: a finished request starts no timer", async () => {
-    const r = rig(false);
-
-    await r.real();
-    assert.equal(r.timers.length, 0);
-});
-
-test("on: warms with a one-token cap, and the warm request is not a real one", async () => {
+test("a request that ended in a tool call is warmed, with a one-token cap and no retries", async () => {
     const r = rig();
 
-    await r.real("s", "toolUse");
+    await r.send("s", "toolUse");
     assert.equal(r.timers.length, 1);
     await r.advance();
     assert.equal(r.calls.length, 2);
     assert.equal(r.calls[1]?.maxTokens, 1);
+    assert.equal(r.calls[1]?.maxRetries, 0);
     assert.equal(r.keeper.status().warms, 1);
     assert.equal(r.timers.length, 1, "the next refresh is scheduled");
 });
 
-test("idle: people who never come back inside the first hour get no warm at all", async () => {
-    // 100 gaps beyond the cap: bucket 1 has 100 at risk and 0 arrivals, so hazard falls below break-even.
-    const r = rig(true, Array(100).fill(MAX_AGE_MS + 1));
+test("a finished answer is not warmed: an idle session costs about what it saves", async () => {
+    const r = rig();
 
-    await r.real();
-    await r.advance();
-    assert.equal(r.keeper.status().warms, 0);
+    await r.send("s", "stop");
     assert.equal(r.timers.length, 0);
 });
 
-test("a new real request cancels the pending warm", async () => {
+test("a warm is not a real request: it never starts a warm of its own beyond the next refresh", async () => {
     const r = rig();
 
-    await r.real();
-    assert.equal(r.timers.length, 1);
-    await r.real();
+    await r.send("s", "toolUse");
+    await r.advance();
+    await r.advance();
+    assert.equal(r.timers.length, 1, "one pending refresh, not one per warm");
+    assert.equal(r.keeper.status().warming, 1);
+});
+
+test("a new real request replaces the pending warm", async () => {
+    const r = rig();
+
+    await r.send("s", "toolUse");
+    await r.send("s", "toolUse");
     assert.equal(r.timers.length, 1, "one timer for the newest request, not two");
 });
 
-test("switching off cancels every pending warm", async () => {
+test("the run ending (a finished answer) stops the warm of its last tool call", async () => {
     const r = rig();
 
-    await r.real("a");
-    await r.real("b");
-    assert.equal(r.timers.length, 2);
-    r.keeper.setEnabled(false);
-    assert.equal(r.timers.length, 0);
-    assert.equal(r.keeper.enabled(), false);
-});
-
-test("the age cap ends warming even when every refresh would pay", async () => {
-    const r = rig();
-
-    await r.real("s", "toolUse");
-
-    for (let i = 0; i < 40 && r.timers.length > 0; i++) {await r.advance();}
-
-    assert.ok(r.now() - 1_000_000 <= MAX_AGE_MS + 300_000);
+    await r.send("s", "toolUse");
+    await r.send("s", "stop");
     assert.equal(r.timers.length, 0);
 });
 
-test("a warm does not count as a real request: the next idle gap is measured from the real one", async () => {
+test("a request that does not use the cache leaves the pending warm alone", async () => {
     const r = rig();
 
-    await r.real();
-    await r.advance(); // the warm, 270 s later
-    r.setNow(1_000_000 + 280_000);
-    await r.real();
-    r.keeper.close();
-    const gaps = JSON.parse(readFileSync(r.file, "utf8")).gaps as number[];
-
-    assert.deepEqual(gaps, [280_000]);
-});
-
-test("the owner's switch is the file: turning it on there is seen after the cached read expires", async () => {
-    const r = rig(false);
-
-    await r.real();
-    assert.equal(r.timers.length, 0);
-    writeFileSync(r.file, JSON.stringify({ enabled: true }));
-    r.setNow(r.now() + 6_000);
-    await r.real();
+    await r.send("s", "toolUse");
+    await r.send("s", "stop", "none");
     assert.equal(r.timers.length, 1);
+});
+
+test("turned off: no warm starts, and a pending one is dropped when it fires", async () => {
+    const off = rig(true);
+
+    await off.send("s", "toolUse");
+    assert.equal(off.timers.length, 0);
+
+    const r = rig();
+
+    await r.send("s", "toolUse");
+    r.setOff(true);
+    await r.advance();
+    assert.equal(r.calls.length, 1, "only the real request");
+    assert.equal(r.timers.length, 0);
 });
 
 test("a timer that fires long after its due time sends nothing", async () => {
     const r = rig();
 
-    await r.real("s", "toolUse");
+    await r.send("s", "toolUse");
     const timer = r.timers[0];
 
     assert.ok(timer);
@@ -193,20 +166,25 @@ test("a timer that fires long after its due time sends nothing", async () => {
     assert.equal(r.calls.length, 1, "only the real request");
 });
 
-test("a request that does not use the cache leaves the pending warm alone", async () => {
+test("the age cap ends warming from the real request, not from the last warm", async () => {
     const r = rig();
 
-    await r.real();
-    assert.equal(r.timers.length, 1);
-    await r.title();
-    assert.equal(r.timers.length, 1);
+    await r.send("s", "toolUse");
+    const start = r.now();
+
+    for (let i = 0; i < 40 && r.timers.length > 0; i++) {await r.advance();}
+
+    assert.ok(r.now() - start < MAX_AGE_MS + 300_000, "it stopped near the cap");
+    assert.equal(r.timers.length, 0);
+    assert.ok(r.keeper.status().warms >= 10, "it did warm up to the cap");
 });
 
 test("close cancels every pending warm", async () => {
     const r = rig();
 
-    await r.real("a");
-    await r.real("b");
+    await r.send("a", "toolUse");
+    await r.send("b", "toolUse");
+    assert.equal(r.timers.length, 2);
     r.keeper.close();
     assert.equal(r.timers.length, 0);
 });
