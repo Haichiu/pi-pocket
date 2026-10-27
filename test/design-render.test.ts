@@ -295,6 +295,90 @@ test(
 );
 
 test(
+    "a slide authored at 1920×1080 keeps its corner content and ignores conflicting size limits",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        const content = `<!doctype html><meta name="pocket-kind" content="deck">
+            <style>section.slide{width:1920px;height:1080px;min-width:2200px;max-width:1280px;min-height:1300px;max-height:720px;background:blue}
+            i{position:absolute;left:1880px;top:1040px;width:40px;height:40px;background:red}</style>
+            <section class="slide"><i></i></section>`;
+
+        await withRender({ ...bundle, content }, host, undefined, async (page) => {
+            await page.load(viewportOf("desktop"));
+            await page.showSlide(1);
+            const rect = await page.evaluate(
+                "(() => { const r = document.querySelector('section.slide').getBoundingClientRect(); return [r.width, r.height]; })()",
+            );
+
+            assert.deepEqual(rect, [1920, 1080]);
+            const image = await page.screenshot(await page.slideSize());
+            const pixel = await page.evaluate(`(async () => {
+                const image = new Image();
+                image.src = 'data:image/png;base64,${image}';
+                await image.decode();
+                const canvas = document.createElement('canvas');
+                canvas.width = image.width;
+                canvas.height = image.height;
+                const context = canvas.getContext('2d');
+                context.drawImage(image, 0, 0);
+                return Array.from(context.getImageData(1900, 1060, 1, 1).data);
+            })()`);
+
+            assert.deepEqual(
+                pixel,
+                [255, 0, 0, 255],
+                "the authored bottom-right mark is in the PNG",
+            );
+            await page.pdf();
+            assert.deepEqual(
+                await page.evaluate(
+                    "(() => { const r = document.querySelector('section.slide').getBoundingClientRect(); return [r.width, r.height]; })()",
+                ),
+                [1920, 1080],
+                "PDF layout also overrides authored slide limits",
+            );
+        });
+    },
+);
+
+test(
+    "a supported 3840×2160 slide exports without a horizontal crop",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        const content =
+            '<!doctype html><meta name="pocket-kind" content="deck"><meta name="pocket-slide-size" content="3840x2160"><section class="slide">Large slide</section>';
+        const png = await exportDesign({ ...bundle, content }, "png", undefined, host);
+
+        assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [3840, 2160]);
+    },
+);
+
+test(
+    "deck PDF pages match the default or custom slide dimensions, one page per slide",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        for (const [meta, expected] of [
+            ["", [1440, 810]],
+            ['<meta name="pocket-slide-size" content="640x640">', [480, 480]],
+        ] as const) {
+            const content = `<!doctype html><meta name="pocket-kind" content="deck">${meta}<section class="slide">First</section><section class="slide">Second</section>`;
+            const pdf = await exportDesign({ ...bundle, content }, "pdf", undefined, host);
+            const boxes = [
+                ...pdf
+                    .toString("latin1")
+                    .matchAll(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/g),
+            ];
+
+            assert.equal(boxes.length, 2);
+
+            for (const box of boxes) {
+                assert.deepEqual([Number(box[1]), Number(box[2])], expected);
+            }
+        }
+    },
+);
+
+test(
     "WebRTC cannot send private UDP packets from a render",
     { skip: browser === undefined, timeout: 120_000 },
     async () => {

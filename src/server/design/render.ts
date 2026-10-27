@@ -409,7 +409,7 @@ export class DesignPage {
                     slide.style.setProperty('display', displays[index] === 'none' ? 'block' : displays[index], 'important');
                 });
                 const style = document.createElement('style');
-                style.textContent = '@page{size:${width}px ${height}px;margin:0}html,body{margin:0!important;padding:0!important;width:${width}px!important;height:auto!important;overflow:visible!important}section.slide{position:relative!important;inset:auto!important;width:${width}px!important;height:${height}px!important;min-height:0!important;margin:0!important;box-sizing:border-box!important;transform:none!important;scale:1!important;break-after:page!important;break-inside:avoid!important}section.slide:last-child{break-after:auto!important}';
+                style.textContent = '@page{size:${width}px ${height}px;margin:0}html,body{margin:0!important;padding:0!important;width:${width}px!important;height:auto!important;overflow:visible!important}section.slide{position:relative!important;inset:auto!important;width:${width}px!important;height:${height}px!important;min-width:0!important;max-width:none!important;min-height:0!important;max-height:none!important;margin:0!important;overflow:hidden!important;box-sizing:border-box!important;transform:none!important;scale:1!important;break-after:page!important;break-inside:avoid!important}section.slide:last-child{break-after:auto!important}';
                 document.head.append(style);
             })()`);
         }
@@ -502,7 +502,7 @@ export class DesignPage {
             const visibleDisplay = ${JSON.stringify(displays[slide - 1])};
             const style = document.createElement('style');
             style.id = 'pocket-render-slide';
-            style.textContent = 'html,body{margin:0!important;padding:0!important;width:${viewport.width}px!important;height:${viewport.height}px!important;overflow:hidden!important}section.slide{display:none!important}section.slide[data-pocket-export]{display:' + visibleDisplay + '!important;position:fixed!important;inset:auto!important;left:${left}px!important;top:${top}px!important;width:${size.width}px!important;height:${size.height}px!important;box-sizing:border-box!important;transform:scale(${scale})!important;transform-origin:top left!important;scale:1!important}';
+            style.textContent = 'html,body{margin:0!important;padding:0!important;width:${viewport.width}px!important;height:${viewport.height}px!important;overflow:hidden!important}section.slide{display:none!important}section.slide[data-pocket-export]{display:' + visibleDisplay + '!important;position:fixed!important;inset:auto!important;left:${left}px!important;top:${top}px!important;width:${size.width}px!important;height:${size.height}px!important;min-width:0!important;max-width:none!important;min-height:0!important;max-height:none!important;margin:0!important;overflow:hidden!important;box-sizing:border-box!important;transform:scale(${scale})!important;transform-origin:top left!important;scale:1!important}';
             document.head.append(style);
             const slides = Array.from(document.querySelectorAll('section.slide'));
             slides.forEach((item, index) => item.toggleAttribute('data-pocket-export', index === ${slide - 1}));

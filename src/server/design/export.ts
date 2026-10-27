@@ -113,6 +113,6 @@ export async function exportDesign(
             slides.push({ image, text });
         }
 
-        return pptx(slides);
+        return pptx(slides, slideSize);
     });
 }
