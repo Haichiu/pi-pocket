@@ -170,3 +170,28 @@ test("an update state folder that the server cannot write stops an npm update be
     chmodSync(state, 0o555);
     assert.equal(await npmWritable(root), process.getuid?.() === 0);
 });
+
+test("warnings after the displayed notes limit still require care", async (t) => {
+    let alert = "WARNING";
+
+    t.mock.method(globalThis, "fetch", async (url: string | URL | Request) =>
+        String(url).includes("registry.npmjs.org")
+            ? Response.json({
+                  "dist-tags": { latest: "1.2.0" },
+                  versions: { "1.2.0": {} },
+              })
+            : Response.json({
+                  tag_name: "v1.2.0",
+                  body: `${"x".repeat(60_000)}\n> [!${alert}]\n> A one-way migration.`,
+              }),
+    );
+
+    for (const kind of ["WARNING", "CAUTION"]) {
+        alert = kind;
+        const release = await npmRelease({ owner: "test", name: "pocket" });
+
+        assert.equal(release.notes?.length, 60_000);
+        assert.equal(release.warning, true);
+        assert.equal(release.unread, undefined);
+    }
+});

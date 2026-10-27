@@ -229,12 +229,13 @@ async function githubRelease(
     }
 
     const body = (await response.json()) as Record<string, unknown>;
+    const notes = typeof body.body === "string" ? body.body : "";
     const foundTag = typeof body.tag_name === "string" ? body.tag_name : "";
     const page = `https://github.com/${repository.owner}/${repository.name}/releases/tag/${foundTag}`;
     const release = releaseOf(foundTag, {
         name:
             typeof body.name === "string" && body.name.trim() !== "" ? body.name.trim() : foundTag,
-        notes: typeof body.body === "string" ? body.body.slice(0, MAX_NOTES) : "",
+        notes: notes.slice(0, MAX_NOTES),
         url: page,
         ...(typeof body.published_at === "string" ? { publishedAt: body.published_at } : {}),
     });
@@ -243,7 +244,8 @@ async function githubRelease(
         throw new Error(`The release's tag is not a version: ${foundTag.slice(0, 40)}`);
     }
 
-    return release;
+    // Read all notes for safety, even when only the first part is displayed.
+    return { ...release, warning: notesWarn(notes) };
 }
 
 /** npm's published latest version, with the notes for that exact version from GitHub. */
