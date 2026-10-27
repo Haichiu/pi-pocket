@@ -69,14 +69,12 @@ export function createParts(pocket) {
                 return undefined;
             }
 
+            // The layout size, not the drawn one: a panel that is still growing in (a transform) is as big as it will be.
             const measure = () => {
-                const box = element.getBoundingClientRect();
+                const w = element.clientWidth;
+                const h = element.clientHeight;
 
-                setSize((old) =>
-                    Math.abs(old.w - box.width) < 0.5 && Math.abs(old.h - box.height) < 0.5
-                        ? old
-                        : { w: box.width, h: box.height },
-                );
+                setSize((old) => (old.w === w && old.h === h ? old : { w, h }));
             };
 
             measure();

@@ -224,6 +224,22 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
         return index.items[id]!;
     };
 
+    /**
+     * The item for a design, made if it is not there yet. The document tracks what is assigned and what is changed through
+     * it, not what is changed through the object that was assigned: so it is read back after it is made.
+     */
+    const itemOf = (doc: { items: Record<string, DesignItem> }, id: string): DesignItem => {
+        if (!Object.hasOwn(doc.items, id)) {
+            if (Object.keys(doc.items).length >= MAX_ITEMS) {
+                throw web.error(409, `This session keeps notes on up to ${MAX_ITEMS} designs.`);
+            }
+
+            doc.items[id] = { comments: [] };
+        }
+
+        return doc.items[id]!;
+    };
+
     /** The comments are everyone's; one person's tweaks are theirs alone. */
     const view = (item: DesignItem | undefined, person: string) => ({
         comments: item?.comments ?? [],
@@ -301,13 +317,7 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
             await request.commit(async (tx) => {
                 const doc = await tx.doc(DesignCommentsDoc, request.conversation.id);
 
-                if (!Object.hasOwn(doc.items, id) && Object.keys(doc.items).length >= MAX_ITEMS) {
-                    throw web.error(409, "This session keeps comments on up to 100 designs.");
-                }
-
-                const item = Object.hasOwn(doc.items, id)
-                    ? doc.items[id]!
-                    : (doc.items[id] = { comments: [] });
+                const item = itemOf(doc, id);
 
                 if (item.comments.length >= MAX_COMMENTS) {
                     throw web.error(
@@ -459,19 +469,11 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
             await request.commit(async (tx) => {
                 const doc = await tx.doc(DesignCommentsDoc, request.conversation.id);
 
-                if (!Object.hasOwn(doc.items, id)) {
-                    if (values === null) {
-                        return;
-                    }
-
-                    if (Object.keys(doc.items).length >= MAX_ITEMS) {
-                        throw web.error(409, "This session keeps notes on up to 100 designs.");
-                    }
-
-                    doc.items[id] = { comments: [] };
+                if (!Object.hasOwn(doc.items, id) && values === null) {
+                    return;
                 }
 
-                const item = doc.items[id]!;
+                const item = itemOf(doc, id);
 
                 if (values === null || Object.keys(values).length === 0) {
                     if (item.tweaks !== undefined) {
@@ -579,9 +581,7 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
                 }
 
                 const notes = await tx.doc(DesignCommentsDoc, request.conversation.id);
-                const item = Object.hasOwn(notes.items, id)
-                    ? notes.items[id]!
-                    : (notes.items[id] = { comments: [] });
+                const item = itemOf(notes, id);
 
                 item.restores = { ...item.restores, [String(next)]: from };
 

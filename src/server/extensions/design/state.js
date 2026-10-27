@@ -124,6 +124,8 @@ export function sessionState() {
         knobs: [],
         tweaks: {},
         deck: null,
+        /** The slide the deck was last on (0 first): a page that loads again goes back to it. */
+        slide: 0,
         present: false,
         /** A request from outside to open an artifact (the viewer's button, the command): the panel takes it once. */
         wanted: null,

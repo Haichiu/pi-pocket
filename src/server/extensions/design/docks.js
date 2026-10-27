@@ -10,6 +10,13 @@ export function createDocks(env) {
     const { html, useEffect, useRef, useState, Switch } = pocket;
     const { Ico, ago } = parts;
 
+    const versionTitle = (version, latest) =>
+        `${version.version === latest ? "Newest" : `Version ${version.version}`}${version.restoredFrom ? ` · from v${version.restoredFrom}` : ""}`;
+    const versionNote = (version) =>
+        `${ago(version.createdAt)} · ${(version.size / 1024).toFixed(1)} KB`;
+    const confirmText = (latest, from) =>
+        `Make version ${latest + 1} from version ${from}? Nothing is lost: every version stays.`;
+
     function DockHead({ title, count, children }) {
         return html`<header class="dsn-dock-head">
             <h3>${title}${count > 0 && html` <span class="dsn-count">${count}</span>`}</h3>
@@ -76,14 +83,8 @@ export function createDocks(env) {
                                 >
                                     <span class="dsn-version-no mono">v${version.version}</span>
                                     <span class="dsn-version-info">
-                                        <span>
-                                            ${version.version === latest ? "Newest" : "Version " + version.version}
-                                            ${version.restoredFrom && html` · from v${version.restoredFrom}`}
-                                        </span>
-                                        <span class="muted small"
-                                            >${ago(version.createdAt)} ·
-                                            ${(version.size / 1024).toFixed(1)} KB</span
-                                        >
+                                        <span>${versionTitle(version, latest)}</span>
+                                        <span class="muted small">${versionNote(version)}</span>
                                     </span>
                                     ${version.version === shown && html`<${Ico} name="check" size=${15} />`}
                                 </button>
@@ -113,12 +114,11 @@ export function createDocks(env) {
                                 </div>
                                 ${
                                     asking === version.version &&
-                                    html`<div class="dsn-confirm">
-                                        <span
-                                            >Make version ${latest + 1} from version
-                                            ${version.version}? Nothing is lost: every version
-                                            stays.</span
-                                        >
+                                    html`<div
+                                        class="dsn-confirm"
+                                        ref=${(element) => element?.scrollIntoView({ block: "nearest" })}
+                                    >
+                                        <span>${confirmText(latest, version.version)}</span>
                                         <span class="dsn-confirm-actions">
                                             <button
                                                 type="button"

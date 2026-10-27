@@ -38,6 +38,7 @@ export default function setup(pocket) {
         /** The page's frame, for the parts that talk to it (the slide strip): `{ send, goto, supported }`, or null. */
         frame: { current: null },
         canEdit,
+        darkTheme: () => document.documentElement.dataset.mode !== "light",
         sizeClass: (state) => {
             const width = state.width || 1000;
 
@@ -92,6 +93,7 @@ export default function setup(pocket) {
                 draft: null,
                 knobs: [],
                 deck: null,
+                slide: 0,
                 present: false,
             });
         },
@@ -110,7 +112,13 @@ export default function setup(pocket) {
             });
         },
         setView(view) {
-            store.set({ view, mode: view === "canvas" ? store.get().mode : "view", draft: null });
+            // Variations fill the room: the side panel goes.
+            store.set({
+                view,
+                mode: view === "canvas" ? store.get().mode : "view",
+                draft: null,
+                ...(view === "grid" ? { dock: null } : {}),
+            });
         },
         setDock(dock) {
             store.set(dock === null ? { dock: null, mode: "view", draft: null } : { dock });

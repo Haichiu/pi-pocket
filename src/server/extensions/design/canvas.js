@@ -100,7 +100,8 @@ export function createCanvas(env) {
         const [ready, setReady] = useState(0);
         const [loaded, setLoaded] = useState(false);
         const sent = useRef({ at: -1, values: {} });
-        const scale = scaleOf(s.zoom, size, roomSize);
+        // The zoom bar floats over the bottom of the room: the page fits above it.
+        const scale = scaleOf(s.zoom, size, { w: roomSize.w, h: roomSize.h - 40 });
         const src = frameUrl(s.conversation, design.id, version);
         const key = `${src}#${s.reload}`;
         const notes = s.notes[design.id];
@@ -152,11 +153,11 @@ export function createCanvas(env) {
                 message.slides > 0 &&
                 num(message.current)
             ) {
+                const current = Math.max(0, Math.round(message.current));
+
                 store.set({
-                    deck: {
-                        slides: Math.min(500, Math.round(message.slides)),
-                        current: Math.max(0, Math.round(message.current)),
-                    },
+                    deck: { slides: Math.min(500, Math.round(message.slides)), current },
+                    slide: current,
                 });
             }
         };
@@ -187,6 +188,13 @@ export function createCanvas(env) {
             store.set({ knobs: [], deck: null });
         }, [key]);
 
+        // Back from present mode or a reload: the slide the person was on.
+        useEffect(() => {
+            if (ready > 0 && store.get().slide > 0) {
+                send({ type: "pocket-goto", slide: store.get().slide });
+            }
+        }, [ready]);
+
         // The mode: the page's inspector for a comment, contenteditable text for an edit.
         useEffect(() => {
             send({ type: "pocket-inspect", on: s.mode === "comment" && !readOnly });
@@ -197,7 +205,14 @@ export function createCanvas(env) {
         const pinKey = pins.map((comment) => comment.id).join();
 
         useEffect(() => {
-            send({ type: "pocket-highlight", targets: pins.map((comment) => comment.target) });
+            send({
+                type: "pocket-highlight",
+                targets: pins.map((comment, index) => ({
+                    ...(comment.target.pid ? { pid: comment.target.pid } : {}),
+                    selector: comment.target.selector,
+                    label: index + 1,
+                })),
+            });
         }, [ready, pinKey]);
 
         // The saved tweaks, once the page has said what its knobs are and the server what was saved.
@@ -234,7 +249,7 @@ export function createCanvas(env) {
         }, [ready, knobs, values]);
 
         return html`<div
-            class="dsn-canvas"
+            class="dsn-canvas has-zoom"
             ref=${room}
             data-backdrop=${s.backdrop}
             data-mode=${s.mode}
@@ -244,7 +259,7 @@ export function createCanvas(env) {
                     <iframe
                         ref=${frame}
                         key=${key}
-                        class=${`dsn-frame ${loaded ? "loaded" : ""}`}
+                        class=${`dsn-frame wait ${loaded ? "loaded" : ""}`}
                         src=${src}
                         sandbox=${SANDBOX}
                         allow=${ALLOW}
@@ -257,17 +272,17 @@ export function createCanvas(env) {
             ${
                 s.mode === "comment" &&
                 !s.draft &&
-                html`<div class="dsn-hint">
+                html`<div class="dsn-hint" key=${s.mode}>
                     ${
                         supported
-                            ? "Tap an element to comment on it"
+                            ? "Tap an element to comment"
                             : "Pointing needs the frame's inspector"
                     }
                 </div>`
             }
             ${
                 s.mode === "edit" &&
-                html`<div class="dsn-hint">
+                html`<div class="dsn-hint" key=${s.mode}>
                     ${supported ? "Tap text to change it" : "Editing needs the frame's inspector"}
                 </div>`
             }

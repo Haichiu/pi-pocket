@@ -8,9 +8,10 @@ import { changed } from "./tweaks.js";
 import { createViews } from "./views.js";
 import { useStore } from "./state.js";
 
-/** The sheet's own width classes: below 560 px it stacks; from 640 px the side panel sits beside the canvas. */
+/** The sheet's own width classes: below 560 px it stacks; from 900 px the side panel sits beside the canvas. */
 const NARROW = 560;
-const SIDE = 640;
+const SIDE = 900;
+const STACK = 560;
 
 export function createWorkspace(env) {
     const { pocket, store, data, parts, app } = env;
@@ -49,6 +50,9 @@ export function createWorkspace(env) {
             [ours, appState.view.artifacts, s.listed],
         );
     }
+
+    const listNote = (design) =>
+        `${design.id} · v${latestOf(design)} · ${ago(design.versions.at(-1)?.createdAt ?? 0)}`;
 
     // ─── Pop-ups ─────────────────────────────────────────────────────────────
 
@@ -110,10 +114,7 @@ export function createWorkspace(env) {
                               >
                                   <span class="dsn-list-main">
                                       <strong>${row.title}</strong>
-                                      <span class="muted small mono">
-                                          ${row.id} · v${latestOf(row)} ·
-                                          ${ago(row.versions.at(-1)?.createdAt ?? 0)}
-                                      </span>
+                                      <span class="muted small mono">${listNote(row)}</span>
                                   </span>
                                   ${row.kind === "deck" && html`<span class="dsn-chip">deck</span>`}
                                   ${row.id === design?.id && html`<${Ico} name="check" size=${15} />`}
@@ -186,26 +187,22 @@ export function createWorkspace(env) {
               </button>`;
     }
 
-    function Menu({ s, design, shown, group, deck, canShare, onClose }) {
+    function Menu({ s, device, size, design, shown, group, deck, canShare, onClose }) {
         const [busy, setBusy] = useState(null);
-        const size = sizeOf(s.device, s.custom);
 
         const run = async (format) => {
             setBusy(format);
 
-            const ok = await data.download({
+            await data.download({
                 artifact: design.id,
                 version: shown,
                 format,
-                viewport: exportViewport(s.device, size),
+                viewport: exportViewport(device, size),
                 slide: s.deck?.current,
             });
 
             setBusy(null);
-
-            if (ok) {
-                onClose();
-            }
+            onClose();
         };
 
         const exporting = (format, label, hint) =>
@@ -246,7 +243,7 @@ export function createWorkspace(env) {
                 <${MenuItem}
                     icon="monitor"
                     label="Custom size…"
-                    on=${s.device === "custom"}
+                    on=${device === "custom"}
                     onClick=${() => {
                         env.setDevice("custom");
                         onClose();
@@ -313,14 +310,27 @@ export function createWorkspace(env) {
 
     // ─── The toolbar ─────────────────────────────────────────────────────────
 
-    function Bar({ s, designs, design, shown, latest, group, deck, canShare, canEdit }) {
+    function Bar({
+        s,
+        device,
+        size,
+        designs,
+        design,
+        shown,
+        latest,
+        group,
+        deck,
+        canShare,
+        canEdit,
+    }) {
         const [open, setOpen] = useState(null);
         const narrow = env.sizeClass(s) === "narrow";
         const devices = [
             { value: "mobile", icon: DEVICES.mobile.icon, title: "Phone, 390 × 844" },
             { value: "tablet", icon: DEVICES.tablet.icon, title: "Tablet, 820 × 1180" },
-            { value: "desktop", icon: DEVICES.desktop.icon, title: "Desktop, 1280 × 800" },
-            ...(deck ? [{ value: "slide", icon: "play", title: "Slide, 16:9" }] : []),
+            deck
+                ? { value: "slide", icon: "monitor", title: "Slide, 1280 × 720" }
+                : { value: "desktop", icon: DEVICES.desktop.icon, title: "Desktop, 1280 × 800" },
             ...(narrow ? [] : [{ value: "custom", icon: "fit", title: "Custom size" }]),
         ];
         const open_ = openOf(s.notes[design.id]?.comments ?? []).length;
@@ -369,7 +379,7 @@ export function createWorkspace(env) {
                 <${Segmented}
                     label="Size"
                     iconOnly=${true}
-                    value=${s.device}
+                    value=${device}
                     options=${devices.map((device) => ({ ...device, label: device.title }))}
                     onChange=${env.setDevice}
                 />
@@ -384,7 +394,7 @@ export function createWorkspace(env) {
                     <${Ico} name="more" size=${18} />
                 </button>
             </div>
-            ${s.device === "custom" && html`<${CustomSize} s=${s} />`}
+            ${device === "custom" && html`<${CustomSize} s=${s} />`}
             <div class="dsn-tabs" role="tablist" aria-label="Mode">
                 ${tabs.map(
                     (tab) =>
@@ -455,6 +465,8 @@ export function createWorkspace(env) {
                 open === "more" &&
                 html`<${Menu}
                     s=${s}
+                    device=${device}
+                    size=${size}
                     design=${design}
                     shown=${shown}
                     group=${group}
@@ -582,11 +594,15 @@ export function createWorkspace(env) {
             }
         }, [s.artifact, s.conversation]);
 
-        // A hand-made number for a size class is best kept where all parts read it.
-        const size = sizeOf(
-            s.device === "slide" && design?.kind !== "deck" ? "desktop" : s.device,
-            s.custom,
-        );
+        // A deck is shown at slide size by default, and a page is never shown at it.
+        const deck = design?.kind === "deck" || s.deck !== null;
+        const device =
+            deck && s.device === "desktop"
+                ? "slide"
+                : !deck && s.device === "slide"
+                  ? "desktop"
+                  : s.device;
+        const size = sizeOf(device, s.custom);
         const latest = design ? latestOf(design) : 1;
         const shown = design
             ? design.versions.some((each) => each.version === s.version)
@@ -594,8 +610,9 @@ export function createWorkspace(env) {
                 : latest
             : 1;
         const group = design ? siblingsOf(designs, design) : [];
-        const deck = design?.kind === "deck" || s.deck !== null;
-        const side = (store.get().width || width) >= SIDE;
+        // Beside the canvas on a wide panel, or a narrower one that shows a tall page (a phone or a tablet): under it otherwise.
+        const room = store.get().width || width;
+        const side = room >= SIDE || (room >= STACK && size.h > size.w);
 
         if (s.conversation === null) {
             return html`<div class="dsn" ref=${root}>
@@ -637,6 +654,8 @@ export function createWorkspace(env) {
         >
             <${Bar}
                 s=${s}
+                device=${device}
+                size=${size}
                 designs=${designs}
                 design=${design}
                 shown=${shown}

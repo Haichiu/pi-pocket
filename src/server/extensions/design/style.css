@@ -12,8 +12,9 @@
 }
 
 @media (min-width: 1100px) {
+    /* The canvas takes what the chat can spare: the chat keeps 440px, and the canvas is never narrower than 480px. */
     .layout.paneling .ext-panel.wide[data-module="design"] {
-        --ext-panel-w: 58%;
+        --ext-panel-w: max(480px, min(58%, calc(100% - 760px)));
     }
 }
 
@@ -428,6 +429,10 @@ button.dsn-chip {
     overflow: auto;
 }
 
+.dsn-canvas.has-zoom > .dsn-scroll {
+    padding-bottom: 56px;
+}
+
 .dsn-stage {
     position: relative;
     flex: none;
@@ -447,6 +452,10 @@ button.dsn-chip {
     transform-origin: 0 0;
 }
 
+.dsn-canvas:has(.dsn-frame.wait:not(.loaded)) .dsn-stage {
+    background: var(--dsn-fill-2);
+}
+
 .dsn-frame {
     display: block;
     width: 100%;
@@ -455,7 +464,7 @@ button.dsn-chip {
     background: #fff;
 }
 
-.dsn-canvas .dsn-frame:not(.loaded) {
+.dsn-canvas .dsn-frame.wait:not(.loaded) {
     opacity: 0;
 }
 
@@ -479,10 +488,24 @@ button.dsn-chip {
     color: var(--dsn-on-accent);
     font-size: 12.5px;
     font-weight: 600;
+    white-space: nowrap;
     text-align: center;
     pointer-events: none;
     transform: translateX(-50%);
     box-shadow: 0 6px 18px -6px rgb(0 0 0 / 0.5);
+    animation: dsn-hint 5s ease forwards;
+}
+
+/* It says what to do, then gets out of the page's way. */
+@keyframes dsn-hint {
+    0%,
+    70% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
 }
 
 .dsn-zoom {
@@ -1111,28 +1134,6 @@ button.dsn-chip {
 
 .dsn-compare-room {
     flex: 1;
-}
-
-.dsn-swap {
-    position: absolute;
-    top: 5px;
-    left: 50%;
-    z-index: 2;
-    display: grid;
-    place-items: center;
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background: var(--dsn-fill-2);
-    box-shadow: 0 0 0 1px var(--dsn-hair);
-    transform: translateX(-50%);
-}
-
-.dsn-compare.stacked .dsn-swap {
-    top: calc(50% - 15px);
-    left: auto;
-    right: 10px;
-    transform: none;
 }
 
 /* ─── Variations ───────────────────────────────────────────── */

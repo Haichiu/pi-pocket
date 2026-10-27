@@ -12,7 +12,7 @@ export function createViews(env, canvas) {
 
     // ─── Compare ─────────────────────────────────────────────────────────────
 
-    function ComparePane({ s, design, version, size, scale, onPick, side }) {
+    function ComparePane({ s, design, version, size, scale, onPick, side, onSwap }) {
         const box = useRef(null);
 
         return html`<section class="dsn-compare-pane" aria-label=${`Version ${version}`}>
@@ -32,6 +32,18 @@ export function createViews(env, canvas) {
                                 </option>`,
                         )}
                 </select>
+                ${
+                    onSwap &&
+                    html`<button
+                        type="button"
+                        class="icon-button"
+                        title="Swap the two versions"
+                        aria-label="Swap the two versions"
+                        onClick=${onSwap}
+                    >
+                        <${Ico} name="swap" size=${15} />
+                    </button>`
+                }
             </header>
             <div class="dsn-compare-room dsn-canvas" data-backdrop=${s.backdrop} ref=${box}>
                 <div class="dsn-scroll" data-no-swipe>
@@ -59,7 +71,7 @@ export function createViews(env, canvas) {
         const pane = stacked
             ? { w: room.w, h: Math.max(0, room.h / 2 - 40) }
             : { w: room.w / 2, h: Math.max(0, room.h - 40) };
-        const scale = scaleOf(s.zoom, size, pane, 10);
+        const scale = scaleOf(s.zoom, size, pane);
 
         return html`<div class=${`dsn-compare ${stacked ? "stacked" : ""}`} ref=${probe}>
             <${ComparePane}
@@ -69,17 +81,9 @@ export function createViews(env, canvas) {
                 size=${size}
                 scale=${scale}
                 side="Before"
+                onSwap=${() => store.set({ compare: { a: b, b: a } })}
                 onPick=${(version) => store.set({ compare: { a: version, b } })}
             />
-            <button
-                type="button"
-                class="dsn-swap"
-                title="Swap the two versions"
-                aria-label="Swap the two versions"
-                onClick=${() => store.set({ compare: { a: b, b: a } })}
-            >
-                <${Ico} name="swap" size=${15} />
-            </button>
             <${ComparePane}
                 s=${s}
                 design=${design}
@@ -187,7 +191,7 @@ export function createViews(env, canvas) {
         const go = (slide) => {
             const to = Math.max(0, Math.min(deck.slides - 1, slide));
 
-            store.set({ deck: { ...deck, current: to } });
+            store.set({ deck: { ...deck, current: to }, slide: to });
             env.frame.current?.goto(to);
         };
 
@@ -247,7 +251,10 @@ export function createViews(env, canvas) {
                     Number.isFinite(message.slides) &&
                     Number.isFinite(message.current)
                 ) {
-                    store.set({ deck: { slides: message.slides, current: message.current } });
+                    store.set({
+                        deck: { slides: message.slides, current: message.current },
+                        slide: message.current,
+                    });
                 }
             },
             onReady: () => setReady((count) => count + 1),
@@ -257,7 +264,7 @@ export function createViews(env, canvas) {
             const to = Math.max(0, Math.min((store.get().deck?.slides ?? 1) - 1, slide));
 
             if (bridge?.send?.({ type: "pocket-goto", slide: to })) {
-                store.set((now) => ({ deck: now.deck && { ...now.deck, current: to } }));
+                store.set((now) => ({ deck: now.deck && { ...now.deck, current: to }, slide: to }));
             }
         };
 
