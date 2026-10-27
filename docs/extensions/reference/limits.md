@@ -79,6 +79,9 @@ All the numbers that limit a module, in one place. Each group links to the guide
 - **Saved state of an artifact (`pocket-state-set`):** 16 KB of JSON at most for one value. A schema is 1 to 64 letters, digits, and `. _ : -`.
 - **Saves:** 20 in 10 s for one person and one artifact. Past that, the save fails.
 - **Saved values of a session:** 300 at most, for all its artifacts and people together.
+- **Assets of a version (since 0.26.0):** 200 files at most, 5 MB for one, 20 MB for all. A name is a relative path of 200 characters at most, with no `.` or `..` segment. A group is a lowercase kebab-case slug of 64 characters at most.
+- **A private asset address:** it is valid for 12 hours.
+- **Design:** a tweaks manifest has 40 knobs at most; a page sends 60 messages a second at most; 2 renders run at once and each takes 90 s at most; a design system file is 16 KB at most.
 - **Shares of a session:** 100 at most at once. A share lasts 1 day, 7 days, or 30 days, or until it is ended (`hours` left out).
 
 ## Tool calls
