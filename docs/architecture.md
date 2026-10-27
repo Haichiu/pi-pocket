@@ -107,10 +107,11 @@ Only people choose models; Pi, PiP, and Pi Pocket itself never pick one on the s
 
 ## Prompt cache keeper
 
-`CacheKeeper` (`cache-keeper.ts`, `app.cacheKeeper`) wraps `models.streamSimple` as the outermost wrapper, so it sees each real request finish and replays it through the wrappers below. The order, innermost first, is request shaping, `timing.ts`, `LimitGate`, then the keeper. A warm request passes `noWait`, so a limit makes it fail and never queue. It is on by default; `PI_POCKET_CACHE_KEEPER=off` turns it off.
+`CacheKeeper` (`cache-keeper.ts`, `app.cacheKeeper`) wraps `models.streamSimple` as the outermost wrapper, so it sees each real request finish and replays it through the wrappers below. The order, innermost first, is the final payload observer, request shaping, `timing.ts`, `LimitGate`, then the keeper. A warm request passes `noWait`, so a limit makes it fail and never queue. It is on by default; `PI_POCKET_CACHE_KEEPER=off` turns it off.
 
 - **When.** A request that ended in a tool call is replayed with `maxTokens` 1 at 90% of the cache lifetime, or 10 seconds before its end, only when the expected savings are more than the cost. It never warms an idle session, a 1h cache, a request with `cacheRetention` none, or Anthropic thinking set by a token budget.
-- **Stop.** A real cached request, the end of the run (PiP's too), an error, shutdown, or 30 minutes stops it.
+- **Payload.** The observer hashes the real request's final JSON after all shapers. Before transmission, it compares each warm's final JSON with that hash. Only provider output-cap fields may differ. A changed or unobserved payload sends no warm and adds no spend.
+- **Stop.** A real cached request, the end of the run (PiP's too), a changed payload, an error, shutdown, or 30 minutes stops it.
 - **Spend.** A warm request's usage counts in `pi.usage` and in the spend of the person and session captured when it started. `Spend` checks their limits before each warm.
 - **Restart.** A restart discards the warm timers. It replays no warm request.
 
