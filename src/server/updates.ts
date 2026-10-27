@@ -416,6 +416,8 @@ export class Updates {
     readonly repository: string;
     readonly #listeners = new Set<(status: UpdateStatus) => void>();
     #latest: Release | undefined;
+    /** The last check asked npm, not GitHub. */
+    #fromNpm = false;
     #checkedAt: number | undefined;
     #error: string | undefined;
     #target: Target | undefined;
@@ -839,6 +841,11 @@ export class Updates {
             }
         } catch (error) {
             this.#error = describe(error);
+
+            // npm is the only word on what an npm install can get: a version it no longer confirms is not offered.
+            if (this.#fromNpm) {
+                this.#latest = undefined;
+            }
         } finally {
             this.#checkedAt = this.#now;
         }
@@ -851,14 +858,17 @@ export class Updates {
             throw new Error(problem);
         }
 
+        const kind = await this.#installKind(await this.#local());
+
+        this.#fromNpm = kind === "npm-global" || kind === "npm-local" || kind === "npx";
+
         if (this.#options.releases !== undefined) {
             return this.#options.releases(signal);
         }
 
         const github = githubRepository(this.repository);
-        const kind = await this.#installKind(await this.#local());
 
-        if (kind === "npm-global" || kind === "npm-local" || kind === "npx") {
+        if (this.#fromNpm) {
             return npmRelease(github, signal);
         }
 
@@ -1211,6 +1221,7 @@ export class Updates {
 
             if (reason !== undefined) {
                 declined = true;
+
                 throw new HttpError(409, reason);
             }
 

@@ -86,6 +86,30 @@ test("only the exact global npm root can update; local and npx installs show the
             }
         }
 
+        // A version npm no longer confirms (unpublished, or the registry fails) is not offered from an earlier look.
+        let gone = false;
+        const withdrawn = new Updates({
+            appRoot: global,
+            version: "1.0.0",
+            supervised: true,
+            rollback: true,
+            npmRollback: true,
+            restart: () => assert.fail("nothing to update"),
+            busy: () => 0,
+            log: () => {},
+            releases: async () => {
+                if (gone) {
+                    throw new Error("npm answered 404 for the newest release");
+                }
+
+                return { tag: "v2.0.0", version: "2.0.0", name: "2.0.0", warning: false };
+            },
+        });
+
+        assert.equal((await withdrawn.check()).available, true);
+        gone = true;
+        assert.equal((await withdrawn.check()).available, false);
+
         const packages = join(root, "packages");
 
         renameSync(dirname(global), packages);
