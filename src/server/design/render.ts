@@ -81,10 +81,11 @@ export async function serveBundle(bundle: DesignBundle) {
     const prefix = `/${token}/a/`;
     const assets = new Map(bundle.assets.map((asset) => [asset.name, asset]));
     const server = createServer((request, response) => {
-        const url = new URL(request.url ?? "/", "http://127.0.0.1");
+        let url: URL;
         let name: string;
 
         try {
+            url = new URL(request.url ?? "/", "http://127.0.0.1");
             name = decodeURIComponent(url.pathname.slice(prefix.length));
         } catch {
             response.writeHead(400).end();

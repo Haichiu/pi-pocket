@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { createSocket } from "node:dgram";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -66,6 +66,21 @@ test("the private endpoint serves only its token-scoped snapshot", async () => {
         assert.equal((await fetch(new URL("/", endpoint.url))).status, 404);
         assert.equal((await fetch(`${endpoint.url}missing.png`)).status, 404);
         assert.equal((await fetch(endpoint.url, { method: "POST" })).status, 404);
+        await new Promise<void>((resolve, reject) => {
+            const url = new URL(endpoint.url);
+            const request = httpRequest(
+                { hostname: url.hostname, port: url.port, path: "http://[", timeout: 5000 },
+                (response) => {
+                    assert.equal(response.statusCode, 400);
+                    response.resume();
+                    response.on("end", resolve);
+                },
+            );
+
+            request.on("timeout", () => request.destroy(new Error("no answer")));
+            request.on("error", reject);
+            request.end();
+        });
     } finally {
         await endpoint.close();
     }
