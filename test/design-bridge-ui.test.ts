@@ -740,3 +740,52 @@ test("the app's own messages are checked before they go", real, async () => {
     );
     assert.ok((await check({ type: "pocket-run", html: "<p>" })).error);
 });
+
+test(
+    "HTML run in the run frame, which wipes its document, still gets the design side",
+    real,
+    async () => {
+        const html = `<!doctype html><html><head><meta name="pocket-kind" content="deck"></head><body>
+        <section class="slide">A</section><section class="slide">B</section>
+        <script type="application/json" id="pocket-tweaks">[{"name":"--x","type":"text","value":"1"}]</script></body></html>`;
+
+        await inPage(`
+        document.querySelector("#design-frame")?.remove();
+        const { attachBridge } = await import("/artifact-bridge.js");
+        const frame = document.createElement("iframe");
+        frame.id = "design-frame";
+        frame.setAttribute("sandbox", "allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads");
+        frame.style.cssText = "position:fixed;left:0;top:0;width:800px;height:600px;border:0;z-index:99999;background:#fff";
+        window.__got = [];
+        window.__bridge = attachBridge({ current: frame }, {
+            source: "a reply",
+            onMessage: (message) => window.__got.push(message),
+        });
+        window.__send = (message) => __bridge.send(message);
+        addEventListener("message", function hear(event) {
+            if (event.source === frame.contentWindow && event.data?.type === "pocket-run-ready") {
+                removeEventListener("message", hear);
+                frame.contentWindow.postMessage({ type: "pocket-run", html: ${JSON.stringify(html)} }, "*");
+            }
+        });
+        frame.src = "/a/frame";
+        document.body.append(frame);
+        window.__frame = frame;
+        return "null";
+    `);
+        await until(
+            async () =>
+                (await gotOf("pocket-deck")).length >= 1 &&
+                (await gotOf("pocket-tweaks")).length === 1,
+            "the deck and the manifest of the replaced page",
+            SLOW,
+        );
+        assert.deepEqual((await gotOf("pocket-deck"))[0], {
+            type: "pocket-deck",
+            slides: 2,
+            current: 0,
+        });
+        assert.equal(await send({ type: "pocket-goto", slide: 1 }), true);
+        await until(async () => (await gotOf("pocket-deck")).at(-1)?.current === 1, "goto", SLOW);
+    },
+);
