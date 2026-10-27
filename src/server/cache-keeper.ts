@@ -11,7 +11,9 @@
  *   - `warmCost`  a cache read of the whole prompt plus one output token.
  *   - `missCost`  what the next real request pays more if the entry is gone: a cache write instead of a read.
  *   - `hazard`    the chance that the run's next request comes in the next interval (`TOOL_HAZARD`).
- * A new real request, the run ending, an error, or the age cap (`MAX_AGE_MS`) stops it.
+ * A new real request, the run being stopped, an error, shutdown, or the age cap (`MAX_AGE_MS`, 30 minutes) stops it.
+ * The cap is the best of 10 to 60 minutes on the owner's own tool-call gaps, and it bounds the loss when a tool waits
+ * on a person (an approval).
  *
  * `install` wraps `models.streamSimple` in place, as `timing.ts` and `limit-gate.ts` do. The warm request goes to the
  * wrapped function, so it is not recorded as a real request. Deleting this module and its install line removes it.
@@ -38,7 +40,7 @@ export function refreshDelayMs(ttlMs: number): number | undefined {
 }
 
 /** Warming never goes on past this long after the real request that started it. */
-export const MAX_AGE_MS = 60 * 60_000;
+export const MAX_AGE_MS = 30 * 60_000;
 /** Chance of a real request in the next interval after a tool call: the run goes on when the tool ends. */
 export const TOOL_HAZARD = 0.9;
 
@@ -116,6 +118,7 @@ export class CacheKeeper {
     readonly #deps: Required<KeeperDeps>;
     readonly #entries = new Map<string, Entry>();
     #underlying: StreamSimple | undefined;
+    #closed = false;
     #warms = 0;
     #spent = 0;
 
@@ -142,6 +145,8 @@ export class CacheKeeper {
 
     /** Shutdown: no warm goes out after this. */
     close(): void {
+        this.#closed = true;
+
         for (const key of [...this.#entries.keys()]) {this.#drop(key);}
     }
 
@@ -185,7 +190,10 @@ export class CacheKeeper {
         // Only a request that ended in a tool call is followed by another one soon.
         if (message.stopReason !== "toolUse" || options === undefined) {return;}
 
-        if (this.#deps.disabled() || !isReplayable(model, options)) {return;}
+        if (this.#closed || this.#deps.disabled() || !isReplayable(model, options)) {return;}
+
+        // The run was stopped (or a tool failed it): no request follows.
+        if (options.signal?.aborted === true) {return;}
 
         const ttl = ttlMsOf(model, options);
         const usage = message.usage;
@@ -208,6 +216,10 @@ export class CacheKeeper {
 
         this.#entries.set(key, entry);
         this.#schedule(key, entry, delay);
+        // The run is stopped while the tool runs: nothing follows, so stop warming.
+        options.signal?.addEventListener("abort", () => {
+            if (this.#entries.get(key) === entry) {this.#drop(key);}
+        }, { once: true });
     }
 
     #schedule(key: string, entry: Entry, delay: number): void {

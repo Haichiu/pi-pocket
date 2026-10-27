@@ -19,6 +19,7 @@ function rig(disabled = false) {
     let now = 1_000_000;
     let off = disabled;
     const timers: { at: number; fn: () => void }[] = [];
+    let failNext = false;
     const calls: { maxTokens?: number; maxRetries?: number }[] = [];
     let stopReason = "stop";
     const models = {
@@ -26,7 +27,7 @@ function rig(disabled = false) {
             const stream = createAssistantMessageEventStream();
 
             calls.push({ ...(options?.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }), ...(options?.maxRetries === undefined ? {} : { maxRetries: options.maxRetries }) });
-            const message = { role: "assistant", content: [], api: m.api, provider: m.provider, model: m.id, usage, stopReason, timestamp: now };
+            const message = { role: "assistant", content: [], api: m.api, provider: m.provider, model: m.id, usage, stopReason: failNext && options?.maxTokens === 1 ? "error" : stopReason, timestamp: now };
 
             queueMicrotask(() => stream.push({ type: "done", reason: "stop", message } as never));
 
@@ -48,9 +49,9 @@ function rig(disabled = false) {
 
     keeper.install(models);
 
-    const send = async (sessionId: string, stop: string, cacheRetention: "short" | "none" = "short") => {
+    const send = async (sessionId: string | undefined, stop: string, cacheRetention: "short" | "long" | "none" = "short", signal?: AbortSignal) => {
         stopReason = stop;
-        await models.streamSimple(model, { messages: [] } as never, { sessionId, cacheRetention }).result();
+        await models.streamSimple(model, { messages: [] } as never, { ...(sessionId === undefined ? {} : { sessionId }), cacheRetention, ...(signal === undefined ? {} : { signal }) }).result();
         await new Promise((r) => setImmediate(r));
     };
 
@@ -64,7 +65,7 @@ function rig(disabled = false) {
         await new Promise((r) => setTimeout(r, 5));
     };
 
-    return { keeper, send, advance, calls, timers, setNow: (t: number) => { now = t; }, now: () => now, setOff: (v: boolean) => { off = v; } };
+    return { keeper, send, advance, calls, timers, setNow: (t: number) => { now = t; }, now: () => now, setOff: (v: boolean) => { off = v; }, failWarm: () => { failNext = true; } };
 }
 
 test("break-even: a 5m write costs 12.5x a read, so a 0.9 hazard pays and a 0.05 one does not", () => {
@@ -176,7 +177,7 @@ test("the age cap ends warming from the real request, not from the last warm", a
 
     assert.ok(r.now() - start < MAX_AGE_MS + 300_000, "it stopped near the cap");
     assert.equal(r.timers.length, 0);
-    assert.ok(r.keeper.status().warms >= 10, "it did warm up to the cap");
+    assert.ok(r.keeper.status().warms >= 5, "it did warm up to the cap");
 });
 
 test("close cancels every pending warm", async () => {
@@ -187,4 +188,61 @@ test("close cancels every pending warm", async () => {
     assert.equal(r.timers.length, 2);
     r.keeper.close();
     assert.equal(r.timers.length, 0);
+});
+
+test("the run being stopped while a tool runs ends the warm", async () => {
+    const r = rig();
+    const abort = new AbortController();
+
+    await r.send("s", "toolUse", "short", abort.signal);
+    assert.equal(r.timers.length, 1);
+    abort.abort();
+    assert.equal(r.timers.length, 0);
+});
+
+test("a request whose run is already stopped starts no warm", async () => {
+    const r = rig();
+    const abort = new AbortController();
+
+    abort.abort();
+    await r.send("s", "toolUse", "short", abort.signal);
+    assert.equal(r.timers.length, 0);
+});
+
+test("a request with no session id is never warmed", async () => {
+    const r = rig();
+
+    await r.send(undefined, "toolUse");
+    assert.equal(r.timers.length, 0);
+});
+
+test("a warm that ends in an error stops warming that session", async () => {
+    const r = rig();
+
+    await r.send("s", "toolUse");
+    r.failWarm();
+    await r.advance();
+    assert.equal(r.timers.length, 0);
+    assert.equal(r.keeper.status().warms, 0);
+});
+
+test("a request that ends after close starts no new warm", async () => {
+    const r = rig();
+
+    r.keeper.close();
+    await r.send("s", "toolUse");
+    assert.equal(r.timers.length, 0);
+});
+
+test("the 1h tier writes at twice the input price: break-even moves up", () => {
+    const ratio = (writeRate: number) => decide({ promptTokens: 50_000, rates: COST, writeRate, hazard: 0.9 }).missCost;
+
+    assert.ok(ratio(COST.input * 2) > ratio(COST.cacheWrite));
+});
+
+test("a one hour entry is warmed at 90% of its lifetime", async () => {
+    const r = rig();
+
+    await r.send("s", "toolUse", "long");
+    assert.equal(r.timers[0]?.at, r.now() + 3_240_000);
 });
