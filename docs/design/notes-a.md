@@ -1,6 +1,6 @@
 # Stream A: artifact bundles
 
-Status: bundle implementation is complete on `design/bundles`. Core published-route wiring remains an integration task.
+Status: bundle implementation and core published-route wiring are complete on `design/bundles`.
 
 ## Built interfaces
 
@@ -39,19 +39,28 @@ A capability-authenticated HTML asset preserves the original expiry. It cannot r
 The usual authenticated `/a/:conversation/:artifact/:version/<name>` also works.
 Long-open pages can need a reload after 24 hours to fetch assets again.
 
-## Integration still needed
+## Published routes
 
-`src/server/http.ts` currently accepts only exactly `/pub/:token`.
-Published asset routes need a serving-only change there and in `src/server/http/public.ts`.
-These files are outside stream A's assigned ownership. Approval was requested from the integrator.
+The integrator approved stream A's ownership of the serving changes in `src/server/http.ts` and `src/server/http/public.ts`.
+`http.ts` now routes `/pub/:token/<name>` through `publicArtifact()` to the shared bundle responder.
 `http/artifact-assets.ts` exports `publicArtifactBundle(app, request, response, token, name = "", query = new URLSearchParams())`.
-The integrator can call it directly from `http.ts`, or delegate from `http/public.ts`.
-Pass `parts[1]` as the token and `parts.slice(2).join("/")` as the name.
+The route passes `parts[1]` as the token and `parts.slice(2).join("/")` as the name.
 The responder checks the share on every request and uses the share's pinned or latest version.
-It gives public HTML no bridge. Its tests use an isolated route adapter until core wiring lands.
+It gives public HTML no bridge. The same name check, MIME table, sandbox CSP, and `nosniff` protect public and private assets.
+A latest-version link follows asset replacements, additions, and removals. A pinned link keeps its own manifest.
+Ending or expiring a link closes its main page and every asset.
+Tests use the real core HTTP handler, not an isolated route adapter.
+Chromium also loads the bundle's fonts, images, CSS, and imported modules through a published link.
+
+## Integration still needed
 
 `room.ts:601` also needs to project `meta.group` and `meta.kind` for the workspace picker.
 Stream A stores these fields but does not own `room.ts`.
+
+Inline Run loads bundle assets correctly. Static Preview keeps its existing restrictive security boundary.
+`web/rich.js:previewDocument()` removes base tags and stylesheet links, and its CSP permits only data images and fonts.
+If static Preview must show bundle assets before Run, the integrator must add a safe preview path in `web/rich.js`.
+Stream A does not own that file. The browser tests check inline Run, not static Preview.
 
 `npm run format` also fixes an existing unbraced `if` in `src/server/extensions/prompt.ts`.
 This unrelated formatting change stays uncommitted in this worktree. The integrator must keep the brace fix for lint.
@@ -68,10 +77,12 @@ The reported full format and lint checks include that local brace fix.
 ## Checks
 
 - `npm run format`, `npm run check`, and `npm run lint` passed.
-- The final complete `npm test` run passed: 761 tests, 0 failures, 0 skips, about 84 seconds.
+- The final complete `npm test` run passed after public routing: 762 tests, 0 failures, 0 skips, about 84 seconds.
 - The bundle and ZIP tests passed together, including a real Chromium test.
 - Tests cover inheritance, replacement, removal, hash storage, replay, unsafe sources, limits, capability scope, expiry, and revocation.
-- Tests cover sandbox headers, MIME types, public responder revocation, nested pages, fonts, images, CSS, module imports, inline RunFrame, and own-tab rendering.
+- Tests cover sandbox headers, MIME types, public route revocation and expiry, pinned and latest manifests, nested pages, fonts, images, CSS, module imports, inline RunFrame, own-tab rendering, and published rendering.
+- The focused bundle and share suites passed after the routing change: 19 tests, 0 failures.
+- A fresh security review of the core routing changes found no concrete bugs.
 - Fork and restart tests confirm that manifests and global asset bytes survive.
 - `unzip -t` accepted an archive with a deflated HTML entry and a binary entry.
 - A fresh, strong-model security review found no remaining concrete bugs after 3 fixes.
