@@ -226,24 +226,14 @@ export function createData(pocket, store) {
                     format,
                     ...(viewport ? { viewport } : {}),
                 });
-                const file = await pocket.api(
-                    `download?${new URLSearchParams({ conversation: String(conversation), name: made.name })}`,
-                );
-                const binary = atob(file.base64);
-                const bytes = new Uint8Array(binary.length);
-
-                for (let at = 0; at < binary.length; at += 1) {
-                    bytes[at] = binary.charCodeAt(at);
-                }
-
+                // The core route streams the file from the session's folder as an attachment.
                 const link = document.createElement("a");
 
-                link.href = URL.createObjectURL(new Blob([bytes], { type: file.type }));
-                link.download = file.name;
+                link.href = `/api/c/${encodeURIComponent(conversation)}/download?${new URLSearchParams({ path: made.relative })}`;
+                link.download = made.name;
                 document.body.append(link);
                 link.click();
                 link.remove();
-                setTimeout(() => URL.revokeObjectURL(link.href), 30_000);
 
                 return true;
             } catch (error) {
