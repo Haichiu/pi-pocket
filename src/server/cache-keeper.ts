@@ -117,12 +117,14 @@ export type KeeperDeps = {
     log?: (line: string) => void;
     /** The conversation that sends requests under a provider session id, so `runEnded` can find its warm. */
     conversationOf?: (sessionId: string) => Promise<number | undefined>;
+    /** Whether a conversation is in a run now. */
+    isRunning?: (conversationId: number) => boolean;
     /** True turns the keeper off. Read at each decision. */
     disabled?: () => boolean;
 };
 
 export class CacheKeeper {
-    readonly #deps: Required<Omit<KeeperDeps, "conversationOf">> & Pick<KeeperDeps, "conversationOf">;
+    readonly #deps: Required<Omit<KeeperDeps, "conversationOf" | "isRunning">> & Pick<KeeperDeps, "conversationOf" | "isRunning">;
     readonly #entries = new Map<string, Entry>();
     #underlying: StreamSimple | undefined;
     #closed = false;
@@ -226,7 +228,12 @@ export class CacheKeeper {
         // Which conversation it is, so that the run's end can stop it. It still warms when this is not known.
         void this.#deps.conversationOf?.(key).then(
             (id) => {
-                if (id !== undefined && this.#entries.get(key) === entry) {entry.conversationId = id;}
+                if (id === undefined || this.#entries.get(key) !== entry) {return;}
+
+                entry.conversationId = id;
+
+                // The run ended before the lookup came back: its end was missed, so stop now.
+                if (this.#deps.isRunning?.(id) === false) {this.#drop(key);}
             },
             () => {},
         );

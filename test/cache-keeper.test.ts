@@ -20,6 +20,7 @@ function rig(disabled = false) {
     let off = disabled;
     const timers: { at: number; fn: () => void }[] = [];
     let failNext = false;
+    const ended = new Set<number>();
     const calls: { maxTokens?: number; maxRetries?: number }[] = [];
     let stopReason = "stop";
     const models = {
@@ -37,6 +38,7 @@ function rig(disabled = false) {
     const keeper = new CacheKeeper({
         now: () => now,
         conversationOf: async (sessionId) => ({ a: 1, b: 2, s: 3 })[sessionId],
+        isRunning: (id) => !ended.has(id),
         disabled: () => off,
         setTimer: ((fn: () => void, ms: number) => { const t = { at: now + ms, fn };
 
@@ -66,7 +68,7 @@ function rig(disabled = false) {
         await new Promise((r) => setTimeout(r, 5));
     };
 
-    return { keeper, send, advance, calls, timers, setNow: (t: number) => { now = t; }, now: () => now, setOff: (v: boolean) => { off = v; }, failWarm: () => { failNext = true; } };
+    return { keeper, send, advance, calls, timers, setNow: (t: number) => { now = t; }, now: () => now, setOff: (v: boolean) => { off = v; }, failWarm: () => { failNext = true; }, endRun: (id: number) => { ended.add(id); } };
 }
 
 test("break-even: a 5m write costs 12.5x a read, so a 0.9 hazard pays and a 0.05 one does not", () => {
@@ -254,5 +256,14 @@ test("a tool that waits for a person is bounded by the cap: about six warms, not
 
     for (let i = 0; i < 40 && r.timers.length > 0; i++) {await r.advance();}
 
-    assert.ok(r.keeper.status().warms <= 7, "30 minutes at 270 s is at most 7 warms");
+    assert.ok(r.keeper.status().warms >= 5 && r.keeper.status().warms <= 7, "30 minutes at 270 s is 6 or 7 warms");
+});
+
+test("a run that ended before the conversation lookup came back stops the warm", async () => {
+    const r = rig();
+
+    r.endRun(3); // session "s" is conversation 3; its run is over when the lookup returns
+    await r.send("s", "toolUse");
+    await new Promise((x) => setImmediate(x));
+    assert.equal(r.timers.length, 0);
 });

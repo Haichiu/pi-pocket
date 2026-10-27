@@ -431,9 +431,8 @@ export class PocketApp {
         this.cacheKeeper = new CacheKeeper({
             log: (line) => this.#log(line),
             conversationOf: (sessionId) => this.#conversationOfSession(sessionId),
+            isRunning: (conversationId) => this.#busy.has(conversationId as ConversationId),
         });
-        // No request follows the last tool call of a run that ended or was stopped.
-        this.events.on("run.ended", ({ conversationId }) => this.cacheKeeper.runEnded(conversationId));
         this.limits = new LimitGate({
             hours: () => this.config.limitWaitHours,
             epoch: (provider) => this.providers.signInEpoch(provider),
@@ -1101,6 +1100,8 @@ export class PocketApp {
 
                 if (!busy) {
                     this.spend.runEnded(id);
+                    // No request follows the last tool call of a run that ended or was stopped (PiP's runs too).
+                    this.cacheKeeper.runEnded(Number(id));
                     this.pipCompaction.runEnded(id);
 
                     if (this.#sessions[String(id)] !== undefined) {
