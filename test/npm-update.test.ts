@@ -21,6 +21,7 @@ import {
     readOutcome,
     readPending,
     restorePackage,
+    restoreMissingNpmPackage,
     rollBackUpdate,
     stagedPackagePath,
     swapInPackage,
@@ -274,6 +275,38 @@ test("npm state remembers a canonical global root without node_modules in its pa
     assert.equal(updatePaths(root).dir, paths.dir, "the marker survives clearing pending state");
 });
 
+test("startup repairs the state between package renames before loading the live package", (t) => {
+    const { dir, root } = sandbox();
+
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    manifest(root, "1.0.0");
+    pending(root, { phase: "switching" });
+    const paths = updatePaths(root);
+
+    manifest(stagedPackagePath(root), "2.0.0");
+    renameSync(root, paths.previous);
+    assert.equal(existsSync(root), false);
+    assert.equal(restoreMissingNpmPackage(root), true);
+    assert.equal(version(root), "1.0.0");
+    assert.equal(restoreMissingNpmPackage(root), false, "an existing live package is not replaced");
+    assert.equal(finishNpmPending(root, readPending(root)!).ok, false);
+
+    // If only the staged copy remains, put it at the live path and retain startup recovery state.
+    rmSync(root, { recursive: true });
+    pending(root);
+    assert.equal(restoreMissingNpmPackage(root), true);
+    assert.equal(version(root), "2.0.0");
+    assert.equal(finishNpmPending(root, readPending(root)!).ok, true);
+
+    // A warning release that may have run must not fall back to an older data reader.
+    renameSync(root, paths.failed);
+    manifest(paths.previous, "1.0.0");
+    pending(root, { phase: "switching", modules: true, oneWay: true });
+    assert.equal(restoreMissingNpmPackage(root), true);
+    assert.equal(version(root), "2.0.0");
+    assert.equal(version(paths.previous), "1.0.0");
+});
+
 test("npm state handles interrupted swaps and restores, one-way releases, and changed packages", (t) => {
     const { dir, root } = sandbox();
 
@@ -322,6 +355,9 @@ test("npm state handles interrupted swaps and restores, one-way releases, and ch
     assert.equal(readPending(root)?.kind, "npm-global", "recovery can retry after the error");
     assert.equal(version(paths.previous), "1.0.0");
     assert.equal(version(root), "9.0.0");
+    assert.match(finishNpmPending(root, readPending(root)!).message, /started at 9\.0\.0/);
+    assert.equal(readPending(root), undefined, "a successful manual reinstall ends stale recovery");
+    assert.equal(version(paths.previous), "1.0.0", "manual recovery keeps the backup");
 
     reset();
     swapInPackage(root);

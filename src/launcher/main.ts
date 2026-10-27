@@ -7,7 +7,7 @@
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, sep } from "node:path";
 import { createInterface } from "node:readline";
@@ -27,7 +27,12 @@ import {
 } from "./access.ts";
 import { fail, parseArgs } from "./options.ts";
 // The one server module the launcher runs itself: it imports only Node's own, so an update cannot break the launcher.
-import { readPending, rollBackUpdate, stopMeansRollBack } from "../server/update-state.ts";
+import {
+    readPending,
+    restoreMissingNpmPackage,
+    rollBackUpdate,
+    stopMeansRollBack,
+} from "../server/update-state.ts";
 import {
     accent,
     bold,
@@ -451,6 +456,13 @@ function maybeShowPanel(): void {
 // ─── The server ─────────────────────────────────────────────────────────
 
 function startServer(first: boolean): void {
+    try {
+        restoreMissingNpmPackage(APP_ROOT);
+    } catch (error) {
+        // A child that cannot load still reaches the normal rollback and retry path below.
+        log(red(`Could not restore the live npm package: ${(error as Error).message}`));
+    }
+
     const args = [
         SERVER,
         "--host",
@@ -889,10 +901,6 @@ async function main(): Promise<void> {
 
     if (mode !== "custom") {
         saveSettings(mode);
-    }
-
-    if (!existsSync(SERVER)) {
-        fail(`Missing ${SERVER}`);
     }
 
     log(dim(`  Starting Pi Pocket (${modeLabel()})…`));
