@@ -86,6 +86,7 @@ export class Spend {
         const counted = await harness.snapshot(SpendDoc, context);
 
         this.#people = { ...counted?.people };
+        this.#stopOverLimit();
     }
 
     /** Add spend in a conversation to a person, to be stored with the next count. */
