@@ -49,11 +49,16 @@ export function createHandler(options: HttpOptions) {
             }
 
             // An artifact published to anyone with its address: the token is the whole of the access, no sign-in.
-            // Exactly `/pub/<token>`: nothing under it is a page.
+            // Paths below the token select only assets from that share's selected version.
             if (parts[0] === "pub") {
-                const token = parts.length === 2 ? parts[1] : undefined;
-
-                return await publicArtifact(app, request, response, token, url.searchParams);
+                return await publicArtifact(
+                    app,
+                    request,
+                    response,
+                    parts[1],
+                    url.searchParams,
+                    parts.slice(2).join("/"),
+                );
             }
 
             // A page an extension module shows to anyone with its link: the token is the whole of the access, no sign-in.
