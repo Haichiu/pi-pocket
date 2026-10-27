@@ -1291,3 +1291,9 @@ button.dsn-chip {
 .dsn-present-bar .icon-button {
     color: #fff;
 }
+
+@media (prefers-reduced-motion: reduce) {
+    .dsn-hint {
+        animation: none;
+    }
+}

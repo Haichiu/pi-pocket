@@ -84,6 +84,9 @@ export default function setup(pocket) {
         },
 
         open(id, version = null) {
+            const same = store.get().artifact === id;
+
+            // The page's own knobs and slides go when its frame does (`CanvasView`): the same design's frame stays.
             store.set({
                 artifact: id,
                 version,
@@ -91,10 +94,8 @@ export default function setup(pocket) {
                 compare: null,
                 mode: "view",
                 draft: null,
-                knobs: [],
-                deck: null,
-                slide: 0,
                 present: false,
+                ...(same ? {} : { slide: 0 }),
             });
         },
         showVersion(version) {
@@ -142,6 +143,11 @@ export default function setup(pocket) {
                 draft: to.mode === "comment" ? s.draft : null,
                 view: tab === "versions" || s.view === "canvas" ? s.view : "canvas",
             });
+
+            // Others comment as this tab looks: read them when the list opens, as well as when they say so.
+            if (to.dock === "comments" && s.artifact !== null) {
+                void data.notes(s.artifact);
+            }
         },
         setDevice(device) {
             store.set({ device });
@@ -232,13 +238,17 @@ export default function setup(pocket) {
 
     // Pi published or changed something: the server's list (groups, kinds) is read again.
     let signature = "";
+    let seen = null;
     let later = 0;
     const stopApp = app.subscribe((state) => {
         const list = state.view.artifacts;
 
-        if (!list || state.conversationId !== store.get().conversation) {
+        // The app tells this on every change while Pi writes: most leave the list as it was.
+        if (!list || list === seen || state.conversationId !== store.get().conversation) {
             return;
         }
+
+        seen = list;
 
         const next = list.map((each) => `${each.id}@${each.versions.at(-1)?.version}`).join();
 

@@ -377,7 +377,8 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
                     delete found.resolved;
                 }
 
-                return structuredClone(found);
+                // The document hands out tracked objects, which cannot be cloned: a plain copy of what the answer needs.
+                return JSON.parse(JSON.stringify(found)) as DesignComment;
             });
 
             changed(request.conversation.id, id);
