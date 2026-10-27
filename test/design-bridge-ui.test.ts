@@ -590,6 +590,13 @@ test(
             current: 0,
         });
 
+        // The frame may not have its size the moment its page starts: wait for the slide to fit it.
+        await until(
+            async () => Math.abs((await dump()).slides[0]!.width - 800) <= 1,
+            "the slide scaled to the frame",
+            SLOW,
+        );
+
         const first = await dump();
 
         assert.deepEqual(
