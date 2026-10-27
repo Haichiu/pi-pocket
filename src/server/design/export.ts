@@ -4,7 +4,7 @@ import type { PocketHost } from "../host.ts";
 import { writeExport } from "./files.ts";
 import type { DesignBundle } from "./bundle.ts";
 import { pptx } from "./pptx.ts";
-import { type DesignViewport, viewportOf, withRender } from "./render.ts";
+import { type DesignViewport, SLIDE_SIZE, viewportOf, withRender } from "./render.ts";
 import { zip } from "../zip.ts";
 
 export type ExportFormat = "png" | "pdf" | "pptx" | "html";
@@ -73,7 +73,7 @@ export async function exportDesign(
     }
 
     return withRender(bundle, host, signal, async (page) => {
-        const size = format === "pptx" ? { width: 1280, height: 720 } : viewportOf(viewport);
+        const size = format === "pptx" ? SLIDE_SIZE : viewportOf(viewport);
 
         await page.load(size);
         await page.evaluate(`document.title = ${JSON.stringify(bundle.meta.title)}`);
@@ -86,7 +86,7 @@ export async function exportDesign(
             }
 
             return Buffer.from(
-                await page.screenshot(deck ? { width: 1280, height: 720 } : size, !deck),
+                await page.screenshot(deck ? await page.slideSize() : size, !deck),
                 "base64",
             );
         }
@@ -96,12 +96,13 @@ export async function exportDesign(
         }
 
         const texts = await page.slides();
+        const slideSize = await page.slideSize();
         const slides: { image: Buffer; text: string }[] = [];
         let total = 0;
 
         for (const [index, text] of texts.entries()) {
             await page.showSlide(index + 1);
-            const image = Buffer.from(await page.screenshot(size), "base64");
+            const image = Buffer.from(await page.screenshot(slideSize), "base64");
 
             total += image.length;
 
@@ -112,6 +113,6 @@ export async function exportDesign(
             slides.push({ image, text });
         }
 
-        return pptx(slides);
+        return pptx(slides, slideSize);
     });
 }

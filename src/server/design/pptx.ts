@@ -1,4 +1,4 @@
-/** Image-backed widescreen PowerPoint decks with searchable speaker notes. */
+/** Image-backed PowerPoint decks with searchable speaker notes; widescreen by default. */
 import { zip } from "../zip.ts";
 
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
@@ -9,7 +9,6 @@ const PACKAGE_R = "http://schemas.openxmlformats.org/package/2006/relationships"
 const CONTENT_TYPES = "http://schemas.openxmlformats.org/package/2006/content-types";
 const MIME = "application/vnd.openxmlformats-officedocument.presentationml.";
 const WIDTH = 12192000;
-const HEIGHT = 6858000;
 const NS = `xmlns:p="${P}" xmlns:a="${A}" xmlns:r="${R}"`;
 const COLOR_MAP =
     'accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" bg1="lt1" bg2="lt2" folHlink="folHlink" hlink="hlink" tx1="dk1" tx2="dk2"';
@@ -124,8 +123,26 @@ function imageType(image: Buffer): "png" | "jpeg" {
     throw new Error("PPTX slide images must be PNG or JPEG buffers.");
 }
 
-/** Create an OPC PowerPoint ZIP. Each image fills a 16:9 slide; text goes in its notes. */
-export function pptx(slides: { image: Buffer; text: string }[]): Buffer {
+/** Create an OPC PowerPoint ZIP. Each image fills a slide at the given aspect ratio; text goes in its notes. */
+export function pptx(
+    slides: { image: Buffer; text: string }[],
+    size: { width: number; height: number } = { width: 16, height: 9 },
+): Buffer {
+    const scale = Math.min(WIDTH / size.width, WIDTH / size.height);
+    const width = Math.round(size.width * scale);
+    const height = Math.round(size.height * scale);
+
+    if (
+        size.width <= 0 ||
+        size.height <= 0 ||
+        !Number.isFinite(width) ||
+        !Number.isFinite(height) ||
+        width < 914400 ||
+        height < 914400
+    ) {
+        throw new Error("PPTX slide dimensions need a finite, supported aspect ratio.");
+    }
+
     const entries: { name: string; bytes: Buffer }[] = [];
     const overrides: string[] = [];
     const imageTypes = new Set<string>();
@@ -168,7 +185,7 @@ export function pptx(slides: { image: Buffer; text: string }[]): Buffer {
             <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>
             <p:notesMasterIdLst><p:notesMasterId r:id="rId2"/></p:notesMasterIdLst>
             ${slides.length ? `<p:sldIdLst>${slides.map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${3 + i}"/>`).join("")}</p:sldIdLst>` : ""}
-            <p:sldSz cx="${WIDTH}" cy="${HEIGHT}" type="screen16x9"/>
+            <p:sldSz cx="${width}" cy="${height}" type="${size.width * 9 === size.height * 16 ? "screen16x9" : "custom"}"/>
             <p:notesSz cx="6858000" cy="9144000"/>
         </p:presentation>`,
         "presentation.main",
@@ -244,7 +261,7 @@ export function pptx(slides: { image: Buffer; text: string }[]): Buffer {
                     <p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/>
                 </p:nvPicPr>
                 <p:blipFill><a:blip r:embed="rId2"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>
-                <p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${WIDTH}" cy="${HEIGHT}"/></a:xfrm>
+                <p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width}" cy="${height}"/></a:xfrm>
                     <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
                 </p:spPr>
             </p:pic>`)}</p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`,

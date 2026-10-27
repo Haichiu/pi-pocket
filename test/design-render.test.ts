@@ -10,7 +10,12 @@ import type { DesignBundle } from "../src/server/design/bundle.ts";
 import { exportDesign } from "../src/server/design/export.ts";
 import { writeExport } from "../src/server/design/files.ts";
 import { designRoutes, designTools } from "../src/server/design/index.ts";
-import { serveBundle, viewportOf, withRender } from "../src/server/design/render.ts";
+import {
+    parseSlideSize,
+    serveBundle,
+    viewportOf,
+    withRender,
+} from "../src/server/design/render.ts";
 import type { ExtensionWeb, PocketHost } from "../src/server/host.ts";
 import { createPublicFetch } from "../src/server/public-fetch.ts";
 
@@ -106,7 +111,7 @@ test("HTML export includes the main page and binary assets", async () => {
 });
 
 test("design tools and export route expose the required contracts", async () => {
-    const tools = designTools(host, async () => bundle);
+    const tools = designTools(host);
 
     assert.deepEqual(
         tools.map((tool) => tool.name),
@@ -131,7 +136,6 @@ test("design tools and export route expose the required contracts", async () => 
                 Object.assign(new Error(message), { status }),
         } as unknown as ExtensionWeb,
         host,
-        async () => bundle,
     );
     assert.equal(routes[0]!.path, "export");
     assert.equal(routes[0]!.access, "steer");
@@ -239,6 +243,128 @@ test(
         assert.equal(output.readUInt32LE(0), 0x04034b50);
         assert.ok(output.includes(Buffer.from("ppt/slides/slide2.xml")));
         assert.ok(output.includes(Buffer.from("ppt/notesSlides/notesSlide2.xml")));
+    },
+);
+
+test(
+    "a deck exports at the size the canvas lays it out: 1920×1080, or its pocket-slide-size",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        // A slide written at 1920×1080 with a mark in its bottom-right corner: it must be in the picture, not cut off.
+        const slide = (meta: string) =>
+            `<!doctype html><meta name="pocket-kind" content="deck">${meta}<style>body{margin:0}section.slide{position:relative;background:#00f}i{position:absolute;right:0;bottom:0;width:40px;height:40px;background:#f00}</style><section class="slide"><i></i></section>`;
+        const size = (png: Buffer) => [png.readUInt32BE(16), png.readUInt32BE(20)];
+
+        assert.deepEqual(parseSlideSize(""), { width: 1920, height: 1080 });
+        assert.deepEqual(parseSlideSize("1280x720"), { width: 1280, height: 720 });
+        assert.deepEqual(parseSlideSize("99999x1"), { width: 1920, height: 1080 });
+
+        const big = await exportDesign({ ...bundle, content: slide("") }, "png", undefined, host);
+
+        assert.deepEqual(size(big), [1920, 1080]);
+
+        await withRender({ ...bundle, content: slide("") }, host, undefined, async (page) => {
+            await page.load(viewportOf("desktop"));
+            await page.showSlide(1);
+            const corner = await page.evaluate(
+                "(() => { const r = document.querySelector('i').getBoundingClientRect(); return [r.right, r.bottom]; })()",
+            );
+
+            assert.deepEqual(corner, [1920, 1080]);
+        });
+
+        const small = await exportDesign(
+            { ...bundle, content: slide('<meta name="pocket-slide-size" content="1280x720">') },
+            "png",
+            undefined,
+            host,
+        );
+
+        assert.deepEqual(size(small), [1280, 720]);
+    },
+);
+
+test(
+    "a slide authored at 1920×1080 keeps its corner content and ignores conflicting size limits",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        const content = `<!doctype html><meta name="pocket-kind" content="deck">
+            <style>section.slide{width:1920px;height:1080px;min-width:2200px;max-width:1280px;min-height:1300px;max-height:720px;background:blue}
+            i{position:absolute;left:1880px;top:1040px;width:40px;height:40px;background:red}</style>
+            <section class="slide"><i></i></section>`;
+
+        await withRender({ ...bundle, content }, host, undefined, async (page) => {
+            await page.load(viewportOf("desktop"));
+            await page.showSlide(1);
+            const rect = await page.evaluate(
+                "(() => { const r = document.querySelector('section.slide').getBoundingClientRect(); return [r.width, r.height]; })()",
+            );
+
+            assert.deepEqual(rect, [1920, 1080]);
+            const image = await page.screenshot(await page.slideSize());
+            const pixel = await page.evaluate(`(async () => {
+                const image = new Image();
+                image.src = 'data:image/png;base64,${image}';
+                await image.decode();
+                const canvas = document.createElement('canvas');
+                canvas.width = image.width;
+                canvas.height = image.height;
+                const context = canvas.getContext('2d');
+                context.drawImage(image, 0, 0);
+                return Array.from(context.getImageData(1900, 1060, 1, 1).data);
+            })()`);
+
+            assert.deepEqual(
+                pixel,
+                [255, 0, 0, 255],
+                "the authored bottom-right mark is in the PNG",
+            );
+            await page.pdf();
+            assert.deepEqual(
+                await page.evaluate(
+                    "(() => { const r = document.querySelector('section.slide').getBoundingClientRect(); return [r.width, r.height]; })()",
+                ),
+                [1920, 1080],
+                "PDF layout also overrides authored slide limits",
+            );
+        });
+    },
+);
+
+test(
+    "a supported 3840×2160 slide exports without a horizontal crop",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        const content =
+            '<!doctype html><meta name="pocket-kind" content="deck"><meta name="pocket-slide-size" content="3840x2160"><section class="slide">Large slide</section>';
+        const png = await exportDesign({ ...bundle, content }, "png", undefined, host);
+
+        assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [3840, 2160]);
+    },
+);
+
+test(
+    "deck PDF pages match the default or custom slide dimensions, one page per slide",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        for (const [meta, expected] of [
+            ["", [1440, 810]],
+            ['<meta name="pocket-slide-size" content="640x640">', [480, 480]],
+        ] as const) {
+            const content = `<!doctype html><meta name="pocket-kind" content="deck">${meta}<section class="slide">First</section><section class="slide">Second</section>`;
+            const pdf = await exportDesign({ ...bundle, content }, "pdf", undefined, host);
+            const boxes = [
+                ...pdf
+                    .toString("latin1")
+                    .matchAll(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/g),
+            ];
+
+            assert.equal(boxes.length, 2);
+
+            for (const box of boxes) {
+                assert.deepEqual([Number(box[1]), Number(box[2])], expected);
+            }
+        }
     },
 );
 

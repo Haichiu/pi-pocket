@@ -25,6 +25,27 @@ const RENDER_CSP =
     "sandbox allow-scripts allow-modals; frame-src 'none'; worker-src 'none'; object-src 'none'; connect-src http: https:;";
 let active = 0;
 
+/** The default slide size of a deck, as the canvas lays slides out. */
+export const SLIDE_SIZE: DesignViewport = { width: 1920, height: 1080 };
+
+/** A `pocket-slide-size` value (`WxH`, each 320 to 3840), or the default for anything else. */
+export function parseSlideSize(value: string): DesignViewport {
+    const match = /^\s*(\d{3,4})\s*[x×]\s*(\d{3,4})\s*$/i.exec(value);
+
+    if (match === null) {
+        return SLIDE_SIZE;
+    }
+
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+
+    if (width < 320 || height < 320 || width > 3840 || height > 3840) {
+        return SLIDE_SIZE;
+    }
+
+    return { width, height };
+}
+
 export function viewportOf(value: string | DesignViewport = "desktop"): DesignViewport {
     if (typeof value === "string") {
         if (Object.hasOwn(VIEWPORTS, value)) {
@@ -337,7 +358,7 @@ export class DesignPage {
     async screenshot(viewport: DesignViewport, fullPage = false, preview = false): Promise<string> {
         const metrics = fullPage ? await this.send("Page.getLayoutMetrics") : undefined;
         const content = metrics?.cssContentSize;
-        const width = Math.min(2560, Math.ceil(content?.width ?? viewport.width));
+        const width = Math.min(fullPage ? 2560 : 3840, Math.ceil(content?.width ?? viewport.width));
         const height = Math.min(16000, Math.ceil(content?.height ?? viewport.height));
         const scale = preview ? Math.min(1, 2000 / Math.max(width, height)) : 1;
         const result = await this.send("Page.captureScreenshot", {
@@ -357,10 +378,23 @@ export class DesignPage {
         );
     }
 
+    /**
+     * The size a deck's slides are written at, as the canvas lays them out (`artifact-inspect.ts`): 1920×1080, or the
+     * page's `<meta name="pocket-slide-size" content="WxH">`.
+     */
+    async slideSize(): Promise<DesignViewport> {
+        const value = await this.evaluate(
+            `document.querySelector('meta[name="pocket-slide-size"]')?.content ?? ''`,
+        );
+
+        return parseSlideSize(typeof value === "string" ? value : "");
+    }
+
     async pdf(): Promise<string> {
         if (await this.isDeck()) {
             await this.slides();
             const displays = await this.#displays();
+            const { width, height } = await this.slideSize();
 
             await this.evaluate(`(() => {
                 document.getElementById('pocket-render-slide')?.remove();
@@ -372,7 +406,7 @@ export class DesignPage {
                     slide.style.setProperty('display', displays[index] === 'none' ? 'block' : displays[index], 'important');
                 });
                 const style = document.createElement('style');
-                style.textContent = '@page{size:13.333333in 7.5in;margin:0}html,body{margin:0!important;padding:0!important;width:1280px!important;height:auto!important;overflow:visible!important}section.slide{position:relative!important;inset:auto!important;width:1280px!important;height:720px!important;min-height:0!important;margin:0!important;box-sizing:border-box!important;transform:none!important;scale:1!important;break-after:page!important;break-inside:avoid!important}section.slide:last-child{break-after:auto!important}';
+                style.textContent = '@page{size:${width}px ${height}px;margin:0}html,body{margin:0!important;padding:0!important;width:${width}px!important;height:auto!important;overflow:visible!important}section.slide{position:relative!important;inset:auto!important;width:${width}px!important;height:${height}px!important;min-width:0!important;max-width:none!important;min-height:0!important;max-height:none!important;margin:0!important;overflow:hidden!important;box-sizing:border-box!important;transform:none!important;scale:1!important;break-after:page!important;break-inside:avoid!important}section.slide:last-child{break-after:auto!important}';
                 document.head.append(style);
             })()`);
         }
@@ -444,27 +478,28 @@ export class DesignPage {
         return displays;
     }
 
-    async showSlide(
-        slide: number,
-        viewport: DesignViewport = { width: 1280, height: 720 },
-    ): Promise<void> {
+    /** Show one slide (from 1), laid out at the deck's slide size and scaled to fit `viewport` (default: that size). */
+    async showSlide(slide: number, viewport?: DesignViewport): Promise<void> {
         const slides = await this.slides();
+        const size = await this.slideSize();
+
+        viewport ??= size;
 
         if (!Number.isInteger(slide) || slide < 1 || slide > slides.length) {
             throw new Error(`Slide must be between 1 and ${slides.length}.`);
         }
 
         const displays = await this.#displays();
-        const scale = Math.min(viewport.width / 1280, viewport.height / 720);
-        const left = (viewport.width - 1280 * scale) / 2;
-        const top = (viewport.height - 720 * scale) / 2;
+        const scale = Math.min(viewport.width / size.width, viewport.height / size.height);
+        const left = (viewport.width - size.width * scale) / 2;
+        const top = (viewport.height - size.height * scale) / 2;
 
         await this.evaluate(`(() => {
             document.getElementById('pocket-render-slide')?.remove();
             const visibleDisplay = ${JSON.stringify(displays[slide - 1])};
             const style = document.createElement('style');
             style.id = 'pocket-render-slide';
-            style.textContent = 'html,body{margin:0!important;padding:0!important;width:${viewport.width}px!important;height:${viewport.height}px!important;overflow:hidden!important}section.slide{display:none!important}section.slide[data-pocket-export]{display:' + visibleDisplay + '!important;position:fixed!important;inset:auto!important;left:${left}px!important;top:${top}px!important;width:1280px!important;height:720px!important;box-sizing:border-box!important;transform:scale(${scale})!important;transform-origin:top left!important;scale:1!important}';
+            style.textContent = 'html,body{margin:0!important;padding:0!important;width:${viewport.width}px!important;height:${viewport.height}px!important;overflow:hidden!important}section.slide{display:none!important}section.slide[data-pocket-export]{display:' + visibleDisplay + '!important;position:fixed!important;inset:auto!important;left:${left}px!important;top:${top}px!important;width:${size.width}px!important;height:${size.height}px!important;min-width:0!important;max-width:none!important;min-height:0!important;max-height:none!important;margin:0!important;overflow:hidden!important;box-sizing:border-box!important;transform:scale(${scale})!important;transform-origin:top left!important;scale:1!important}';
             document.head.append(style);
             const slides = Array.from(document.querySelectorAll('section.slide'));
             slides.forEach((item, index) => item.toggleAttribute('data-pocket-export', index === ${slide - 1}));

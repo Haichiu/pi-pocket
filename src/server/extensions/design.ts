@@ -5,15 +5,8 @@
  * send. The agent's side (tools, prompt guide, export) is in `../design/`; this module is the workspace.
  */
 import { randomUUID } from "node:crypto";
-import { constants, existsSync } from "node:fs";
-import { open, realpath } from "node:fs/promises";
-import { extname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import {
-    defineExtension,
-    type PromptSection,
-    type ToolRegistration,
-} from "@earendil-works/pi-durable";
+import { defineExtension } from "@earendil-works/pi-durable";
+import { designGuide, designRoutes, designTools } from "../design/index.ts";
 import {
     type ArtifactMeta,
     ArtifactBodyDoc,
@@ -22,38 +15,7 @@ import {
     DesignCommentsDoc,
     type DesignItem,
 } from "../docs.ts";
-import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationWebRequest, ExtensionWeb, PocketHost } from "../host.ts";
-
-/** A design's committed bundle, as the agent's side reads it (`PocketApp.artifactBundle`, stream A of Design mode). */
-type DesignBundleReader = (
-    conversation: ConversationId,
-    artifact: string,
-    version?: number,
-) => Promise<{
-    meta: ArtifactMeta;
-    version: number;
-    content: string;
-    assets: { name: string; type: string; bytes: Buffer }[];
-}>;
-
-/** What this module needs of the agent's side (`src/server/design/index.ts`, stream D of Design mode). */
-type DesignAgent = {
-    designTools(host: PocketHost, readBundle: DesignBundleReader): ToolRegistration[];
-    designGuide(host: PocketHost): PromptSection;
-    designRoutes(web: ExtensionWeb, host: PocketHost, readBundle: DesignBundleReader): void;
-};
-
-/** The files an export makes, by extension: what the download route may serve, and as what. */
-const EXPORT_TYPES: Record<string, string> = {
-    ".png": "image/png",
-    ".pdf": "application/pdf",
-    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ".zip": "application/zip",
-};
-const EXPORT_NAME = /^[a-z0-9][a-z0-9-]{0,63}-v[1-9]\d{0,5}\.(?:png|pdf|pptx|zip)$/;
-/** The most a download carries: it goes as JSON (base64), so a larger export stays in its folder for Files to show. */
-const MAX_DOWNLOAD = 40 * 1024 * 1024;
 
 /** An artifact as the index keeps it, with the fields of bundles (`group`, `kind`) that an older index lacks. */
 type DesignArtifact = ArtifactMeta & { group?: string; kind?: string };
@@ -171,36 +133,11 @@ export function cleanTweaks(web: Pick<ExtensionWeb, "error">, value: unknown) {
     return values;
 }
 
-/** The agent's side, if this copy has it: loaded when this module loads, so the module still works without it. */
-async function loadAgent(): Promise<DesignAgent | undefined> {
-    const url = new URL("../design/index.ts", import.meta.url);
-
-    if (!existsSync(fileURLToPath(url))) {
-        return undefined;
-    }
-
-    return (await import(url.href)) as DesignAgent;
-}
-
 export default async function createDesign(host: PocketHost, web?: ExtensionWeb) {
-    const agent = await loadAgent();
-    // The app's reader of committed bundles (stream A's `PocketApp.artifactBundle`), which the host must hand on to modules.
-    // Without it the agent's tools and export say what is missing, at the moment someone asks.
-    const hosted = (host as PocketHost & { artifactBundle?: DesignBundleReader }).artifactBundle;
-
-    const readBundle: DesignBundleReader =
-        typeof hosted === "function"
-            ? hosted.bind(host)
-            : async () => {
-                  throw new Error(
-                      "This copy of Pi Pocket gives modules no reader of design bundles yet.",
-                  );
-              };
-
     const extension = defineExtension({
         name: "pocket-design",
-        tools: agent?.designTools(host, readBundle) ?? [],
-        sections: agent === undefined ? [] : [agent.designGuide(host)],
+        tools: designTools(host),
+        sections: [designGuide(host)],
     });
 
     if (web === undefined) {
@@ -672,92 +609,8 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
         },
     });
 
-    if (agent === undefined) {
-        // Export is the agent side's; without it the buttons say so instead of finding nothing.
-        web.route(
-            "POST",
-            "export",
-            () => {
-                throw web.error(501, "Export is not in this copy of Pi Pocket.");
-            },
-            { access: "steer" },
-        );
-    } else {
-        agent.designRoutes(web, host, readBundle);
-    }
-
-    // What an export wrote, for the browser to save: routes answer JSON, so the file comes as base64. It is looked up by
-    // the name the export gave it, in the session's `exports/` folder, as a plain file: no path from the browser, no link.
-    web.route(
-        "GET",
-        "download",
-        async (request) => {
-            const conversation = Number(request.query.get("conversation"));
-            const name = request.query.get("name") ?? "";
-            const session = request.sessions().find((each) => each.id === conversation);
-
-            if (session === undefined) {
-                throw web.error(404, "No such session.");
-            }
-
-            if (!EXPORT_NAME.test(name)) {
-                throw web.error(400, "That is not the name of an export.");
-            }
-
-            try {
-                const root = await realpath(session.cwd);
-                const folder = await realpath(join(session.cwd, "exports"));
-
-                if (folder !== join(root, "exports")) {
-                    throw new Error("The exports folder is not inside the session's.");
-                }
-
-                // One open, with no following of a link: what is checked is what is read, and no more than the limit.
-                const handle = await open(
-                    join(folder, name),
-                    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-                );
-                let bytes: Buffer;
-
-                try {
-                    const info = await handle.stat();
-
-                    if (!info.isFile()) {
-                        throw new Error("Not a plain file.");
-                    }
-
-                    if (info.size > MAX_DOWNLOAD) {
-                        throw web.error(
-                            413,
-                            "That export is too large to download here: it is in the session's exports folder.",
-                        );
-                    }
-
-                    bytes = Buffer.alloc(info.size);
-
-                    const { bytesRead } = await handle.read(bytes, 0, info.size, 0);
-
-                    bytes = bytes.subarray(0, bytesRead);
-                } finally {
-                    await handle.close();
-                }
-
-                return {
-                    name,
-                    type: EXPORT_TYPES[extname(name)] ?? "application/octet-stream",
-                    size: bytes.length,
-                    base64: bytes.toString("base64"),
-                };
-            } catch (error) {
-                if (error instanceof Error && (error as { status?: number }).status === 413) {
-                    throw error;
-                }
-
-                throw web.error(404, "That export is not there.");
-            }
-        },
-        { access: "steer" },
-    );
+    // Export (`POST export`) is the agent side's; the file comes through core's download route.
+    designRoutes(web, host);
 
     return extension;
 }

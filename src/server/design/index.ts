@@ -2,13 +2,12 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ConversationId, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { ExtensionWeb, PocketHost } from "../host.ts";
-import { loadBundle, type DesignBundleReader } from "./bundle.ts";
-import { EXPORT_TYPES, saveDesignExport, type ExportFormat } from "./export.ts";
+import { readBundle } from "./bundle.ts";
+import { EXPORT_TYPES, type ExportFormat, saveDesignExport } from "./export.ts";
 import { VIEWPORTS, viewportOf, withRender } from "./render.ts";
 import { designSystemTool } from "./system.ts";
 
 export { designGuide } from "./guide.ts";
-export type { DesignBundle, DesignBundleReader } from "./bundle.ts";
 
 const version = Type.Optional(Type.Integer({ minimum: 1 }));
 const preset = Type.Union([
@@ -23,7 +22,7 @@ const formatSchema = Type.Union([
     Type.Literal("html"),
 ]);
 
-export function designTools(host: PocketHost, readBundle: DesignBundleReader): ToolRegistration[] {
+export function designTools(host: PocketHost): ToolRegistration[] {
     const preview = Object.assign(
         defineTool({
             name: "design_preview",
@@ -40,11 +39,13 @@ export function designTools(host: PocketHost, readBundle: DesignBundleReader): T
             }),
             replay: "safe",
             execute: async (args, api, context) => {
-                const bundle = await loadBundle(
-                    readBundle,
+                const bundle = await readBundle(
+                    host,
+                    api.snapshot,
                     api.conversationId,
                     args.id,
                     args.version,
+                    context,
                 );
                 const views = args.viewports ?? ["mobile", "desktop"];
 
@@ -118,14 +119,21 @@ export function designTools(host: PocketHost, readBundle: DesignBundleReader): T
             path: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
         }),
         execute: async (args, api, context) => {
-            const bundle = await loadBundle(readBundle, api.conversationId, args.id, args.version);
+            const bundle = await readBundle(
+                host,
+                api.snapshot,
+                api.conversationId,
+                args.id,
+                args.version,
+                context,
+            );
             const cwd = (await api.agent(context)).cwd;
 
             if (cwd === undefined) {
                 throw new Error("This session has no working directory for the export.");
             }
 
-            const result = await saveDesignExport(
+            const saved = await saveDesignExport(
                 bundle,
                 {
                     id: args.id,
@@ -142,15 +150,15 @@ export function designTools(host: PocketHost, readBundle: DesignBundleReader): T
                 output: [
                     {
                         type: "text",
-                        text: `Exported ${args.id} v${bundle.version} to ${result.path}`,
+                        text: `Exported ${args.id} v${bundle.version} to ${saved.path}`,
                     },
                 ],
                 details: {
-                    path: result.path,
+                    path: saved.path,
                     id: args.id,
                     version: bundle.version,
                     format: args.format,
-                    bytes: result.size,
+                    bytes: saved.size,
                 },
             };
         },
@@ -159,29 +167,27 @@ export function designTools(host: PocketHost, readBundle: DesignBundleReader): T
     return [preview, exportTool, designSystemTool()];
 }
 
-/** Prepare a session-local export. Core's file download route serves it after its own access checks. */
-export function designRoutes(
-    web: ExtensionWeb,
-    host: PocketHost,
-    readBundle: DesignBundleReader,
-): void {
+/**
+ * `POST export` for the workspace: the same export as `design_export`, written in the session folder at its default
+ * path. It answers `{ path, name, size }`; the browser downloads the file through the core file route.
+ */
+export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
     web.route(
         "POST",
         "export",
         async (request) => {
-            const conversation = Number(request.body.conversation);
+            const body = request.body;
+            const conversation = Number(body.conversation);
             const session = request.sessions().find((item) => item.id === conversation);
 
             if (session === undefined) {
                 throw web.error(404, "No session");
             }
 
-            const id = typeof request.body.id === "string" ? request.body.id : "";
-            const format = typeof request.body.format === "string" ? request.body.format : "";
-            const rawVersion = request.body.version;
-            const selectedVersion = rawVersion === undefined ? undefined : Number(rawVersion);
-            const viewport =
-                typeof request.body.viewport === "string" ? request.body.viewport : "desktop";
+            const id = typeof body.id === "string" ? body.id : "";
+            const format = typeof body.format === "string" ? body.format : "";
+            const selectedVersion = body.version === undefined ? undefined : Number(body.version);
+            const viewport = typeof body.viewport === "string" ? body.viewport : "desktop";
 
             if (!Object.hasOwn(EXPORT_TYPES, format)) {
                 throw web.error(400, "Choose png, pdf, pptx, or html.");
@@ -193,14 +199,15 @@ export function designRoutes(
 
             try {
                 viewportOf(viewport);
-                const bundle = await loadBundle(
-                    readBundle,
+                const bundle = await readBundle(
+                    host,
+                    request.snapshot,
                     conversation as ConversationId,
                     id,
                     selectedVersion,
+                    request.context,
                 );
-
-                return await saveDesignExport(
+                const saved = await saveDesignExport(
                     bundle,
                     {
                         id,
@@ -211,6 +218,8 @@ export function designRoutes(
                     },
                     host,
                 );
+
+                return { ...saved, relative: `exports/${saved.name}` };
             } catch (error) {
                 if (request.signal.aborted) {
                     throw error;

@@ -1,6 +1,8 @@
-/** The injected, committed artifact bundle reader shared with the Design workspace. */
-import type { ConversationId } from "@earendil-works/pi-durable";
-import type { ArtifactMeta } from "../docs.ts";
+/** A design's bundle, read from the artifact documents: the page, and every asset of the version. */
+import type { Context } from "@earendil-works/chord";
+import type { ConversationId, DocumentReader } from "@earendil-works/pi-durable";
+import { ArtifactAssetDoc, ArtifactBodyDoc, ArtifactsDoc, type ArtifactMeta } from "../docs.ts";
+import type { PocketHost } from "../host.ts";
 
 export type DesignBundle = {
     meta: ArtifactMeta;
@@ -9,18 +11,13 @@ export type DesignBundle = {
     assets: { name: string; type: string; bytes: Buffer }[];
 };
 
-export type DesignBundleReader = (
-    conversation: ConversationId,
-    artifact: string,
-    version?: number,
-) => Promise<DesignBundle>;
-
-/** Validate untrusted identifiers before calling the integration-supplied reader. */
-export async function loadBundle(
-    readBundle: DesignBundleReader,
+export async function readBundle(
+    _host: PocketHost,
+    snapshot: DocumentReader["snapshot"],
     conversation: ConversationId,
     id: string,
-    version?: number,
+    version: number | undefined,
+    context: Context,
 ): Promise<DesignBundle> {
     if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) {
         throw new Error("Use the artifact's kebab-case id.");
@@ -30,15 +27,39 @@ export async function loadBundle(
         throw new Error("Version must be a positive integer.");
     }
 
-    const bundle = await readBundle(conversation, id, version);
+    // The same documents `PocketApp.artifactBundle` reads: the index, the version's body, and its assets by hash.
+    const index = await snapshot(ArtifactsDoc, conversation, context);
+    const meta =
+        index !== undefined && Object.hasOwn(index.items, id) ? index.items[id] : undefined;
+    const record = meta?.versions.find(
+        (item) => item.version === (version ?? meta.versions.at(-1)?.version),
+    );
 
-    if (bundle.meta.type !== "html") {
+    if (meta === undefined || record === undefined) {
+        throw new Error("The artifact or version does not exist.");
+    }
+
+    if (meta.type !== "html") {
         throw new Error("Design tools require an HTML artifact.");
     }
 
-    if (!Number.isSafeInteger(bundle.version) || bundle.version < 1) {
-        throw new Error("The bundle reader returned an invalid version.");
+    const body = await snapshot(ArtifactBodyDoc, conversation, `${id}@${record.version}`, context);
+
+    if (body === undefined) {
+        throw new Error("The artifact content is missing.");
     }
 
-    return bundle;
+    const assets = await Promise.all(
+        Object.entries(record.assets ?? {}).map(async ([name, asset]) => {
+            const stored = await snapshot(ArtifactAssetDoc, asset.hash, context);
+
+            if (stored === undefined) {
+                throw new Error(`The artifact asset ${name} is missing.`);
+            }
+
+            return { name, type: asset.type, bytes: Buffer.from(stored.base64, "base64") };
+        }),
+    );
+
+    return { meta, version: record.version, content: body.content, assets };
 }

@@ -1,11 +1,11 @@
-// Design tools receive a committed bundle reader from the integration, never a host or snapshot fallback.
+// Agent tools use the same committed artifact versions as the viewer, scoped to the calling conversation.
 import { cleanUp, context, newSession, openApp, scriptedModel, work } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { after, before, test } from "node:test";
 import type { ConversationId, ToolRegistration } from "@earendil-works/pi-durable";
 import { findBrowser } from "../src/server/browser/discovery.ts";
-import { loadBundle, type DesignBundleReader } from "../src/server/design/bundle.ts";
+import { readBundle } from "../src/server/design/bundle.ts";
 import { designRoutes, designTools } from "../src/server/design/index.ts";
 import createArtifacts from "../src/server/extensions/artifacts.ts";
 import type { ExtensionWeb, PocketHost, WebHandler, WebRequest } from "../src/server/host.ts";
@@ -16,8 +16,6 @@ let conversation: ConversationId;
 const host = { fetchPublic: createPublicFetch() } as PocketHost;
 const content =
     '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><h1 data-pid="title">Design</h1>';
-const readBundle: DesignBundleReader = (id, artifact, version) =>
-    app.artifactBundle(id, artifact, version);
 
 function api(id = conversation) {
     return {
@@ -38,12 +36,6 @@ before(async () => {
     app = await openApp(scriptedModel());
     conversation = await newSession(app);
     await call(createArtifacts(host).tools![0]!, { id: "test", title: "Test", content });
-    await call(createArtifacts(host).tools![0]!, {
-        id: "notes",
-        title: "Notes",
-        type: "markdown",
-        content: "# Notes",
-    });
 });
 
 after(async () => {
@@ -51,22 +43,30 @@ after(async () => {
     cleanUp();
 });
 
-test("the injected bundle reader receives the conversation, artifact, and selected version", async () => {
-    const found = await loadBundle(readBundle, conversation, "test", undefined);
+test("the bundle reader reads the committed version and refuses missing, foreign, or non-HTML artifacts", async () => {
+    const snapshot = app.harness.snapshot.bind(app.harness);
+    const found = await readBundle(host, snapshot, conversation, "test", undefined, context);
 
     assert.equal(found.content, content);
     assert.equal(found.version, 1);
-    await assert.rejects(loadBundle(readBundle, conversation, "../test"), /kebab/);
-    await assert.rejects(loadBundle(readBundle, conversation, "test", 99), /version/i);
-    await assert.rejects(loadBundle(readBundle, conversation, "test", NaN), /positive/);
-    await assert.rejects(loadBundle(readBundle, conversation, "notes"), /HTML/);
     await assert.rejects(
-        loadBundle(async () => ({ ...found, version: 0 }), conversation, "test"),
-        /invalid version/,
+        readBundle(host, snapshot, conversation, "../test", undefined, context),
+        /kebab/,
+    );
+    await assert.rejects(
+        readBundle(host, snapshot, conversation, "test", 99, context),
+        /does not exist/,
+    );
+    await assert.rejects(
+        readBundle(host, snapshot, conversation, "test", NaN, context),
+        /positive/,
     );
     const other = await newSession(app);
 
-    await assert.rejects(loadBundle(readBundle, other, "test"), /artifact/i);
+    await assert.rejects(
+        readBundle(host, snapshot, other, "test", undefined, context),
+        /does not exist/,
+    );
 });
 
 test("the bundle reader returns the version's stored assets, byte for byte", async () => {
@@ -84,7 +84,8 @@ test("the bundle reader returns the version's stored assets, byte for byte", asy
         ],
     });
 
-    const found = await loadBundle(readBundle, conversation, "assets");
+    const snapshot = app.harness.snapshot.bind(app.harness);
+    const found = await readBundle(host, snapshot, conversation, "assets", undefined, context);
     const byName = new Map(found.assets.map((asset) => [asset.name, asset]));
 
     assert.deepEqual([...byName.keys()].sort(), ["css/site.css", "img/logo.png"]);
@@ -94,7 +95,7 @@ test("the bundle reader returns the version's stored assets, byte for byte", asy
 });
 
 test("design_export writes a real HTML bundle to the default session-local path", async () => {
-    const tool = designTools(host, readBundle).find((item) => item.name === "design_export")!;
+    const tool = designTools(host).find((item) => item.name === "design_export")!;
     const result = await call(tool, { id: "test", format: "html" });
     const details = result.details as { path: string; version: number };
     const bytes = await readFile(details.path);
@@ -116,13 +117,12 @@ test("design_export writes a real HTML bundle to the default session-local path"
     );
 });
 
-test("the workspace POST export writes a visible session's default file and returns JSON metadata", async () => {
+test("the workspace export writes the file in a visible session's folder and answers its path", async () => {
     let handler: WebHandler | undefined;
+    let method: string | undefined;
 
-    const route: ExtensionWeb["route"] = (method, path, handle, options) => {
-        assert.equal(method, "POST");
-        assert.equal(path, "export");
-        assert.equal(options?.access, "steer");
+    const route: ExtensionWeb["route"] = (asked, _path, handle) => {
+        method = asked;
         handler = handle;
     };
 
@@ -133,40 +133,37 @@ test("the workspace POST export writes a visible session's default file and retu
                 Object.assign(new Error(message), { status }),
         } as unknown as ExtensionWeb,
         host,
-        readBundle,
     );
+    assert.equal(method, "POST");
     const request = {
-        body: { conversation, id: "test", format: "html", path: "../ignored.zip" },
+        body: { conversation, id: "test", format: "html" },
         sessions: () => [{ id: conversation, cwd: work }],
+        snapshot: app.harness.snapshot.bind(app.harness),
         signal: new AbortController().signal,
         context,
     } as unknown as WebRequest;
-    const result = (await handler!(request)) as { path: string; name: string; size: number };
-    const bytes = await readFile(result.path);
+    const answer = (await handler!(request)) as {
+        path: string;
+        relative: string;
+        name: string;
+        size: number;
+    };
 
-    assert.deepEqual(result, {
-        path: `${work}/exports/test-v1.zip`,
-        name: "test-v1.zip",
-        size: bytes.length,
-    });
+    assert.equal(answer.path, `${work}/exports/test-v1.zip`);
+    assert.equal(answer.relative, "exports/test-v1.zip");
+    assert.equal(answer.name, "test-v1.zip");
+    const bytes = await readFile(answer.path);
+
+    assert.equal(bytes.length, answer.size);
     assert.equal(bytes.readUInt32LE(0), 0x04034b50);
-    assert.equal(JSON.parse(JSON.stringify(result)).name, "test-v1.zip");
-    const toolResult = await call(
-        designTools(host, readBundle).find((tool) => tool.name === "design_export")!,
-        { id: "test", format: "html" },
-    );
-    const toolFile = toolResult.details as { path: string; bytes: number };
-
-    assert.equal(toolFile.path, result.path);
-    assert.equal(toolFile.bytes, result.size);
     await assert.rejects(async () => handler!({ ...request, sessions: () => [] }), /No session/);
     await assert.rejects(
-        async () => handler!({ ...request, body: { ...request.body, format: "exe" } }),
+        async () =>
+            handler!({
+                ...request,
+                body: { conversation, id: "test", format: "exe" },
+            } as unknown as WebRequest),
         /Choose/,
-    );
-    await assert.rejects(
-        async () => handler!({ ...request, body: { ...request.body, version: 0 } }),
-        /positive/,
     );
 });
 
@@ -175,7 +172,7 @@ test(
     { skip: findBrowser() === undefined, timeout: 120_000 },
     async () => {
         const result = await call(
-            designTools(host, readBundle).find((item) => item.name === "design_preview")!,
+            designTools(host).find((item) => item.name === "design_preview")!,
             { id: "test" },
         );
         const images = result.output?.filter((item) => item.type === "image") ?? [];

@@ -41,6 +41,31 @@ function png(): Buffer {
 
 const IMAGE = png();
 
+test("custom slide proportions stay unchanged in the presentation and full-bleed image", () => {
+    for (const [size, width, height] of [
+        [{ width: 1080, height: 1080 }, 12192000, 12192000],
+        [{ width: 720, height: 1280 }, 6858000, 12192000],
+    ] as const) {
+        const parts = unpack(pptx([{ image: IMAGE, text: "Custom slide" }], size));
+
+        assert.ok(
+            parts
+                .get("ppt/presentation.xml")!
+                .toString()
+                .includes(`<p:sldSz cx="${width}" cy="${height}" type="custom"/>`),
+        );
+        assert.ok(
+            parts
+                .get("ppt/slides/slide1.xml")!
+                .toString()
+                .includes(`<a:ext cx="${width}" cy="${height}"/>`),
+        );
+    }
+
+    assert.throws(() => pptx([], { width: 0, height: 1080 }), /aspect ratio/);
+    assert.throws(() => pptx([], { width: NaN, height: 1080 }), /aspect ratio/);
+});
+
 /** Read central records and independently verify sizes, offsets, local headers, and CRC32. */
 function unpack(bytes: Buffer): Map<string, Buffer> {
     const end = bytes.length - 22;
