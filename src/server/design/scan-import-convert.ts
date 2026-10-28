@@ -5,6 +5,7 @@
  * a type style, a shadow, and a border are put in the forms that the tokens engine reads.
  */
 import { colorsIn } from "./scan-parse.ts";
+import { shadowValue } from "./scan-scales.ts";
 
 export type Obj = Record<string, unknown>;
 
@@ -238,13 +239,22 @@ export function convert(node: Obj, inherited: string | undefined): Obj | undefin
             out = Number(value);
         } else if (type === "fontWeight") {
             out = weightOf(value);
+        } else if (type === "duration" && /^-?\d*\.?\d+$/.test(value.trim())) {
+            out = `${value.trim()}ms`;
         }
     } else if (typeof value === "number" && LENGTH_TYPES.has(key)) {
         out = `${value}px`;
+    } else if (typeof value === "number" && type === "duration") {
+        out = `${value}ms`;
     }
 
     if (type === "shadow") {
-        out = Array.isArray(out) ? out.map(shadowLayer) : shadowLayer(out);
+        out =
+            typeof out === "string" && !out.trim().startsWith("{")
+                ? shadowValue(out)
+                : Array.isArray(out)
+                  ? out.map(shadowLayer)
+                  : shadowLayer(out);
     } else if (type === "typography" && isObject(out)) {
         out = typographyOf(out);
     } else if (type === "border" && isObject(out)) {

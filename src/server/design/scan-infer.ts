@@ -56,7 +56,7 @@ export function infer(facts: Facts, folder: string): Inferred {
     // A project that already keeps tokens in a token file: use them.
     finishImports(facts.imported);
 
-    if (facts.imported.count >= 8 || (facts.imported.studio && facts.imported.count > 0)) {
+    if (facts.imported.count >= 8 || (facts.imported.certain && facts.imported.count > 0)) {
         result.imported = facts.imported.count;
         result.draft = {
             tokens: { ...meta, ...(facts.imported.default as Obj) },
