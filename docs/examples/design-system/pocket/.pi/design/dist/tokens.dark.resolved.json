@@ -21,6 +21,11 @@
         "$type": "color",
         "$value": "#e1e2e7"
       },
+      "150": {
+        "$type": "color",
+        "$value": "#dcdee6",
+        "$description": "A half step, kept on purpose: the light mode's sunken well must be a shade darker than the canvas (100) and still hold muted text at 4.5:1, and 200 is too dark for that."
+      },
       "200": {
         "$type": "color",
         "$value": "#d0d5e3"
@@ -448,7 +453,7 @@
       "canvas": {
         "$type": "color",
         "$value": "#0e0e14",
-        "$description": "The desk behind everything."
+        "$description": "The desk behind everything. In high contrast, canvas, base, and sunken are one black: edges separate them, not tints."
       },
       "base": {
         "$type": "color",
@@ -463,17 +468,17 @@
       "raised": {
         "$type": "color",
         "$value": "#252734",
-        "$description": "Controls and anything lifted off a surface."
+        "$description": "Controls and anything lifted off a surface. In light mode it is the same white as surface: the shadow lifts it."
       },
       "selected": {
         "$type": "color",
         "$value": "#2b2d3b",
-        "$description": "A selected row or segment."
+        "$description": "A selected row or segment: an accent tint in light mode, a lifted gray in dark and high contrast."
       },
       "sunken": {
         "$type": "color",
         "$value": "#13141c",
-        "$description": "Inset areas: code blocks and wells."
+        "$description": "Inset areas: code blocks and wells. A shade darker than the canvas in light mode; in high contrast it is the canvas black, and an edge sets it off."
       },
       "hover": {
         "$type": "color",
@@ -505,7 +510,7 @@
       "muted": {
         "$type": "color",
         "$value": "#9097b8",
-        "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too."
+        "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too. In high contrast it is the same color as secondary, because it needs 7:1 there."
       },
       "inverse": {
         "$type": "color",
@@ -678,7 +683,7 @@
       "bg": {
         "$type": "color",
         "$value": "#13141c",
-        "$description": "The ground of code."
+        "$description": "The ground of code: the same as the sunken well."
       },
       "text": {
         "$type": "color",

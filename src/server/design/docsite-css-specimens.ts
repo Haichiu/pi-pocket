@@ -126,7 +126,7 @@ export const CSS_SPECIMENS = `/* ── Specimens ──────────
 
 .shadows {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
     gap: 28px 20px;
     margin-top: 14px;
     padding: 28px 20px;

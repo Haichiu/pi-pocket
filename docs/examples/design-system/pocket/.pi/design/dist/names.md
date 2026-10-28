@@ -20,6 +20,7 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `color.neutral.0` | `--color-neutral-0` | `--color-neutral-0` | `bg-neutral-0` `text-neutral-0` `border-neutral-0` |
 | `color.neutral.50` | `--color-neutral-50` | `--color-neutral-50` | `bg-neutral-50` `text-neutral-50` `border-neutral-50` |
 | `color.neutral.100` | `--color-neutral-100` | `--color-neutral-100` | `bg-neutral-100` `text-neutral-100` `border-neutral-100` |
+| `color.neutral.150` | `--color-neutral-150` | `--color-neutral-150` | `bg-neutral-150` `text-neutral-150` `border-neutral-150` |
 | `color.neutral.200` | `--color-neutral-200` | `--color-neutral-200` | `bg-neutral-200` `text-neutral-200` `border-neutral-200` |
 | `color.neutral.300` | `--color-neutral-300` | `--color-neutral-300` | `bg-neutral-300` `text-neutral-300` `border-neutral-300` |
 | `color.neutral.400` | `--color-neutral-400` | `--color-neutral-400` | `bg-neutral-400` `text-neutral-400` `border-neutral-400` |

@@ -21,6 +21,11 @@
         "$type": "color",
         "$value": "#e1e2e7"
       },
+      "150": {
+        "$type": "color",
+        "$value": "#dcdee6",
+        "$description": "A half step, kept on purpose: the light mode's sunken well must be a shade darker than the canvas (100) and still hold muted text at 4.5:1, and 200 is too dark for that."
+      },
       "200": {
         "$type": "color",
         "$value": "#d0d5e3"
@@ -448,7 +453,7 @@
       "canvas": {
         "$type": "color",
         "$value": "#e1e2e7",
-        "$description": "The desk behind everything."
+        "$description": "The desk behind everything. In high contrast, canvas, base, and sunken are one black: edges separate them, not tints."
       },
       "base": {
         "$type": "color",
@@ -463,17 +468,17 @@
       "raised": {
         "$type": "color",
         "$value": "#ffffff",
-        "$description": "Controls and anything lifted off a surface."
+        "$description": "Controls and anything lifted off a surface. In light mode it is the same white as surface: the shadow lifts it."
       },
       "selected": {
         "$type": "color",
-        "$value": "#e1e2e7",
-        "$description": "A selected row or segment."
+        "$value": "#cdddfe",
+        "$description": "A selected row or segment: an accent tint in light mode, a lifted gray in dark and high contrast."
       },
       "sunken": {
         "$type": "color",
-        "$value": "#e1e2e7",
-        "$description": "Inset areas: code blocks and wells."
+        "$value": "#dcdee6",
+        "$description": "Inset areas: code blocks and wells. A shade darker than the canvas in light mode; in high contrast it is the canvas black, and an edge sets it off."
       },
       "hover": {
         "$type": "color",
@@ -505,7 +510,7 @@
       "muted": {
         "$type": "color",
         "$value": "#565f89",
-        "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too."
+        "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too. In high contrast it is the same color as secondary, because it needs 7:1 there."
       },
       "inverse": {
         "$type": "color",
@@ -677,8 +682,8 @@
     "code": {
       "bg": {
         "$type": "color",
-        "$value": "#e1e2e7",
-        "$description": "The ground of code."
+        "$value": "#dcdee6",
+        "$description": "The ground of code: the same as the sunken well."
       },
       "text": {
         "$type": "color",
@@ -1604,7 +1609,7 @@
       },
       "bg-hover": {
         "$type": "color",
-        "$value": "#e1e2e7"
+        "$value": "#cdddfe"
       },
       "fg": {
         "$type": "color",
@@ -1646,7 +1651,7 @@
     "disabled": {
       "bg": {
         "$type": "color",
-        "$value": "#e1e2e7"
+        "$value": "#cdddfe"
       },
       "fg": {
         "$type": "color",
@@ -1690,7 +1695,7 @@
     },
     "bg-disabled": {
       "$type": "color",
-      "$value": "#e1e2e7"
+      "$value": "#cdddfe"
     },
     "radius": {
       "$type": "dimension",
@@ -1737,7 +1742,7 @@
   "segmented": {
     "track": {
       "$type": "color",
-      "$value": "#e1e2e7"
+      "$value": "#cdddfe"
     },
     "selected": {
       "$type": "color",
@@ -1769,7 +1774,7 @@
     "neutral": {
       "bg": {
         "$type": "color",
-        "$value": "#e1e2e7"
+        "$value": "#cdddfe"
       },
       "fg": {
         "$type": "color",
@@ -1944,7 +1949,7 @@
     },
     "row-hover": {
       "$type": "color",
-      "$value": "#e1e2e7"
+      "$value": "#cdddfe"
     },
     "row-selected": {
       "$type": "color",
@@ -1985,7 +1990,7 @@
   "code-block": {
     "bg": {
       "$type": "color",
-      "$value": "#e1e2e7"
+      "$value": "#dcdee6"
     },
     "radius": {
       "$type": "dimension",
@@ -1993,7 +1998,7 @@
     },
     "head-bg": {
       "$type": "color",
-      "$value": "#e1e2e7"
+      "$value": "#cdddfe"
     },
     "border": {
       "$type": "color",
