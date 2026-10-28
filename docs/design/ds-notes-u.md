@@ -50,7 +50,7 @@ Also fixed, as asked:
 - `test/design-system-routes.test.ts`: access (view, steer, one-session guest), the revision, no system and the old file, a linked folder, saves and their refusals, a stale revision, the shape checks of every field, guidelines and modes, the check and its report cut, publishing (once for each key, assets by hash), the zip and its download, a system with an error.
 - `test/design-system-ui.test.ts` (real Chromium, 26 tests): the picker and every section; copy; live preview through the frame bridge (the page reports its button's color), undo, redo, discard, save; links; modes and side by side; typing checks; sizes, easings, and Ask Pi for a shadow; search; component frames; guidelines; a conflict; a refused save; the check and Send to Pi; publish and export from the menu; modes from the menu; a viewer; no system and the old file; an error in the system; focus mode; a phone (fits, the open design a tap away, the phone's frame, no overflow); `/design-open system` and the launcher; Ctrl+Z, Ctrl+Shift+Z, and Ctrl+S; Discard asking again, and Save saying what it wrote.
 - `test/design-system-fixtures.ts` (the "Harbor" system and a page that uses it) and `test/serve-design-system.ts`.
-- Run on the merged tree at the last commit: `npm run format` changes nothing, `npm run check` and `npm run lint` pass, and `npm test` passes 1167 of 1167 (the three `design-system-*` files hold 65 of them).
+- Run on the merged tree at the last commit: `npm run format` changes nothing, `npm run check` and `npm run lint` pass, and `npm test` passes 1167 of 1167 (the three `design-system-*` files hold 59 of them).
 
 ## Round 2: the integrator's review
 
