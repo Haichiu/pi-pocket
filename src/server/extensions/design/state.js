@@ -183,6 +183,8 @@ export function systemState() {
         sysAll: {},
         sysQuery: "",
         sysSearch: false,
+        /** The alias list that is open: `{ token, mode }`. It is drawn over the whole view, not inside a row. */
+        sysPick: null,
         /** On a narrow panel: the view itself, or the open design under it (`system` or `preview`). */
         sysPane: "system",
         /** The last save: `idle`, `saving`, `failed` (with `error` and `problems`), `conflict`, or `saved` (with `note`). */

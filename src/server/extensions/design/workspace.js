@@ -28,7 +28,7 @@ export function createWorkspace(env) {
     const views = createViews(env, canvas);
     const { Picker } = createPicker(env);
     const widgets = createSystemWidgets(env);
-    const system = createSystemView(env, canvas, createSystemSections(env, widgets));
+    const system = createSystemView(env, canvas, createSystemSections(env, widgets), widgets);
 
     /** Parts of the app's own state this reads: the session's artifacts, who the person is. Redraws only when they change. */
     function useApp() {

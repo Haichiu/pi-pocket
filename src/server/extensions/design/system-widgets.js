@@ -475,7 +475,6 @@ export function createSystemWidgets(env) {
      * kind. A shadow or a typography style is shown, and changed with Pi: its parts are not separate in the saved value.
      */
     function TokenEditor({ model, token, modes, canEdit, narrow }) {
-        const [picking, setPicking] = useState(null);
         const editable = EDITABLE.has(token.type);
         const dependents = model.dependents(token.name);
         const anyEdit = model.modes.some((mode) => model.edited(token.name, mode));
@@ -546,7 +545,7 @@ export function createSystemWidgets(env) {
                             html`<button
                                 type="button"
                                 class="dsn-link"
-                                onClick=${() => setPicking(mode)}
+                                onClick=${() => env.pickAlias(token.name, mode)}
                             >
                                 ${now.alias ? "Change" : "Link to a token"}
                             </button>`
@@ -575,20 +574,6 @@ export function createSystemWidgets(env) {
                         >
                             Match ${modeTitle(model.defaultMode)}
                         </button>`
-                    }
-                    ${
-                        picking === mode &&
-                        html`<${AliasPicker}
-                            model=${model}
-                            token=${token}
-                            mode=${mode}
-                            narrow=${narrow}
-                            onClose=${() => setPicking(null)}
-                            onPick=${(name) => {
-                                setPicking(null);
-                                env.editToken(token.name, mode, { alias: name });
-                            }}
-                        />`
                     }
                 </section>`;
             })}

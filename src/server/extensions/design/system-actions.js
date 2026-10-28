@@ -103,7 +103,16 @@ export function createSystemActions(env, systemData) {
         },
 
         setSection(sysSection) {
-            store.set({ sysSection, sysOpen: null });
+            store.set({ sysSection, sysOpen: null, sysPick: null });
+        },
+
+        /** Open the list of tokens that `token` may link to, in `mode`. */
+        pickAlias(token, mode) {
+            store.set({ sysPick: { token, mode } });
+        },
+
+        closePick() {
+            store.set({ sysPick: null });
         },
 
         toggleToken(name) {

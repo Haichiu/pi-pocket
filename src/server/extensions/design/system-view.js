@@ -23,7 +23,7 @@ const typing = (target) =>
     target instanceof HTMLElement &&
     (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 
-export function createSystemView(env, canvas, sections) {
+export function createSystemView(env, canvas, sections, widgets) {
     const { pocket, store, parts, systemData } = env;
     const { html, useEffect, useMemo, useRef, useState } = pocket;
     const { Ico, Popover } = parts;
@@ -893,8 +893,25 @@ export function createSystemView(env, canvas, sections) {
             pane=${split ? "side" : "page"}
         />`;
 
+        // The list of tokens to link to is drawn here, over the whole view: a row would hold it inside its own box.
+        const picking = s.sysPick && model?.has(s.sysPick.token) ? s.sysPick : null;
+
         return html`<div class="dsy-main" data-split=${split} data-pane=${s.sysPane}>
             ${split ? html`${column}${preview}` : s.sysPane === "preview" ? preview : column}
+            ${
+                picking &&
+                html`<${widgets.AliasPicker}
+                    model=${model}
+                    token=${model.token(picking.token)}
+                    mode=${picking.mode}
+                    narrow=${narrow}
+                    onClose=${env.closePick}
+                    onPick=${(name) => {
+                        env.closePick();
+                        env.editToken(picking.token, picking.mode, { alias: name });
+                    }}
+                />`
+            }
         </div>`;
     }
 
