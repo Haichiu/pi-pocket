@@ -818,6 +818,16 @@ td.num {
     background: var(--dd-panel);
 }
 
+.spec-row.c {
+    grid-template-columns: minmax(150px, 230px) 72px minmax(0, 1fr);
+    padding: 9px 16px;
+}
+
+.spec-row.c .val {
+    color: var(--dd-muted);
+    font: 12.5px var(--dd-mono);
+}
+
 .spec-meta {
     display: grid;
     gap: 4px;
@@ -1229,6 +1239,14 @@ pre.snip {
     margin-top: 32px;
 }
 
+.prose h3 {
+    font-size: 22px;
+}
+
+.prose h4 {
+    font-size: 17px;
+}
+
 .prose h5 {
     font-size: 15px;
 }
@@ -1240,7 +1258,7 @@ pre.snip {
 }
 
 .prose code, .desc code, .sub code {
-    padding: 1px 6px;
+    padding: 1px 5px;
     border-radius: 5px;
     background: var(--dd-sunken);
     font-size: 0.9em;
@@ -1281,7 +1299,7 @@ pre.snip {
 }
 
 .ref .tk {
-    margin: 0 0 4px;
+    margin: 0 6px 4px 0;
 }
 
 .empty {
@@ -1413,8 +1431,17 @@ pre.snip {
         border-radius: 16px;
     }
 
-    .spec-row {
+    .spec-row,
+    .spec-row.c {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .spec-row.c {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .spec-row.c .sample {
+        grid-column: 1 / -1;
     }
 
     .family .big {
@@ -1469,14 +1496,14 @@ pre.snip {
     }
 
     .ref td[data-label]::before {
-        content: attr(data-label);
-        display: block;
-        margin-top: 4px;
-        color: var(--dd-faint);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
+        display: none;
+    }
+
+    .ref td[data-label="Type"],
+    .ref td[data-label="Value"] {
+        display: inline-block;
+        margin: 4px 14px 0 0;
+        font-size: 13px;
     }
 }
 

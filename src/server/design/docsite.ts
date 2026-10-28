@@ -832,7 +832,7 @@ function typographySection(ctx: Ctx): { html: string; count: number } | undefine
 function rowOf(ctx: Ctx, token: ResolvedToken, sample: string): string {
     const value = variants(ctx, (mode) => esc(plain(token.type, valueIn(token, mode)?.value)));
 
-    return `<div class="spec-row" data-q="${esc(`${token.name} ${token.description ?? ""}`.toLowerCase())}"><div class="spec-meta">${copyName(token)}<span class="val">${value}</span>${token.description === undefined ? "" : `<span class="desc">${esc(token.description)}</span>`}</div><div>${sample}</div></div>`;
+    return `<div class="spec-row c" data-q="${esc(`${token.name} ${token.description ?? ""}`.toLowerCase())}"><div class="spec-meta">${copyName(token)}${token.description === undefined ? "" : `<span class="desc">${esc(token.description)}</span>`}</div><div class="val">${value}</div><div class="sample">${sample}</div></div>`;
 }
 
 function layoutSection(ctx: Ctx): { html: string; count: number } | undefined {
