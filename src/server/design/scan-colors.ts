@@ -6,6 +6,9 @@
 import { type Rgba, contrastRatio, parseColor, toOklch } from "./color.ts";
 import type { ColorFact } from "./scan-facts.ts";
 
+/** A list of words from one string. */
+const w = (text: string) => text.split(" ");
+
 export type RoleName =
     | "background"
     | "surface"
@@ -197,106 +200,30 @@ export function words(name: string): string[] {
         .filter(
             (word) =>
                 word !== "" &&
-                ![
-                    "color",
-                    "colour",
-                    "clr",
-                    "c",
-                    "theme",
-                    "tw",
-                    "ui",
-                    "sys",
-                    "md",
-                    "ref",
-                    "palette",
-                    "colors",
-                    "var",
-                ].includes(word),
+                !w("color colour clr c theme tw ui sys md ref palette colors var").includes(word),
         );
 }
 
-const STATE = new Set([
-    "hover",
-    "active",
-    "focus",
-    "pressed",
-    "disabled",
-    "selected",
-    "checked",
-    "visited",
-    "ring",
-    "placeholder",
-]);
-const SURFACEISH = new Set([
-    "surface",
-    "card",
-    "panel",
-    "elevated",
-    "raised",
-    "container",
-    "popover",
-    "modal",
-    "dialog",
-    "sheet",
-    "input",
-    "button",
-    "btn",
-    "header",
-    "footer",
-    "nav",
-    "navbar",
-    "sidebar",
-    "menu",
-    "tooltip",
-    "toast",
-    "overlay",
-    "code",
-    "table",
-    "row",
-    "layer",
-    "tile",
-    "well",
-]);
-const OTHER_ROLE = new Set([
-    "accent",
-    "danger",
-    "error",
-    "warning",
-    "success",
-    "info",
-    "brand",
-    "destructive",
-    "critical",
-    "secondary",
-    "tertiary",
-    "link",
-    "border",
-    "outline",
-    "divider",
-]);
+const STATE = new Set(
+    w("hover active focus pressed disabled selected checked visited ring placeholder"),
+);
+const SURFACEISH = new Set(
+    w(
+        "surface card panel elevated raised container popover modal dialog sheet input button btn header footer nav navbar sidebar menu tooltip toast overlay code table row layer tile well",
+    ),
+);
+const OTHER_ROLE = new Set(
+    w(
+        "accent danger error warning success info brand destructive critical secondary tertiary link border outline divider",
+    ),
+);
 const subset = (segs: string[], allowed: string[]) =>
     segs.every((seg) => allowed.includes(seg) || /^\d{1,3}$/.test(seg));
 const has = (segs: string[], list: readonly string[]) => segs.some((seg) => list.includes(seg));
 
-const VARIANT = [
-    "bg",
-    "background",
-    "subtle",
-    "soft",
-    "light",
-    "lighter",
-    "muted",
-    "tint",
-    "container",
-    "border",
-    "outline",
-    "hover",
-    "active",
-    "focus",
-    "pressed",
-    "disabled",
-    "faint",
-];
+const VARIANT = w(
+    "bg background subtle soft light lighter muted tint container border outline hover active focus pressed disabled faint",
+);
 const INK = ["foreground", "fg", "text", "on", "contrast", "inverse", "inverted", "content"];
 
 /** How well a variable's name fits a role, 0 (not at all) to about 100. */
@@ -304,20 +231,9 @@ export function nameScore(role: RoleName, segs: string[]): number {
     if (
         segs.length === 0 ||
         segs.some((seg) =>
-            [
-                "rgb",
-                "hsl",
-                "channels",
-                "channel",
-                "alpha",
-                "opacity",
-                "radius",
-                "width",
-                "shadow",
-                "size",
-                "font",
-                "gradient",
-            ].includes(seg),
+            w(
+                "rgb hsl channels channel alpha opacity radius width shadow size font gradient",
+            ).includes(seg),
         )
     ) {
         return 0;
@@ -330,15 +246,10 @@ export function nameScore(role: RoleName, segs: string[]): number {
 
     switch (role) {
         case "background": {
-            const strong = has(segs, [
-                "bg",
-                "background",
-                "page",
-                "canvas",
-                "body",
-                "window",
-                "root",
-            ]);
+            // `body` alone is the body text in many systems (`--body`); `body-bg` is the page.
+            const strong =
+                (segs.includes("body") && has(segs, ["bg", "background"])) ||
+                has(segs, ["bg", "background", "page", "canvas", "window", "root"]);
             const base = segs.includes("base") && segs.some((seg) => /^\d/.test(seg));
 
             if (state || has(segs, [...SURFACEISH, ...OTHER_ROLE]) || (!strong && !base)) {
@@ -348,71 +259,34 @@ export function nameScore(role: RoleName, segs: string[]): number {
             // `bg-primary` is the page in many systems and the brand in others: the caller checks the color.
             return (
                 (strong ? 70 : 55) +
-                (subset(segs, [
-                    "bg",
-                    "background",
-                    "page",
-                    "canvas",
-                    "body",
-                    "base",
-                    "main",
-                    "app",
-                    "root",
-                    "default",
-                    "window",
-                    "primary",
-                    "1",
-                    "0",
-                ])
+                (subset(
+                    segs,
+                    w(
+                        "bg background page canvas body base main app root default window primary 1 0",
+                    ),
+                )
                     ? 25
                     : 0)
             );
         }
 
         case "surface": {
-            const named = has(segs, [
-                "surface",
-                "card",
-                "panel",
-                "elevated",
-                "raised",
-                "container",
-                "popover",
-                "layer",
-                "sheet",
-                "tile",
-                "well",
-            ]);
+            const named = has(
+                segs,
+                w("surface card panel elevated raised container popover layer sheet tile well"),
+            );
             const layered =
                 has(segs, ["bg", "background"]) &&
-                has(segs, [
-                    "secondary",
-                    "alt",
-                    "subtle",
-                    "muted",
-                    "elevated",
-                    "raised",
-                    "tertiary",
-                ]);
+                has(segs, w("secondary alt subtle muted elevated raised tertiary"));
             const base = segs.includes("base") && segs.some((seg) => /^[2-9]\d{2}$/.test(seg));
 
             if (
                 state ||
                 has(segs, [
                     ...INK,
-                    ...[
-                        "accent",
-                        "danger",
-                        "error",
-                        "warning",
-                        "success",
-                        "info",
-                        "brand",
-                        "link",
-                        "border",
-                        "outline",
-                        "divider",
-                    ],
+                    ...w(
+                        "accent danger error warning success info brand link border outline divider",
+                    ),
                 ]) ||
                 (!named && !layered && !base)
             ) {
@@ -421,22 +295,12 @@ export function nameScore(role: RoleName, segs: string[]): number {
 
             return (
                 (named ? 70 : layered ? 58 : 50) +
-                (subset(segs, [
-                    "surface",
-                    "card",
-                    "panel",
-                    "bg",
-                    "background",
-                    "default",
-                    "elevated",
-                    "raised",
-                    "container",
-                    "secondary",
-                    "alt",
-                    "subtle",
-                    "muted",
-                    "popover",
-                ])
+                (subset(
+                    segs,
+                    w(
+                        "surface card panel bg background default elevated raised container secondary alt subtle muted popover",
+                    ),
+                )
                     ? 25
                     : 0)
             );
@@ -450,38 +314,18 @@ export function nameScore(role: RoleName, segs: string[]): number {
 
             if (
                 state ||
-                has(segs, [
-                    "muted",
-                    "secondary",
-                    "subtle",
-                    "dim",
-                    "dimmed",
-                    "faint",
-                    "tertiary",
-                    "disabled",
-                    "inverse",
-                    "inverted",
-                    "link",
-                    "heading",
-                    "quiet",
-                    "soft",
-                    "weak",
-                    "hint",
-                ]) ||
-                (has(segs, [
-                    "accent",
-                    "primary",
-                    "danger",
-                    "error",
-                    "warning",
-                    "success",
-                    "info",
-                    "brand",
-                    "destructive",
-                    "card",
-                    "popover",
-                    "sidebar",
-                ]) &&
+                has(
+                    segs,
+                    w(
+                        "muted secondary subtle dim dimmed faint tertiary disabled inverse inverted link heading quiet soft weak hint",
+                    ),
+                ) ||
+                (has(
+                    segs,
+                    w(
+                        "accent primary danger error warning success info brand destructive card popover sidebar",
+                    ),
+                ) &&
                     !subset(segs, ["text", "primary", "fg", "foreground", "default"])) ||
                 (!ink && !onBase && !body)
             ) {
@@ -490,57 +334,30 @@ export function nameScore(role: RoleName, segs: string[]): number {
 
             return (
                 (ink ? 70 : onBase ? 62 : 42) +
-                (subset(segs, [
-                    "text",
-                    "fg",
-                    "foreground",
-                    "primary",
-                    "default",
-                    "base",
-                    "main",
-                    "body",
-                    "ink",
-                    "content",
-                    "1",
-                    "0",
-                ])
+                (subset(
+                    segs,
+                    w("text fg foreground primary default base main body ink content 1 0"),
+                )
                     ? 25
                     : 0)
             );
         }
 
         case "muted": {
-            const quiet = has(segs, [
-                "muted",
-                "secondary",
-                "subtle",
-                "dim",
-                "dimmed",
-                "faint",
-                "tertiary",
-                "soft",
-                "weak",
-                "hint",
-                "quiet",
-                "caption",
-                "meta",
-            ]);
+            const quiet = has(
+                segs,
+                w(
+                    "muted secondary subtle dim dimmed faint tertiary soft weak hint quiet caption meta",
+                ),
+            );
             const ink = has(segs, ["text", "fg", "foreground", "content", "ink"]);
 
             if (
                 (state && !segs.includes("placeholder")) ||
-                has(segs, [
-                    "bg",
-                    "background",
-                    "card",
-                    "surface",
-                    "border",
-                    "accent",
-                    "danger",
-                    "error",
-                    "warning",
-                    "success",
-                ])
+                has(
+                    segs,
+                    w("bg background card surface border accent danger error warning success"),
+                )
             ) {
                 return 0;
             }
@@ -562,52 +379,30 @@ export function nameScore(role: RoleName, segs: string[]): number {
         }
 
         case "border": {
-            const named = has(segs, [
-                "border",
-                "outline",
-                "divider",
-                "separator",
-                "stroke",
-                "line",
-                "hairline",
-                "rule",
-            ]);
+            const named = has(
+                segs,
+                w("border outline divider separator stroke line hairline rule"),
+            );
 
             if (
                 !named ||
                 state ||
-                has(segs, [
-                    "radius",
-                    "width",
-                    "style",
-                    "focus",
-                    "accent",
-                    "primary",
-                    "danger",
-                    "error",
-                    "success",
-                    "warning",
-                    "bg",
-                    "background",
-                ])
+                has(
+                    segs,
+                    w(
+                        "radius width style focus accent primary danger error success warning bg background",
+                    ),
+                )
             ) {
                 return 0;
             }
 
             return (
                 70 +
-                (subset(segs, [
-                    "border",
-                    "default",
-                    "base",
-                    "subtle",
-                    "muted",
-                    "light",
-                    "divider",
-                    "separator",
-                    "line",
-                    "color",
-                ])
+                (subset(
+                    segs,
+                    w("border default base subtle muted light divider separator line color"),
+                )
                     ? 25
                     : 0)
             );
@@ -642,18 +437,7 @@ export function nameScore(role: RoleName, segs: string[]): number {
                 30 +
                 middle -
                 (variant ? 40 : 0) +
-                (subset(segs, [
-                    "accent",
-                    "primary",
-                    "brand",
-                    "default",
-                    "main",
-                    "500",
-                    "600",
-                    "base",
-                    "link",
-                    "key",
-                ])
+                (subset(segs, w("accent primary brand default main 500 600 base link key"))
                     ? 10
                     : 0)
             );
@@ -665,16 +449,7 @@ export function nameScore(role: RoleName, segs: string[]): number {
         case "success": {
             const table = {
                 danger: [
-                    [
-                        "danger",
-                        "error",
-                        "destructive",
-                        "critical",
-                        "negative",
-                        "invalid",
-                        "alert",
-                        "err",
-                    ],
+                    w("danger error destructive critical negative invalid alert err"),
                     ["red"],
                 ],
                 warning: [

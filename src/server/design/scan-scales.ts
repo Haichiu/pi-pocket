@@ -729,7 +729,20 @@ export function breakpointScale(
         return;
     }
 
-    const used = topBy([...facts.breakpoints], ([, count]) => count, 5).sort((a, b) => a[0] - b[0]);
+    // 1100px and 1101px are one breakpoint: the more used stands for both.
+    const clusters: [number, number][] = [];
+
+    for (const [size, count] of [...facts.breakpoints].sort((a, b) => b[1] - a[1])) {
+        const near = clusters.find(([other]) => Math.abs(other - size) <= Math.max(2, size * 0.02));
+
+        if (near === undefined) {
+            clusters.push([size, count]);
+        } else {
+            near[1] += count;
+        }
+    }
+
+    const used = topBy(clusters, ([, count]) => count, 5).sort((a, b) => a[0] - b[0]);
     const names = ["sm", "md", "lg", "xl", "2xl"];
 
     used.forEach(([size], at) => {

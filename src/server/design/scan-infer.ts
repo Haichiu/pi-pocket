@@ -38,6 +38,9 @@ import {
 } from "./scan-scales.ts";
 import { buildSystem } from "./tokens-model.ts";
 
+/** A list of words from one string. */
+const w = (text: string) => text.split(" ");
+
 type Obj = Record<string, unknown>;
 
 export type { Draft, Inferred };
@@ -843,21 +846,9 @@ export function infer(facts: Facts, folder: string): Inferred {
 
         if (
             match !== null &&
-            ![
-                "bg",
-                "background",
-                "surface",
-                "text",
-                "fg",
-                "foreground",
-                "border",
-                "layer",
-                "base",
-                "space",
-                "spacing",
-                "size",
-                "step",
-            ].includes(match[1]!.toLowerCase())
+            !w(
+                "bg background surface text fg foreground border layer base space spacing size step",
+            ).includes(match[1]!.toLowerCase())
         ) {
             const list = scales.get(match[1]!.toLowerCase()) ?? [];
 
@@ -902,31 +893,9 @@ export function infer(facts: Facts, folder: string): Inferred {
     for (const [family, list] of scales) {
         if (
             list.length < 2 &&
-            ![
-                "gray",
-                "grey",
-                "red",
-                "orange",
-                "yellow",
-                "green",
-                "blue",
-                "indigo",
-                "purple",
-                "pink",
-                "teal",
-                "cyan",
-                "lime",
-                "amber",
-                "emerald",
-                "sky",
-                "violet",
-                "fuchsia",
-                "rose",
-                "slate",
-                "zinc",
-                "stone",
-                "neutral",
-            ].includes(family)
+            !w(
+                "gray grey red orange yellow green blue indigo purple pink teal cyan lime amber emerald sky violet fuchsia rose slate zinc stone neutral",
+            ).includes(family)
         ) {
             continue;
         }

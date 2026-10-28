@@ -29,7 +29,13 @@ import { boundedText } from "./tokens-base.ts";
 import { checkTokensBlock, scanReport, scanRoot, scanTokens } from "./scan.ts";
 import type { DesignSystem, SystemChange } from "./system-types.ts";
 import { readDesignFile } from "./tokens-io.ts";
-import { loadDesignSystem, problemLine, systemSummary, writeDesignSystem } from "./tokens.ts";
+import {
+    defaultModeName,
+    loadDesignSystem,
+    problemLine,
+    systemSummary,
+    writeDesignSystem,
+} from "./tokens.ts";
 
 export { boundedText, utf8Cut } from "./tokens-base.ts";
 
@@ -326,9 +332,9 @@ export function designSystemTool(): ToolRegistration {
 
             const change = (value: SystemChange, headline: string) =>
                 text(afterWrite(writeDesignSystem(cwd, value), headline));
-            const toSet = (system: DesignSystem | undefined): SystemChange["set"] =>
+            const toSet = (defaultMode: string): SystemChange["set"] =>
                 (args.changes ?? []).map((entry) => ({
-                    mode: entry.mode ?? system?.modes[0] ?? "light",
+                    mode: entry.mode ?? defaultMode,
                     token: entry.token,
                     value: entry.value,
                     ...(entry.type === undefined ? {} : { type: entry.type as never }),
@@ -404,7 +410,9 @@ export function designSystemTool(): ToolRegistration {
                         ...(args.description === undefined
                             ? {}
                             : { description: args.description }),
-                        ...(args.changes === undefined ? {} : { set: toSet(undefined) }),
+                        ...(args.changes === undefined
+                            ? {}
+                            : { set: toSet(defaultModeName(tokens)) }),
                         ...(args.content === undefined ? {} : { guidelines: args.content }),
                     });
 
@@ -422,7 +430,7 @@ export function designSystemTool(): ToolRegistration {
 
                     return change(
                         {
-                            set: toSet(system),
+                            set: toSet(system?.modes[0] ?? "light"),
                             remove: (args.remove ?? []).map((entry) => ({
                                 mode: entry.mode ?? system?.modes[0] ?? "light",
                                 token: entry.token,

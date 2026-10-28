@@ -21,6 +21,9 @@ import {
 } from "./scan-parse.ts";
 import { importTokens, type Imported } from "./scan-import.ts";
 
+/** A list of words from one string. */
+const w = (text: string) => text.split(" ");
+
 /** What a value is for, which decides the group of its token. */
 export type Category =
     | "color"
@@ -245,21 +248,11 @@ function useColors(facts: Facts, decl: Decl, dark: boolean): void {
 
 // --- Other uses ----------------------------------------------------------------------------------------------------
 
-const GENERIC = new Set([
-    "serif",
-    "sans-serif",
-    "monospace",
-    "cursive",
-    "fantasy",
-    "system-ui",
-    "ui-serif",
-    "ui-sans-serif",
-    "ui-monospace",
-    "ui-rounded",
-    "math",
-    "emoji",
-    "fangsong",
-]);
+const GENERIC = new Set(
+    w(
+        "serif sans-serif monospace cursive fantasy system-ui ui-serif ui-sans-serif ui-monospace ui-rounded math emoji fangsong",
+    ),
+);
 
 /** The family names of a `font-family` value, quotes removed; undefined for `inherit` or a `var()`. */
 export function stackOf(value: string): string[] | undefined {

@@ -56,7 +56,12 @@ const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
 
 /** The name of the default mode, as `tokens.json` says. */
 function defaultModeOf(folder: Folder): string {
-    const mode = isObject(folder.raw.tokens) ? extensionOf(folder.raw.tokens).mode : undefined;
+    return defaultModeName(folder.raw.tokens);
+}
+
+/** The name of the default mode that a `tokens.json` object declares (`light` unless it says otherwise). */
+export function defaultModeName(tokens: unknown): string {
+    const mode = isObject(tokens) ? extensionOf(tokens).mode : undefined;
 
     return typeof mode === "string" && MODE_NAME.test(mode) ? mode : "light";
 }

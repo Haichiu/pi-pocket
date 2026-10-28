@@ -583,8 +583,8 @@ export function colorObjectCss(value: unknown): { css: string } | { error: strin
 
 /**
  * `color-mix()` of two colors in `space`, as CSS Color 5 defines it for the rectangular spaces: the components are mixed
- * premultiplied by alpha. `srgb` mixes the encoded channels; every other space (`oklab`, `oklch`, `lab`...) is mixed in
- * Oklab, which is close for a draft. A percentage left out is the rest of 100%; if both add to less than 100%, the mix
+ * premultiplied by alpha. `srgb` mixes the encoded channels; `oklch` (and `lch`, `hsl`, `hwb`, taken as `oklch`) mixes
+ * lightness and chroma and turns the hue the short way; every other space (`oklab`, `lab`...) is mixed in Oklab. A percentage left out is the rest of 100%; if both add to less than 100%, the mix
  * is translucent by the difference.
  */
 export function mixColors(
@@ -624,6 +624,22 @@ export function mixColors(
             b: clamp(mix(first.color.b, second.color.b)),
             a: clamp(alpha),
         };
+    }
+
+    // Polar spaces mix the hue along the shorter arc; the rest is mixed in Oklab.
+    if (["oklch", "lch", "hsl", "hwb"].includes(space)) {
+        const x = toOklch(first.color);
+        const y = toOklch(second.color);
+        // A gray has no hue of its own: it takes the other color's.
+        const hueX = x.c < 0.0004 ? y.h : x.h;
+        const hueY = y.c < 0.0004 ? x.h : y.h;
+        const gap = ((hueY - hueX + 540) % 360) - 180;
+        const hue = (((hueX + gap * (a2 / sum)) % 360) + 360) % 360;
+        const l = (x.l * a1 + y.l * a2) / sum;
+        const c = (x.c * a1 + y.c * a2) / sum;
+        const rad = (hue * Math.PI) / 180;
+
+        return fromOklab(l, c * Math.cos(rad), c * Math.sin(rad), alpha);
     }
 
     const x = toOklab(first.color);

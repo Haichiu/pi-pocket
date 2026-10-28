@@ -655,3 +655,79 @@ test("a project with nothing to read gives a draft with no tokens, and the repor
     assert.match(report, /held no colors, fonts, sizes, or custom properties/);
     assert.match(scanReport(scanTokens(project({ "readme.md": "x" }))), /found no style files/);
 });
+
+// --- A dark-first project with color-mix() ----------------------------------------------------------------------------
+
+const DARK_FIRST = {
+    "web/style.css": `:root {
+  --o-bg: #1a1b26; --o-fg: #a9b1d6; --o-fg-bright: #c0caf5; --o-accent: #7aa2f7; --o-red: #f7768e; --o-yellow: #e0af68; --o-green: #9ece6a;
+  --bg: var(--o-bg); --card: color-mix(in srgb, var(--body) 4%, var(--bg)); --line: color-mix(in srgb, var(--body) 13%, var(--bg));
+  --text: var(--o-fg-bright); --body: var(--o-fg); --muted: color-mix(in oklab, var(--body) 76%, var(--bg));
+  --accent: var(--o-accent); --ok: var(--o-green); --warn: var(--o-yellow); --err: var(--o-red);
+  --step-mark-size: 19px;
+}
+:root[data-mode="light"] { --o-bg: #fafafa; --o-fg: #3a3f55; --o-fg-bright: #1c2033; --o-accent: #2f5bd0; --line: color-mix(in srgb, var(--body) 15%, var(--bg)); }
+body { background: var(--bg); color: var(--text); }`,
+};
+
+test("a dark-first project: dark is the default mode, light is the file, color-mix() is computed, and short names are roles", () => {
+    const scan = scanTokens(project(DARK_FIRST));
+    const system = load(scan);
+    const roles = scan.inferred.roles;
+
+    assert.deepEqual(system.modes, ["dark", "light"]);
+    assert.deepEqual(scan.inferred.modes, { default: "dark", alt: "light" });
+    assert.equal(system.schemes.dark, "dark");
+    assert.equal(system.schemes.light, "light");
+    assert.equal(roles.background!.value, "#1a1b26");
+    assert.equal(
+        roles.background!.dark,
+        "#fafafa",
+        "the other mode's value is reported under `dark`",
+    );
+    assert.equal(roles.surface!.value, "#20212d", "--card is color-mix(in srgb, body 4%, bg)");
+    assert.equal(
+        roles.muted!.value,
+        "#8389a8",
+        "--muted is color-mix(in oklab, ...), computed like the browser does",
+    );
+    assert.equal(roles.border!.source, "line", "--line is the border");
+    assert.equal(roles.danger!.source, "err");
+    assert.equal(roles.warning!.source, "warn");
+    assert.equal(roles.success!.source, "ok");
+    assert.equal(hex(system, "color.bg.page", "light"), "#fafafa");
+    assert.equal(hex(system, "color.accent.default", "light"), "#2f5bd0");
+    assert.ok(Object.keys(scan.draft.modes).join() === "light");
+    assert.match(
+        scanReport(scan),
+        /Modes: dark \(default\), light \(tokens\.light\.json drafted\); the project is dark first/,
+    );
+    // `--step-mark-size` is not a type step.
+    assert.ok(!token(system, "text.mark-size"));
+    assert.equal(
+        token(system, "size.step-mark-size")?.modes.dark!.css ??
+            token(system, "size.mark-size")?.modes.dark!.css,
+        "19px",
+    );
+});
+
+test("a lone --body is the text, and --body-bg is the page", () => {
+    const text = scanTokens(
+        project({ "a.css": ":root { --body: #333333; --bg-body: #ffffff; --accent: #3366ff }" }),
+    );
+    const roles = text.inferred.roles;
+
+    assert.equal(roles.background!.source, "bg-body");
+    assert.equal(roles.text!.source, "body");
+});
+
+test("breakpoints a pixel apart are one", () => {
+    const scan = scanTokens(
+        project({
+            "a.css":
+                "@media (min-width: 1100px) { a { color: red } } @media (min-width: 1101px) { a { color: blue } } @media (min-width: 640px) { a { color: red } }",
+        }),
+    );
+
+    assert.deepEqual(scan.inferred.breakpoints, ["sm 640px", "md 1100px"]);
+});

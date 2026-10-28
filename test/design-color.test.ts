@@ -6,6 +6,7 @@ import {
     colorObjectCss,
     contrastRatio,
     luminance,
+    mixColors,
     num,
     over,
     parseColor,
@@ -169,4 +170,36 @@ test("num trims digits and the sign of zero", () => {
     assert.equal(num(-0.00001), "0");
     assert.equal(num(2), "2");
     assert.equal(num(1 / 3, 2), "0.33");
+});
+
+test("mixColors matches the browser's color-mix()", () => {
+    const parse = (text: string) => parseColor(text)!;
+    const mixed = (space: string, a: string, pa: number | undefined, b: string, pb?: number) =>
+        toHex(
+            mixColors(
+                space,
+                { color: parse(a), ...(pa === undefined ? {} : { percent: pa }) },
+                { color: parse(b), ...(pb === undefined ? {} : { percent: pb }) },
+            ),
+        );
+
+    // Values from Chromium's canvas for the same color-mix().
+    assert.equal(mixed("oklab", "#a9b1d6", 76, "#1a1b26"), "#8389a8");
+    assert.equal(mixed("srgb", "#a9b1d6", 4, "#1a1b26"), "#20212d");
+    assert.equal(mixed("srgb", "red", undefined, "blue"), "#800080");
+    assert.equal(
+        mixed("srgb", "#a9b1d6", 7, "transparent"),
+        "#a9b1d612",
+        "a mix with transparent keeps the color, less opaque",
+    );
+    // The hue turns the short way; a channel may differ by one in the last place.
+    const channels = (hex: string) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
+
+    assert.ok(
+        channels(mixed("oklch", "#7aa2f7", 50, "#f7768e")).every(
+            (value, at) => Math.abs(value - channels("#c986e0")[at]!) <= 1,
+        ),
+    );
+    // Percentages that do not add to 100 are scaled; if they add to less, the result is translucent.
+    assert.equal(mixed("srgb", "#000", 25, "#fff", 25), "#80808080");
 });

@@ -388,3 +388,26 @@ test("scan returns the fenced report with the draft, and writes nothing", async 
     assert.ok(!inside.includes("</scan_data>"), "no closing tag inside the fence");
     assert.ok(!/[\u202e]/.test(text));
 });
+
+test("init fromScan on a dark-first project: a change without a mode lands in the default (dark) mode", async () => {
+    const dir = project({
+        "a.css": `:root { --bg: #111111; --text: #eeeeee; --accent: #7aa2f7 }
+:root[data-mode="light"] { --bg: #ffffff; --text: #111111; --accent: #2f5bd0 }`,
+    });
+
+    await say(
+        run(dir, {
+            action: "init",
+            fromScan: true,
+            changes: [{ token: "color.accent.default", value: "#ff00ff" }],
+        }),
+    );
+
+    const base = JSON.parse(readFileSync(join(dir, ".pi/design/tokens.json"), "utf8"));
+    const light = JSON.parse(readFileSync(join(dir, ".pi/design/tokens.light.json"), "utf8"));
+
+    assert.equal(base.$extensions["com.pi-pocket"].mode, "dark");
+    assert.equal(base.color.accent.default.$value, "#ff00ff", "the change is in tokens.json, not in a mode file");
+    assert.ok(light.color.accent.default, "the light mode keeps its own accent");
+    assert.match(await say(run(dir, { action: "read" })), /modes dark \(default\), light/);
+});
