@@ -182,6 +182,12 @@ export interface Host {
      */
     requesterOf(conversationId: ConversationId): string | undefined;
     /**
+     * The role of a person by id: `"owner"`, `"guest"`, or `"viewer"`. It is `undefined` for an id that is not a person here.
+     * @since 0.27.0
+     * @experimental
+     */
+    roleOf(personId: string): Role | undefined;
+    /**
      * Listens to what happens in the app: sessions made, renamed, and archived, messages people send to Pi, and runs that start and end. Returns how to stop: pass it to `web.onDispose`. PiP's conversations send none.
      * @since 0.22.0
      * @experimental
@@ -683,7 +689,17 @@ export interface BrowserPageHandle {
      * @since 0.22.0
      * @experimental
      */
-    snapshot(): Promise<{ text: string; controls: BrowserControl[]; truncated: boolean }>;
+    snapshot(): Promise<{
+        text: string;
+        controls: BrowserControl[];
+        truncated: boolean;
+        /**
+         * Where the page is scrolled, in CSS pixels: `y` is the top of the viewport, `viewport` its height, and `height` the page's.
+         * @since 0.27.0
+         * @experimental
+         */
+        scroll: { y: number; viewport: number; height: number };
+    }>;
     /**
      * What a target is: its description, its kind, and whether it is a field or a password field.
      * @since 0.22.0

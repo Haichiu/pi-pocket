@@ -195,6 +195,11 @@ export function browserHandle(page: BrowserPage): BrowserPageHandle {
                 text: outline.lines,
                 controls: outline.items ?? [],
                 truncated: outline.truncated,
+                scroll: {
+                    y: outline.scrollY,
+                    viewport: outline.innerHeight,
+                    height: outline.scrollHeight,
+                },
             };
         },
         inspect: async (at: BrowserTarget) => {
