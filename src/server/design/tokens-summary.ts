@@ -59,6 +59,50 @@ function palettes(tokens: ResolvedToken[]): string[] {
     );
 }
 
+/** A class name that is safe to show: letters, digits, and the marks that Tailwind and BEM use. */
+const CLASS_NAME = /^[\w:.[\]%/#-]{1,48}$/;
+
+/**
+ * The root element of a markup, and the class names of its states: `<article class="pk-card">` and the other classes
+ * the states use (`pk-card--selected`), so that Pi can reuse the markup without reading the file. Project text: only
+ * safe class names are kept.
+ */
+function rootOf(component: DesignSystem["components"][number]): string {
+    const classesIn = (tag: string) =>
+        (
+            /\bclass\s*=\s*(?:"([^"]*)"|'([^']*)')/i
+                .exec(tag)
+                ?.slice(1)
+                .find((each) => each !== undefined) ?? ""
+        )
+            .split(/\s+/)
+            .filter((name) => CLASS_NAME.test(name));
+    const first = component.markup[component.states[0]!] ?? "";
+    const opening = /<([a-z][a-z0-9-]*)\b[^>]*>/i.exec(first);
+
+    if (opening === null) {
+        return "";
+    }
+
+    const tag = opening[1]!.toLowerCase();
+    const rootClasses = classesIn(opening[0]);
+    const seen = new Set(rootClasses);
+    const others: string[] = [];
+
+    for (const state of component.states) {
+        for (const element of (component.markup[state] ?? "").matchAll(/<[a-z][^>]*>/gi)) {
+            for (const name of classesIn(element[0])) {
+                if (!seen.has(name)) {
+                    seen.add(name);
+                    others.push(name);
+                }
+            }
+        }
+    }
+
+    return `root <${tag}${rootClasses.length === 0 ? "" : ` class="${rootClasses.join(" ")}"`}>${others.length === 0 ? "" : `; other classes ${others.slice(0, 8).join(" ")}${others.length > 8 ? " …" : ""}`}`;
+}
+
 /** How much each token is used: by components (their `tokens`), and by other tokens that are aliases of it. */
 function useCounts(system: DesignSystem): Map<string, number> {
     const uses = new Map<string, number>();
@@ -176,11 +220,10 @@ export function systemSummary(system: DesignSystem, maxBytes: number): string {
         );
 
         for (const component of system.components) {
-            const markup = component.markup[component.states[0]!] ?? "";
-            const opening = /<[a-z][^>]*>/i.exec(markup)?.[0] ?? "";
+            const root = rootOf(component);
 
             componentLines.push(
-                `  ${component.slug}: ${clip(plain(component.name), 40)}; states ${component.states.join(", ")}${component.description === "" ? "" : `; ${clip(plain(component.description), 80)}`}${opening === "" ? "" : `; ${clip(plain(opening), 90)}`}`,
+                `  ${component.slug}: ${clip(plain(component.name), 40)}${root === "" ? "" : `; ${root}`}; states ${component.states.join(", ")}${component.description === "" ? "" : `; ${clip(plain(component.description), 80)}`}`,
             );
         }
     }

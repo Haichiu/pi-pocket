@@ -26,7 +26,7 @@ import {
 } from "./tokens-base.ts";
 import { buildSystem, inferType } from "./tokens-model.ts";
 
-export { compileDesignSystem, scaleOf, type Scale } from "./tokens-compile.ts";
+export { compileDesignSystem, scaleOf, tailwindNames, type Scale } from "./tokens-compile.ts";
 export { systemSummary } from "./tokens-summary.ts";
 export { DESIGN_DIR };
 
@@ -511,6 +511,10 @@ export function writeDesignSystem(cwd: string, change: SystemChange): DesignSyst
     files.set("dist/components.css", system.compiled.components);
 
     // A DTCG file for each mode; one for a mode that is gone goes too.
+    if (system.compiled.studio !== undefined) {
+        files.set("dist/tokens.studio.json", system.compiled.studio);
+    }
+
     for (const [mode, text] of Object.entries(system.compiled.modes ?? {})) {
         files.set(`dist/tokens.${mode}.resolved.json`, text);
     }

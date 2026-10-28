@@ -9,10 +9,18 @@
  * is declared, so a nested `[data-theme]` scope must declare it again to see the new `--x`.
  */
 import type { CompiledFiles, DesignSystem, ResolvedToken, TokenTier } from "./system-types.ts";
+import { compactJson, dtcgJson, studioJson } from "./tokens-dtcg.ts";
 
 export type CompileInput = Pick<
     DesignSystem,
-    "name" | "description" | "modes" | "schemes" | "tokens" | "components" | "tailwindReset"
+    | "name"
+    | "description"
+    | "modes"
+    | "schemes"
+    | "tokens"
+    | "components"
+    | "tailwindReset"
+    | "dtcgFormat"
 >;
 
 type Decl = [property: string, value: string];
@@ -282,7 +290,47 @@ function stripLead(path: readonly string[], drop: readonly string[]): string[] {
     return path.slice(at);
 }
 
-/** The Tailwind v4 variable for a token (`--color-*`, `--font-*`, `--text-*`, `--spacing-*`, ...), if a namespace fits. */
+/** Words that name the group of a type scale: `font.leading.tight`, `type.size.lg`, `typography.tracking.wide`. */
+const TYPE_GROUPS = ["font", "fonts", "type", "typography", "text"];
+/** The Tailwind namespace of the second word of such a path. */
+const TYPE_SUB: Record<string, string> = {
+    leading: "leading",
+    lineheight: "leading",
+    lineheights: "leading",
+    tracking: "tracking",
+    letterspacing: "tracking",
+    weight: "font-weight",
+    weights: "font-weight",
+    fontweight: "font-weight",
+    size: "text",
+    sizes: "text",
+    fontsize: "text",
+    family: "font",
+    families: "font",
+    fontfamily: "font",
+    typeface: "font",
+};
+/** The first words of a color path that name the utility, not the role: `bg-surface`, `text-primary`, `border-default`. */
+const UTILITY_WORDS = [
+    "bg",
+    "background",
+    "text",
+    "fg",
+    "foreground",
+    "border",
+    "outline",
+    "ring",
+    "fill",
+    "stroke",
+];
+
+/**
+ * The Tailwind v4 variable for a token, if a namespace fits: `--color-*`, `--font-*` (families), `--text-*`,
+ * `--font-weight-*`, `--tracking-*`, `--leading-*`, `--breakpoint-*`, `--container-*`, `--spacing-*`, `--radius-*`,
+ * `--shadow-*`, `--inset-shadow-*`, `--drop-shadow-*`, `--blur-*`, `--perspective-*`, `--aspect-*`, `--ease-*`. A
+ * color role drops the word that the utility repeats (`color.bg.surface` is `--color-surface`, so `bg-surface`), and a
+ * trailing `default` (`color.accent.default` is `--color-accent`), unless that leaves nothing.
+ */
 function tailwindName(token: ResolvedToken): string | undefined {
     if (token.tailwind !== undefined) {
         return token.tailwind;
@@ -290,27 +338,49 @@ function tailwindName(token: ResolvedToken): string | undefined {
 
     const path = token.path;
     const first = norm(path[0]!);
+    const sub = TYPE_GROUPS.includes(first) ? TYPE_SUB[norm(path[1] ?? "")] : undefined;
     const join = (prefix: string, rest: readonly string[]) => `--${prefix}-${rest.join("-")}`;
+    // The path without the words of the group and its sub-group (`font.leading.tight` is `tight`).
+    const tail = (drop: readonly string[]) =>
+        stripLead(path, [...TYPE_GROUPS, ...Object.keys(TYPE_SUB), ...drop]);
 
     switch (token.type) {
-        case "color":
-            return join("color", stripLead(path, ["color", "colors", "colour", "clr"]));
+        case "color": {
+            let rest = stripLead(path, ["color", "colors", "colour", "clr"]);
+
+            if (rest.length > 1 && UTILITY_WORDS.includes(norm(rest[0]!))) {
+                rest = rest.slice(1);
+            } else if (rest.length > 1 && norm(rest.at(-1)!) === "default") {
+                rest = rest.slice(0, -1);
+            }
+
+            return join("color", rest);
+        }
+
         case "fontFamily":
-            return join(
-                "font",
-                stripLead(path, ["font", "fonts", "family", "families", "fontfamily", "typeface"]),
-            );
+            return join("font", tail(["typeface"]));
         case "fontWeight":
-            return join(
-                "font-weight",
-                stripLead(path, ["font", "weight", "weights", "fontweight"]),
-            );
+            return join("font-weight", tail(["weight", "weights", "fontweight"]));
         case "cubicBezier":
             return join(
                 "ease",
                 stripLead(path, ["motion", "ease", "easing", "easings", "timing", "transition"]),
             );
         case "shadow":
+            if (["inset", "insetshadow"].includes(first)) {
+                return join(
+                    "inset-shadow",
+                    stripLead(path, ["inset", "insetshadow", "shadow", "shadows"]),
+                );
+            }
+
+            if (["dropshadow", "drop"].includes(first)) {
+                return join(
+                    "drop-shadow",
+                    stripLead(path, ["dropshadow", "drop", "shadow", "shadows"]),
+                );
+            }
+
             return join(
                 "shadow",
                 stripLead(path, ["shadow", "shadows", "elevation", "elevations", "boxshadow"]),
@@ -321,13 +391,25 @@ function tailwindName(token: ResolvedToken): string | undefined {
                 stripLead(path, ["text", "type", "typography", "font", "fonts", "style", "styles"]),
             );
         case "number":
-            return ["leading", "lineheight", "lineheights"].includes(first)
-                ? join(
-                      "leading",
-                      stripLead(path, ["leading", "lineheight", "lineheights", "line", "height"]),
-                  )
+            if (sub === "leading" || ["leading", "lineheight", "lineheights"].includes(first)) {
+                return join(
+                    "leading",
+                    tail(["leading", "lineheight", "lineheights", "line", "height"]),
+                );
+            }
+
+            return ["aspect", "aspects", "ratio", "ratios"].includes(first)
+                ? join("aspect", stripLead(path, ["aspect", "aspects", "ratio", "ratios"]))
                 : undefined;
         case "dimension":
+            if (sub === "tracking" || ["tracking", "letterspacing"].includes(first)) {
+                return join("tracking", tail(["tracking", "letterspacing"]));
+            }
+
+            if (sub === "leading") {
+                return join("leading", tail(["leading", "lineheight", "lineheights"]));
+            }
+
             if (["space", "spacing", "spaces", "gap", "gutter"].includes(first)) {
                 return join(
                     "spacing",
@@ -353,20 +435,11 @@ function tailwindName(token: ResolvedToken): string | undefined {
 
             if (
                 ["text", "fontsize", "fontsizes", "fs", "typesize"].includes(first) ||
-                (first === "font" && norm(path[1] ?? "") === "size")
+                sub === "text"
             ) {
                 return join(
                     "text",
-                    stripLead(path, [
-                        "text",
-                        "font",
-                        "size",
-                        "sizes",
-                        "fontsize",
-                        "fontsizes",
-                        "fs",
-                        "typesize",
-                    ]),
+                    tail(["size", "sizes", "fontsize", "fontsizes", "fs", "typesize"]),
                 );
             }
 
@@ -381,8 +454,8 @@ function tailwindName(token: ResolvedToken): string | undefined {
                 return join("container", stripLead(path, ["container", "containers"]));
             }
 
-            if (["tracking", "letterspacing"].includes(first)) {
-                return join("tracking", stripLead(path, ["tracking", "letterspacing"]));
+            if (["perspective", "perspectives"].includes(first)) {
+                return join("perspective", stripLead(path, ["perspective", "perspectives"]));
             }
 
             return first === "blur" ? join("blur", stripLead(path, ["blur"])) : undefined;
@@ -390,6 +463,36 @@ function tailwindName(token: ResolvedToken): string | undefined {
             return undefined;
     }
 }
+
+/** The namespaces of Tailwind v4's theme: a variable that starts with one makes utilities, so it must be of that kind. */
+const TAILWIND_NAMESPACES = [
+    "color",
+    "font",
+    "text",
+    "tracking",
+    "leading",
+    "breakpoint",
+    "container",
+    "spacing",
+    "radius",
+    "shadow",
+    "inset-shadow",
+    "drop-shadow",
+    "blur",
+    "perspective",
+    "aspect",
+    "ease",
+    "animate",
+];
+
+/** The namespace that Tailwind reads a variable in (the longest that fits: `font-weight` before `font`). */
+const namespaceOf = (name: string) =>
+    [...TAILWIND_NAMESPACES]
+        .sort((a, b) => b.length - a.length)
+        .find((namespace) => name.startsWith(`--${namespace}-`));
+
+/** Whether a variable would be read by Tailwind as a member of one of its theme namespaces. */
+const inNamespace = (name: string) => namespaceOf(name) !== undefined;
 
 /** The scales that a dimension token can belong to, by the name of its group. */
 export type Scale = "text" | "space" | "radius" | "breakpoint" | "container" | "tracking" | "blur";
@@ -416,16 +519,20 @@ export function scaleOf(token: ResolvedToken): Scale | undefined {
  * The one variable each token has in `tailwind.css`: its Tailwind v4 namespace name (`--spacing-4`, `--text-sm`,
  * `--color-bg-surface`) when one fits and no earlier token has it, else its own (`--button-padding-x`).
  */
-function tailwindNames(system: CompileInput): Map<string, string> {
+export function tailwindNames(system: CompileInput): Map<string, string> {
     const names = new Map<string, string>();
     const claimed = new Set<string>();
     const wanted = system.tokens.map((token) => ({ token, name: tailwindName(token) }));
 
-    // A token with no namespace keeps its own name; nobody else may take it.
+    // A token with no namespace keeps its own name; nobody else may take it. A name that starts with a namespace of
+    // Tailwind's (`--font-leading-tight`) would make utilities of the wrong kind (`font-leading-tight`), so it gets
+    // `--ds-` in front.
     for (const { token, name } of wanted) {
         if (name === undefined) {
-            names.set(token.name, token.cssVar);
-            claimed.add(token.cssVar);
+            const own = inNamespace(token.cssVar) ? `--ds-${token.cssVar.slice(2)}` : token.cssVar;
+
+            names.set(token.name, own);
+            claimed.add(own);
         }
     }
 
@@ -447,10 +554,15 @@ function tailwindNames(system: CompileInput): Map<string, string> {
             names.set(token.name, name);
             claimed.add(name);
         } else {
-            let own = token.cssVar;
+            // Its own variable, when that is not in a namespace of another kind (--font-leading-tight for a leading).
+            const base =
+                !inNamespace(token.cssVar) || namespaceOf(token.cssVar) === namespaceOf(name)
+                    ? token.cssVar
+                    : name;
+            let own = base;
 
             for (let at = 2; claimed.has(own); at++) {
-                own = `${token.cssVar}-${at}`;
+                own = `${base}-${at}`;
             }
 
             names.set(token.name, own);
@@ -513,9 +625,17 @@ function tailwindCss(system: CompileInput): string {
             "For Tailwind CSS v4. Import it after Tailwind, in your main stylesheet:",
             '    @import "tailwindcss";',
             '    @import "./tailwind.css";',
-            "Each token has one variable here: in a Tailwind namespace (--color-*, --font-*, --text-*, --spacing-*, --radius-*,",
-            "--shadow-*, --ease-*) when one fits, so that it makes utilities such as bg-bg-surface or rounded-md, else under its",
-            "own name. tokens.css has the tokens under their own names (--space-4); link it too for var(--space-4) and components.",
+            "Each token has one variable here, in a namespace of Tailwind's theme when one fits: --color-*, --font-* (families),",
+            "--text-*, --font-weight-*, --tracking-*, --leading-*, --breakpoint-*, --container-*, --spacing-*, --radius-*,",
+            "--shadow-*, --inset-shadow-*, --drop-shadow-*, --blur-*, --perspective-*, --aspect-*, --ease-*. A token with no",
+            "namespace keeps its own name (--button-height); one whose name would be read as a namespace of the wrong kind",
+            "(--font-leading-tight) gets --ds- in front.",
+            "Utilities read well because a role drops the word that the utility repeats: color.bg.surface is --color-surface",
+            "(bg-surface), color.text.primary is --color-primary (text-primary), color.border.default is --color-default",
+            "(border-default), and a trailing default goes (color.accent.default is --color-accent). When two roles would",
+            "have one name, the first keeps it and the other keeps its full name (--color-text-muted).",
+            "tokens.css has every token under its own name (--color-bg-surface, --space-4); link it too for var(--space-4)",
+            "and the components.",
             'To clear Tailwind\'s default palette (bg-red-500 and the rest), set "tailwindReset": ["color"] in tokens.json\'s',
             '$extensions["com.pi-pocket"].',
         ]),
@@ -579,127 +699,6 @@ function tailwindCss(system: CompileInput): string {
 
 // --- Resolved JSON and component CSS ------------------------------------------------------------------------------------
 
-/** The value of `get` for each mode: one value when every mode has the same, else a map by mode. */
-function perMode<T>(
-    modes: readonly string[],
-    get: (mode: string) => T,
-): { same: T } | { by: Record<string, T> } {
-    const first = get(modes[0]!);
-    const same = modes.every((mode) => JSON.stringify(get(mode)) === JSON.stringify(first));
-
-    return same
-        ? { same: first }
-        : { by: Object.fromEntries(modes.map((mode) => [mode, get(mode)])) };
-}
-
-/**
- * `tokens.resolved.json`: the tokens with every reference followed, in a compact form. For each token its type, tier,
- * and variable, and its value as CSS (`value` when every mode has the same, else `values` by mode); `alias` names the
- * token it refers to; `parts` are a type style's members. For a file that DTCG tools read, see `tokens.<mode>.resolved.json`.
- */
-function resolvedJson(system: CompileInput): string {
-    const tokens = system.tokens.map((token): [string, unknown] => {
-        const entry: Record<string, unknown> = {
-            type: token.type,
-            tier: token.tier,
-            cssVar: token.cssVar,
-        };
-
-        for (const key of ["description", "deprecated", "tailwind", "contrast"] as const) {
-            if (token[key] !== undefined) {
-                entry[key] = token[key];
-            }
-        }
-
-        const value = perMode(
-            system.modes,
-            (mode) => token.modes[mode]!.literal ?? token.modes[mode]!.css,
-        );
-        const alias = perMode(system.modes, (mode) => token.modes[mode]!.alias);
-
-        if ("same" in value) {
-            entry.value = value.same;
-        } else {
-            entry.values = value.by;
-        }
-
-        if ("same" in alias ? alias.same !== undefined : true) {
-            entry.alias = "same" in alias ? alias.same : alias.by;
-        }
-
-        if (token.type === "typography") {
-            const parts = perMode(system.modes, (mode) => token.modes[mode]!.parts);
-
-            entry.parts = "same" in parts ? parts.same : parts.by;
-        }
-
-        return [token.name, entry];
-    });
-
-    // One line for each token, so that the file is short and still diffs well.
-    const head = {
-        name: system.name,
-        ...(system.description === undefined ? {} : { description: system.description }),
-        modes: system.modes,
-        defaultMode: system.modes[0],
-        schemes: system.schemes,
-    };
-
-    return `{\n${Object.entries(head)
-        .map(([key, value]) => ` ${JSON.stringify(key)}: ${JSON.stringify(value)},`)
-        .join(
-            "\n",
-        )}\n "tokens": {\n${tokens.map(([name, entry]) => `  ${JSON.stringify(name)}: ${JSON.stringify(entry)}`).join(",\n")}\n }\n}\n`;
-}
-
-/**
- * `tokens.<mode>.resolved.json`: the whole system in one mode as a DTCG file (the Design Tokens Community Group format
- * that Style Dictionary and Tokens Studio read). Groups nest by path; each token has `$type` and one `$value`, with
- * every reference followed; `$description` and `$deprecated` stay.
- */
-function dtcgJson(system: CompileInput, mode: string): string {
-    const root: Record<string, unknown> = {
-        $description: `${system.name}: every token in the ${mode} mode, references followed.`,
-        $extensions: { "com.pi-pocket": { mode, colorScheme: schemeOf(system, mode) } },
-    };
-
-    for (const token of system.tokens) {
-        let group = root;
-
-        for (const key of token.path.slice(0, -1)) {
-            const next = group[key];
-
-            if (typeof next === "object" && next !== null && !("$value" in next)) {
-                group = next as Record<string, unknown>;
-            } else {
-                const made: Record<string, unknown> = {};
-
-                Object.defineProperty(group, key, {
-                    value: made,
-                    enumerable: true,
-                    writable: true,
-                    configurable: true,
-                });
-                group = made;
-            }
-        }
-
-        Object.defineProperty(group, token.path.at(-1)!, {
-            value: {
-                $type: token.type,
-                $value: token.modes[mode]!.value,
-                ...(token.description === undefined ? {} : { $description: token.description }),
-                ...(token.deprecated === undefined ? {} : { $deprecated: token.deprecated }),
-            },
-            enumerable: true,
-            writable: true,
-            configurable: true,
-        });
-    }
-
-    return `${JSON.stringify(root, null, 2)}\n`;
-}
-
 function componentsCss(system: CompileInput): string {
     const head = header(system, "components.css", [
         'Use it:  <link rel="stylesheet" href="ds/components.css">  then use the markup of a component specimen.',
@@ -717,15 +716,16 @@ function componentsCss(system: CompileInput): string {
     return `${head}\n\n${blocks.join("\n\n")}\n`;
 }
 
-/** Compiles a system into the files of `.pi/design/dist/`: four, and a DTCG file for each mode. */
+/** Compiles a system into the files of `.pi/design/dist/`: four, a DTCG file for each mode, and one for Tokens Studio. */
 export function compileDesignSystem(input: CompileInput): CompiledFiles {
     const system = literalPrimitives(input);
 
     return {
         css: tokensCss(system),
         tailwind: tailwindCss(system),
-        json: resolvedJson(system),
+        json: compactJson(system),
         components: componentsCss(system),
         modes: Object.fromEntries(system.modes.map((mode) => [mode, dtcgJson(system, mode)])),
+        studio: studioJson(system),
     };
 }

@@ -26,12 +26,15 @@ Make Pi Pocket the best place to **build, keep, and use a design system** with a
   guidelines.md          Prose: voice, layout rules, do and don't. Bounded (16 KB).
   dist/                  Generated. Never edit by hand.
     tokens.css           :root (default) + [data-theme="<mode>"] + @media (prefers-color-scheme: dark) when a dark mode exists.
-    tailwind.css         Tailwind v4 @theme block: one variable for each token, in Tailwind's namespace (--spacing-4, --text-sm)
-                         when one fits, else under its own name. A dark: variant for [data-theme] and the system's dark setting.
-    tokens.resolved.json Every token resolved, every mode, compact: one line for each token.
+    tailwind.css         Tailwind v4 @theme block: one variable for each token, in the Tailwind namespace of its kind
+                         (--spacing-4, --text-sm, --leading-tight, --tracking-wide); a color role drops the word that the
+                         utility repeats (color.bg.surface is --color-surface, so bg-surface). A token that fits no namespace
+                         keeps its own name. A dark: variant for [data-theme] and the system's dark setting.
     tokens.<mode>.resolved.json
-                         DTCG, one file for each mode, with one $value for each token and every reference followed
-                         (Style Dictionary and Tokens Studio read it).
+                         The main JSON output. DTCG, one file for each mode, with one $value for each token and every
+                         reference followed (Style Dictionary reads it). String forms by default; see "format" below.
+    tokens.studio.json   For Tokens Studio: one file with a token set for each mode and a $themes array that turns one on.
+    tokens.resolved.json A compact summary for scripts, secondary to the DTCG files: one line for each token.
     components.css       The CSS of every component specimen, scoped by class.
 .pi/design-system.md     The 0.26 format. Still read when .pi/design/ is absent.
 ```
@@ -44,6 +47,8 @@ Make Pi Pocket the best place to **build, keep, and use a design system** with a
 - **Modes**: the default mode is `tokens.json`; `tokens.<mode>.json` holds overrides. Mode names: lowercase slug.
 - **Contrast pairs** (optional): `$extensions["com.pi-pocket"].contrast: { on: "{color.bg.surface}", min: 4.5 }` on a text color: the validator checks it in every mode. A list of pairs is allowed. `exempt: "disabled" | "decorative"` leaves a pair out of the warnings (WCAG exempts both): a failing exempt pair is a note (`notes` of the system), not a warning.
 - **Names**: a token named for its own value (`space.16` = 16px, `duration.140` = 140ms) gets a warning, with a fix: name it for a role (`space.card`) or a step of a scale (`space.4`).
+- **DTCG draft of the output** (optional): `$extensions["com.pi-pocket"].format` on the root of `tokens.json`. `"2021"` (the default) writes the string forms of the 2021 to 2024 drafts in `tokens.<mode>.resolved.json`: `"#7aa2f7"`, `"16px"`, `"150ms"`. `"2025.10"` writes the object forms: a color is `{ colorSpace, components, alpha, hex }` (sRGB, or the space the token was written in), and a dimension or duration is `{ value, unit }` (2025.10 has px and rem for a dimension and ms and s for a duration; another unit stays text). A file has one form throughout, whatever form the tokens were written in. `tokens.studio.json` is always in the string forms.
+- **Tailwind names**: `tailwind.css` puts a token in the namespace of its kind: `--color-*`, `--font-*` (families), `--text-*`, `--font-weight-*`, `--tracking-*`, `--leading-*`, `--breakpoint-*`, `--container-*`, `--spacing-*`, `--radius-*`, `--shadow-*`, `--inset-shadow-*`, `--drop-shadow-*`, `--blur-*`, `--perspective-*`, `--aspect-*`, `--ease-*`. A token whose own name would be read as a namespace of another kind (`--font-leading-tight`) gets `--ds-` in front. `tokens.css` keeps the full names.
 - **Tailwind reset** (optional): `$extensions["com.pi-pocket"].tailwindReset: ["color"]` on the root of `tokens.json` puts `--color-*: initial;` in `tailwind.css`, so Tailwind's default palette does not leak into utilities. `true` is `["color"]`; the other names are `font`, `text`, `font-weight`, `spacing`, `radius`, `shadow`, `ease`, `breakpoint`, and `all`.
 - A primitive, or a step of a scale (`space.4`), that refers to another primitive (`{dim.16}`) is written in `tokens.css` as the value (`--space-4: 16px`), so that DevTools shows `16px`. A role or component token keeps `var()`.
 - CSS variable name: the path joined by `-`, with `--` in front (`color.bg.surface` → `--color-bg-surface`). A reference compiles to `var(--…)`, so a mode override of a primitive flows through.

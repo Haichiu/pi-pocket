@@ -13,7 +13,8 @@ import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
 import { LIMITS, collectFiles, readHead } from "./scan-files.ts";
 import { colorsIn, darkMixinsIn } from "./scan-parse.ts";
-import { type Facts, ingestFile, newFacts } from "./scan-facts.ts";
+import { type Facts, newFacts } from "./scan-facts.ts";
+import { ingestFile } from "./scan-facts-files.ts";
 import { type Draft, type Inferred, infer } from "./scan-infer.ts";
 
 export { LIMITS };

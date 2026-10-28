@@ -197,7 +197,7 @@ function afterWrite(system: DesignSystem, headline: string): string {
 
     return [
         headline,
-        `Design system "${system.name}": ${system.tokens.length} tokens, modes ${system.modes.join(", ")}, ${system.components.length} component${system.components.length === 1 ? "" : "s"}. Compiled .pi/design/dist/: tokens.css ${sizeOf(dist.css)}, tailwind.css ${sizeOf(dist.tailwind)}, tokens.resolved.json ${sizeOf(dist.json)}, tokens.<mode>.resolved.json for ${Object.keys(dist.modes ?? {}).length} mode${Object.keys(dist.modes ?? {}).length === 1 ? "" : "s"}, components.css ${sizeOf(dist.components)}.`,
+        `Design system "${system.name}": ${system.tokens.length} tokens, modes ${system.modes.join(", ")}, ${system.components.length} component${system.components.length === 1 ? "" : "s"}. Compiled .pi/design/dist/: tokens.css ${sizeOf(dist.css)}, tailwind.css ${sizeOf(dist.tailwind)}, tokens.<mode>.resolved.json for ${Object.keys(dist.modes ?? {}).length} mode${Object.keys(dist.modes ?? {}).length === 1 ? "" : "s"}, tokens.studio.json, tokens.resolved.json (compact) ${sizeOf(dist.json)}, components.css ${sizeOf(dist.components)}.`,
         problemsText(system),
         'A design uses it with <link rel="stylesheet" href="ds/tokens.css"> (and ds/components.css): the artifact tool attaches the current files.',
     ]
@@ -276,9 +276,20 @@ export function designSystemTool(): ToolRegistration {
     return defineTool({
         name: "design_system",
         description: [
-            `The project's design system, kept in .pi/design/: DTCG design tokens (tokens.json), modes such as dark (tokens.dark.json), component specimens (components/<name>.html), and guidelines.md. It compiles to dist/tokens.css (CSS variables), dist/tailwind.css (Tailwind v4 @theme), tokens.resolved.json (compact) and tokens.<mode>.resolved.json (DTCG, one per mode), and components.css. A design links it with <link rel="stylesheet" href="ds/tokens.css"> and uses only var(--…) values.`,
+            `The project's design system, kept in .pi/design/: DTCG design tokens (tokens.json), modes such as dark (tokens.dark.json), component specimens (components/<name>.html), and guidelines.md. It compiles to dist/tokens.css (CSS variables), dist/tailwind.css (Tailwind v4 @theme), tokens.<mode>.resolved.json (DTCG, one per mode; the main JSON), tokens.studio.json (Tokens Studio), tokens.resolved.json (a compact summary), and components.css. A design links it with <link rel="stylesheet" href="ds/tokens.css"> and uses only var(--…) values.`,
             "Actions: read (a summary, or one file with file), scan (draft tokens from the project's style files; saves nothing), init (save the first tokens: your DTCG object, or fromScan), set (add, change, or remove single tokens), component (add, replace, or drop a specimen), guidelines (replace guidelines.md), validate (check; writes nothing), compile (rewrite dist/). Every change is checked first, and nothing is written when it adds an error. A parameter belongs to certain actions; a call that gives one to another action is refused with the action it fits.",
-            'Token format: groups nest; a token is { "$value": …, "$type": … }; $type is inherited from the group; a reference is "{color.gray.900}". Types: color, dimension, fontFamily, fontWeight, duration, cubicBezier, number, shadow, typography, border, transition, gradient, strokeStyle. Example: {"color":{"$type":"color","gray":{"900":{"$value":"#1a1b26"}},"bg":{"surface":{"$value":"{color.gray.900}"}}},"space":{"$type":"dimension","4":{"$value":"16px"}}}. A mode holds only the tokens that change: {"dark":{"color":{"bg":{"surface":{"$value":"{color.gray.50}"}}}}}. The CSS variable is the path joined by "-": color.bg.surface is --color-bg-surface. A text color can declare "$extensions":{"com.pi-pocket":{"contrast":{"on":"{color.bg.surface}","min":4.5}}}, checked in every mode.',
+            [
+                "Example calls, one for each action:",
+                '- read: {"action":"read"} (summary) or {"action":"read","file":"dist/tokens.css"}',
+                '- scan: {"action":"scan"} or {"action":"scan","path":"src"} (draft only; the end of its report has the next call)',
+                '- init: {"action":"init","fromScan":true} or {"action":"init","name":"Harbor","tokens":{…},"modes":{"dark":{…}}}',
+                '- set: {"action":"set","changes":[{"token":"color.accent.default","value":"#7aa2f7","mode":"dark"}],"remove":[{"token":"color.old"}]}',
+                '- component: {"action":"component","slug":"button","content":"<script type=\\"application/json\\" id=\\"pocket-component\\">…"} or {"action":"component","slug":"button","drop":true}',
+                '- guidelines: {"action":"guidelines","content":"# Voice\\n…"}',
+                '- validate: {"action":"validate"}',
+                '- compile: {"action":"compile"}',
+            ].join("\n"),
+            'Token format: groups nest; a token is { "$value": …, "$type": … }; $type is inherited from the group; a reference is "{color.gray.900}". Types: color, dimension, fontFamily, fontWeight, duration, cubicBezier, number, shadow, typography, border, transition, gradient, strokeStyle. Example: {"color":{"$type":"color","gray":{"900":{"$value":"#1a1b26"}},"bg":{"surface":{"$value":"{color.gray.900}"}}},"space":{"$type":"dimension","4":{"$value":"16px"}}}. A mode holds only the tokens that change: {"dark":{"color":{"bg":{"surface":{"$value":"{color.gray.50}"}}}}}. The CSS variable is the path joined by "-": color.bg.surface is --color-bg-surface. A text color can declare "$extensions":{"com.pi-pocket":{"contrast":{"on":"{color.bg.surface}","min":4.5}}}, checked in every mode. The root of tokens.json may set "$extensions":{"com.pi-pocket":{"format":"2025.10"}} so that dist/tokens.<mode>.resolved.json uses the DTCG 2025.10 objects; the default is the string forms ("#7aa2f7", "16px").',
         ].join("\n"),
         parameters: Type.Object({
             // `write` (the 0.26 single file) still works, and is left out of the descriptions: `init` replaces it.

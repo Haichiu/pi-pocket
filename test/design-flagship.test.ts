@@ -220,9 +220,10 @@ test("every contrast pair passes in every mode, and text roles pass on every gro
     }
 });
 
-/** Every file under a folder, relative, sorted. */
+/** Every file under a folder, relative, sorted. `dist/` is generated (test/design-dist.test.ts checks it), not a source. */
 function files(root: string, at = root): string[] {
     return readdirSync(at, { withFileTypes: true })
+        .filter((entry) => entry.name !== "dist")
         .flatMap((entry) =>
             entry.isDirectory()
                 ? files(root, join(at, entry.name))
