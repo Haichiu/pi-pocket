@@ -893,7 +893,7 @@ test("systemSummary: variables by role with values, then the palette, components
     );
     assert.match(
         text,
-        /button: Button; states default, hover; The main action\.; <button class="btn">/,
+        /button: Button; root <button class="btn">; other classes is-hover; states default, hover; The main action\./,
     );
     assert.match(text, /One accent per view/);
     assert.doesNotMatch(text, /<\/guidelines>/, "a closing tag in project text is defanged");

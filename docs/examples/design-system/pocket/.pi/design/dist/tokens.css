@@ -132,8 +132,10 @@
     --color-alpha-scrim-light: #d0d5e38c; /* Dim layer behind sheets, on light grounds. */
 
     /* font.family */
-    --font-family-sans: Geist, ui-sans-serif, system-ui, sans-serif; /* Words: messages, labels, headings. */
-    --font-family-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; /* Code, paths, branches, numbers, counts, and keys. Ligatures off, as i… */
+    --font-family-sans:
+        Geist, ui-sans-serif, system-ui, sans-serif; /* Words: messages, labels, headings. */
+    --font-family-mono:
+        "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; /* Code, paths, branches, numbers, counts, and keys. Ligatures off, as i… */
 
     /* font.weight */
     --font-weight-regular: 400;
@@ -271,14 +273,22 @@
     /* color.text */
     --color-text-primary: var(--color-neutral-850); /* Headings and the words that matter. */
     --color-text-secondary: var(--color-neutral-700); /* Body text. */
-    --color-text-muted: var(--color-neutral-600); /* Hints, timestamps, and secondary labels. Reads at 4.5:1 on every grou… */
+    --color-text-muted: var(
+        --color-neutral-600
+    ); /* Hints, timestamps, and secondary labels. Reads at 4.5:1 on every grou… */
     --color-text-inverse: var(--color-neutral-0); /* Text on a strong, neutral fill. */
-    --color-text-disabled: var(--color-neutral-500); /* Disabled controls only. WCAG exempts disabled text from contrast, so … */
+    --color-text-disabled: var(
+        --color-neutral-500
+    ); /* Disabled controls only. WCAG exempts disabled text from contrast, so … */
 
     /* color.border */
     --color-border-subtle: var(--color-alpha-dark-soft); /* A hairline between tiles and rows. */
-    --color-border-default: var(--color-alpha-dark-medium); /* A visible line: cards and dividers. */
-    --color-border-strong: var(--color-neutral-550); /* The edge of a field or a switch track. Reaches 3:1 on every ground. */
+    --color-border-default: var(
+        --color-alpha-dark-medium
+    ); /* A visible line: cards and dividers. */
+    --color-border-strong: var(
+        --color-neutral-550
+    ); /* The edge of a field or a switch track. Reaches 3:1 on every ground. */
     --color-border-focus: var(--color-blue-700); /* The keyboard focus ring. */
 
     /* color.accent */
@@ -291,7 +301,9 @@
     --color-accent-line: var(--color-blue-200); /* The border of an accent wash. */
 
     /* color.danger */
-    --color-danger-default: var(--color-red-700); /* Errors and destructive actions. Text and icons. */
+    --color-danger-default: var(
+        --color-red-700
+    ); /* Errors and destructive actions. Text and icons. */
     --color-danger-soft: var(--color-red-50); /* A wash behind danger messages. */
     --color-danger-line: var(--color-red-200); /* The border of a danger message. */
     --color-danger-fill: var(--color-red-700); /* The fill of a destructive button. */
@@ -309,7 +321,9 @@
     --color-success-line: var(--color-green-200); /* The border of a success message. */
 
     /* color.info */
-    --color-info-default: var(--color-cyan-700); /* Information and neutral notices. Text and icons. */
+    --color-info-default: var(
+        --color-cyan-700
+    ); /* Information and neutral notices. Text and icons. */
     --color-info-soft: var(--color-cyan-50); /* A wash behind info messages. */
     --color-info-line: var(--color-cyan-200); /* The border of an info message. */
 
@@ -334,73 +348,88 @@
     --color-shadow-default: var(--color-alpha-shadow-light); /* The color of every shadow. */
 
     /* shadow */
-    --shadow-lift: 0px 18px 40px -18px var(--color-shadow-default), 0px 2px 6px -2px var(--color-shadow-default); /* A soft lift: the message box. */
-    --shadow-float: 0px 24px 60px -16px var(--color-shadow-default), 0px 0px 0px 1px var(--color-border-default); /* What floats over the page: pop-ups, sheets, the launcher. */
+    --shadow-lift:
+        0px 18px 40px -18px var(--color-shadow-default),
+        0px 2px 6px -2px var(--color-shadow-default); /* A soft lift: the message box. */
+    --shadow-float:
+        0px 24px 60px -16px var(--color-shadow-default), 0px 0px 0px 1px var(--color-border-default); /* What floats over the page: pop-ups, sheets, the launcher. */
     --shadow-hairline: 0px 0px 0px 1px var(--color-border-default); /* A 1 px outline drawn as a shadow, so layout does not move. */
-    --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-border-focus); /* The keyboard focus ring: a soft halo around a solid line. Keep it vis… */
+    --shadow-focus-ring:
+        0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-border-focus); /* The keyboard focus ring: a soft halo around a solid line. Keep it vis… */
 
     /* type */
-    --type-display: var(--font-weight-bold) var(--font-size-4xl)/var(--font-leading-tight) var(--font-family-sans); /* Page titles and the home screen. */
+    --type-display: var(--font-weight-bold) var(--font-size-4xl)/var(--font-leading-tight)
+        var(--font-family-sans); /* Page titles and the home screen. */
     --type-display-font-family: var(--font-family-sans);
     --type-display-font-size: var(--font-size-4xl);
     --type-display-font-weight: var(--font-weight-bold);
     --type-display-line-height: var(--font-leading-tight);
     --type-display-letter-spacing: var(--font-tracking-tight);
-    --type-title: var(--font-weight-semibold) var(--font-size-3xl)/var(--font-leading-tight) var(--font-family-sans); /* A screen or a sheet title. */
+    --type-title: var(--font-weight-semibold) var(--font-size-3xl)/var(--font-leading-tight)
+        var(--font-family-sans); /* A screen or a sheet title. */
     --type-title-font-family: var(--font-family-sans);
     --type-title-font-size: var(--font-size-3xl);
     --type-title-font-weight: var(--font-weight-semibold);
     --type-title-line-height: var(--font-leading-tight);
     --type-title-letter-spacing: var(--font-tracking-tight);
-    --type-heading: var(--font-weight-semibold) var(--font-size-2xl)/var(--font-leading-snug) var(--font-family-sans); /* A section heading. */
+    --type-heading: var(--font-weight-semibold) var(--font-size-2xl)/var(--font-leading-snug)
+        var(--font-family-sans); /* A section heading. */
     --type-heading-font-family: var(--font-family-sans);
     --type-heading-font-size: var(--font-size-2xl);
     --type-heading-font-weight: var(--font-weight-semibold);
     --type-heading-line-height: var(--font-leading-snug);
     --type-heading-letter-spacing: var(--font-tracking-tight);
-    --type-subheading: var(--font-weight-semibold) var(--font-size-xl)/var(--font-leading-snug) var(--font-family-sans); /* A group heading. */
+    --type-subheading: var(--font-weight-semibold) var(--font-size-xl)/var(--font-leading-snug)
+        var(--font-family-sans); /* A group heading. */
     --type-subheading-font-family: var(--font-family-sans);
     --type-subheading-font-size: var(--font-size-xl);
     --type-subheading-font-weight: var(--font-weight-semibold);
     --type-subheading-line-height: var(--font-leading-snug);
     --type-subheading-letter-spacing: var(--font-tracking-normal);
-    --type-body-lg: var(--font-weight-regular) var(--font-size-lg)/var(--font-leading-normal) var(--font-family-sans); /* Long reading text. */
+    --type-body-lg: var(--font-weight-regular) var(--font-size-lg)/var(--font-leading-normal)
+        var(--font-family-sans); /* Long reading text. */
     --type-body-lg-font-family: var(--font-family-sans);
     --type-body-lg-font-size: var(--font-size-lg);
     --type-body-lg-font-weight: var(--font-weight-regular);
     --type-body-lg-line-height: var(--font-leading-normal);
     --type-body-lg-letter-spacing: var(--font-tracking-normal);
-    --type-body: var(--font-weight-regular) var(--font-size-md)/var(--font-leading-normal) var(--font-family-sans); /* The default text. */
+    --type-body: var(--font-weight-regular) var(--font-size-md)/var(--font-leading-normal)
+        var(--font-family-sans); /* The default text. */
     --type-body-font-family: var(--font-family-sans);
     --type-body-font-size: var(--font-size-md);
     --type-body-font-weight: var(--font-weight-regular);
     --type-body-line-height: var(--font-leading-normal);
     --type-body-letter-spacing: var(--font-tracking-normal);
-    --type-label: var(--font-weight-medium) var(--font-size-sm)/var(--font-leading-snug) var(--font-family-sans); /* Buttons, fields, and tabs. */
+    --type-label: var(--font-weight-medium) var(--font-size-sm)/var(--font-leading-snug)
+        var(--font-family-sans); /* Buttons, fields, and tabs. */
     --type-label-font-family: var(--font-family-sans);
     --type-label-font-size: var(--font-size-sm);
     --type-label-font-weight: var(--font-weight-medium);
     --type-label-line-height: var(--font-leading-snug);
     --type-label-letter-spacing: var(--font-tracking-normal);
-    --type-caption: var(--font-weight-regular) var(--font-size-xs)/var(--font-leading-snug) var(--font-family-sans); /* Hints and metadata. */
+    --type-caption: var(--font-weight-regular) var(--font-size-xs)/var(--font-leading-snug)
+        var(--font-family-sans); /* Hints and metadata. */
     --type-caption-font-family: var(--font-family-sans);
     --type-caption-font-size: var(--font-size-xs);
     --type-caption-font-weight: var(--font-weight-regular);
     --type-caption-line-height: var(--font-leading-snug);
     --type-caption-letter-spacing: var(--font-tracking-normal);
-    --type-overline: var(--font-weight-semibold) var(--font-size-2xs)/var(--font-leading-snug) var(--font-family-sans); /* Small headings over a group. */
+    --type-overline: var(--font-weight-semibold) var(--font-size-2xs)/var(--font-leading-snug)
+        var(--font-family-sans); /* Small headings over a group. */
     --type-overline-font-family: var(--font-family-sans);
     --type-overline-font-size: var(--font-size-2xs);
     --type-overline-font-weight: var(--font-weight-semibold);
     --type-overline-line-height: var(--font-leading-snug);
     --type-overline-letter-spacing: var(--font-tracking-wide);
-    --type-code: var(--font-weight-regular) var(--font-size-sm)/var(--font-leading-normal) var(--font-family-mono); /* Code, paths, and branches. */
+    --type-code: var(--font-weight-regular) var(--font-size-sm)/var(--font-leading-normal)
+        var(--font-family-mono); /* Code, paths, and branches. */
     --type-code-font-family: var(--font-family-mono);
     --type-code-font-size: var(--font-size-sm);
     --type-code-font-weight: var(--font-weight-regular);
     --type-code-line-height: var(--font-leading-normal);
     --type-code-letter-spacing: var(--font-tracking-normal);
-    --type-code-sm: var(--font-weight-regular) var(--font-size-xs)/var(--font-leading-normal) var(--font-family-mono); /* Inline code and keys. */
+    --type-code-sm: var(--font-weight-regular) var(--font-size-xs)/var(--font-leading-normal)
+        var(--font-family-mono); /* Inline code and keys. */
     --type-code-sm-font-family: var(--font-family-mono);
     --type-code-sm-font-size: var(--font-size-xs);
     --type-code-sm-font-weight: var(--font-weight-regular);
@@ -638,10 +667,14 @@
     --color-shadow-default: var(--color-alpha-shadow-dark);
 
     /* shadow */
-    --shadow-lift: 0px 18px 40px -18px var(--color-shadow-default), 0px 2px 6px -2px var(--color-shadow-default);
-    --shadow-float: 0px 24px 60px -16px var(--color-shadow-default), 0px 0px 0px 1px var(--color-border-default);
+    --shadow-lift:
+        0px 18px 40px -18px var(--color-shadow-default),
+        0px 2px 6px -2px var(--color-shadow-default);
+    --shadow-float:
+        0px 24px 60px -16px var(--color-shadow-default), 0px 0px 0px 1px var(--color-border-default);
     --shadow-hairline: 0px 0px 0px 1px var(--color-border-default);
-    --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-border-focus);
+    --shadow-focus-ring:
+        0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-border-focus);
 
     /* === Component tokens === */
 
@@ -824,10 +857,14 @@
     --color-shadow-default: var(--color-alpha-shadow-dark);
 
     /* shadow */
-    --shadow-lift: 0px 18px 40px -18px var(--color-shadow-default), 0px 2px 6px -2px var(--color-shadow-default);
-    --shadow-float: 0px 24px 60px -16px var(--color-shadow-default), 0px 0px 0px 1px var(--color-border-default);
+    --shadow-lift:
+        0px 18px 40px -18px var(--color-shadow-default),
+        0px 2px 6px -2px var(--color-shadow-default);
+    --shadow-float:
+        0px 24px 60px -16px var(--color-shadow-default), 0px 0px 0px 1px var(--color-border-default);
     --shadow-hairline: 0px 0px 0px 1px var(--color-border-default);
-    --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-border-focus);
+    --shadow-focus-ring:
+        0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-border-focus);
 
     /* === Component tokens === */
 
@@ -1013,10 +1050,15 @@
         --color-shadow-default: var(--color-alpha-shadow-dark);
 
         /* shadow */
-        --shadow-lift: 0px 18px 40px -18px var(--color-shadow-default), 0px 2px 6px -2px var(--color-shadow-default);
-        --shadow-float: 0px 24px 60px -16px var(--color-shadow-default), 0px 0px 0px 1px var(--color-border-default);
+        --shadow-lift:
+            0px 18px 40px -18px var(--color-shadow-default),
+            0px 2px 6px -2px var(--color-shadow-default);
+        --shadow-float:
+            0px 24px 60px -16px var(--color-shadow-default),
+            0px 0px 0px 1px var(--color-border-default);
         --shadow-hairline: 0px 0px 0px 1px var(--color-border-default);
-        --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-border-focus);
+        --shadow-focus-ring:
+            0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-border-focus);
 
         /* === Component tokens === */
 

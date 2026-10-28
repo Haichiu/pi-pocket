@@ -1,1954 +1,1834 @@
 {
-  "$description": "Pi Pocket: every token in the high-contrast mode, references followed. DTCG, the 2021 to 2024 drafts' string forms (the default): a color is \"#7aa2f7\", a dimension is \"16px\". Set \"format\": \"2025.10\" in tokens.json for the object forms.",
-  "$extensions": {
-    "com.pi-pocket": {
-      "mode": "high-contrast",
-      "colorScheme": "dark",
-      "format": "2021"
-    }
-  },
-  "color": {
-    "neutral": {
-      "0": {
-        "$type": "color",
-        "$value": "#ffffff"
-      },
-      "50": {
-        "$type": "color",
-        "$value": "#f4f5f9"
-      },
-      "100": {
-        "$type": "color",
-        "$value": "#e1e2e7"
-      },
-      "200": {
-        "$type": "color",
-        "$value": "#d0d5e3"
-      },
-      "300": {
-        "$type": "color",
-        "$value": "#c0caf5"
-      },
-      "350": {
-        "$type": "color",
-        "$value": "#b4bee6"
-      },
-      "400": {
-        "$type": "color",
-        "$value": "#a9b1d6"
-      },
-      "500": {
-        "$type": "color",
-        "$value": "#9097b8"
-      },
-      "550": {
-        "$type": "color",
-        "$value": "#7882a8"
-      },
-      "600": {
-        "$type": "color",
-        "$value": "#565f89"
-      },
-      "650": {
-        "$type": "color",
-        "$value": "#3f4254"
-      },
-      "700": {
-        "$type": "color",
-        "$value": "#2b2d3b"
-      },
-      "750": {
-        "$type": "color",
-        "$value": "#252734"
-      },
-      "800": {
-        "$type": "color",
-        "$value": "#20212d"
-      },
-      "850": {
-        "$type": "color",
-        "$value": "#1a1b26"
-      },
-      "900": {
-        "$type": "color",
-        "$value": "#13141c"
-      },
-      "950": {
-        "$type": "color",
-        "$value": "#0e0e14"
-      }
-    },
-    "blue": {
-      "50": {
-        "$type": "color",
-        "$value": "#e0e8f9"
-      },
-      "100": {
-        "$type": "color",
-        "$value": "#98bafe"
-      },
-      "200": {
-        "$type": "color",
-        "$value": "#b7ccf8"
-      },
-      "300": {
-        "$type": "color",
-        "$value": "#7aa2f7"
-      },
-      "400": {
-        "$type": "color",
-        "$value": "#6b92e6"
-      },
-      "600": {
-        "$type": "color",
-        "$value": "#4a5f8f"
-      },
-      "700": {
-        "$type": "color",
-        "$value": "#3557a5"
-      },
-      "800": {
-        "$type": "color",
-        "$value": "#284895"
-      },
-      "900": {
-        "$type": "color",
-        "$value": "#1b3a85"
-      },
-      "950": {
-        "$type": "color",
-        "$value": "#272e43"
-      }
-    },
-    "red": {
-      "50": {
-        "$type": "color",
-        "$value": "#f4e1e8"
-      },
-      "100": {
-        "$type": "color",
-        "$value": "#fe9aa9"
-      },
-      "200": {
-        "$type": "color",
-        "$value": "#f6b6c4"
-      },
-      "300": {
-        "$type": "color",
-        "$value": "#f7768e"
-      },
-      "400": {
-        "$type": "color",
-        "$value": "#e5667f"
-      },
-      "600": {
-        "$type": "color",
-        "$value": "#89495a"
-      },
-      "700": {
-        "$type": "color",
-        "$value": "#a72c4c"
-      },
-      "800": {
-        "$type": "color",
-        "$value": "#96193e"
-      },
-      "900": {
-        "$type": "color",
-        "$value": "#840032"
-      },
-      "950": {
-        "$type": "color",
-        "$value": "#392835"
-      }
-    },
-    "yellow": {
-      "50": {
-        "$type": "color",
-        "$value": "#f1eae2"
-      },
-      "100": {
-        "$type": "color",
-        "$value": "#f4c787"
-      },
-      "200": {
-        "$type": "color",
-        "$value": "#ead2b1"
-      },
-      "300": {
-        "$type": "color",
-        "$value": "#e0af68"
-      },
-      "400": {
-        "$type": "color",
-        "$value": "#d09f58"
-      },
-      "600": {
-        "$type": "color",
-        "$value": "#7d6547"
-      },
-      "700": {
-        "$type": "color",
-        "$value": "#7c5200"
-      },
-      "800": {
-        "$type": "color",
-        "$value": "#6a4600"
-      },
-      "900": {
-        "$type": "color",
-        "$value": "#593a00"
-      },
-      "950": {
-        "$type": "color",
-        "$value": "#36302f"
-      }
-    },
-    "orange": {
-      "50": {
-        "$type": "color",
-        "$value": "#f3e5e5"
-      },
-      "100": {
-        "$type": "color",
-        "$value": "#fdab96"
-      },
-      "200": {
-        "$type": "color",
-        "$value": "#f0c4ba"
-      },
-      "300": {
-        "$type": "color",
-        "$value": "#eb927b"
-      },
-      "400": {
-        "$type": "color",
-        "$value": "#da836c"
-      },
-      "600": {
-        "$type": "color",
-        "$value": "#835751"
-      },
-      "700": {
-        "$type": "color",
-        "$value": "#93422e"
-      },
-      "800": {
-        "$type": "color",
-        "$value": "#833420"
-      },
-      "900": {
-        "$type": "color",
-        "$value": "#732511"
-      },
-      "950": {
-        "$type": "color",
-        "$value": "#372c32"
-      }
-    },
-    "green": {
-      "50": {
-        "$type": "color",
-        "$value": "#e6efe2"
-      },
-      "100": {
-        "$type": "color",
-        "$value": "#b7e38a"
-      },
-      "200": {
-        "$type": "color",
-        "$value": "#c9e2b2"
-      },
-      "300": {
-        "$type": "color",
-        "$value": "#9ece6a"
-      },
-      "400": {
-        "$type": "color",
-        "$value": "#8fbe5a"
-      },
-      "600": {
-        "$type": "color",
-        "$value": "#5c7548"
-      },
-      "700": {
-        "$type": "color",
-        "$value": "#406501"
-      },
-      "800": {
-        "$type": "color",
-        "$value": "#355500"
-      },
-      "900": {
-        "$type": "color",
-        "$value": "#2b4700"
-      },
-      "950": {
-        "$type": "color",
-        "$value": "#2c3430"
-      }
-    },
-    "cyan": {
-      "50": {
-        "$type": "color",
-        "$value": "#d8e7ed"
-      },
-      "100": {
-        "$type": "color",
-        "$value": "#65b2be"
-      },
-      "200": {
-        "$type": "color",
-        "$value": "#9cc9d2"
-      },
-      "300": {
-        "$type": "color",
-        "$value": "#449dab"
-      },
-      "400": {
-        "$type": "color",
-        "$value": "#328e9b"
-      },
-      "600": {
-        "$type": "color",
-        "$value": "#2f5c69"
-      },
-      "700": {
-        "$type": "color",
-        "$value": "#056470"
-      },
-      "800": {
-        "$type": "color",
-        "$value": "#025560"
-      },
-      "900": {
-        "$type": "color",
-        "$value": "#004750"
-      },
-      "950": {
-        "$type": "color",
-        "$value": "#202d39"
-      }
-    },
-    "magenta": {
-      "50": {
-        "$type": "color",
-        "$value": "#e9e5f6"
-      },
-      "100": {
-        "$type": "color",
-        "$value": "#c2a6f7"
-      },
-      "200": {
-        "$type": "color",
-        "$value": "#d1c2f0"
-      },
-      "300": {
-        "$type": "color",
-        "$value": "#ad8ee6"
-      },
-      "400": {
-        "$type": "color",
-        "$value": "#9e7fd5"
-      },
-      "600": {
-        "$type": "color",
-        "$value": "#645586"
-      },
-      "700": {
-        "$type": "color",
-        "$value": "#6a4b9c"
-      },
-      "800": {
-        "$type": "color",
-        "$value": "#5c3c8d"
-      },
-      "900": {
-        "$type": "color",
-        "$value": "#4f2e7d"
-      },
-      "950": {
-        "$type": "color",
-        "$value": "#2f2b41"
-      }
-    },
-    "alpha": {
-      "light": {
-        "faint": {
-          "$type": "color",
-          "$value": "#a9b1d612"
-        },
-        "soft": {
-          "$type": "color",
-          "$value": "#a9b1d61a"
-        },
-        "medium": {
-          "$type": "color",
-          "$value": "#a9b1d62b"
+    "$description": "Pi Pocket: every token in the high-contrast mode, references followed. DTCG, the 2021 to 2024 drafts' string forms (the default): a color is \"#7aa2f7\", a dimension is \"16px\". Set \"format\": \"2025.10\" in tokens.json for the object forms.",
+    "$extensions": {
+        "com.pi-pocket": {
+            "mode": "high-contrast",
+            "colorScheme": "dark",
+            "format": "2021"
         }
-      },
-      "dark": {
-        "faint": {
-          "$type": "color",
-          "$value": "#343b5812"
+    },
+    "color": {
+        "neutral": {
+            "0": {
+                "$type": "color",
+                "$value": "#ffffff"
+            },
+            "50": {
+                "$type": "color",
+                "$value": "#f4f5f9"
+            },
+            "100": {
+                "$type": "color",
+                "$value": "#e1e2e7"
+            },
+            "200": {
+                "$type": "color",
+                "$value": "#d0d5e3"
+            },
+            "300": {
+                "$type": "color",
+                "$value": "#c0caf5"
+            },
+            "350": {
+                "$type": "color",
+                "$value": "#b4bee6"
+            },
+            "400": {
+                "$type": "color",
+                "$value": "#a9b1d6"
+            },
+            "500": {
+                "$type": "color",
+                "$value": "#9097b8"
+            },
+            "550": {
+                "$type": "color",
+                "$value": "#7882a8"
+            },
+            "600": {
+                "$type": "color",
+                "$value": "#565f89"
+            },
+            "650": {
+                "$type": "color",
+                "$value": "#3f4254"
+            },
+            "700": {
+                "$type": "color",
+                "$value": "#2b2d3b"
+            },
+            "750": {
+                "$type": "color",
+                "$value": "#252734"
+            },
+            "800": {
+                "$type": "color",
+                "$value": "#20212d"
+            },
+            "850": {
+                "$type": "color",
+                "$value": "#1a1b26"
+            },
+            "900": {
+                "$type": "color",
+                "$value": "#13141c"
+            },
+            "950": {
+                "$type": "color",
+                "$value": "#0e0e14"
+            }
         },
-        "soft": {
-          "$type": "color",
-          "$value": "#343b581a"
+        "blue": {
+            "50": {
+                "$type": "color",
+                "$value": "#e0e8f9"
+            },
+            "100": {
+                "$type": "color",
+                "$value": "#98bafe"
+            },
+            "200": {
+                "$type": "color",
+                "$value": "#b7ccf8"
+            },
+            "300": {
+                "$type": "color",
+                "$value": "#7aa2f7"
+            },
+            "400": {
+                "$type": "color",
+                "$value": "#6b92e6"
+            },
+            "600": {
+                "$type": "color",
+                "$value": "#4a5f8f"
+            },
+            "700": {
+                "$type": "color",
+                "$value": "#3557a5"
+            },
+            "800": {
+                "$type": "color",
+                "$value": "#284895"
+            },
+            "900": {
+                "$type": "color",
+                "$value": "#1b3a85"
+            },
+            "950": {
+                "$type": "color",
+                "$value": "#272e43"
+            }
         },
-        "medium": {
-          "$type": "color",
-          "$value": "#343b582b"
+        "red": {
+            "50": {
+                "$type": "color",
+                "$value": "#f4e1e8"
+            },
+            "100": {
+                "$type": "color",
+                "$value": "#fe9aa9"
+            },
+            "200": {
+                "$type": "color",
+                "$value": "#f6b6c4"
+            },
+            "300": {
+                "$type": "color",
+                "$value": "#f7768e"
+            },
+            "400": {
+                "$type": "color",
+                "$value": "#e5667f"
+            },
+            "600": {
+                "$type": "color",
+                "$value": "#89495a"
+            },
+            "700": {
+                "$type": "color",
+                "$value": "#a72c4c"
+            },
+            "800": {
+                "$type": "color",
+                "$value": "#96193e"
+            },
+            "900": {
+                "$type": "color",
+                "$value": "#840032"
+            },
+            "950": {
+                "$type": "color",
+                "$value": "#392835"
+            }
+        },
+        "yellow": {
+            "50": {
+                "$type": "color",
+                "$value": "#f1eae2"
+            },
+            "100": {
+                "$type": "color",
+                "$value": "#f4c787"
+            },
+            "200": {
+                "$type": "color",
+                "$value": "#ead2b1"
+            },
+            "300": {
+                "$type": "color",
+                "$value": "#e0af68"
+            },
+            "400": {
+                "$type": "color",
+                "$value": "#d09f58"
+            },
+            "600": {
+                "$type": "color",
+                "$value": "#7d6547"
+            },
+            "700": {
+                "$type": "color",
+                "$value": "#7c5200"
+            },
+            "800": {
+                "$type": "color",
+                "$value": "#6a4600"
+            },
+            "900": {
+                "$type": "color",
+                "$value": "#593a00"
+            },
+            "950": {
+                "$type": "color",
+                "$value": "#36302f"
+            }
+        },
+        "orange": {
+            "50": {
+                "$type": "color",
+                "$value": "#f3e5e5"
+            },
+            "100": {
+                "$type": "color",
+                "$value": "#fdab96"
+            },
+            "200": {
+                "$type": "color",
+                "$value": "#f0c4ba"
+            },
+            "300": {
+                "$type": "color",
+                "$value": "#eb927b"
+            },
+            "400": {
+                "$type": "color",
+                "$value": "#da836c"
+            },
+            "600": {
+                "$type": "color",
+                "$value": "#835751"
+            },
+            "700": {
+                "$type": "color",
+                "$value": "#93422e"
+            },
+            "800": {
+                "$type": "color",
+                "$value": "#833420"
+            },
+            "900": {
+                "$type": "color",
+                "$value": "#732511"
+            },
+            "950": {
+                "$type": "color",
+                "$value": "#372c32"
+            }
+        },
+        "green": {
+            "50": {
+                "$type": "color",
+                "$value": "#e6efe2"
+            },
+            "100": {
+                "$type": "color",
+                "$value": "#b7e38a"
+            },
+            "200": {
+                "$type": "color",
+                "$value": "#c9e2b2"
+            },
+            "300": {
+                "$type": "color",
+                "$value": "#9ece6a"
+            },
+            "400": {
+                "$type": "color",
+                "$value": "#8fbe5a"
+            },
+            "600": {
+                "$type": "color",
+                "$value": "#5c7548"
+            },
+            "700": {
+                "$type": "color",
+                "$value": "#406501"
+            },
+            "800": {
+                "$type": "color",
+                "$value": "#355500"
+            },
+            "900": {
+                "$type": "color",
+                "$value": "#2b4700"
+            },
+            "950": {
+                "$type": "color",
+                "$value": "#2c3430"
+            }
+        },
+        "cyan": {
+            "50": {
+                "$type": "color",
+                "$value": "#d8e7ed"
+            },
+            "100": {
+                "$type": "color",
+                "$value": "#65b2be"
+            },
+            "200": {
+                "$type": "color",
+                "$value": "#9cc9d2"
+            },
+            "300": {
+                "$type": "color",
+                "$value": "#449dab"
+            },
+            "400": {
+                "$type": "color",
+                "$value": "#328e9b"
+            },
+            "600": {
+                "$type": "color",
+                "$value": "#2f5c69"
+            },
+            "700": {
+                "$type": "color",
+                "$value": "#056470"
+            },
+            "800": {
+                "$type": "color",
+                "$value": "#025560"
+            },
+            "900": {
+                "$type": "color",
+                "$value": "#004750"
+            },
+            "950": {
+                "$type": "color",
+                "$value": "#202d39"
+            }
+        },
+        "magenta": {
+            "50": {
+                "$type": "color",
+                "$value": "#e9e5f6"
+            },
+            "100": {
+                "$type": "color",
+                "$value": "#c2a6f7"
+            },
+            "200": {
+                "$type": "color",
+                "$value": "#d1c2f0"
+            },
+            "300": {
+                "$type": "color",
+                "$value": "#ad8ee6"
+            },
+            "400": {
+                "$type": "color",
+                "$value": "#9e7fd5"
+            },
+            "600": {
+                "$type": "color",
+                "$value": "#645586"
+            },
+            "700": {
+                "$type": "color",
+                "$value": "#6a4b9c"
+            },
+            "800": {
+                "$type": "color",
+                "$value": "#5c3c8d"
+            },
+            "900": {
+                "$type": "color",
+                "$value": "#4f2e7d"
+            },
+            "950": {
+                "$type": "color",
+                "$value": "#2f2b41"
+            }
+        },
+        "alpha": {
+            "light": {
+                "faint": {
+                    "$type": "color",
+                    "$value": "#a9b1d612"
+                },
+                "soft": {
+                    "$type": "color",
+                    "$value": "#a9b1d61a"
+                },
+                "medium": {
+                    "$type": "color",
+                    "$value": "#a9b1d62b"
+                }
+            },
+            "dark": {
+                "faint": {
+                    "$type": "color",
+                    "$value": "#343b5812"
+                },
+                "soft": {
+                    "$type": "color",
+                    "$value": "#343b581a"
+                },
+                "medium": {
+                    "$type": "color",
+                    "$value": "#343b582b"
+                }
+            },
+            "shadow-dark": {
+                "$type": "color",
+                "$value": "#00000080",
+                "$description": "Shadow color on dark grounds."
+            },
+            "shadow-light": {
+                "$type": "color",
+                "$value": "#28284624",
+                "$description": "Shadow color on light grounds."
+            },
+            "scrim-dark": {
+                "$type": "color",
+                "$value": "#0e0e148c",
+                "$description": "Dim layer behind sheets, on dark grounds."
+            },
+            "scrim-light": {
+                "$type": "color",
+                "$value": "#d0d5e38c",
+                "$description": "Dim layer behind sheets, on light grounds."
+            }
+        },
+        "bg": {
+            "canvas": {
+                "$type": "color",
+                "$value": "#0e0e14",
+                "$description": "The desk behind everything."
+            },
+            "base": {
+                "$type": "color",
+                "$value": "#0e0e14",
+                "$description": "The app's ground."
+            },
+            "surface": {
+                "$type": "color",
+                "$value": "#13141c",
+                "$description": "Cards and panels on the ground."
+            },
+            "raised": {
+                "$type": "color",
+                "$value": "#1a1b26",
+                "$description": "Controls and anything lifted off a surface."
+            },
+            "selected": {
+                "$type": "color",
+                "$value": "#20212d",
+                "$description": "A selected row or segment."
+            },
+            "sunken": {
+                "$type": "color",
+                "$value": "#0e0e14",
+                "$description": "Inset areas: code blocks and wells."
+            },
+            "hover": {
+                "$type": "color",
+                "$value": "#a9b1d61a",
+                "$description": "Overlay on a hovered row or button."
+            },
+            "pressed": {
+                "$type": "color",
+                "$value": "#a9b1d62b",
+                "$description": "Overlay on a pressed row or button."
+            },
+            "scrim": {
+                "$type": "color",
+                "$value": "#0e0e148c",
+                "$description": "The dim layer behind a sheet."
+            }
+        },
+        "text": {
+            "primary": {
+                "$type": "color",
+                "$value": "#ffffff",
+                "$description": "Headings and the words that matter."
+            },
+            "secondary": {
+                "$type": "color",
+                "$value": "#c0caf5",
+                "$description": "Body text."
+            },
+            "muted": {
+                "$type": "color",
+                "$value": "#b4bee6",
+                "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too."
+            },
+            "inverse": {
+                "$type": "color",
+                "$value": "#0e0e14",
+                "$description": "Text on a strong, neutral fill."
+            },
+            "disabled": {
+                "$type": "color",
+                "$value": "#7882a8",
+                "$description": "Disabled controls only. WCAG exempts disabled text from contrast, so it is below 4.5:1 on purpose: never use it for words that matter or for a placeholder."
+            }
+        },
+        "border": {
+            "subtle": {
+                "$type": "color",
+                "$value": "#a9b1d62b",
+                "$description": "A hairline between tiles and rows."
+            },
+            "default": {
+                "$type": "color",
+                "$value": "#7882a8",
+                "$description": "A visible line: cards and dividers."
+            },
+            "strong": {
+                "$type": "color",
+                "$value": "#a9b1d6",
+                "$description": "The edge of a field or a switch track. Reaches 3:1 on every ground."
+            },
+            "focus": {
+                "$type": "color",
+                "$value": "#98bafe",
+                "$description": "The keyboard focus ring."
+            }
+        },
+        "accent": {
+            "default": {
+                "$type": "color",
+                "$value": "#98bafe",
+                "$description": "Links, icons, and accents on a ground."
+            },
+            "fill": {
+                "$type": "color",
+                "$value": "#98bafe",
+                "$description": "The fill of a primary button."
+            },
+            "fill-hover": {
+                "$type": "color",
+                "$value": "#e0e8f9",
+                "$description": "The fill under the pointer."
+            },
+            "fill-active": {
+                "$type": "color",
+                "$value": "#b7ccf8",
+                "$description": "The fill while pressed."
+            },
+            "on-fill": {
+                "$type": "color",
+                "$value": "#0e0e14",
+                "$description": "Text on the accent fill."
+            },
+            "soft": {
+                "$type": "color",
+                "$value": "#272e43",
+                "$description": "A quiet accent wash behind selected things."
+            },
+            "line": {
+                "$type": "color",
+                "$value": "#7aa2f7",
+                "$description": "The border of an accent wash."
+            }
+        },
+        "danger": {
+            "default": {
+                "$type": "color",
+                "$value": "#fe9aa9",
+                "$description": "Errors and destructive actions. Text and icons."
+            },
+            "soft": {
+                "$type": "color",
+                "$value": "#392835",
+                "$description": "A wash behind danger messages."
+            },
+            "line": {
+                "$type": "color",
+                "$value": "#f7768e",
+                "$description": "The border of a danger message."
+            },
+            "fill": {
+                "$type": "color",
+                "$value": "#fe9aa9",
+                "$description": "The fill of a destructive button."
+            },
+            "fill-hover": {
+                "$type": "color",
+                "$value": "#f4e1e8",
+                "$description": "The destructive fill under the pointer."
+            },
+            "on-fill": {
+                "$type": "color",
+                "$value": "#0e0e14",
+                "$description": "Text on the danger fill."
+            }
+        },
+        "warning": {
+            "default": {
+                "$type": "color",
+                "$value": "#f4c787",
+                "$description": "Warnings and cautions. Text and icons."
+            },
+            "soft": {
+                "$type": "color",
+                "$value": "#36302f",
+                "$description": "A wash behind warning messages."
+            },
+            "line": {
+                "$type": "color",
+                "$value": "#e0af68",
+                "$description": "The border of a warning message."
+            }
+        },
+        "success": {
+            "default": {
+                "$type": "color",
+                "$value": "#b7e38a",
+                "$description": "Success and done. Text and icons."
+            },
+            "soft": {
+                "$type": "color",
+                "$value": "#2c3430",
+                "$description": "A wash behind success messages."
+            },
+            "line": {
+                "$type": "color",
+                "$value": "#9ece6a",
+                "$description": "The border of a success message."
+            }
+        },
+        "info": {
+            "default": {
+                "$type": "color",
+                "$value": "#65b2be",
+                "$description": "Information and neutral notices. Text and icons."
+            },
+            "soft": {
+                "$type": "color",
+                "$value": "#202d39",
+                "$description": "A wash behind info messages."
+            },
+            "line": {
+                "$type": "color",
+                "$value": "#449dab",
+                "$description": "The border of an info message."
+            }
+        },
+        "brand": {
+            "default": {
+                "$type": "color",
+                "$value": "#fdab96",
+                "$description": "Pi Pocket's mark."
+            }
+        },
+        "spark": {
+            "default": {
+                "$type": "color",
+                "$value": "#c2a6f7",
+                "$description": "Loaders and thoughts."
+            }
+        },
+        "code": {
+            "bg": {
+                "$type": "color",
+                "$value": "#0e0e14",
+                "$description": "The ground of code."
+            },
+            "text": {
+                "$type": "color",
+                "$value": "#ffffff",
+                "$description": "Code without a color of its own."
+            },
+            "keyword": {
+                "$type": "color",
+                "$value": "#c2a6f7",
+                "$description": "Keywords."
+            },
+            "string": {
+                "$type": "color",
+                "$value": "#b7e38a",
+                "$description": "Strings."
+            },
+            "number": {
+                "$type": "color",
+                "$value": "#fdab96",
+                "$description": "Numbers."
+            },
+            "function": {
+                "$type": "color",
+                "$value": "#98bafe",
+                "$description": "Functions."
+            },
+            "type": {
+                "$type": "color",
+                "$value": "#f4c787",
+                "$description": "Types."
+            },
+            "operator": {
+                "$type": "color",
+                "$value": "#65b2be",
+                "$description": "Operators."
+            },
+            "tag": {
+                "$type": "color",
+                "$value": "#fe9aa9",
+                "$description": "Tags and selectors."
+            }
+        },
+        "shadow": {
+            "default": {
+                "$type": "color",
+                "$value": "#00000080",
+                "$description": "The color of every shadow."
+            }
         }
-      },
-      "shadow-dark": {
-        "$type": "color",
-        "$value": "#00000080",
-        "$description": "Shadow color on dark grounds."
-      },
-      "shadow-light": {
-        "$type": "color",
-        "$value": "#28284624",
-        "$description": "Shadow color on light grounds."
-      },
-      "scrim-dark": {
-        "$type": "color",
-        "$value": "#0e0e148c",
-        "$description": "Dim layer behind sheets, on dark grounds."
-      },
-      "scrim-light": {
-        "$type": "color",
-        "$value": "#d0d5e38c",
-        "$description": "Dim layer behind sheets, on light grounds."
-      }
     },
-    "bg": {
-      "canvas": {
-        "$type": "color",
-        "$value": "#0e0e14",
-        "$description": "The desk behind everything."
-      },
-      "base": {
-        "$type": "color",
-        "$value": "#0e0e14",
-        "$description": "The app's ground."
-      },
-      "surface": {
-        "$type": "color",
-        "$value": "#13141c",
-        "$description": "Cards and panels on the ground."
-      },
-      "raised": {
-        "$type": "color",
-        "$value": "#1a1b26",
-        "$description": "Controls and anything lifted off a surface."
-      },
-      "selected": {
-        "$type": "color",
-        "$value": "#20212d",
-        "$description": "A selected row or segment."
-      },
-      "sunken": {
-        "$type": "color",
-        "$value": "#0e0e14",
-        "$description": "Inset areas: code blocks and wells."
-      },
-      "hover": {
-        "$type": "color",
-        "$value": "#a9b1d61a",
-        "$description": "Overlay on a hovered row or button."
-      },
-      "pressed": {
-        "$type": "color",
-        "$value": "#a9b1d62b",
-        "$description": "Overlay on a pressed row or button."
-      },
-      "scrim": {
-        "$type": "color",
-        "$value": "#0e0e148c",
-        "$description": "The dim layer behind a sheet."
-      }
+    "font": {
+        "family": {
+            "sans": {
+                "$type": "fontFamily",
+                "$value": ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+                "$description": "Words: messages, labels, headings."
+            },
+            "mono": {
+                "$type": "fontFamily",
+                "$value": [
+                    "JetBrains Mono",
+                    "ui-monospace",
+                    "SF Mono",
+                    "Menlo",
+                    "Consolas",
+                    "monospace"
+                ],
+                "$description": "Code, paths, branches, numbers, counts, and keys. Ligatures off, as in a terminal."
+            }
+        },
+        "weight": {
+            "regular": {
+                "$type": "fontWeight",
+                "$value": 400
+            },
+            "medium": {
+                "$type": "fontWeight",
+                "$value": 500
+            },
+            "semibold": {
+                "$type": "fontWeight",
+                "$value": 600
+            },
+            "bold": {
+                "$type": "fontWeight",
+                "$value": 700
+            }
+        },
+        "size": {
+            "2xs": {
+                "$type": "dimension",
+                "$value": "11px"
+            },
+            "xs": {
+                "$type": "dimension",
+                "$value": "12px"
+            },
+            "sm": {
+                "$type": "dimension",
+                "$value": "13px"
+            },
+            "md": {
+                "$type": "dimension",
+                "$value": "14px"
+            },
+            "lg": {
+                "$type": "dimension",
+                "$value": "16px"
+            },
+            "xl": {
+                "$type": "dimension",
+                "$value": "18px"
+            },
+            "2xl": {
+                "$type": "dimension",
+                "$value": "22px"
+            },
+            "3xl": {
+                "$type": "dimension",
+                "$value": "28px"
+            },
+            "4xl": {
+                "$type": "dimension",
+                "$value": "36px"
+            }
+        },
+        "leading": {
+            "tight": {
+                "$type": "number",
+                "$value": 1.2
+            },
+            "snug": {
+                "$type": "number",
+                "$value": 1.4
+            },
+            "normal": {
+                "$type": "number",
+                "$value": 1.55
+            },
+            "relaxed": {
+                "$type": "number",
+                "$value": 1.65,
+                "$description": "The conversation's line height."
+            }
+        },
+        "tracking": {
+            "tight": {
+                "$type": "dimension",
+                "$value": "-0.2px"
+            },
+            "normal": {
+                "$type": "dimension",
+                "$value": "0px"
+            },
+            "wide": {
+                "$type": "dimension",
+                "$value": "0.4px"
+            }
+        }
     },
-    "text": {
-      "primary": {
-        "$type": "color",
-        "$value": "#ffffff",
-        "$description": "Headings and the words that matter."
-      },
-      "secondary": {
-        "$type": "color",
-        "$value": "#c0caf5",
-        "$description": "Body text."
-      },
-      "muted": {
-        "$type": "color",
-        "$value": "#b4bee6",
-        "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too."
-      },
-      "inverse": {
-        "$type": "color",
-        "$value": "#0e0e14",
-        "$description": "Text on a strong, neutral fill."
-      },
-      "disabled": {
-        "$type": "color",
-        "$value": "#7882a8",
-        "$description": "Disabled controls only. WCAG exempts disabled text from contrast, so it is below 4.5:1 on purpose: never use it for words that matter or for a placeholder."
-      }
+    "duration": {
+        "stagger": {
+            "$type": "duration",
+            "$value": "24ms",
+            "$description": "The step between staggered arrivals."
+        },
+        "fast": {
+            "$type": "duration",
+            "$value": "150ms",
+            "$description": "Hover and leaving."
+        },
+        "base": {
+            "$type": "duration",
+            "$value": "175ms",
+            "$description": "Fades."
+        },
+        "slow": {
+            "$type": "duration",
+            "$value": "420ms",
+            "$description": "Arrivals."
+        },
+        "slower": {
+            "$type": "duration",
+            "$value": "540ms",
+            "$description": "Borders that follow a window."
+        },
+        "spring": {
+            "$type": "duration",
+            "$value": "560ms",
+            "$description": "Fluid motion's spring."
+        }
     },
-    "border": {
-      "subtle": {
-        "$type": "color",
-        "$value": "#a9b1d62b",
-        "$description": "A hairline between tiles and rows."
-      },
-      "default": {
-        "$type": "color",
-        "$value": "#7882a8",
-        "$description": "A visible line: cards and dividers."
-      },
-      "strong": {
-        "$type": "color",
-        "$value": "#a9b1d6",
-        "$description": "The edge of a field or a switch track. Reaches 3:1 on every ground."
-      },
-      "focus": {
-        "$type": "color",
-        "$value": "#98bafe",
-        "$description": "The keyboard focus ring."
-      }
+    "easing": {
+        "out": {
+            "$type": "cubicBezier",
+            "$value": [0.23, 1, 0.32, 1],
+            "$description": "easeOutQuint."
+        },
+        "in-out": {
+            "$type": "cubicBezier",
+            "$value": [0.65, 0.05, 0.36, 1],
+            "$description": "easeInOutCubic."
+        },
+        "almost-linear": {
+            "$type": "cubicBezier",
+            "$value": [0.5, 0.5, 0.75, 1],
+            "$description": "almostLinear."
+        },
+        "glide": {
+            "$type": "cubicBezier",
+            "$value": [0.16, 1, 0.3, 1],
+            "$description": "easeOutExpo."
+        },
+        "exit": {
+            "$type": "cubicBezier",
+            "$value": [0.4, 0, 1, 1],
+            "$description": "Speeds away."
+        }
     },
-    "accent": {
-      "default": {
-        "$type": "color",
-        "$value": "#98bafe",
-        "$description": "Links, icons, and accents on a ground."
-      },
-      "fill": {
-        "$type": "color",
-        "$value": "#98bafe",
-        "$description": "The fill of a primary button."
-      },
-      "fill-hover": {
-        "$type": "color",
-        "$value": "#e0e8f9",
-        "$description": "The fill under the pointer."
-      },
-      "fill-active": {
-        "$type": "color",
-        "$value": "#b7ccf8",
-        "$description": "The fill while pressed."
-      },
-      "on-fill": {
-        "$type": "color",
-        "$value": "#0e0e14",
-        "$description": "Text on the accent fill."
-      },
-      "soft": {
-        "$type": "color",
-        "$value": "#272e43",
-        "$description": "A quiet accent wash behind selected things."
-      },
-      "line": {
-        "$type": "color",
-        "$value": "#7aa2f7",
-        "$description": "The border of an accent wash."
-      }
+    "z": {
+        "base": {
+            "$type": "number",
+            "$value": 0
+        },
+        "raised": {
+            "$type": "number",
+            "$value": 1
+        },
+        "sticky": {
+            "$type": "number",
+            "$value": 15
+        },
+        "panel": {
+            "$type": "number",
+            "$value": 30
+        },
+        "drawer": {
+            "$type": "number",
+            "$value": 35
+        },
+        "sheet": {
+            "$type": "number",
+            "$value": 40
+        },
+        "popover": {
+            "$type": "number",
+            "$value": 45
+        },
+        "toast": {
+            "$type": "number",
+            "$value": 60
+        }
     },
-    "danger": {
-      "default": {
-        "$type": "color",
-        "$value": "#fe9aa9",
-        "$description": "Errors and destructive actions. Text and icons."
-      },
-      "soft": {
-        "$type": "color",
-        "$value": "#392835",
-        "$description": "A wash behind danger messages."
-      },
-      "line": {
-        "$type": "color",
-        "$value": "#f7768e",
-        "$description": "The border of a danger message."
-      },
-      "fill": {
-        "$type": "color",
-        "$value": "#fe9aa9",
-        "$description": "The fill of a destructive button."
-      },
-      "fill-hover": {
-        "$type": "color",
-        "$value": "#f4e1e8",
-        "$description": "The destructive fill under the pointer."
-      },
-      "on-fill": {
-        "$type": "color",
-        "$value": "#0e0e14",
-        "$description": "Text on the danger fill."
-      }
+    "space": {
+        "0": {
+            "$type": "dimension",
+            "$value": "0px"
+        },
+        "1": {
+            "$type": "dimension",
+            "$value": "4px"
+        },
+        "2": {
+            "$type": "dimension",
+            "$value": "8px"
+        },
+        "3": {
+            "$type": "dimension",
+            "$value": "12px"
+        },
+        "4": {
+            "$type": "dimension",
+            "$value": "16px"
+        },
+        "5": {
+            "$type": "dimension",
+            "$value": "20px"
+        },
+        "6": {
+            "$type": "dimension",
+            "$value": "24px"
+        },
+        "8": {
+            "$type": "dimension",
+            "$value": "32px"
+        },
+        "10": {
+            "$type": "dimension",
+            "$value": "40px"
+        },
+        "12": {
+            "$type": "dimension",
+            "$value": "48px"
+        },
+        "16": {
+            "$type": "dimension",
+            "$value": "64px"
+        },
+        "gap": {
+            "in": {
+                "$type": "dimension",
+                "$value": "4px",
+                "$description": "Between things inside one tile."
+            },
+            "out": {
+                "$type": "dimension",
+                "$value": "8px",
+                "$description": "Between tiles."
+            }
+        },
+        "hair": {
+            "$type": "dimension",
+            "$value": "2px",
+            "$description": "A hairline of space: the padding of a badge, the offset of a focus ring."
+        }
     },
-    "warning": {
-      "default": {
-        "$type": "color",
-        "$value": "#f4c787",
-        "$description": "Warnings and cautions. Text and icons."
-      },
-      "soft": {
-        "$type": "color",
-        "$value": "#36302f",
-        "$description": "A wash behind warning messages."
-      },
-      "line": {
-        "$type": "color",
-        "$value": "#e0af68",
-        "$description": "The border of a warning message."
-      }
-    },
-    "success": {
-      "default": {
-        "$type": "color",
-        "$value": "#b7e38a",
-        "$description": "Success and done. Text and icons."
-      },
-      "soft": {
-        "$type": "color",
-        "$value": "#2c3430",
-        "$description": "A wash behind success messages."
-      },
-      "line": {
-        "$type": "color",
-        "$value": "#9ece6a",
-        "$description": "The border of a success message."
-      }
-    },
-    "info": {
-      "default": {
-        "$type": "color",
-        "$value": "#65b2be",
-        "$description": "Information and neutral notices. Text and icons."
-      },
-      "soft": {
-        "$type": "color",
-        "$value": "#202d39",
-        "$description": "A wash behind info messages."
-      },
-      "line": {
-        "$type": "color",
-        "$value": "#449dab",
-        "$description": "The border of an info message."
-      }
-    },
-    "brand": {
-      "default": {
-        "$type": "color",
-        "$value": "#fdab96",
-        "$description": "Pi Pocket's mark."
-      }
-    },
-    "spark": {
-      "default": {
-        "$type": "color",
-        "$value": "#c2a6f7",
-        "$description": "Loaders and thoughts."
-      }
-    },
-    "code": {
-      "bg": {
-        "$type": "color",
-        "$value": "#0e0e14",
-        "$description": "The ground of code."
-      },
-      "text": {
-        "$type": "color",
-        "$value": "#ffffff",
-        "$description": "Code without a color of its own."
-      },
-      "keyword": {
-        "$type": "color",
-        "$value": "#c2a6f7",
-        "$description": "Keywords."
-      },
-      "string": {
-        "$type": "color",
-        "$value": "#b7e38a",
-        "$description": "Strings."
-      },
-      "number": {
-        "$type": "color",
-        "$value": "#fdab96",
-        "$description": "Numbers."
-      },
-      "function": {
-        "$type": "color",
-        "$value": "#98bafe",
-        "$description": "Functions."
-      },
-      "type": {
-        "$type": "color",
-        "$value": "#f4c787",
-        "$description": "Types."
-      },
-      "operator": {
-        "$type": "color",
-        "$value": "#65b2be",
-        "$description": "Operators."
-      },
-      "tag": {
-        "$type": "color",
-        "$value": "#fe9aa9",
-        "$description": "Tags and selectors."
-      }
-    },
-    "shadow": {
-      "default": {
-        "$type": "color",
-        "$value": "#00000080",
-        "$description": "The color of every shadow."
-      }
-    }
-  },
-  "font": {
-    "family": {
-      "sans": {
-        "$type": "fontFamily",
-        "$value": [
-          "Geist",
-          "ui-sans-serif",
-          "system-ui",
-          "sans-serif"
-        ],
-        "$description": "Words: messages, labels, headings."
-      },
-      "mono": {
-        "$type": "fontFamily",
-        "$value": [
-          "JetBrains Mono",
-          "ui-monospace",
-          "SF Mono",
-          "Menlo",
-          "Consolas",
-          "monospace"
-        ],
-        "$description": "Code, paths, branches, numbers, counts, and keys. Ligatures off, as in a terminal."
-      }
-    },
-    "weight": {
-      "regular": {
-        "$type": "fontWeight",
-        "$value": 400
-      },
-      "medium": {
-        "$type": "fontWeight",
-        "$value": 500
-      },
-      "semibold": {
-        "$type": "fontWeight",
-        "$value": 600
-      },
-      "bold": {
-        "$type": "fontWeight",
-        "$value": 700
-      }
+    "radius": {
+        "mark": {
+            "$type": "dimension",
+            "$value": "2px",
+            "$description": "State squares."
+        },
+        "tag": {
+            "$type": "dimension",
+            "$value": "4px",
+            "$description": "Inline code, keys, small tags."
+        },
+        "seg": {
+            "$type": "dimension",
+            "$value": "5px",
+            "$description": "A segment in its track."
+        },
+        "row": {
+            "$type": "dimension",
+            "$value": "6px",
+            "$description": "Small buttons and list rows."
+        },
+        "control": {
+            "$type": "dimension",
+            "$value": "7px",
+            "$description": "Icon buttons, fields, segmented tracks."
+        },
+        "card": {
+            "$type": "dimension",
+            "$value": "8px",
+            "$description": "Cards and primary buttons."
+        },
+        "window": {
+            "$type": "dimension",
+            "$value": "10px",
+            "$description": "Windows, approval cards, peek tiles."
+        },
+        "sheet": {
+            "$type": "dimension",
+            "$value": "12px",
+            "$description": "The message box, sheets, the launcher."
+        },
+        "float": {
+            "$type": "dimension",
+            "$value": "12px",
+            "$description": "Pop-ups and menus. Equal to radius.sheet today; kept apart so that floating things can be rounded on their own."
+        },
+        "pill": {
+            "$type": "dimension",
+            "$value": "999px",
+            "$description": "Pills and avatars."
+        }
     },
     "size": {
-      "2xs": {
-        "$type": "dimension",
-        "$value": "11px"
-      },
-      "xs": {
-        "$type": "dimension",
-        "$value": "12px"
-      },
-      "sm": {
-        "$type": "dimension",
-        "$value": "13px"
-      },
-      "md": {
-        "$type": "dimension",
-        "$value": "14px"
-      },
-      "lg": {
-        "$type": "dimension",
-        "$value": "16px"
-      },
-      "xl": {
-        "$type": "dimension",
-        "$value": "18px"
-      },
-      "2xl": {
-        "$type": "dimension",
-        "$value": "22px"
-      },
-      "3xl": {
-        "$type": "dimension",
-        "$value": "28px"
-      },
-      "4xl": {
-        "$type": "dimension",
-        "$value": "36px"
-      }
+        "control": {
+            "sm": {
+                "$type": "dimension",
+                "$value": "28px"
+            },
+            "md": {
+                "$type": "dimension",
+                "$value": "36px"
+            },
+            "lg": {
+                "$type": "dimension",
+                "$value": "44px"
+            }
+        },
+        "tap": {
+            "$type": "dimension",
+            "$value": "44px",
+            "$description": "The smallest touch target on a touch screen."
+        },
+        "icon": {
+            "sm": {
+                "$type": "dimension",
+                "$value": "14px"
+            },
+            "md": {
+                "$type": "dimension",
+                "$value": "16px"
+            },
+            "lg": {
+                "$type": "dimension",
+                "$value": "20px"
+            }
+        },
+        "avatar": {
+            "$type": "dimension",
+            "$value": "28px"
+        },
+        "step-mark": {
+            "$type": "dimension",
+            "$value": "19px",
+            "$description": "The mark of a step in an activity timeline."
+        },
+        "switch": {
+            "width": {
+                "$type": "dimension",
+                "$value": "36px"
+            },
+            "height": {
+                "$type": "dimension",
+                "$value": "20px"
+            },
+            "thumb": {
+                "$type": "dimension",
+                "$value": "14px"
+            }
+        },
+        "dot": {
+            "$type": "dimension",
+            "$value": "6px",
+            "$description": "A status dot."
+        }
     },
-    "leading": {
-      "tight": {
-        "$type": "number",
-        "$value": 1.2
-      },
-      "snug": {
-        "$type": "number",
-        "$value": 1.4
-      },
-      "normal": {
-        "$type": "number",
-        "$value": 1.55
-      },
-      "relaxed": {
-        "$type": "number",
-        "$value": 1.65,
-        "$description": "The conversation's line height."
-      }
+    "breakpoint": {
+        "sm": {
+            "$type": "dimension",
+            "$value": "480px"
+        },
+        "md": {
+            "$type": "dimension",
+            "$value": "700px"
+        },
+        "lg": {
+            "$type": "dimension",
+            "$value": "960px"
+        },
+        "xl": {
+            "$type": "dimension",
+            "$value": "1100px"
+        }
     },
-    "tracking": {
-      "tight": {
-        "$type": "dimension",
-        "$value": "-0.2px"
-      },
-      "normal": {
-        "$type": "dimension",
-        "$value": "0px"
-      },
-      "wide": {
-        "$type": "dimension",
-        "$value": "0.4px"
-      }
-    }
-  },
-  "duration": {
-    "stagger": {
-      "$type": "duration",
-      "$value": "24ms",
-      "$description": "The step between staggered arrivals."
+    "border": {
+        "width": {
+            "hairline": {
+                "$type": "dimension",
+                "$value": "1px"
+            },
+            "thick": {
+                "$type": "dimension",
+                "$value": "2px"
+            }
+        }
     },
-    "fast": {
-      "$type": "duration",
-      "$value": "150ms",
-      "$description": "Hover and leaving."
+    "shadow": {
+        "lift": {
+            "$type": "shadow",
+            "$value": [
+                {
+                    "color": "#00000080",
+                    "offsetX": "0px",
+                    "offsetY": "18px",
+                    "blur": "40px",
+                    "spread": "-18px"
+                },
+                {
+                    "color": "#00000080",
+                    "offsetX": "0px",
+                    "offsetY": "2px",
+                    "blur": "6px",
+                    "spread": "-2px"
+                }
+            ],
+            "$description": "A soft lift: the message box."
+        },
+        "float": {
+            "$type": "shadow",
+            "$value": [
+                {
+                    "color": "#00000080",
+                    "offsetX": "0px",
+                    "offsetY": "24px",
+                    "blur": "60px",
+                    "spread": "-16px"
+                },
+                {
+                    "color": "#7882a8",
+                    "offsetX": "0px",
+                    "offsetY": "0px",
+                    "blur": "0px",
+                    "spread": "1px"
+                }
+            ],
+            "$description": "What floats over the page: pop-ups, sheets, the launcher."
+        },
+        "hairline": {
+            "$type": "shadow",
+            "$value": [
+                {
+                    "color": "#7882a8",
+                    "offsetX": "0px",
+                    "offsetY": "0px",
+                    "blur": "0px",
+                    "spread": "1px"
+                }
+            ],
+            "$description": "A 1 px outline drawn as a shadow, so layout does not move."
+        },
+        "focus-ring": {
+            "$type": "shadow",
+            "$value": [
+                {
+                    "color": "#272e43",
+                    "offsetX": "0px",
+                    "offsetY": "0px",
+                    "blur": "0px",
+                    "spread": "3px"
+                },
+                {
+                    "color": "#98bafe",
+                    "offsetX": "0px",
+                    "offsetY": "0px",
+                    "blur": "0px",
+                    "spread": "1px"
+                }
+            ],
+            "$description": "The keyboard focus ring: a soft halo around a solid line. Keep it visible."
+        }
     },
-    "base": {
-      "$type": "duration",
-      "$value": "175ms",
-      "$description": "Fades."
+    "type": {
+        "display": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+                "fontSize": "36px",
+                "fontWeight": 700,
+                "lineHeight": 1.2,
+                "letterSpacing": "-0.2px"
+            },
+            "$description": "Page titles and the home screen."
+        },
+        "title": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+                "fontSize": "28px",
+                "fontWeight": 600,
+                "lineHeight": 1.2,
+                "letterSpacing": "-0.2px"
+            },
+            "$description": "A screen or a sheet title."
+        },
+        "heading": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+                "fontSize": "22px",
+                "fontWeight": 600,
+                "lineHeight": 1.4,
+                "letterSpacing": "-0.2px"
+            },
+            "$description": "A section heading."
+        },
+        "subheading": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+                "fontSize": "18px",
+                "fontWeight": 600,
+                "lineHeight": 1.4,
+                "letterSpacing": "0px"
+            },
+            "$description": "A group heading."
+        },
+        "body-lg": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+                "fontSize": "16px",
+                "fontWeight": 400,
+                "lineHeight": 1.55,
+                "letterSpacing": "0px"
+            },
+            "$description": "Long reading text."
+        },
+        "body": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+                "fontSize": "14px",
+                "fontWeight": 400,
+                "lineHeight": 1.55,
+                "letterSpacing": "0px"
+            },
+            "$description": "The default text."
+        },
+        "label": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+                "fontSize": "13px",
+                "fontWeight": 500,
+                "lineHeight": 1.4,
+                "letterSpacing": "0px"
+            },
+            "$description": "Buttons, fields, and tabs."
+        },
+        "caption": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+                "fontSize": "12px",
+                "fontWeight": 400,
+                "lineHeight": 1.4,
+                "letterSpacing": "0px"
+            },
+            "$description": "Hints and metadata."
+        },
+        "overline": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
+                "fontSize": "11px",
+                "fontWeight": 600,
+                "lineHeight": 1.4,
+                "letterSpacing": "0.4px"
+            },
+            "$description": "Small headings over a group."
+        },
+        "code": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": [
+                    "JetBrains Mono",
+                    "ui-monospace",
+                    "SF Mono",
+                    "Menlo",
+                    "Consolas",
+                    "monospace"
+                ],
+                "fontSize": "13px",
+                "fontWeight": 400,
+                "lineHeight": 1.55,
+                "letterSpacing": "0px"
+            },
+            "$description": "Code, paths, and branches."
+        },
+        "code-sm": {
+            "$type": "typography",
+            "$value": {
+                "fontFamily": [
+                    "JetBrains Mono",
+                    "ui-monospace",
+                    "SF Mono",
+                    "Menlo",
+                    "Consolas",
+                    "monospace"
+                ],
+                "fontSize": "12px",
+                "fontWeight": 400,
+                "lineHeight": 1.55,
+                "letterSpacing": "0px"
+            },
+            "$description": "Inline code and keys."
+        }
     },
-    "slow": {
-      "$type": "duration",
-      "$value": "420ms",
-      "$description": "Arrivals."
+    "motion": {
+        "duration": {
+            "hover": {
+                "$type": "duration",
+                "$value": "150ms"
+            },
+            "exit": {
+                "$type": "duration",
+                "$value": "150ms"
+            },
+            "fade": {
+                "$type": "duration",
+                "$value": "175ms"
+            },
+            "enter": {
+                "$type": "duration",
+                "$value": "420ms"
+            },
+            "glide": {
+                "$type": "duration",
+                "$value": "420ms"
+            },
+            "border": {
+                "$type": "duration",
+                "$value": "540ms"
+            },
+            "spring": {
+                "$type": "duration",
+                "$value": "560ms"
+            },
+            "stagger": {
+                "$type": "duration",
+                "$value": "24ms"
+            }
+        },
+        "ease": {
+            "standard": {
+                "$type": "cubicBezier",
+                "$value": [0.23, 1, 0.32, 1],
+                "$description": "Most things."
+            },
+            "in-out": {
+                "$type": "cubicBezier",
+                "$value": [0.65, 0.05, 0.36, 1],
+                "$description": "Things that move across the screen."
+            },
+            "linear": {
+                "$type": "cubicBezier",
+                "$value": [0.5, 0.5, 0.75, 1]
+            },
+            "glide": {
+                "$type": "cubicBezier",
+                "$value": [0.16, 1, 0.3, 1]
+            },
+            "exit": {
+                "$type": "cubicBezier",
+                "$value": [0.4, 0, 1, 1],
+                "$description": "Things that leave."
+            }
+        },
+        "transition": {
+            "hover": {
+                "$type": "transition",
+                "$value": {
+                    "duration": "150ms",
+                    "timingFunction": [0.23, 1, 0.32, 1],
+                    "delay": "0ms"
+                },
+                "$description": "Color changes under the pointer."
+            },
+            "enter": {
+                "$type": "transition",
+                "$value": {
+                    "duration": "420ms",
+                    "timingFunction": [0.23, 1, 0.32, 1],
+                    "delay": "0ms"
+                },
+                "$description": "Something arrives."
+            },
+            "fade": {
+                "$type": "transition",
+                "$value": {
+                    "duration": "175ms",
+                    "timingFunction": [0.23, 1, 0.32, 1],
+                    "delay": "0ms"
+                },
+                "$description": "Something fades in."
+            },
+            "exit": {
+                "$type": "transition",
+                "$value": {
+                    "duration": "150ms",
+                    "timingFunction": [0.4, 0, 1, 1],
+                    "delay": "0ms"
+                },
+                "$description": "Something leaves."
+            }
+        }
     },
-    "slower": {
-      "$type": "duration",
-      "$value": "540ms",
-      "$description": "Borders that follow a window."
+    "button": {
+        "radius": {
+            "$type": "dimension",
+            "$value": "8px"
+        },
+        "height": {
+            "$type": "dimension",
+            "$value": "36px"
+        },
+        "padding-x": {
+            "$type": "dimension",
+            "$value": "16px"
+        },
+        "gap": {
+            "$type": "dimension",
+            "$value": "8px"
+        },
+        "primary": {
+            "bg": {
+                "$type": "color",
+                "$value": "#98bafe"
+            },
+            "bg-hover": {
+                "$type": "color",
+                "$value": "#e0e8f9"
+            },
+            "bg-active": {
+                "$type": "color",
+                "$value": "#b7ccf8"
+            },
+            "fg": {
+                "$type": "color",
+                "$value": "#0e0e14"
+            }
+        },
+        "secondary": {
+            "bg": {
+                "$type": "color",
+                "$value": "#1a1b26"
+            },
+            "bg-hover": {
+                "$type": "color",
+                "$value": "#20212d"
+            },
+            "fg": {
+                "$type": "color",
+                "$value": "#ffffff"
+            },
+            "border": {
+                "$type": "color",
+                "$value": "#a9b1d6"
+            }
+        },
+        "ghost": {
+            "bg-hover": {
+                "$type": "color",
+                "$value": "#a9b1d61a"
+            },
+            "bg-active": {
+                "$type": "color",
+                "$value": "#a9b1d62b"
+            },
+            "fg": {
+                "$type": "color",
+                "$value": "#ffffff"
+            }
+        },
+        "danger": {
+            "bg": {
+                "$type": "color",
+                "$value": "#fe9aa9"
+            },
+            "bg-hover": {
+                "$type": "color",
+                "$value": "#f4e1e8"
+            },
+            "fg": {
+                "$type": "color",
+                "$value": "#0e0e14"
+            }
+        },
+        "disabled": {
+            "bg": {
+                "$type": "color",
+                "$value": "#20212d"
+            },
+            "fg": {
+                "$type": "color",
+                "$value": "#7882a8"
+            }
+        }
     },
-    "spring": {
-      "$type": "duration",
-      "$value": "560ms",
-      "$description": "Fluid motion's spring."
-    }
-  },
-  "easing": {
-    "out": {
-      "$type": "cubicBezier",
-      "$value": [
-        0.23,
-        1,
-        0.32,
-        1
-      ],
-      "$description": "easeOutQuint."
-    },
-    "in-out": {
-      "$type": "cubicBezier",
-      "$value": [
-        0.65,
-        0.05,
-        0.36,
-        1
-      ],
-      "$description": "easeInOutCubic."
-    },
-    "almost-linear": {
-      "$type": "cubicBezier",
-      "$value": [
-        0.5,
-        0.5,
-        0.75,
-        1
-      ],
-      "$description": "almostLinear."
-    },
-    "glide": {
-      "$type": "cubicBezier",
-      "$value": [
-        0.16,
-        1,
-        0.3,
-        1
-      ],
-      "$description": "easeOutExpo."
-    },
-    "exit": {
-      "$type": "cubicBezier",
-      "$value": [
-        0.4,
-        0,
-        1,
-        1
-      ],
-      "$description": "Speeds away."
-    }
-  },
-  "z": {
-    "base": {
-      "$type": "number",
-      "$value": 0
-    },
-    "raised": {
-      "$type": "number",
-      "$value": 1
-    },
-    "sticky": {
-      "$type": "number",
-      "$value": 15
-    },
-    "panel": {
-      "$type": "number",
-      "$value": 30
-    },
-    "drawer": {
-      "$type": "number",
-      "$value": 35
-    },
-    "sheet": {
-      "$type": "number",
-      "$value": 40
-    },
-    "popover": {
-      "$type": "number",
-      "$value": 45
-    },
-    "toast": {
-      "$type": "number",
-      "$value": 60
-    }
-  },
-  "space": {
-    "0": {
-      "$type": "dimension",
-      "$value": "0px"
-    },
-    "1": {
-      "$type": "dimension",
-      "$value": "4px"
-    },
-    "2": {
-      "$type": "dimension",
-      "$value": "8px"
-    },
-    "3": {
-      "$type": "dimension",
-      "$value": "12px"
-    },
-    "4": {
-      "$type": "dimension",
-      "$value": "16px"
-    },
-    "5": {
-      "$type": "dimension",
-      "$value": "20px"
-    },
-    "6": {
-      "$type": "dimension",
-      "$value": "24px"
-    },
-    "8": {
-      "$type": "dimension",
-      "$value": "32px"
-    },
-    "10": {
-      "$type": "dimension",
-      "$value": "40px"
-    },
-    "12": {
-      "$type": "dimension",
-      "$value": "48px"
-    },
-    "16": {
-      "$type": "dimension",
-      "$value": "64px"
-    },
-    "gap": {
-      "in": {
-        "$type": "dimension",
-        "$value": "4px",
-        "$description": "Between things inside one tile."
-      },
-      "out": {
-        "$type": "dimension",
-        "$value": "8px",
-        "$description": "Between tiles."
-      }
-    },
-    "hair": {
-      "$type": "dimension",
-      "$value": "2px",
-      "$description": "A hairline of space: the padding of a badge, the offset of a focus ring."
-    }
-  },
-  "radius": {
-    "mark": {
-      "$type": "dimension",
-      "$value": "2px",
-      "$description": "State squares."
-    },
-    "tag": {
-      "$type": "dimension",
-      "$value": "4px",
-      "$description": "Inline code, keys, small tags."
-    },
-    "seg": {
-      "$type": "dimension",
-      "$value": "5px",
-      "$description": "A segment in its track."
-    },
-    "row": {
-      "$type": "dimension",
-      "$value": "6px",
-      "$description": "Small buttons and list rows."
-    },
-    "control": {
-      "$type": "dimension",
-      "$value": "7px",
-      "$description": "Icon buttons, fields, segmented tracks."
-    },
-    "card": {
-      "$type": "dimension",
-      "$value": "8px",
-      "$description": "Cards and primary buttons."
-    },
-    "window": {
-      "$type": "dimension",
-      "$value": "10px",
-      "$description": "Windows, approval cards, peek tiles."
-    },
-    "sheet": {
-      "$type": "dimension",
-      "$value": "12px",
-      "$description": "The message box, sheets, the launcher."
-    },
-    "float": {
-      "$type": "dimension",
-      "$value": "12px",
-      "$description": "Pop-ups and menus. Equal to radius.sheet today; kept apart so that floating things can be rounded on their own."
-    },
-    "pill": {
-      "$type": "dimension",
-      "$value": "999px",
-      "$description": "Pills and avatars."
-    }
-  },
-  "size": {
-    "control": {
-      "sm": {
-        "$type": "dimension",
-        "$value": "28px"
-      },
-      "md": {
-        "$type": "dimension",
-        "$value": "36px"
-      },
-      "lg": {
-        "$type": "dimension",
-        "$value": "44px"
-      }
-    },
-    "tap": {
-      "$type": "dimension",
-      "$value": "44px",
-      "$description": "The smallest touch target on a touch screen."
-    },
-    "icon": {
-      "sm": {
-        "$type": "dimension",
-        "$value": "14px"
-      },
-      "md": {
-        "$type": "dimension",
-        "$value": "16px"
-      },
-      "lg": {
-        "$type": "dimension",
-        "$value": "20px"
-      }
-    },
-    "avatar": {
-      "$type": "dimension",
-      "$value": "28px"
-    },
-    "step-mark": {
-      "$type": "dimension",
-      "$value": "19px",
-      "$description": "The mark of a step in an activity timeline."
+    "input": {
+        "bg": {
+            "$type": "color",
+            "$value": "#1a1b26"
+        },
+        "fg": {
+            "$type": "color",
+            "$value": "#ffffff"
+        },
+        "placeholder": {
+            "$type": "color",
+            "$value": "#b4bee6"
+        },
+        "border": {
+            "$type": "color",
+            "$value": "#a9b1d6"
+        },
+        "border-hover": {
+            "$type": "color",
+            "$value": "#b4bee6"
+        },
+        "border-focus": {
+            "$type": "color",
+            "$value": "#98bafe"
+        },
+        "border-error": {
+            "$type": "color",
+            "$value": "#fe9aa9"
+        },
+        "bg-disabled": {
+            "$type": "color",
+            "$value": "#20212d"
+        },
+        "radius": {
+            "$type": "dimension",
+            "$value": "7px"
+        },
+        "height": {
+            "$type": "dimension",
+            "$value": "36px"
+        },
+        "padding-x": {
+            "$type": "dimension",
+            "$value": "12px"
+        }
     },
     "switch": {
-      "width": {
-        "$type": "dimension",
-        "$value": "36px"
-      },
-      "height": {
-        "$type": "dimension",
-        "$value": "20px"
-      },
-      "thumb": {
-        "$type": "dimension",
-        "$value": "14px"
-      }
-    },
-    "dot": {
-      "$type": "dimension",
-      "$value": "6px",
-      "$description": "A status dot."
-    }
-  },
-  "breakpoint": {
-    "sm": {
-      "$type": "dimension",
-      "$value": "480px"
-    },
-    "md": {
-      "$type": "dimension",
-      "$value": "700px"
-    },
-    "lg": {
-      "$type": "dimension",
-      "$value": "960px"
-    },
-    "xl": {
-      "$type": "dimension",
-      "$value": "1100px"
-    }
-  },
-  "border": {
-    "width": {
-      "hairline": {
-        "$type": "dimension",
-        "$value": "1px"
-      },
-      "thick": {
-        "$type": "dimension",
-        "$value": "2px"
-      }
-    }
-  },
-  "shadow": {
-    "lift": {
-      "$type": "shadow",
-      "$value": [
-        {
-          "color": "#00000080",
-          "offsetX": "0px",
-          "offsetY": "18px",
-          "blur": "40px",
-          "spread": "-18px"
+        "track-off": {
+            "$type": "color",
+            "$value": "#a9b1d6"
         },
-        {
-          "color": "#00000080",
-          "offsetX": "0px",
-          "offsetY": "2px",
-          "blur": "6px",
-          "spread": "-2px"
+        "track-on": {
+            "$type": "color",
+            "$value": "#98bafe"
+        },
+        "thumb": {
+            "$type": "color",
+            "$value": "#0e0e14"
+        },
+        "thumb-on": {
+            "$type": "color",
+            "$value": "#0e0e14"
         }
-      ],
-      "$description": "A soft lift: the message box."
     },
-    "float": {
-      "$type": "shadow",
-      "$value": [
-        {
-          "color": "#00000080",
-          "offsetX": "0px",
-          "offsetY": "24px",
-          "blur": "60px",
-          "spread": "-16px"
+    "segmented": {
+        "track": {
+            "$type": "color",
+            "$value": "#20212d"
         },
-        {
-          "color": "#7882a8",
-          "offsetX": "0px",
-          "offsetY": "0px",
-          "blur": "0px",
-          "spread": "1px"
+        "selected": {
+            "$type": "color",
+            "$value": "#1a1b26"
+        },
+        "fg": {
+            "$type": "color",
+            "$value": "#c0caf5"
+        },
+        "fg-selected": {
+            "$type": "color",
+            "$value": "#ffffff"
+        },
+        "radius": {
+            "$type": "dimension",
+            "$value": "7px"
+        },
+        "radius-seg": {
+            "$type": "dimension",
+            "$value": "5px"
         }
-      ],
-      "$description": "What floats over the page: pop-ups, sheets, the launcher."
     },
-    "hairline": {
-      "$type": "shadow",
-      "$value": [
-        {
-          "color": "#7882a8",
-          "offsetX": "0px",
-          "offsetY": "0px",
-          "blur": "0px",
-          "spread": "1px"
+    "badge": {
+        "neutral": {
+            "bg": {
+                "$type": "color",
+                "$value": "#20212d"
+            },
+            "fg": {
+                "$type": "color",
+                "$value": "#c0caf5"
+            },
+            "border": {
+                "$type": "color",
+                "$value": "#7882a8"
+            }
+        },
+        "accent": {
+            "bg": {
+                "$type": "color",
+                "$value": "#272e43"
+            },
+            "fg": {
+                "$type": "color",
+                "$value": "#98bafe"
+            },
+            "border": {
+                "$type": "color",
+                "$value": "#7aa2f7"
+            }
+        },
+        "success": {
+            "bg": {
+                "$type": "color",
+                "$value": "#2c3430"
+            },
+            "fg": {
+                "$type": "color",
+                "$value": "#b7e38a"
+            },
+            "border": {
+                "$type": "color",
+                "$value": "#9ece6a"
+            }
+        },
+        "warning": {
+            "bg": {
+                "$type": "color",
+                "$value": "#36302f"
+            },
+            "fg": {
+                "$type": "color",
+                "$value": "#f4c787"
+            },
+            "border": {
+                "$type": "color",
+                "$value": "#e0af68"
+            }
+        },
+        "danger": {
+            "bg": {
+                "$type": "color",
+                "$value": "#392835"
+            },
+            "fg": {
+                "$type": "color",
+                "$value": "#fe9aa9"
+            },
+            "border": {
+                "$type": "color",
+                "$value": "#f7768e"
+            }
+        },
+        "radius": {
+            "$type": "dimension",
+            "$value": "999px"
         }
-      ],
-      "$description": "A 1 px outline drawn as a shadow, so layout does not move."
     },
-    "focus-ring": {
-      "$type": "shadow",
-      "$value": [
-        {
-          "color": "#272e43",
-          "offsetX": "0px",
-          "offsetY": "0px",
-          "blur": "0px",
-          "spread": "3px"
+    "card": {
+        "bg": {
+            "$type": "color",
+            "$value": "#13141c"
         },
-        {
-          "color": "#98bafe",
-          "offsetX": "0px",
-          "offsetY": "0px",
-          "blur": "0px",
-          "spread": "1px"
+        "border": {
+            "$type": "color",
+            "$value": "#7882a8"
+        },
+        "border-selected": {
+            "$type": "color",
+            "$value": "#7aa2f7"
+        },
+        "bg-selected": {
+            "$type": "color",
+            "$value": "#272e43"
+        },
+        "radius": {
+            "$type": "dimension",
+            "$value": "8px"
+        },
+        "padding": {
+            "$type": "dimension",
+            "$value": "16px"
+        },
+        "shadow": {
+            "$type": "shadow",
+            "$value": [
+                {
+                    "color": "#00000080",
+                    "offsetX": "0px",
+                    "offsetY": "18px",
+                    "blur": "40px",
+                    "spread": "-18px"
+                },
+                {
+                    "color": "#00000080",
+                    "offsetX": "0px",
+                    "offsetY": "2px",
+                    "blur": "6px",
+                    "spread": "-2px"
+                }
+            ]
         }
-      ],
-      "$description": "The keyboard focus ring: a soft halo around a solid line. Keep it visible."
-    }
-  },
-  "type": {
-    "display": {
-      "$type": "typography",
-      "$value": {
-        "fontFamily": [
-          "Geist",
-          "ui-sans-serif",
-          "system-ui",
-          "sans-serif"
-        ],
-        "fontSize": "36px",
-        "fontWeight": 700,
-        "lineHeight": 1.2,
-        "letterSpacing": "-0.2px"
-      },
-      "$description": "Page titles and the home screen."
     },
-    "title": {
-      "$type": "typography",
-      "$value": {
-        "fontFamily": [
-          "Geist",
-          "ui-sans-serif",
-          "system-ui",
-          "sans-serif"
-        ],
-        "fontSize": "28px",
-        "fontWeight": 600,
-        "lineHeight": 1.2,
-        "letterSpacing": "-0.2px"
-      },
-      "$description": "A screen or a sheet title."
-    },
-    "heading": {
-      "$type": "typography",
-      "$value": {
-        "fontFamily": [
-          "Geist",
-          "ui-sans-serif",
-          "system-ui",
-          "sans-serif"
-        ],
-        "fontSize": "22px",
-        "fontWeight": 600,
-        "lineHeight": 1.4,
-        "letterSpacing": "-0.2px"
-      },
-      "$description": "A section heading."
-    },
-    "subheading": {
-      "$type": "typography",
-      "$value": {
-        "fontFamily": [
-          "Geist",
-          "ui-sans-serif",
-          "system-ui",
-          "sans-serif"
-        ],
-        "fontSize": "18px",
-        "fontWeight": 600,
-        "lineHeight": 1.4,
-        "letterSpacing": "0px"
-      },
-      "$description": "A group heading."
-    },
-    "body-lg": {
-      "$type": "typography",
-      "$value": {
-        "fontFamily": [
-          "Geist",
-          "ui-sans-serif",
-          "system-ui",
-          "sans-serif"
-        ],
-        "fontSize": "16px",
-        "fontWeight": 400,
-        "lineHeight": 1.55,
-        "letterSpacing": "0px"
-      },
-      "$description": "Long reading text."
-    },
-    "body": {
-      "$type": "typography",
-      "$value": {
-        "fontFamily": [
-          "Geist",
-          "ui-sans-serif",
-          "system-ui",
-          "sans-serif"
-        ],
-        "fontSize": "14px",
-        "fontWeight": 400,
-        "lineHeight": 1.55,
-        "letterSpacing": "0px"
-      },
-      "$description": "The default text."
-    },
-    "label": {
-      "$type": "typography",
-      "$value": {
-        "fontFamily": [
-          "Geist",
-          "ui-sans-serif",
-          "system-ui",
-          "sans-serif"
-        ],
-        "fontSize": "13px",
-        "fontWeight": 500,
-        "lineHeight": 1.4,
-        "letterSpacing": "0px"
-      },
-      "$description": "Buttons, fields, and tabs."
-    },
-    "caption": {
-      "$type": "typography",
-      "$value": {
-        "fontFamily": [
-          "Geist",
-          "ui-sans-serif",
-          "system-ui",
-          "sans-serif"
-        ],
-        "fontSize": "12px",
-        "fontWeight": 400,
-        "lineHeight": 1.4,
-        "letterSpacing": "0px"
-      },
-      "$description": "Hints and metadata."
-    },
-    "overline": {
-      "$type": "typography",
-      "$value": {
-        "fontFamily": [
-          "Geist",
-          "ui-sans-serif",
-          "system-ui",
-          "sans-serif"
-        ],
-        "fontSize": "11px",
-        "fontWeight": 600,
-        "lineHeight": 1.4,
-        "letterSpacing": "0.4px"
-      },
-      "$description": "Small headings over a group."
-    },
-    "code": {
-      "$type": "typography",
-      "$value": {
-        "fontFamily": [
-          "JetBrains Mono",
-          "ui-monospace",
-          "SF Mono",
-          "Menlo",
-          "Consolas",
-          "monospace"
-        ],
-        "fontSize": "13px",
-        "fontWeight": 400,
-        "lineHeight": 1.55,
-        "letterSpacing": "0px"
-      },
-      "$description": "Code, paths, and branches."
-    },
-    "code-sm": {
-      "$type": "typography",
-      "$value": {
-        "fontFamily": [
-          "JetBrains Mono",
-          "ui-monospace",
-          "SF Mono",
-          "Menlo",
-          "Consolas",
-          "monospace"
-        ],
-        "fontSize": "12px",
-        "fontWeight": 400,
-        "lineHeight": 1.55,
-        "letterSpacing": "0px"
-      },
-      "$description": "Inline code and keys."
-    }
-  },
-  "motion": {
-    "duration": {
-      "hover": {
-        "$type": "duration",
-        "$value": "150ms"
-      },
-      "exit": {
-        "$type": "duration",
-        "$value": "150ms"
-      },
-      "fade": {
-        "$type": "duration",
-        "$value": "175ms"
-      },
-      "enter": {
-        "$type": "duration",
-        "$value": "420ms"
-      },
-      "glide": {
-        "$type": "duration",
-        "$value": "420ms"
-      },
-      "border": {
-        "$type": "duration",
-        "$value": "540ms"
-      },
-      "spring": {
-        "$type": "duration",
-        "$value": "560ms"
-      },
-      "stagger": {
-        "$type": "duration",
-        "$value": "24ms"
-      }
-    },
-    "ease": {
-      "standard": {
-        "$type": "cubicBezier",
-        "$value": [
-          0.23,
-          1,
-          0.32,
-          1
-        ],
-        "$description": "Most things."
-      },
-      "in-out": {
-        "$type": "cubicBezier",
-        "$value": [
-          0.65,
-          0.05,
-          0.36,
-          1
-        ],
-        "$description": "Things that move across the screen."
-      },
-      "linear": {
-        "$type": "cubicBezier",
-        "$value": [
-          0.5,
-          0.5,
-          0.75,
-          1
-        ]
-      },
-      "glide": {
-        "$type": "cubicBezier",
-        "$value": [
-          0.16,
-          1,
-          0.3,
-          1
-        ]
-      },
-      "exit": {
-        "$type": "cubicBezier",
-        "$value": [
-          0.4,
-          0,
-          1,
-          1
-        ],
-        "$description": "Things that leave."
-      }
-    },
-    "transition": {
-      "hover": {
-        "$type": "transition",
-        "$value": {
-          "duration": "150ms",
-          "timingFunction": [
-            0.23,
-            1,
-            0.32,
-            1
-          ],
-          "delay": "0ms"
+    "notice": {
+        "radius": {
+            "$type": "dimension",
+            "$value": "8px"
         },
-        "$description": "Color changes under the pointer."
-      },
-      "enter": {
-        "$type": "transition",
-        "$value": {
-          "duration": "420ms",
-          "timingFunction": [
-            0.23,
-            1,
-            0.32,
-            1
-          ],
-          "delay": "0ms"
-        },
-        "$description": "Something arrives."
-      },
-      "fade": {
-        "$type": "transition",
-        "$value": {
-          "duration": "175ms",
-          "timingFunction": [
-            0.23,
-            1,
-            0.32,
-            1
-          ],
-          "delay": "0ms"
-        },
-        "$description": "Something fades in."
-      },
-      "exit": {
-        "$type": "transition",
-        "$value": {
-          "duration": "150ms",
-          "timingFunction": [
-            0.4,
-            0,
-            1,
-            1
-          ],
-          "delay": "0ms"
-        },
-        "$description": "Something leaves."
-      }
-    }
-  },
-  "button": {
-    "radius": {
-      "$type": "dimension",
-      "$value": "8px"
-    },
-    "height": {
-      "$type": "dimension",
-      "$value": "36px"
-    },
-    "padding-x": {
-      "$type": "dimension",
-      "$value": "16px"
-    },
-    "gap": {
-      "$type": "dimension",
-      "$value": "8px"
-    },
-    "primary": {
-      "bg": {
-        "$type": "color",
-        "$value": "#98bafe"
-      },
-      "bg-hover": {
-        "$type": "color",
-        "$value": "#e0e8f9"
-      },
-      "bg-active": {
-        "$type": "color",
-        "$value": "#b7ccf8"
-      },
-      "fg": {
-        "$type": "color",
-        "$value": "#0e0e14"
-      }
-    },
-    "secondary": {
-      "bg": {
-        "$type": "color",
-        "$value": "#1a1b26"
-      },
-      "bg-hover": {
-        "$type": "color",
-        "$value": "#20212d"
-      },
-      "fg": {
-        "$type": "color",
-        "$value": "#ffffff"
-      },
-      "border": {
-        "$type": "color",
-        "$value": "#a9b1d6"
-      }
-    },
-    "ghost": {
-      "bg-hover": {
-        "$type": "color",
-        "$value": "#a9b1d61a"
-      },
-      "bg-active": {
-        "$type": "color",
-        "$value": "#a9b1d62b"
-      },
-      "fg": {
-        "$type": "color",
-        "$value": "#ffffff"
-      }
-    },
-    "danger": {
-      "bg": {
-        "$type": "color",
-        "$value": "#fe9aa9"
-      },
-      "bg-hover": {
-        "$type": "color",
-        "$value": "#f4e1e8"
-      },
-      "fg": {
-        "$type": "color",
-        "$value": "#0e0e14"
-      }
-    },
-    "disabled": {
-      "bg": {
-        "$type": "color",
-        "$value": "#20212d"
-      },
-      "fg": {
-        "$type": "color",
-        "$value": "#7882a8"
-      }
-    }
-  },
-  "input": {
-    "bg": {
-      "$type": "color",
-      "$value": "#1a1b26"
-    },
-    "fg": {
-      "$type": "color",
-      "$value": "#ffffff"
-    },
-    "placeholder": {
-      "$type": "color",
-      "$value": "#b4bee6"
-    },
-    "border": {
-      "$type": "color",
-      "$value": "#a9b1d6"
-    },
-    "border-hover": {
-      "$type": "color",
-      "$value": "#b4bee6"
-    },
-    "border-focus": {
-      "$type": "color",
-      "$value": "#98bafe"
-    },
-    "border-error": {
-      "$type": "color",
-      "$value": "#fe9aa9"
-    },
-    "bg-disabled": {
-      "$type": "color",
-      "$value": "#20212d"
-    },
-    "radius": {
-      "$type": "dimension",
-      "$value": "7px"
-    },
-    "height": {
-      "$type": "dimension",
-      "$value": "36px"
-    },
-    "padding-x": {
-      "$type": "dimension",
-      "$value": "12px"
-    }
-  },
-  "switch": {
-    "track-off": {
-      "$type": "color",
-      "$value": "#a9b1d6"
-    },
-    "track-on": {
-      "$type": "color",
-      "$value": "#98bafe"
-    },
-    "thumb": {
-      "$type": "color",
-      "$value": "#0e0e14"
-    },
-    "thumb-on": {
-      "$type": "color",
-      "$value": "#0e0e14"
-    }
-  },
-  "segmented": {
-    "track": {
-      "$type": "color",
-      "$value": "#20212d"
-    },
-    "selected": {
-      "$type": "color",
-      "$value": "#1a1b26"
-    },
-    "fg": {
-      "$type": "color",
-      "$value": "#c0caf5"
-    },
-    "fg-selected": {
-      "$type": "color",
-      "$value": "#ffffff"
-    },
-    "radius": {
-      "$type": "dimension",
-      "$value": "7px"
-    },
-    "radius-seg": {
-      "$type": "dimension",
-      "$value": "5px"
-    }
-  },
-  "badge": {
-    "neutral": {
-      "bg": {
-        "$type": "color",
-        "$value": "#20212d"
-      },
-      "fg": {
-        "$type": "color",
-        "$value": "#c0caf5"
-      },
-      "border": {
-        "$type": "color",
-        "$value": "#7882a8"
-      }
-    },
-    "accent": {
-      "bg": {
-        "$type": "color",
-        "$value": "#272e43"
-      },
-      "fg": {
-        "$type": "color",
-        "$value": "#98bafe"
-      },
-      "border": {
-        "$type": "color",
-        "$value": "#7aa2f7"
-      }
-    },
-    "success": {
-      "bg": {
-        "$type": "color",
-        "$value": "#2c3430"
-      },
-      "fg": {
-        "$type": "color",
-        "$value": "#b7e38a"
-      },
-      "border": {
-        "$type": "color",
-        "$value": "#9ece6a"
-      }
-    },
-    "warning": {
-      "bg": {
-        "$type": "color",
-        "$value": "#36302f"
-      },
-      "fg": {
-        "$type": "color",
-        "$value": "#f4c787"
-      },
-      "border": {
-        "$type": "color",
-        "$value": "#e0af68"
-      }
-    },
-    "danger": {
-      "bg": {
-        "$type": "color",
-        "$value": "#392835"
-      },
-      "fg": {
-        "$type": "color",
-        "$value": "#fe9aa9"
-      },
-      "border": {
-        "$type": "color",
-        "$value": "#f7768e"
-      }
-    },
-    "radius": {
-      "$type": "dimension",
-      "$value": "999px"
-    }
-  },
-  "card": {
-    "bg": {
-      "$type": "color",
-      "$value": "#13141c"
-    },
-    "border": {
-      "$type": "color",
-      "$value": "#7882a8"
-    },
-    "border-selected": {
-      "$type": "color",
-      "$value": "#7aa2f7"
-    },
-    "bg-selected": {
-      "$type": "color",
-      "$value": "#272e43"
-    },
-    "radius": {
-      "$type": "dimension",
-      "$value": "8px"
-    },
-    "padding": {
-      "$type": "dimension",
-      "$value": "16px"
-    },
-    "shadow": {
-      "$type": "shadow",
-      "$value": [
-        {
-          "color": "#00000080",
-          "offsetX": "0px",
-          "offsetY": "18px",
-          "blur": "40px",
-          "spread": "-18px"
-        },
-        {
-          "color": "#00000080",
-          "offsetX": "0px",
-          "offsetY": "2px",
-          "blur": "6px",
-          "spread": "-2px"
+        "padding": {
+            "$type": "dimension",
+            "$value": "12px"
         }
-      ]
-    }
-  },
-  "notice": {
-    "radius": {
-      "$type": "dimension",
-      "$value": "8px"
     },
-    "padding": {
-      "$type": "dimension",
-      "$value": "12px"
-    }
-  },
-  "menu": {
-    "bg": {
-      "$type": "color",
-      "$value": "#1a1b26"
-    },
-    "radius": {
-      "$type": "dimension",
-      "$value": "12px"
-    },
-    "shadow": {
-      "$type": "shadow",
-      "$value": [
-        {
-          "color": "#00000080",
-          "offsetX": "0px",
-          "offsetY": "24px",
-          "blur": "60px",
-          "spread": "-16px"
+    "menu": {
+        "bg": {
+            "$type": "color",
+            "$value": "#1a1b26"
         },
-        {
-          "color": "#7882a8",
-          "offsetX": "0px",
-          "offsetY": "0px",
-          "blur": "0px",
-          "spread": "1px"
+        "radius": {
+            "$type": "dimension",
+            "$value": "12px"
+        },
+        "shadow": {
+            "$type": "shadow",
+            "$value": [
+                {
+                    "color": "#00000080",
+                    "offsetX": "0px",
+                    "offsetY": "24px",
+                    "blur": "60px",
+                    "spread": "-16px"
+                },
+                {
+                    "color": "#7882a8",
+                    "offsetX": "0px",
+                    "offsetY": "0px",
+                    "blur": "0px",
+                    "spread": "1px"
+                }
+            ]
+        },
+        "row-radius": {
+            "$type": "dimension",
+            "$value": "6px"
+        },
+        "row-height": {
+            "$type": "dimension",
+            "$value": "36px"
+        },
+        "row-hover": {
+            "$type": "color",
+            "$value": "#20212d"
+        },
+        "row-selected": {
+            "$type": "color",
+            "$value": "#272e43"
         }
-      ]
     },
-    "row-radius": {
-      "$type": "dimension",
-      "$value": "6px"
+    "step": {
+        "mark-size": {
+            "$type": "dimension",
+            "$value": "19px"
+        },
+        "running": {
+            "$type": "color",
+            "$value": "#c2a6f7"
+        },
+        "done": {
+            "$type": "color",
+            "$value": "#b7e38a"
+        },
+        "failed": {
+            "$type": "color",
+            "$value": "#fe9aa9"
+        },
+        "waiting": {
+            "$type": "color",
+            "$value": "#f4c787"
+        },
+        "rule": {
+            "$type": "color",
+            "$value": "#7882a8"
+        }
     },
-    "row-height": {
-      "$type": "dimension",
-      "$value": "36px"
-    },
-    "row-hover": {
-      "$type": "color",
-      "$value": "#20212d"
-    },
-    "row-selected": {
-      "$type": "color",
-      "$value": "#272e43"
+    "code-block": {
+        "bg": {
+            "$type": "color",
+            "$value": "#0e0e14"
+        },
+        "radius": {
+            "$type": "dimension",
+            "$value": "8px"
+        },
+        "head-bg": {
+            "$type": "color",
+            "$value": "#20212d"
+        },
+        "border": {
+            "$type": "color",
+            "$value": "#a9b1d62b"
+        }
     }
-  },
-  "step": {
-    "mark-size": {
-      "$type": "dimension",
-      "$value": "19px"
-    },
-    "running": {
-      "$type": "color",
-      "$value": "#c2a6f7"
-    },
-    "done": {
-      "$type": "color",
-      "$value": "#b7e38a"
-    },
-    "failed": {
-      "$type": "color",
-      "$value": "#fe9aa9"
-    },
-    "waiting": {
-      "$type": "color",
-      "$value": "#f4c787"
-    },
-    "rule": {
-      "$type": "color",
-      "$value": "#7882a8"
-    }
-  },
-  "code-block": {
-    "bg": {
-      "$type": "color",
-      "$value": "#0e0e14"
-    },
-    "radius": {
-      "$type": "dimension",
-      "$value": "8px"
-    },
-    "head-bg": {
-      "$type": "color",
-      "$value": "#20212d"
-    },
-    "border": {
-      "$type": "color",
-      "$value": "#a9b1d62b"
-    }
-  }
 }

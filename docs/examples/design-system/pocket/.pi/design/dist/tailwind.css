@@ -161,8 +161,10 @@
     --color-alpha-scrim-light: #d0d5e38c; /* Dim layer behind sheets, on light grounds. */
 
     /* font.family */
-    --font-sans: Geist, ui-sans-serif, system-ui, sans-serif; /* Words: messages, labels, headings. */
-    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; /* Code, paths, branches, numbers, counts, and keys. Ligatures off, as i… */
+    --font-sans:
+        Geist, ui-sans-serif, system-ui, sans-serif; /* Words: messages, labels, headings. */
+    --font-mono:
+        "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; /* Code, paths, branches, numbers, counts, and keys. Ligatures off, as i… */
 
     /* font.weight */
     --font-weight-regular: 400;
@@ -300,14 +302,20 @@
     /* color.text */
     --color-primary: var(--color-neutral-850); /* Headings and the words that matter. */
     --color-secondary: var(--color-neutral-700); /* Body text. */
-    --color-muted: var(--color-neutral-600); /* Hints, timestamps, and secondary labels. Reads at 4.5:1 on every grou… */
+    --color-muted: var(
+        --color-neutral-600
+    ); /* Hints, timestamps, and secondary labels. Reads at 4.5:1 on every grou… */
     --color-inverse: var(--color-neutral-0); /* Text on a strong, neutral fill. */
-    --color-disabled: var(--color-neutral-500); /* Disabled controls only. WCAG exempts disabled text from contrast, so … */
+    --color-disabled: var(
+        --color-neutral-500
+    ); /* Disabled controls only. WCAG exempts disabled text from contrast, so … */
 
     /* color.border */
     --color-subtle: var(--color-alpha-dark-soft); /* A hairline between tiles and rows. */
     --color-default: var(--color-alpha-dark-medium); /* A visible line: cards and dividers. */
-    --color-strong: var(--color-neutral-550); /* The edge of a field or a switch track. Reaches 3:1 on every ground. */
+    --color-strong: var(
+        --color-neutral-550
+    ); /* The edge of a field or a switch track. Reaches 3:1 on every ground. */
     --color-focus: var(--color-blue-700); /* The keyboard focus ring. */
 
     /* color.accent */
@@ -363,10 +371,13 @@
     --color-shadow: var(--color-alpha-shadow-light); /* The color of every shadow. */
 
     /* shadow */
-    --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow); /* A soft lift: the message box. */
-    --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-default); /* What floats over the page: pop-ups, sheets, the launcher. */
+    --shadow-lift:
+        0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow); /* A soft lift: the message box. */
+    --shadow-float:
+        0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-default); /* What floats over the page: pop-ups, sheets, the launcher. */
     --shadow-hairline: 0px 0px 0px 1px var(--color-default); /* A 1 px outline drawn as a shadow, so layout does not move. */
-    --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus); /* The keyboard focus ring: a soft halo around a solid line. Keep it vis… */
+    --shadow-focus-ring:
+        0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus); /* The keyboard focus ring: a soft halo around a solid line. Keep it vis… */
 
     /* type */
     --text-display: var(--text-4xl); /* Page titles and the home screen. */
@@ -648,7 +659,8 @@
     --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow);
     --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-default);
     --shadow-hairline: 0px 0px 0px 1px var(--color-default);
-    --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
+    --shadow-focus-ring:
+        0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
 
     /* === Component tokens === */
 
@@ -834,7 +846,8 @@
     --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow);
     --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-default);
     --shadow-hairline: 0px 0px 0px 1px var(--color-default);
-    --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
+    --shadow-focus-ring:
+        0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
 
     /* === Component tokens === */
 
@@ -1019,10 +1032,13 @@
         --color-shadow: var(--color-alpha-shadow-dark);
 
         /* shadow */
-        --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow);
-        --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-default);
+        --shadow-lift:
+            0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow);
+        --shadow-float:
+            0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-default);
         --shadow-hairline: 0px 0px 0px 1px var(--color-default);
-        --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
+        --shadow-focus-ring:
+            0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
 
         /* === Component tokens === */
 
