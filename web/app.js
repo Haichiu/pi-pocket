@@ -6,7 +6,7 @@ import { canGoBack, goBack, replaceAddress, startHistory, useBack } from "./back
 import { BrowserButton, BrowserPanel } from "./browser-panel.js";
 import { browserAvailable, setBrowserOpen, toggleBrowser } from "./browser.js";
 import { PeopleButton, PeoplePanel } from "./chat.js";
-import { Composer, openingByAlt } from "./composer.js";
+import { Composer, openingByAlt, shortModel } from "./composer.js";
 import { useChanges } from "./diff.js";
 import {
     FilesButton,
@@ -66,6 +66,7 @@ import {
     html,
     Icon,
     iconPath,
+    modelLabel,
     shortPath,
     useEdge,
     usePresence,
@@ -249,7 +250,15 @@ function Topbar() {
                     conversation?.kind === "subagent"
                         ? html`<span class="title-folder title-parent">
                               subagent of ${conversation.parent?.title ?? "?"}
-                          </span>`
+                          </span>
+                          <button
+                              class="title-model"
+                              aria-label=${`Model: ${modelLabel(view.agent)}: change it`}
+                              title=${`Model: ${modelLabel(view.agent)}`}
+                              onClick=${() => openSheet({ type: "model" })}
+                          >
+                              <span class="title-model-name">${shortModel(view.agent)}</span>
+                          </button>`
                         : html`${
                               folder &&
                               html`<span class="title-folder" aria-hidden="true">${folder}</span>`
