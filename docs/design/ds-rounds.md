@@ -78,6 +78,8 @@ Every line rose or held. Disputed: the docs page's component frames are blank in
 
 Merged after judging: T 995c1d8 (scan 0.994 held-out), U 00433fa and 49b3174 (shadow parts, inherited modes, all contrast pairs, exempt badges, lazy start), G f633029 (exempt pair, notes, use-it blocks).
 
+Round 4 assignments: T (Tailwind namespaces and role utilities, one JSON convention plus a Tokens Studio export, committed flagship `dist/` with a diff test, DTCG 2025.10 forms, an example per tool action, component entry points in the summary, split `scan-infer.ts` and `scan-facts.ts`); U (roles count, shadow values on tiles, phone mode control and tab cue and Check sheet height, compact spacing rows, a fixed save bar, one-tap fixes through V's engine, Harbor tabs); V (`applyExactFixes`, reduced motion, non-text contrast, a small check CLI); G (docs component frames for certain, hero by role, shadow and radius layout, page under 600 KB, split `docsite.ts`); B (second held-out set, painted frames check, the shots script in the bench with per-tab assertions).
+
 Round 3 assignments: U (people experience), G (docs page, flagship naming, guide), V (role-aware suggestions, 15+ real pages, stable ids), T (scan, then handoff outputs), integrator (docs).
 
 Round 2 started at once on the bench's weakest phases: V on lint, T on scan, B on a held-out set outside the repo (`/mnt/games/Development/ds-holdout/`, never shown to T or V).
