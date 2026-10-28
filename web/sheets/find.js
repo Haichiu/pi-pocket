@@ -211,9 +211,14 @@ export function FindSheet({ initial }) {
                 continue;
             }
 
-            // A presented input's label is its speaker: its words start after it, unless the label is what matched.
-            const label = entries[index].presentation?.label.replace(/\s+/g, " ");
-            const first = label !== undefined && at > label.length ? label.length + 1 : 0;
+            // A presented input's label is its speaker, and its summary is the line it shows: its words start after
+            // them, unless one of them is what matched.
+            const presentation = entries[index].presentation;
+            const head =
+                presentation === undefined
+                    ? ""
+                    : userSearchText(presentation, "").replace(/\s+/g, " ");
+            const first = head !== "" && at > head.length ? head.length + 1 : 0;
             const start = Math.max(first, at - 50);
             const snippet = `${start > first ? "…" : ""}${text.slice(start, at + needle.length + 90)}`;
             const from = at - start + (start > first ? 1 : 0);
