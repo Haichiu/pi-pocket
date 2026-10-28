@@ -1317,6 +1317,30 @@ function sassColors(text: string, index: Map<string, Variable>): string {
     );
 }
 
+/**
+ * A rule that sets one color on one class (`.text-gray-900 { color: #111827 }`) is a use for each time markup uses the
+ * class: the definition counted once, the rest are added here.
+ */
+function weighClassRules(facts: Facts): void {
+    for (const [key, rule] of facts.classRules) {
+        const [name] = key.split("|") as [string];
+        const count = (facts.classCount.get(name) ?? 0) - 1;
+
+        for (const [hex, map] of [
+            [rule.light, facts.colors],
+            [rule.dark, facts.darkColors],
+        ] as const) {
+            const fact = hex === undefined ? undefined : map.get(hex);
+
+            if (fact !== undefined && count > 0) {
+                // Text is mostly set on the page, not by classes: a class adds to a text color a little.
+                fact[rule.kind] +=
+                    rule.kind === "bg" ? Math.min(count, 6) : rule.kind === "text" ? 1 : 0;
+            }
+        }
+    }
+}
+
 /** Sizes computed from custom properties (`padding: calc(var(--gap) * 2)`) are uses of the sizes they come to. */
 function resolveDeferred(facts: Facts, prep: Prepared): void {
     const lookup = (name: string, kind: "scss" | "less" | "css") => {
@@ -1446,6 +1470,7 @@ export function infer(facts: Facts, folder: string): Inferred {
     ];
 
     useDefaultColors(facts);
+    weighClassRules(facts);
 
     const lightColors = mergeColors(lightDefined, facts.colors);
     const darkColors = mergeColors(darkDefined, alt === "dark" ? facts.darkColors : new Map());
@@ -1554,6 +1579,41 @@ export function infer(facts: Facts, folder: string): Inferred {
                 source: holder.variable.name,
                 score: choice.score,
             };
+        }
+    }
+
+    // A class that has a color in each mode (`.text-gray-900` and `.dark .text-gray-900`) pairs the two: the dark color of
+    // the role's class is the role's dark color.
+    if (result.hasDark) {
+        const kindOf: Partial<Record<RoleName, "bg" | "text" | "border">> = {
+            background: "bg",
+            surface: "bg",
+            text: "text",
+            muted: "text",
+            border: "border",
+            accent: "text",
+        };
+
+        for (const [role, choice] of Object.entries(lightRoles) as [RoleName, RoleChoice][]) {
+            const kind = kindOf[role];
+            const pair = [...facts.classRules.values()].find(
+                (rule) =>
+                    rule.kind === kind &&
+                    rule.light !== undefined &&
+                    rule.dark !== undefined &&
+                    rule.light === choice.hex &&
+                    rule.dark !== choice.hex,
+            );
+
+            if (pair !== undefined && darkRoles[role] === undefined) {
+                darkRoles[role] = {
+                    role,
+                    hex: pair.dark!,
+                    basis: "use",
+                    source: "the same class in the dark mode",
+                    score: choice.score,
+                };
+            }
         }
     }
 

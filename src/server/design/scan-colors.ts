@@ -848,7 +848,7 @@ export function chooseRoles(
         );
         const top = byUse(
             candidates,
-            (color) => (color.fact?.body ?? 0) * 3 + (color.fact?.text ?? 0),
+            (color) => (color.fact?.body ?? 0) * 6 + (color.fact?.text ?? 0),
         )[0];
 
         if (top !== undefined) {

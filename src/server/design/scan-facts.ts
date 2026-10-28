@@ -142,6 +142,10 @@ export interface Facts {
     /** What each length variable is used for: spacing, type size, radius, or the size of a box. */
     varLayout: Map<string, { space: number; text: number; radius: number; box: number }>;
     classUse: Map<string, number>;
+    /** How often each class name is used in markup (`class="a b"`). */
+    classCount: Map<string, number>;
+    /** The colors that a rule with one class sets (`.text-gray-900 { color: … }`), by class, in each mode. */
+    classRules: Map<string, { kind: "bg" | "text" | "border"; light?: string; dark?: string }>;
     fonts: Map<string, FontFact>;
     sizes: Map<number, SizeFact>;
     weights: Map<number, number>;
@@ -181,6 +185,8 @@ export function newFacts(): Facts {
         varKinds: new Map(),
         varLayout: new Map(),
         classUse: new Map(),
+        classCount: new Map(),
+        classRules: new Map(),
         fonts: new Map(),
         sizes: new Map(),
         weights: new Map(),
@@ -221,7 +227,7 @@ const COLOR_PROPERTY: [RegExp, "bg" | "text" | "border" | "fill" | "shadow"][] =
 
 /** Selectors of the page's root: `body`, `html`, `:root`, `#app`, `#root`, `main`. */
 const ROOTISH =
-    /^(?:html|body|:root|#root|#app|#__next|main|\.app|\.App|#app-root)(?:[.#:[][^\s,>+~]*)?$/;
+    /^(?:html|body|:root|#root|#app|#__next|main|\.app|\.App|#app-root|\.(?:page|wrapper|layout|site|shell|root|app-shell|page-wrapper|site-wrapper|app-wrapper)|#(?:page|wrapper|main|site|layout))(?:[.#:[][^\s,>+~]*)?$/;
 const rootish = (selector: string) =>
     selector !== "" &&
     selector
@@ -293,6 +299,23 @@ function useColors(facts: Facts, decl: Decl, dark: boolean): void {
 
     for (const color of found) {
         count(colorFact(map, color.hex, color.text));
+    }
+
+    // A rule with one class (`.text-gray-900 { color: #111827 }`, `.dark .text-gray-900 { color: #f9fafb }`) is that
+    // class's color in its mode: used as often as markup uses the class, and paired with its other mode.
+    const single = /^(?:[^\s,]*\s+)?\.([\w-]+)$/.exec(decl.selector.trim());
+
+    if (
+        single !== null &&
+        found.length === 1 &&
+        (kind === "bg" || kind === "text" || kind === "border") &&
+        facts.classRules.size < 600 &&
+        (decl.selector.trim() === `.${single[1]}` || (dark && isDarkSelector(decl.selector)))
+    ) {
+        const rule = facts.classRules.get(`${single[1]}|${kind}`) ?? { kind };
+
+        rule[dark ? "dark" : "light"] = found[0]!.hex;
+        facts.classRules.set(`${single[1]}|${kind}`, rule);
     }
 
     // A color that comes by a variable is a use of that variable (and of the color it holds, once the scan knows it).
@@ -1815,6 +1838,23 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
 
             for (const color of colorsIn(match[2]!.replace(/_/g, " "))) {
                 colorFact(facts.colors, color.hex, color.text)[kind] += 1;
+            }
+        }
+
+        seen = 0;
+
+        // Every class name used in markup, to weigh the rules that set a color by how often their class is used.
+        for (const match of text.matchAll(
+            /\bclass(?:Name)?\s*=\s*(?:["'`]|\{\s*["'`])([^"'`}]*)/g,
+        )) {
+            if (++seen > 4000) {
+                break;
+            }
+
+            for (const name of match[1]!.split(/\s+/).slice(0, 40)) {
+                if (/^[\w-]{1,40}$/.test(name)) {
+                    bump(facts.classCount, name);
+                }
             }
         }
 
