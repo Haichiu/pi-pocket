@@ -1106,6 +1106,23 @@ export function infer(facts: Facts, folder: string): Inferred {
         }
     }
 
+    // A brand or status color that a dark mode merely uses in another hue (links turn light blue, buttons stay brown) is
+    // not that role's dark value: a role keeps its hue across modes.
+    for (const role of ["accent", "danger", "warning", "success"] as const) {
+        const lightHex = lightRoles[role]?.hex;
+        const light = lightHex === undefined ? undefined : entryOf(lightHex);
+        const dark = darkRoles[role];
+        const other = dark?.basis === "use" ? entryOf(dark.hex) : undefined;
+
+        if (light !== undefined && other !== undefined && light.c >= 0.05 && other.c >= 0.05) {
+            const gap = Math.abs(((light.h - other.h + 540) % 360) - 180);
+
+            if (gap > 40) {
+                delete darkRoles[role];
+            }
+        }
+    }
+
     // 3. The palette: scales the project names, then the role colors, then the colors it uses most.
     const scales = new Map<string, Classified[]>();
 
@@ -1362,6 +1379,37 @@ export function infer(facts: Facts, folder: string): Inferred {
 
         if (darkHex !== undefined && darkHex !== hex) {
             pendingDark.push({ path, hex: darkHex });
+        }
+    }
+
+    // A chromatic color that only the dark mode uses (links turn light blue) is the dark value of the light color of its
+    // hue that has none yet.
+    if (result.hasDark) {
+        const taken = new Set(pendingDark.map((each) => each.hex));
+        const changed = () =>
+            new Set([...book.dark.keys(), ...pendingDark.map((each) => each.path.join("."))]);
+
+        for (const dark of [...darkColors.values()].sort((a, b) => b.uses - a.uses).slice(0, 12)) {
+            if (dark.c < 0.05 || taken.has(dark.hex) || hexPath.has(dark.hex)) {
+                continue;
+            }
+
+            const moved = changed();
+            const twin = [...hexPath]
+                .map(([hex, path]) => ({ entry: lightColors.get(hex), path }))
+                .filter(
+                    (each): each is { entry: ColorEntry; path: string[] } =>
+                        each.entry !== undefined &&
+                        each.entry.c >= 0.05 &&
+                        !moved.has(each.path.join(".")) &&
+                        Math.abs(((each.entry.h - dark.h + 540) % 360) - 180) <= 25,
+                )
+                .sort((a, b) => b.entry.uses - a.entry.uses)[0];
+
+            if (twin !== undefined) {
+                pendingDark.push({ path: twin.path, hex: dark.hex });
+                taken.add(dark.hex);
+            }
         }
     }
 

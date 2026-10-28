@@ -1012,3 +1012,27 @@ test("a bare --radius takes a name after the named ones: --radius-md is not lost
     assert.equal(token(system, "radius.md")!.modes.light!.css, "6px");
     assert.equal(token(system, "radius.sm")!.modes.light!.css, "4px");
 });
+
+test("a dark mode that recolors only the links does not change the accent: the light blue is the link blue's dark value", () => {
+    const scan = scanTokens(
+        project({
+            "a.html": `<style>
+body { background: #faf3e9; color: #333 } a { color: #3366cc } .btn { background: #b5651d; color: #fff } .btn2 { background: #b5651d }
+@media (prefers-color-scheme: dark) { body { background: #1c1411; color: #f0e6da } a { color: #8ab4f8 } }
+</style>`,
+        }),
+    );
+    const system = load(scan);
+    const accent = token(system, "color.accent.default");
+
+    assert.equal(scan.inferred.roles.accent!.value, "#b5651d");
+    assert.equal(
+        accent!.modes.dark?.hex ?? accent!.modes.light!.hex,
+        "#b5651d",
+        "the accent stays brown",
+    );
+    assert.ok(
+        system.tokens.some((each) => each.modes.dark?.hex === "#8ab4f8"),
+        "the link blue's dark value is kept, on the blue",
+    );
+});
