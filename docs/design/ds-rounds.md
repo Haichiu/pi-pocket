@@ -48,6 +48,8 @@ V's lint fixes (root cause: the DOM walk skipped `<body>`, so text was judged on
 
 Shared top items: the scan does not generalize; Check checks Light while the canvas shows Dark (and has no high-contrast choice); phone layout (tabs, warnings box, Check dock); Colors opens on primitives; `tailwind.css` doubles every variable and `tokens.css` adds a `--dim-*` layer; docs copy errors; `features.md` and `map.md` out of date; the suite was red at the time of judging.
 
+Check-in (T's working tree, round 2 scan, not merged): bench scan 0.995, held-out scan **0.795** (from 0.544). The gap shows some bench fitting; T got four general causes (scales only as literals or SCSS/JS, SCSS dark forms, too many colors in a dark-first project, one role).
+
 Round 3 assignments: U (people experience), G (docs page, flagship naming, guide), V (role-aware suggestions, 15+ real pages, stable ids), T (scan, then handoff outputs), integrator (docs).
 
 Round 2 started at once on the bench's weakest phases: V on lint, T on scan, B on a held-out set outside the repo (`/mnt/games/Development/ds-holdout/`, never shown to T or V).
