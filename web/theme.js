@@ -622,7 +622,7 @@ export function apply() {
     Object.assign(root.dataset, attrs);
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", vars["--o-bg"]);
     document.querySelector('meta[name="color-scheme"]')?.setAttribute("content", attrs.mode);
-    void applyIcons(vars);
+    applyIcons(vars);
     // In safe mode, or before the list, the theme's stylesheets stay as the cache has them, for the next load.
     const css = sheets === null || safeMode() ? (cached.css ?? []) : sheets;
     const fonts = sheets === null || safeMode() ? (cached.fonts ?? []) : (lookOf()?.fonts ?? []);

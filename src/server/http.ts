@@ -10,6 +10,7 @@ import { describe, HttpError } from "./errors.ts";
 import { createApi } from "./http/api.ts";
 import { artifact } from "./http/artifacts.ts";
 import { publicArtifactBundle } from "./http/artifact-assets.ts";
+import { iconRoute } from "./http/icon-route.ts";
 import { extensionFile } from "./http/extension-routes.ts";
 import { hookRoute } from "./http/hook-routes.ts";
 import { linkRoute } from "./http/link-routes.ts";
@@ -99,6 +100,11 @@ export function createHandler(options: HttpOptions) {
                     VENDOR[parts[1]]!,
                     "text/javascript; charset=utf-8",
                 );
+            }
+
+            // The app icon in chosen colors, for the home screen (`web/app-icon.js`): a fetch by the phone, no sign-in.
+            if (parts.length === 1 && parts[0] === "app-icon.png") {
+                return iconRoute(request, response, url);
             }
 
             if (parts[0] === "login" && (request.method === "GET" || request.method === "POST")) {
