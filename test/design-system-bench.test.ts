@@ -1657,11 +1657,11 @@ test(
             );
 
             assert.deepEqual(bad.findings.map((item) => [item.rule, item.pid ?? ""]).sort(), [
-                ["accessible-name", "ic"],
-                ["accessible-name", "im"],
-                ["form-label", "e"],
-                ["form-label", "ph"],
-                ["form-label", "sel"],
+                ["missing-label", "e"],
+                ["missing-label", "ic"],
+                ["missing-label", "im"],
+                ["missing-label", "ph"],
+                ["missing-label", "sel"],
                 ["missing-lang", ""],
             ]);
         } finally {
