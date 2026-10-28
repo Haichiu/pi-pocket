@@ -21,6 +21,8 @@ export const MIN_ICON = 64;
 export const MAX_ICON = 1024;
 
 const ART = 512;
+/** The share of a maskable icon the art fills: 352 of 512 pixels. */
+const SAFE = 352 / 512;
 const mask = inflateSync(Buffer.from(PI_MASK.deflated, "base64"));
 
 type Rgb = [number, number, number];
@@ -88,8 +90,11 @@ function chunk(type: string, data: Buffer): Buffer {
     return Buffer.concat([head, data, tail]);
 }
 
-/** The icon as a PNG of `size` pixels (kept between MIN_ICON and MAX_ICON), or null for a color that is not hex. */
-export function renderIcon(colors: IconColors, size: number): Buffer | null {
+/**
+ * The icon as a PNG of `size` pixels (kept between MIN_ICON and MAX_ICON), or null for a color that is not hex. A
+ * `maskable` icon, for the ones an OS crops itself, draws the art at 352 of 512 pixels (the safe zone) on the frame's color.
+ */
+export function renderIcon(colors: IconColors, size: number, maskable = false): Buffer | null {
     const parsed = Object.fromEntries(
         Object.entries(colors).map(([name, value]) => [name, parseHex(value)]),
     ) as Record<keyof IconColors, Rgb | null>;
@@ -111,11 +116,11 @@ export function renderIcon(colors: IconColors, size: number): Buffer | null {
 
             for (let sy = 0; sy < 3; sy++) {
                 for (let sx = 0; sx < 3; sx++) {
-                    const rgb = sample(
-                        (px + (sx + 0.5) / 3) * scale,
-                        (py + (sy + 0.5) / 3) * scale,
-                        c,
-                    );
+                    const x = (px + (sx + 0.5) / 3) * scale;
+                    const y = (py + (sy + 0.5) / 3) * scale;
+                    const rgb = maskable
+                        ? sample(256 + (x - 256) / SAFE, 256 + (y - 256) / SAFE, c)
+                        : sample(x, y, c);
 
                     sum[0]! += rgb[0];
                     sum[1]! += rgb[1];

@@ -1,8 +1,7 @@
 // The app's icons in the colors in use: the tab's icon (an SVG drawn here) and the home-screen icon (`apple-touch-icon`,
 // which iOS and Android's "add to home screen" shortcut read; the server draws its PNG). The files in this folder
-// (`icon.svg` and its PNGs) are the first load's icons, and stay where this module does not run. The web app manifest
-// keeps its own icons: an installed Android app needs a manifest at an address the browser can fetch again, which a
-// page cannot make per palette.
+// (`icon.svg` and its PNGs) are the first load's icons, and stay where this module does not run. The web app manifest's icons
+// follow the same cookie: the server answers `/manifest.webmanifest` with them.
 
 const SIZE = 512;
 const APPLE = 180;
