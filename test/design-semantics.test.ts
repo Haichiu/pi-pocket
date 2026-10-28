@@ -311,9 +311,14 @@ test(
         const report = await check(page(".q{font-size:var(--font-size-sm);margin-top:0}", body), {
             viewport: "desktop",
         });
+        // A finding that stands for several elements lists them all (`elements`).
         const values = (pid: string) =>
             report.findings
-                .filter((item) => item.pid === pid && item.rule === "off-system-size")
+                .filter(
+                    (item) =>
+                        item.rule === "off-system-size" &&
+                        (item.elements?.map((each) => each.pid) ?? [item.pid]).includes(pid),
+                )
                 .map((item) => item.value)
                 .sort();
 

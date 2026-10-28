@@ -4,7 +4,14 @@ import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { ExtensionWeb, PocketHost } from "../host.ts";
 import { readBundle } from "./bundle.ts";
 import { EXPORT_TYPES, type ExportFormat, saveDesignExport } from "./export.ts";
-import { checkPage, mergeFindings, modeFor, reportOf } from "./lint.ts";
+import {
+    checkPage,
+    mergeFindings,
+    mergeNotJudged,
+    modeFor,
+    notJudgedText,
+    reportOf,
+} from "./lint.ts";
 import {
     designActions,
     tweakValues,
@@ -60,7 +67,11 @@ type Output = (
 
 /** One line for a finding: level, rule, where, and the message (which carries the value, the count, and the fix). */
 function findingLine(finding: CheckFinding, views: string, all: number): string {
-    const where = finding.selector === "" ? "page" : finding.selector;
+    const where =
+        finding.selector === ""
+            ? "page"
+            : finding.selector +
+              (finding.elements === undefined ? "" : ` (+${finding.elements.length - 1} more)`);
 
     return `- ${finding.level} ${finding.rule} ${where}${views.length > 0 && views.split(", ").length < all ? ` (${views})` : ""}: ${finding.message}`;
 }
@@ -113,6 +124,16 @@ export function checkText(
 
     if (items.length === 0) {
         lines.push("No findings.");
+    }
+
+    // What was left unjudged, so that the silence can be trusted: the worst view's.
+    const left = reports
+        .map((item) => notJudgedText(item.report))
+        .filter((text) => text !== undefined)
+        .sort((a, b) => b.length - a.length)[0];
+
+    if (left !== undefined) {
+        lines.push(left);
     }
 
     for (const note of notes) {
@@ -320,6 +341,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                                     { viewport: size, colorScheme: scheme, mode: picked?.mode },
                                     found[0]!.summary.elements,
                                     system === undefined,
+                                    mergeNotJudged(found),
                                 ),
                             });
                         }

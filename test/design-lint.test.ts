@@ -317,9 +317,11 @@ test("the same value on many elements is one finding with a count", browser, asy
     );
     const found = ofRule(report, "off-system-color").filter((item) => item.value === "#7ba3f8");
 
-    // One finding for each data-pid scope: Pi and people can name the element, and a long list stays short.
-    assert.deepEqual(found.map((item) => item.pid).sort(), ["other", "scope"]);
-    assert.match(found.find((item) => item.pid === "scope")!.message, /text on 5 elements/);
+    // The same defect on elements of two scopes is one finding that lists both (a pin for each).
+    assert.equal(found.length, 1);
+    assert.deepEqual(found[0]!.elements!.map((item) => item.pid).sort(), ["other", "scope"]);
+    assert.match(found[0]!.message, /text on 5 elements/);
+    assert.match(found[0]!.message, /The same in 1 more place: other\./);
 });
 
 test(
@@ -533,7 +535,7 @@ test("a finding's id holds the rule, and a hash of the element and the value", (
 test("ids are stable between runs and schemes, and unique in a report", browser, async () => {
     const content = page(
         "",
-        `<p data-pid="a" style="margin:0;color:#7ba3f8;background:var(--color-bg-surface)">a</p><p data-pid="b" style="margin:0;color:#7ba3f8;background:var(--color-bg-surface)">b</p><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="4" height="4">`,
+        `<p data-pid="a" style="margin:0;color:#7ba3f8;background:var(--color-bg-surface)">a</p><p data-pid="b" style="margin:0;color:#7ba3fa;background:var(--color-bg-surface)">b</p><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="4" height="4">`,
     );
     const first = await check(content);
     const again = await check(content);
@@ -592,7 +594,7 @@ test("tap targets: under 24 px is an error, under 44 px a warning", browser, asy
     const body =
         // Under 24 px is an error, alone or crowded.
         `<div data-pid="crowded"><a href="#" style="width:16px;height:16px;background:#ccc"></a><a href="#" style="width:16px;height:16px;background:#ccc"></a></div>` +
-        `<div data-pid="alone" style="margin-top:80px"><a class="gap" href="#" style="width:16px;height:16px;background:#ccc"></a></div>` +
+        `<div data-pid="alone" style="margin-top:80px"><a class="gap" href="#" style="width:18px;height:18px;background:#ccc"></a></div>` +
         // A link inside a sentence is exempt.
         `<p data-pid="ok-inline" style="margin-top:80px">Read the <a href="#" style="display:inline">full story</a> today.</p>` +
         // 36 px: warns on a phone.

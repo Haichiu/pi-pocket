@@ -12,7 +12,6 @@ import type { PocketHost } from "../host.ts";
 import type { DesignBundle } from "./bundle.ts";
 import {
     colorDistance,
-    toOklab,
     contrastOf,
     familyList,
     formatColor,
@@ -22,6 +21,17 @@ import {
     tokenSet,
     type TokenSet,
 } from "./lint-color.ts";
+import {
+    colorRoleOf,
+    difference,
+    FAR_COLOR,
+    nearestColor,
+    nearestPassing as passing,
+    SAME_COLOR,
+    USE_PROPERTIES,
+    USE_PROPERTY,
+    USE_ROLE,
+} from "./lint-suggest.ts";
 import { PAGE_SCRIPT, type PageInput, type RawElement, type RawPage } from "./lint-page.ts";
 import {
     type DesignAction,
@@ -32,13 +42,7 @@ import {
     viewportOf,
     withRender,
 } from "./render.ts";
-import type {
-    CheckFinding,
-    CheckReport,
-    CheckRule,
-    DesignSystem,
-    ResolvedToken,
-} from "./system-types.ts";
+import type { CheckFinding, CheckReport, CheckRule, DesignSystem } from "./system-types.ts";
 
 /** What `checkDesign` takes besides the bundle and the system. */
 export interface CheckOptions {
@@ -57,6 +61,11 @@ export interface CheckOptions {
     tweaks?: TweakValues;
     /** Another HTML page of the bundle (`about.html`). */
     page?: string;
+    /**
+     * Ids of findings that a person accepted on purpose (`CheckFinding.id`, stable between runs). They are reported apart,
+     * in `accepted`, and are not errors or warnings. An id that no finding has any more is ignored.
+     */
+    accepted?: string[];
     /** Steps before the checks, in order. */
     actions?: DesignAction[];
     /** For a deck: the slide to check (from 1, default 1), or `all` (up to 40 slides). */
@@ -87,12 +96,17 @@ const RULE_ORDER: CheckRule[] = [
 
 /** Motion longer than this, in milliseconds, or an animation that repeats forever, needs a reduced-motion rule. */
 export const MOTION_MS = 500;
-/** Two colors this close (see `colorDistance`) are the same: a little over 2 steps of 8 bits. */
-const SAME_COLOR = 1;
-/** A nearest token farther than this is no help as a suggestion. */
-const FAR_COLOR = 20;
-/** A color this close to a token is the token's color to the last digit (a fix may replace it). */
-const EXACT_COLOR = 0.3;
+
+export { colorRoleOf };
+
+/** WCAG contrast for the suggestions of `lint-suggest.ts`. */
+const nearestPassing = (
+    set: TokenSet,
+    fg: RgbaTuple,
+    back: [number, number, number],
+    needed: number,
+    use?: string,
+) => passing(set, fg, back, needed, contrastOf, use);
 /** Lengths this close, in pixels, are the same. */
 const SAME_LENGTH = 0.5;
 const MAX_TEXT = 300;
@@ -136,13 +150,6 @@ const rgbOf = (value: unknown): [number, number, number] | undefined =>
     Array.isArray(value) && value.length >= 3 && value.slice(0, 3).every(Number.isFinite)
         ? [value[0], value[1], value[2]]
         : undefined;
-
-/** The tier of a token as a tie-break: a role beats a raw palette value. */
-const TIER_RANK: Record<ResolvedToken["tier"], number> = {
-    semantic: 0,
-    component: 1,
-    primitive: 2,
-};
 
 /** The view of a system's mode: which mode, which color scheme to draw, and the `data-theme` to set. */
 export interface ModeView {
@@ -192,54 +199,6 @@ function resolveTokens(set: TokenSet, raw: RawPage): void {
     });
 }
 
-type Nearest = { token: TokenSet["colors"][number]; distance: number };
-
-/** What a color token is for, by the words of its path: a border, text on a ground, or a ground. None for a palette step. */
-type ColorRole = "text" | "background" | "border";
-
-const ROLE_WORDS: [ColorRole, RegExp][] = [
-    ["border", /^(border|borders|line|lines|divider|dividers|stroke|outline|ring|rule|separator)$/],
-    ["text", /^(text|fg|foreground|content|ink|on|label|copy)$/],
-    ["background", /^(bg|background|surface|fill|canvas|base|ground|wash|soft|scrim|overlay)$/],
-];
-
-/** The role a token's name gives it (the first of border, text, background whose words it holds), if any. */
-export function colorRoleOf(name: string): ColorRole | undefined {
-    const words = name
-        .replace(/([a-z])([A-Z])/g, "$1 $2")
-        .toLowerCase()
-        .split(/[^a-z0-9]+/);
-
-    return ROLE_WORDS.find(([, pattern]) => words.some((word) => pattern.test(word)))?.[0];
-}
-
-/** The CSS property that a use of a color sets, for the edit that a message names. */
-const USE_PROPERTY: Record<string, string> = {
-    text: "color",
-    background: "background-color",
-    border: "border-color",
-    outline: "outline-color",
-};
-
-/** The properties that can hold a color of each use, longhands and the shorthands that carry one (`fix.properties`). */
-const USE_PROPERTIES: Record<string, string[]> = {
-    text: ["color", "-webkit-text-fill-color"],
-    background: ["background-color", "background"],
-    border: [
-        "border-color",
-        "border",
-        "border-top",
-        "border-right",
-        "border-bottom",
-        "border-left",
-        "border-top-color",
-        "border-right-color",
-        "border-bottom-color",
-        "border-left-color",
-    ],
-    outline: ["outline-color", "outline"],
-};
-
 /** The properties that can hold a length of each group (`props` of a size group), with their sides and shorthands. */
 const LENGTH_PROPERTIES: Record<string, string[]> = {
     padding: ["padding", "padding-top", "padding-right", "padding-bottom", "padding-left"],
@@ -255,153 +214,12 @@ const LENGTH_PROPERTIES: Record<string, string[]> = {
     ],
 };
 
-/** The tokens that a color equals to the last digit, the one for the use first (a role token, then a palette step). */
-function exactColorToken(set: TokenSet, color: RgbaTuple, use: string | undefined) {
-    const role = use === undefined ? undefined : USE_ROLE[use];
-    const same = set.colors.filter(
-        (token) => token.rgba !== undefined && colorDistance(color, token.rgba) <= EXACT_COLOR,
-    );
-
-    return [...same].sort(
-        (a, b) =>
-            Number(colorRoleOf(b.name) === role) - Number(colorRoleOf(a.name) === role) ||
-            TIER_RANK[a.tier] - TIER_RANK[b.tier],
-    )[0];
-}
-
-/** How a page uses a color (`useColor` in the page script) as a token role. */
-const USE_ROLE: Record<string, ColorRole> = {
-    text: "text",
-    background: "background",
-    border: "border",
-    outline: "border",
-};
-
-/**
- * The nearest color token to `color`: the closest, a role before a palette value when two are as near. With a `use`
- * (text, background, border, outline), the tokens of that role come first (a color used as a background gets a
- * background token, not a text token); a palette or accent token with no role can stand in; a token of another role is
- * the last resort.
- */
-function nearestColor(set: TokenSet, color: RgbaTuple, use?: string): Nearest | undefined {
-    const role = use === undefined ? undefined : USE_ROLE[use];
-
-    const nearest = (tokens: TokenSet["colors"], bonus: ColorRole | undefined) => {
-        let best: Nearest | undefined;
-
-        for (const token of tokens) {
-            if (token.rgba === undefined) {
-                continue;
-            }
-
-            const distance =
-                colorDistance(color, token.rgba) -
-                (bonus !== undefined && colorRoleOf(token.name) === bonus ? 3 : 0);
-
-            if (
-                best === undefined ||
-                distance < best.distance - 0.5 ||
-                (distance < best.distance + 0.5 &&
-                    TIER_RANK[token.tier] < TIER_RANK[best.token.tier] &&
-                    distance < SAME_COLOR)
-            ) {
-                best = { token, distance };
-            }
-        }
-
-        return best;
-    };
-
-    if (role === undefined) {
-        return nearest(set.colors, undefined);
-    }
-
-    // The role's own tokens first, then a semantic token with no role (an accent), then the palette: a role token wins
-    // unless another is much nearer (more than 12 on the distance scale).
-    const ofRole = nearest(
-        set.colors.filter((token) => colorRoleOf(token.name) === role),
-        undefined,
-    );
-    const semantic = nearest(
-        set.colors.filter(
-            (token) => colorRoleOf(token.name) === undefined && token.tier !== "primitive",
-        ),
-        undefined,
-    );
-    const palette = nearest(
-        set.colors.filter(
-            (token) => colorRoleOf(token.name) === undefined && token.tier === "primitive",
-        ),
-        undefined,
-    );
-    const close = (found: Nearest | undefined) =>
-        found !== undefined && found.distance <= FAR_COLOR ? found : undefined;
-    const best =
-        close(ofRole) !== undefined &&
-        (close(semantic) === undefined || ofRole!.distance <= semantic!.distance + 12)
-            ? ofRole
-            : (close(semantic) ?? close(palette));
-
-    if (best !== undefined) {
-        return best;
-    }
-
-    // No token of the role is close: any token that is close at all (the message says that its role differs).
-    return nearest(set.colors, undefined);
-}
-
-/**
- * How a token differs from the color that it replaces, in words: `slightly darker`, `lighter`, `much more different in
- * hue`. Said when a suggestion changes the value, so that the edit is not a surprise.
- */
-function difference(color: RgbaTuple, token: RgbaTuple): string {
-    const [l1] = toOklab(color[0], color[1], color[2]);
-    const [l2] = toOklab(token[0], token[1], token[2]);
-    const distance = colorDistance(color, token);
-    const degree = distance < 3 ? "slightly " : distance < 8 ? "" : "much ";
-    const lightness = l2 - l1;
-
-    return Math.abs(lightness) > 0.01
-        ? `${degree}${lightness < 0 ? "darker" : "lighter"}`
-        : `${degree}different in hue, at the same lightness`;
-}
-
 /** The length tokens of a kind, with a pixel value. */
 const lengthsOf = (set: TokenSet, kind: LengthKind) =>
     set.lengths.filter(
         (token): token is typeof token & { px: number } =>
             token.kind === kind && token.px !== undefined,
     );
-
-/** A color token that reaches `needed` contrast on `back`, as near to `fg` as any. */
-function nearestPassing(
-    set: TokenSet,
-    fg: RgbaTuple,
-    back: [number, number, number],
-    needed: number,
-) {
-    let best: { token: TokenSet["colors"][number]; distance: number; ratio: number } | undefined;
-
-    for (const token of set.colors) {
-        if (token.rgba === undefined || token.rgba[3] < 0.99) {
-            continue;
-        }
-
-        const ratio = contrastOf(token.rgba, back);
-
-        if (ratio < needed) {
-            continue;
-        }
-
-        const distance = colorDistance(fg, token.rgba);
-
-        if (best === undefined || distance < best.distance - 0.5) {
-            best = { token, distance, ratio };
-        }
-    }
-
-    return best;
-}
 
 const tokenRef = (token: { cssVar: string }) => `var(${token.cssVar})`;
 
@@ -441,9 +259,10 @@ export function analyze(
                 continue;
             }
 
-            const nearest = nearestColor(tokens, rgba);
-
-            const onSystem = nearest !== undefined && nearest.distance < SAME_COLOR;
+            // On the system: some token is this color, within a rounding.
+            const onSystem = tokens.colors.some(
+                (token) => token.rgba !== undefined && colorDistance(rgba, token.rgba) < SAME_COLOR,
+            );
 
             if (onSystem && group.literal !== true) {
                 continue;
@@ -456,17 +275,23 @@ export function analyze(
                 .map(([role, count]) => `${role} on ${plural(count, "element")}`)
                 .join(", ");
             const better = nearestColor(tokens, rgba, main?.[0]);
-            const near = better !== undefined && better.distance <= FAR_COLOR ? better : undefined;
+            const near =
+                better !== undefined && (better.exact || better.distance <= FAR_COLOR)
+                    ? better
+                    : undefined;
             const value = formatColor(rgba);
             const wanted = USE_ROLE[main?.[0] ?? ""];
             const given = near === undefined ? undefined : colorRoleOf(near.token.name);
             const property = USE_PROPERTY[main?.[0] ?? ""] ?? "color";
+            // Said as "the same color" only when it is: a token that differs is the closest one, and the message says how.
             const edit =
                 near === undefined
                     ? ""
-                    : ` Set \`${property}: ${tokenRef(near.token)}\` (${formatColor(near.token.rgba!)}) instead of ${value}.`;
+                    : near.exact
+                      ? ` Set \`${property}: ${tokenRef(near.token)}\` (${formatColor(near.token.rgba!)}, the same color).`
+                      : ` Set \`${property}: ${tokenRef(near.token)}\` (${formatColor(near.token.rgba!)}) instead of ${value}.`;
             const change =
-                near === undefined || onSystem
+                near === undefined || near.exact
                     ? ""
                     : ` The closest token is ${formatColor(near.token.rgba!)}, which is ${difference(rgba, near.token.rgba!)}.`;
             const roleNote =
@@ -474,9 +299,14 @@ export function analyze(
                     ? ` It is a ${given} token, and the system has no ${wanted} token this close.`
                     : "";
 
+            // A fix replaces the literal in place, so the token must fit the use: a text token is not a background's.
             const exact =
-                onSystem && group.literal === true
-                    ? exactColorToken(tokens, rgba, main?.[0])
+                onSystem &&
+                group.literal === true &&
+                near?.exact &&
+                near.token.tier !== "component" &&
+                (given === undefined || given === wanted)
+                    ? near.token
                     : undefined;
 
             add(
@@ -500,7 +330,7 @@ export function analyze(
                           }),
                     message: onSystem
                         ? `${value} is written as a literal (${roles}), so it does not follow the system.` +
-                          (near === undefined ? "" : `${edit}${roleNote}`)
+                          (near === undefined ? "" : `${edit}${change}${roleNote}`)
                         : `${value} is not a system color (${roles}).` +
                           (near === undefined
                               ? " No token is close: pick a role from the system."
@@ -677,7 +507,13 @@ export function analyze(
             const found =
                 tokens === undefined
                     ? undefined
-                    : nearestPassing(tokens, [...fg, 1] as RgbaTuple, bg, 3);
+                    : nearestPassing(
+                          tokens,
+                          [...fg, 1] as RgbaTuple,
+                          bg,
+                          3,
+                          part === "icon" ? "text" : "border",
+                      );
             const property = part === "focus" ? "outline-color" : "color";
             const edit =
                 found === undefined
@@ -726,7 +562,11 @@ export function analyze(
                         ? tokens === undefined
                             ? " Darken the `color` or lighten the `background-color`."
                             : " No system color passes on this background: change its `background-color`."
-                        : ` Set \`color: ${tokenRef(pass.token)}\` (${swatch(pass.token.rgba!)}, ${pass.ratio.toFixed(2)}:1) instead of ${swatch(fg)}.`),
+                        : ` Set \`color: ${tokenRef(pass.token)}\` (${swatch(pass.token.rgba!)}, ${pass.ratio.toFixed(2)}:1) instead of ${swatch(fg)}.${
+                              pass.sameHue
+                                  ? ""
+                                  : ` No system color of its hue reaches ${needed}:1 here, so this one changes the hue.`
+                          }`),
             },
             num(group.count),
         );
@@ -952,7 +792,9 @@ export function analyze(
                 RULE_ORDER.indexOf(a.rule) - RULE_ORDER.indexOf(b.rule) ||
                 b.weight - a.weight,
         )
-        .map(({ weight: _weight, ...finding }) => {
+        .map(({ weight: _weight, ...finding }) => finding)
+        .reduce(groupFindings, [] as CheckFinding[])
+        .map((finding) => {
             const id = findingId(finding);
             const again = (seen.get(id) ?? 0) + 1;
 
@@ -962,18 +804,80 @@ export function analyze(
         });
 }
 
+/** A message without its counts, so that two findings of one defect on different elements compare equal. */
+const plain = (message: string) =>
+    message.replace(/\d+ (more )?(elements?|uses?)/g, "N").replace(/ ?\(and N\)/g, "");
+
+/** The key that findings of one defect share, kept apart from the message (which grows a list of the other elements). */
+const groupKeys = new WeakMap<CheckFinding, string>();
+
+/**
+ * Findings of one rule with the same value, suggestion, and message (apart from its counts) are one defect on several
+ * elements, as two titles in the same wrong font: they become one finding that lists its elements (a pin for each). A
+ * finding with no element (a page-level one) is left alone.
+ */
+export function groupFindings(list: CheckFinding[], next: CheckFinding): CheckFinding[] {
+    const element = (finding: CheckFinding) => ({
+        selector: finding.selector,
+        ...(finding.pid === undefined ? {} : { pid: finding.pid }),
+        ...(finding.rect === undefined ? {} : { rect: finding.rect }),
+    });
+
+    const key = (finding: CheckFinding) => {
+        if (!groupKeys.has(finding)) {
+            groupKeys.set(
+                finding,
+                [
+                    finding.rule,
+                    finding.level,
+                    finding.value ?? "",
+                    finding.suggestion ?? "",
+                    plain(finding.message),
+                ].join("\0"),
+            );
+        }
+
+        return groupKeys.get(finding)!;
+    };
+
+    const same =
+        next.selector === ""
+            ? undefined
+            : list.find((each) => each.selector !== "" && key(each) === key(next));
+
+    if (same === undefined) {
+        return [...list, next];
+    }
+
+    const elements = same.elements ?? [element(same)];
+
+    if (elements.length < 12) {
+        elements.push(element(next));
+    }
+
+    same.elements = elements;
+    same.message = same.message.replace(/ The same in \d+ more places?: .*$/, "");
+    same.message += ` The same in ${plural(elements.length - 1, "more place")}: ${elements
+        .slice(1, 4)
+        .map((each) => each.pid ?? each.selector)
+        .join(", ")}${elements.length > 4 ? ", …" : ""}.`;
+
+    return list;
+}
+
 /**
  * A finding's id: the rule, and a hash of where it is (the `data-pid`, else the selector) and what it is about (the
  * value). The same problem on the same element has the same id in every run, so a pin can follow it; fixing the value
  * ends it, and a new value is a new id. The color scheme, the viewport, and the wording do not change it.
  */
 export function findingId(
-    finding: Pick<CheckFinding, "rule" | "pid" | "selector" | "value">,
+    finding: Pick<CheckFinding, "rule" | "pid" | "selector" | "value" | "elements">,
 ): string {
+    const one = (item: { pid?: string; selector: string }) =>
+        item.pid !== undefined && item.pid !== "" ? `pid:${item.pid}` : `sel:${item.selector}`;
+    // One defect on several elements: the scope is all of them (sorted), so that its id does not depend on their order.
     const scope =
-        finding.pid !== undefined && finding.pid !== ""
-            ? `pid:${finding.pid}`
-            : `sel:${finding.selector}`;
+        finding.elements === undefined ? one(finding) : finding.elements.map(one).sort().join("+");
     const hash = createHash("sha256")
         .update(`${finding.rule}\0${scope}\0${finding.value ?? ""}`)
         .digest("hex")
@@ -1008,6 +912,7 @@ export function reportOf(
     view: { viewport: DesignViewport; colorScheme: "light" | "dark"; mode?: string },
     elements: number,
     withoutSystem: boolean,
+    notJudged?: { count: number; elements: string[] },
 ): CheckReport {
     const byRule: CheckReport["summary"]["byRule"] = {};
 
@@ -1025,9 +930,79 @@ export function reportOf(
             warnings: findings.filter((finding) => finding.level === "warning").length,
             elements,
             byRule,
+            ...(notJudged === undefined || notJudged.count <= 0
+                ? {}
+                : {
+                      notJudged: {
+                          contrast: { count: notJudged.count, elements: notJudged.elements },
+                      },
+                  }),
         },
         withoutSystem,
     };
+}
+
+/**
+ * Move the findings that a person accepted (by id) out of `findings`: they are reported in `accepted`, and the counts
+ * leave them out. A report with nothing accepted is returned as it is.
+ */
+export function acceptFindings(
+    report: CheckReport,
+    ids: readonly string[] | undefined,
+): CheckReport {
+    const wanted = new Set(ids ?? []);
+    const accepted = report.findings.filter(
+        (finding) => finding.id !== undefined && wanted.has(finding.id),
+    );
+
+    if (accepted.length === 0) {
+        return report;
+    }
+
+    const rest = report.findings.filter((finding) => !accepted.includes(finding));
+    const byRule: CheckReport["summary"]["byRule"] = {};
+
+    for (const finding of rest) {
+        byRule[finding.rule] = (byRule[finding.rule] ?? 0) + 1;
+    }
+
+    return {
+        ...report,
+        findings: rest,
+        accepted,
+        summary: {
+            ...report.summary,
+            errors: rest.filter((finding) => finding.level === "error").length,
+            warnings: rest.filter((finding) => finding.level === "warning").length,
+            byRule,
+            accepted: accepted.length,
+        },
+    };
+}
+
+/** The sentence of a report that says what was left unjudged, or nothing when everything was judged. */
+export function notJudgedText(report: CheckReport): string | undefined {
+    const left = report.summary.notJudged?.contrast;
+
+    return left === undefined || left.count <= 0
+        ? undefined
+        : `Contrast not judged on ${plural(left.count, "element")} (what is behind the text is not certain: a gradient, an image, an overlay, a filter, or a faded parent)${left.elements.length > 0 ? `: ${left.elements.join(", ")}${left.count > left.elements.length ? ", …" : ""}` : ""}.`;
+}
+
+/** What was not judged, over several reports (slides): the most, with the elements of each, up to 8. */
+export function mergeNotJudged(
+    reports: CheckReport[],
+): { count: number; elements: string[] } | undefined {
+    const all = reports
+        .map((report) => report.summary.notJudged?.contrast)
+        .filter((each) => each !== undefined);
+
+    return all.length === 0
+        ? undefined
+        : {
+              count: Math.max(...all.map((each) => each.count)),
+              elements: [...new Set(all.flatMap((each) => each.elements))].slice(0, 8),
+          };
 }
 
 /**
@@ -1063,6 +1038,14 @@ export async function checkPage(
         { viewport: view.viewport, colorScheme, mode: picked?.mode },
         num(raw.elements),
         system === undefined,
+        raw.notJudged === undefined
+            ? undefined
+            : {
+                  count: num(raw.notJudged.count),
+                  elements: (Array.isArray(raw.notJudged.elements) ? raw.notJudged.elements : [])
+                      .slice(0, 8)
+                      .map((each) => clip(each, 500)),
+              },
     );
 }
 
@@ -1122,7 +1105,7 @@ export async function checkDesign(
         const view = { viewport, colorScheme, mode: picked?.mode };
 
         if (!(await page.isDeck())) {
-            return checkPage(page, system, view);
+            return acceptFindings(await checkPage(page, system, view), options.accepted);
         }
 
         const count = (await page.slides()).length;
@@ -1139,11 +1122,15 @@ export async function checkDesign(
 
         const findings = mergeFindings(reports);
 
-        return reportOf(
-            findings,
-            { viewport, colorScheme, mode: picked?.mode },
-            reports.reduce((total, report) => total + report.summary.elements, 0),
-            system === undefined,
+        return acceptFindings(
+            reportOf(
+                findings,
+                { viewport, colorScheme, mode: picked?.mode },
+                reports.reduce((total, report) => total + report.summary.elements, 0),
+                system === undefined,
+                mergeNotJudged(reports),
+            ),
+            options.accepted,
         );
     });
 }

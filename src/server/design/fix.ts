@@ -604,27 +604,38 @@ export function applyExactFixes(
             continue;
         }
 
-        const own =
-            finding.pid !== undefined && scanned.pids.get(finding.pid) === 1
-                ? finding.pid
-                : undefined;
-        const wanted = finding.selector === "" ? undefined : normalizeSelector(finding.selector);
+        // A finding that stands for several elements (see `groupFindings`) knows all of them.
+        const where = finding.elements ?? [{ selector: finding.selector, pid: finding.pid }];
+        const owns = new Set(
+            where
+                .map((item) => item.pid)
+                .filter((pid): pid is string => pid !== undefined && scanned.pids.get(pid) === 1),
+        );
+        const wanted = new Set(
+            where
+                .filter((item) => item.selector !== "")
+                .map((item) => normalizeSelector(item.selector)),
+        );
         const certain = real.filter(
             (match) =>
-                (match.declaration.inline && own !== undefined && match.declaration.pid === own) ||
+                (match.declaration.inline &&
+                    match.declaration.pid !== undefined &&
+                    owns.has(match.declaration.pid)) ||
                 (!match.declaration.inline &&
-                    wanted !== undefined &&
                     match.declaration.selector !== undefined &&
-                    match.declaration.selector.split(",").includes(wanted)),
+                    match.declaration.selector.split(",").some((each) => wanted.has(each))),
         );
-        const together = fixable.filter(
-            (other) =>
-                other.fix?.literal === fix.literal &&
-                other.fix.token === fix.token &&
-                other.fix.properties.some((property) => properties.has(property.toLowerCase())),
-        ).length;
-        const chosen =
-            certain.length > 0 ? certain : real.length === 1 || together >= real.length ? real : [];
+        const together = fixable
+            .filter(
+                (other) =>
+                    other.fix?.literal === fix.literal &&
+                    other.fix.token === fix.token &&
+                    other.fix.properties.some((property) => properties.has(property.toLowerCase())),
+            )
+            .reduce((total, other) => total + (other.elements?.length ?? 1), 0);
+        // Every place is accounted for when there are as many elements in the findings given as places (they are the same
+        // defect: fix them together); else the places that are certain; else the only place there is.
+        const chosen = together >= real.length || real.length === 1 ? real : certain;
 
         if (chosen.length === 0) {
             skip(

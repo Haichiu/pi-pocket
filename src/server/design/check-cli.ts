@@ -3,7 +3,7 @@
  * when there is an error.
  *
  *   node src/server/design/check-cli.ts <page.html> [--system <folder>] [--mode <name>] [--viewport <preset|WxH>]
- *                                       [--scheme light|dark] [--json]
+ *                                       [--scheme light|dark] [--accept <id>]… [--json]
  *
  * It renders the page in Chromium (or Chrome, Brave, Edge; `PI_POCKET_BROWSER` names one), so one must be installed:
  * without it the exit code is 2. `--help` prints the usage. `--system` is a project folder that has `.pi/design/` (or that folder itself). The files next to the page (its folder,
@@ -16,7 +16,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from "node:p
 import { findBrowser } from "../browser/discovery.ts";
 import type { PocketHost } from "../host.ts";
 import type { DesignBundle } from "./bundle.ts";
-import { checkDesign, type CheckOptions } from "./lint.ts";
+import { checkDesign, type CheckOptions, notJudgedText } from "./lint.ts";
 import type { DesignSystem } from "./system-types.ts";
 import { loadDesignSystem } from "./tokens.ts";
 
@@ -45,7 +45,7 @@ const TYPES: Record<string, string> = {
 };
 
 const USAGE =
-    "Usage: node src/server/design/check-cli.ts <page.html> [--system <folder>] [--mode <name>] [--viewport <mobile|tablet|desktop|WxH>] [--scheme light|dark] [--json]";
+    "Usage: node src/server/design/check-cli.ts <page.html> [--system <folder>] [--mode <name>] [--viewport <mobile|tablet|desktop|WxH>] [--scheme light|dark] [--accept <id>]... [--json]";
 const HELP = `${USAGE}
 
 Checks an HTML design: values that are not design-system tokens, contrast (text and non-text), tap targets, overflow,
@@ -56,6 +56,7 @@ alt text, labels, names, headings, language, landmarks, fonts, focus, motion. Pr
   --mode <name>      a mode of the system (light, dark, high-contrast, …): data-theme, its scheme, its tokens
   --viewport <size>  mobile (390×844), tablet, desktop (default), or WIDTHxHEIGHT
   --scheme <name>    light (default) or dark
+  --accept <id>      accept a finding on purpose (its id, as printed; repeat for more): it is listed apart and is not an error
   --json             print the report as JSON
 
 It needs Chromium, Chrome, Brave, or Edge on this machine (set PI_POCKET_BROWSER to name one).
@@ -125,6 +126,7 @@ export async function runCheck(args: string[], io: Io): Promise<number> {
     const values: Record<string, string> = {};
     const flags = new Set<string>();
     const files: string[] = [];
+    const accepted: string[] = [];
 
     for (let index = 0; index < args.length; index++) {
         const arg = args[index]!;
@@ -137,7 +139,7 @@ export async function runCheck(args: string[], io: Io): Promise<number> {
 
         if (arg === "--json") {
             flags.add("json");
-        } else if (["--system", "--mode", "--viewport", "--scheme"].includes(arg)) {
+        } else if (["--system", "--mode", "--viewport", "--scheme", "--accept"].includes(arg)) {
             const value = args[++index];
 
             if (value === undefined || value.startsWith("--")) {
@@ -146,7 +148,11 @@ export async function runCheck(args: string[], io: Io): Promise<number> {
                 return 2;
             }
 
-            values[arg.slice(2)] = value;
+            if (arg === "--accept") {
+                accepted.push(value);
+            } else {
+                values[arg.slice(2)] = value;
+            }
         } else if (arg.startsWith("--")) {
             io.error(`Unknown option ${arg}.\n${USAGE}`);
 
@@ -217,6 +223,7 @@ export async function runCheck(args: string[], io: Io): Promise<number> {
             viewport: (values.viewport as CheckOptions["viewport"]) ?? "desktop",
             colorScheme: (values.scheme as "light" | "dark" | undefined) ?? "light",
             ...(values.mode === undefined ? {} : { mode: values.mode }),
+            ...(accepted.length === 0 ? {} : { accepted }),
         };
         const bundle: DesignBundle = {
             meta: { title: basename(page), type: "html", versions: [] },
@@ -239,12 +246,24 @@ export async function runCheck(args: string[], io: Io): Promise<number> {
 
             for (const finding of report.findings) {
                 io.log(
-                    `${finding.level.padEnd(7)} ${finding.rule}  ${finding.selector || "(page)"}\n        ${finding.message}`,
+                    `${finding.level.padEnd(7)} ${finding.rule}  ${finding.selector || "(page)"}${finding.elements === undefined ? "" : ` (+${finding.elements.length - 1} more)`}  [${finding.id}]\n        ${finding.message}`,
                 );
             }
 
+            for (const finding of report.accepted ?? []) {
+                io.log(
+                    `accepted ${finding.rule}  ${finding.selector || "(page)"}  [${finding.id}]`,
+                );
+            }
+
+            const left = notJudgedText(report);
+
+            if (left !== undefined) {
+                io.log(left);
+            }
+
             io.log(
-                `${basename(page)}: ${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"} in ${elements} elements (${report.viewport.width}×${report.viewport.height}, ${report.colorScheme}${report.mode === undefined ? "" : `, mode ${report.mode}`}${report.withoutSystem ? ", no design system" : ""}).`,
+                `${basename(page)}: ${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"} in ${elements} elements${report.accepted === undefined ? "" : `, ${report.accepted.length} accepted`} (${report.viewport.width}×${report.viewport.height}, ${report.colorScheme}${report.mode === undefined ? "" : `, mode ${report.mode}`}${report.withoutSystem ? ", no design system" : ""}).`,
             );
         }
 
