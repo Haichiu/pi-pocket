@@ -38,6 +38,10 @@ export interface SystemDoc {
 /** The most tokens, components, and states the page draws; a system over a limit shows its first part and says so. */
 const MAX_TOKENS = 3000;
 const MAX_COMPONENTS = 60;
+/** The most color cards, palette steps, and rows of one specimen list: a bigger list goes on in the token table. */
+const MAX_ROLES = 240;
+const MAX_PALETTE = 480;
+const MAX_SPECIMENS = 120;
 const MAX_STATES = 16;
 /** The most bytes of page: an artifact holds 2 MB, and the page keeps room under that. */
 const MAX_PAGE = 1_800_000;
@@ -201,6 +205,33 @@ function plain(type: TokenType, value: unknown): string {
                 ? String(value)
                 : clip(JSON.stringify(value) ?? "", 120);
     }
+}
+
+/** The first `max` of a list, and a note for the page when some are left out. */
+function capped<T>(list: T[], max: number): [T[], string] {
+    return list.length <= max
+        ? [list, ""]
+        : [
+              list.slice(0, max),
+              `<p class="sub">Showing the first ${max} of ${list.length}. The table of all tokens has the rest.</p>`,
+          ];
+}
+
+/** Lists cut to the specimen limit, and whether any was cut, for one section. */
+function limiter(): { limit: <T>(list: T[]) => T[]; note: () => string } {
+    let cut = false;
+
+    return {
+        limit: (list) => {
+            cut ||= list.length > MAX_SPECIMENS;
+
+            return list.slice(0, MAX_SPECIMENS);
+        },
+        note: () =>
+            cut
+                ? `<p class="sub">Some lists show only their first ${MAX_SPECIMENS}. The table of all tokens has the rest.</p>`
+                : "",
+    };
 }
 
 // ── The page's model ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -591,8 +622,10 @@ function colorSection(ctx: Ctx): { html: string; count: number } | undefined {
     const colors = ctx.system.tokens.filter(
         (token) => token.type === "color" && token.tier !== "component",
     );
-    const palette = colors.filter((token) => token.tier === "primitive");
-    const roles = colors.filter((token) => token.tier !== "primitive");
+    const allPalette = colors.filter((token) => token.tier === "primitive");
+    const allRoles = colors.filter((token) => token.tier !== "primitive");
+    const [palette, paletteNote] = capped(allPalette, MAX_PALETTE);
+    const [roles, rolesNote] = capped(allRoles, MAX_ROLES);
 
     if (colors.length === 0) {
         return undefined;
@@ -607,7 +640,7 @@ function colorSection(ctx: Ctx): { html: string; count: number } | undefined {
 
     if (roles.length > 0) {
         parts.push(
-            `<h3 id="color-roles">Roles</h3><p class="sub">Roles say what a color is for. Use a role, never a palette step, so the color follows the mode.</p>`,
+            `<h3 id="color-roles">Roles</h3><p class="sub">Roles say what a color is for. Use a role, never a palette step, so the color follows the mode.</p>${rolesNote}`,
         );
 
         for (const [key, tokens] of grouped(roles, groupKey)) {
@@ -619,7 +652,7 @@ function colorSection(ctx: Ctx): { html: string; count: number } | undefined {
 
     if (palette.length > 0) {
         parts.push(
-            `<h3 id="color-palette">Palette</h3><p class="sub">The raw colors that roles point at. Click a step to copy its name.</p>`,
+            `<h3 id="color-palette">Palette</h3><p class="sub">The raw colors that roles point at. Click a step to copy its name.</p>${paletteNote}`,
         );
 
         for (const [key, tokens] of grouped(palette, groupKey)) {
@@ -640,7 +673,7 @@ function colorSection(ctx: Ctx): { html: string; count: number } | undefined {
     }
 
     return {
-        html: `<p class="intro">${roles.length} roles${palette.length > 0 ? ` over ${palette.length} palette colors` : ""}${ctx.modes.length > 1 ? `, in ${ctx.modes.length} modes` : ""}.${pairs.total > 0 ? ` ${pairs.passing === pairs.total ? "Every" : `${pairs.passing} of ${pairs.total}`} contrast pair${pairs.total === 1 ? "" : "s"} pass${pairs.passing === pairs.total ? "" : ""} WCAG AA.` : ""}</p>${parts.join("")}`,
+        html: `<p class="intro">${allRoles.length} roles${allPalette.length > 0 ? ` over ${allPalette.length} palette colors` : ""}${ctx.modes.length > 1 ? `, in ${ctx.modes.length} modes` : ""}.${pairs.total > 0 ? ` ${pairs.passing === pairs.total ? "Every" : `${pairs.passing} of ${pairs.total}`} contrast check${pairs.total === 1 ? "" : "s"} ${pairs.passing === pairs.total ? "meets" : "meet"} its minimum.` : ""}</p>${parts.join("")}`,
         count: colors.length,
     };
 }
@@ -654,27 +687,34 @@ function copyName(token: ResolvedToken): string {
 }
 
 function typographySection(ctx: Ctx): { html: string; count: number } | undefined {
+    const { limit, note } = limiter();
     const tokens = ctx.system.tokens;
-    const families = tokens.filter((token) => token.type === "fontFamily");
-    const weights = tokens.filter((token) => token.type === "fontWeight");
-    const composites = tokens.filter((token) => token.type === "typography");
-    const sizes = tokens.filter(
-        (token) =>
-            token.type === "dimension" &&
-            FONT_ROOTS.test(token.path[0]!) &&
-            token.path.some((segment) => /size/i.test(segment)),
+    const families = limit(tokens.filter((token) => token.type === "fontFamily"));
+    const weights = limit(tokens.filter((token) => token.type === "fontWeight"));
+    const composites = limit(tokens.filter((token) => token.type === "typography"));
+    const sizes = limit(
+        tokens.filter(
+            (token) =>
+                token.type === "dimension" &&
+                FONT_ROOTS.test(token.path[0]!) &&
+                token.path.some((segment) => /size/i.test(segment)),
+        ),
     );
-    const leading = tokens.filter(
-        (token) =>
-            token.type === "number" &&
-            FONT_ROOTS.test(token.path[0]!) &&
-            token.path.some((segment) => /leading|line-?height/i.test(segment)),
+    const leading = limit(
+        tokens.filter(
+            (token) =>
+                token.type === "number" &&
+                FONT_ROOTS.test(token.path[0]!) &&
+                token.path.some((segment) => /leading|line-?height/i.test(segment)),
+        ),
     );
-    const tracking = tokens.filter(
-        (token) =>
-            token.type === "dimension" &&
-            FONT_ROOTS.test(token.path[0]!) &&
-            token.path.some((segment) => /tracking|letter/i.test(segment)),
+    const tracking = limit(
+        tokens.filter(
+            (token) =>
+                token.type === "dimension" &&
+                FONT_ROOTS.test(token.path[0]!) &&
+                token.path.some((segment) => /tracking|letter/i.test(segment)),
+        ),
     );
     const all = [...families, ...weights, ...composites, ...sizes, ...leading, ...tracking];
 
@@ -782,7 +822,7 @@ function typographySection(ctx: Ctx): { html: string; count: number } | undefine
     }
 
     return {
-        html: `<p class="intro">${families.length} typeface${families.length === 1 ? "" : "s"}, ${sizes.length} sizes${composites.length > 0 ? `, and ${composites.length} text styles` : ""}.</p>${parts.join("")}`,
+        html: `<p class="intro">${families.length} typeface${families.length === 1 ? "" : "s"}, ${sizes.length} sizes${composites.length > 0 ? `, and ${composites.length} text styles` : ""}.</p>${parts.join("")}${note()}`,
         count: all.length,
     };
 }
@@ -796,20 +836,25 @@ function rowOf(ctx: Ctx, token: ResolvedToken, sample: string): string {
 }
 
 function layoutSection(ctx: Ctx): { html: string; count: number } | undefined {
+    const { limit, note } = limiter();
     const tokens = ctx.system.tokens.filter((token) => token.tier !== "component");
     const dims = tokens.filter((token) => token.type === "dimension");
     const root = (token: ResolvedToken) => token.path[0]!.toLowerCase();
-    const space = dims.filter((token) => /^(space|spacing|gap|gaps|sp|spaces)$/.test(root(token)));
-    const sizes = dims.filter((token) => /^(size|sizes|sizing)$/.test(root(token)));
-    const breakpoints = dims.filter((token) =>
-        /^(breakpoints?|screens?|bp|media)$/.test(root(token)),
+    const space = limit(
+        dims.filter((token) => /^(space|spacing|gap|gaps|sp|spaces)$/.test(root(token))),
     );
-    const borders = dims.filter((token) => /^(border|borders|stroke)$/.test(root(token)));
-    const radii = dims.filter((token) =>
-        /^(radius|radii|rounded|corners?|round)$/.test(root(token)),
+    const sizes = limit(dims.filter((token) => /^(size|sizes|sizing)$/.test(root(token))));
+    const breakpoints = limit(
+        dims.filter((token) => /^(breakpoints?|screens?|bp|media)$/.test(root(token))),
     );
-    const layers = tokens.filter(
-        (token) => token.type === "number" && /^(z|zindex|z-index|layers?)$/.test(root(token)),
+    const borders = limit(dims.filter((token) => /^(border|borders|stroke)$/.test(root(token))));
+    const radii = limit(
+        dims.filter((token) => /^(radius|radii|rounded|corners?|round)$/.test(root(token))),
+    );
+    const layers = limit(
+        tokens.filter(
+            (token) => token.type === "number" && /^(z|zindex|z-index|layers?)$/.test(root(token)),
+        ),
     );
     const all = [...space, ...sizes, ...breakpoints, ...borders, ...radii, ...layers];
 
@@ -914,7 +959,7 @@ function layoutSection(ctx: Ctx): { html: string; count: number } | undefined {
     }
 
     return {
-        html: `<p class="intro">Spacing, sizes, corners, and layers for the layout.</p>${parts.join("")}`,
+        html: `<p class="intro">Spacing, sizes, corners, and layers for the layout.</p>${parts.join("")}${note()}`,
         count: all.length,
     };
 }
@@ -922,8 +967,9 @@ function layoutSection(ctx: Ctx): { html: string; count: number } | undefined {
 // ── Shadows and motion ─────────────────────────────────────────────────────────────────────────────────────────────
 
 function shadowSection(ctx: Ctx): { html: string; count: number } | undefined {
-    const shadows = ctx.system.tokens.filter(
-        (token) => token.type === "shadow" && token.tier !== "component",
+    const { limit, note } = limiter();
+    const shadows = limit(
+        ctx.system.tokens.filter((token) => token.type === "shadow" && token.tier !== "component"),
     );
 
     if (shadows.length === 0) {
@@ -940,7 +986,7 @@ function shadowSection(ctx: Ctx): { html: string; count: number } | undefined {
                 (token) =>
                     `<div class="shadow-tile" data-q="${esc(`${token.name} ${token.description ?? ""}`.toLowerCase())}" style="box-shadow:${varOf(token, "none")}">${copyName(token)}<span class="desc">${esc(token.description ?? "")}</span><span class="desc mono">${variants(ctx, (mode) => esc(clip(plain("shadow", valueIn(token, mode)?.value), 90)))}</span></div>`,
             )
-            .join("")}</div>`,
+            .join("")}</div>${note()}`,
         count: shadows.length,
     };
 }
@@ -963,15 +1009,16 @@ function curvePath(value: unknown): string | undefined {
 }
 
 function motionSection(ctx: Ctx): { html: string; count: number } | undefined {
+    const { limit, note } = limiter();
     const tokens = ctx.system.tokens;
-    const durations = tokens.filter(
-        (token) => token.type === "duration" && token.tier !== "component",
+    const durations = limit(
+        tokens.filter((token) => token.type === "duration" && token.tier !== "component"),
     );
-    const easings = tokens.filter(
-        (token) => token.type === "cubicBezier" && token.tier !== "component",
+    const easings = limit(
+        tokens.filter((token) => token.type === "cubicBezier" && token.tier !== "component"),
     );
-    const transitions = tokens.filter(
-        (token) => token.type === "transition" && token.tier !== "component",
+    const transitions = limit(
+        tokens.filter((token) => token.type === "transition" && token.tier !== "component"),
     );
     const all = [...durations, ...easings, ...transitions];
 
@@ -1030,7 +1077,7 @@ function motionSection(ctx: Ctx): { html: string; count: number } | undefined {
     }
 
     return {
-        html: `<p class="intro">Motion should explain a change, never decorate. Things leave faster than they arrive.</p><p class="sub" data-reduce-note hidden>Reduced motion is on in this browser, so the demos jump instead of move.</p>${parts.join("")}`,
+        html: `<p class="intro">Motion should explain a change, never decorate. Things leave faster than they arrive.</p><p class="sub" data-reduce-note hidden>Reduced motion is on in this browser, so the demos jump instead of move.</p>${parts.join("")}${note()}`,
         count: all.length,
     };
 }
@@ -1226,8 +1273,12 @@ function tableRows(ctx: Ctx, tokens: ResolvedToken[]): string {
 }
 
 function otherSection(ctx: Ctx): { html: string; count: number } | undefined {
-    const rest = ctx.system.tokens.filter(
-        (token) => !ctx.claimed.has(token) && token.tier !== "component" && token.type !== "color",
+    const { limit, note } = limiter();
+    const rest = limit(
+        ctx.system.tokens.filter(
+            (token) =>
+                !ctx.claimed.has(token) && token.tier !== "component" && token.type !== "color",
+        ),
     );
 
     if (rest.length === 0) {
@@ -1239,7 +1290,7 @@ function otherSection(ctx: Ctx): { html: string; count: number } | undefined {
     }
 
     return {
-        html: `<p class="intro">Tokens that have no specimen of their own.</p><div class="table-wrap ref"><table><thead><tr><th>Token</th><th>Type</th><th>Value</th></tr></thead><tbody>${tableRows(ctx, rest)}</tbody></table></div>`,
+        html: `<p class="intro">Tokens that have no specimen of their own.</p><div class="table-wrap ref"><table><thead><tr><th>Token</th><th>Type</th><th>Value</th></tr></thead><tbody>${tableRows(ctx, rest)}</tbody></table></div>${note()}`,
         count: rest.length,
     };
 }
