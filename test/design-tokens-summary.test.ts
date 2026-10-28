@@ -221,7 +221,7 @@ test("the summary lists each component with its slug, the classes of its root el
             ),
         },
     });
-    const text = systemSummary(system);
+    const text = systemSummary(system, 6000);
 
     assert.match(
         text,
