@@ -45,6 +45,7 @@ import {
 } from "./design-system-bench/lib/score.ts";
 import {
     contrastPairs,
+    goldenCss,
     impliedPairs,
     readFlat,
     systemFromFlat,
@@ -1132,3 +1133,29 @@ test("--fixtures and --lint point the runner at other folders", async () => {
         2,
     );
 });
+
+test(
+    "the CSS probe reads every variable of the flagship right (--space-0 was read as 0.4px from a stale element)",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        const { BenchBrowser } = await import("./design-system-bench/lib/chromium.ts");
+        const { checkCss } = await import("./design-system-bench/lib/css-check.ts");
+        const flat = readFlat(
+            join(BENCH, "..", "fixtures", "design-system", "flagship", ".pi", "design"),
+        );
+        const chromium = (await BenchBrowser.launch())!;
+
+        try {
+            // The bench's own compile of the flagship's source: the engine is not involved.
+            const result = await checkCss(chromium, goldenCss(flat), flat);
+
+            assert.ok(flat.tokens.length > 250, "the flagship is big enough to show the problem");
+            assert.deepEqual(result.problems, []);
+            assert.equal(result.correct, result.comparable);
+            assert.equal(result.defined, result.expected);
+            assert.equal(result.mediaDark, true);
+        } finally {
+            await chromium.close();
+        }
+    },
+);
