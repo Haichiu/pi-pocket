@@ -905,6 +905,14 @@ export type DesignItem = {
     tweaks?: Record<string, { values: Record<string, string | number | boolean>; at: number }>;
     /** Versions that "Go back to this one" made, by version: the version whose content they copy. */
     restores?: Record<string, number>;
+    /**
+     * Findings of the Check that a person accepted for this design, by the finding's stable id: who and when, and what the
+     * finding was (its rule and its message, so that the list can name it after the page stops showing it).
+     */
+    accepted?: Record<
+        string,
+        { by: string; byName: string; at: number; rule: string; message: string }
+    >;
 };
 
 /**

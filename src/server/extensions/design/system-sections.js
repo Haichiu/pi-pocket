@@ -1,0 +1,1344 @@
+// The sections of the System view: Colors, Type, Spacing, Radii, Shadows, Motion, Other, Components, and Guidelines. Each
+// draws the tokens of its kind as what they are (a swatch, a specimen, a bar, a corner, a shadow, a motion), and opens the
+// editor of one token under its row. They read the model (`system.js`) and change nothing but through `env`.
+import { parseColor, ratioText, swatchCss, toHex } from "./color.js";
+import { specimenDocument } from "./specimen.js";
+import {
+    cssOf,
+    groupsOf,
+    matches,
+    millisecondsOf,
+    pixelsOf,
+    safeCss,
+    shadowOf,
+    shadowLines,
+    shadowSummary,
+    showValue,
+    tails,
+    themeCss,
+    typographyMeta,
+    typographyStyle,
+    typographyStyleOf,
+} from "./system.js";
+import { copyText, modeTitle, verdictOf } from "./system-widgets.js";
+
+const SAMPLE = "Sphinx of black quartz, judge my vow";
+
+const hexOf = (value) => {
+    const color = parseColor(value);
+
+    return color === null ? "" : toHex(color);
+};
+
+/** The line under a typography style's name: `20px / 1.15 · 600 · Geist`. */
+function styleMeta(value) {
+    if (typeof value !== "object" || value === null) {
+        return "";
+    }
+
+    const size = cssOf("dimension", value.fontSize);
+    const height =
+        typeof value.lineHeight === "number"
+            ? `/ ${value.lineHeight}`
+            : value.lineHeight
+              ? `/ ${cssOf("dimension", value.lineHeight)}`
+              : "";
+    const family = Array.isArray(value.fontFamily) ? value.fontFamily[0] : value.fontFamily;
+
+    return [[size, height].filter(Boolean).join(" "), value.fontWeight, family]
+        .filter((part) => part !== undefined && part !== "")
+        .join(" · ");
+}
+
+export function createSystemSections(env, widgets) {
+    const { pocket, store } = env;
+    const { html, useEffect, useRef, useState, Markdown } = pocket;
+    const { Ico } = env.parts;
+    const { Swatch, CopyName, ContrastBadge, TokenEditor, Curve } = widgets;
+
+    // ─── Rows and groups ─────────────────────────────────────────────────────
+
+    /** One token: a visual, its name (which copies), a line under it, its value; a tap opens its editor under it. */
+    function TokenRow({ ctx, token, visual, sub, value, stacked = false, children }) {
+        const open = ctx.s.sysOpen === token.name;
+        const edited = ctx.modes.some((mode) => ctx.model.edited(token.name, mode));
+
+        return html`<li
+            class=${`dsy-row ${open ? "open" : ""} ${edited ? "edited" : ""} ${stacked ? "stacked" : ""}`}
+            data-token=${token.name}
+        >
+            <div class="dsy-row-main" onClick=${() => env.toggleToken(token.name)}>
+                ${visual && html`<span class="dsy-row-visual">${visual}</span>`}
+                <span class="dsy-row-text">
+                    <span class="dsy-row-title">
+                        <${CopyName} name=${token.name} />
+                        ${token.deprecated && html`<span class="dsy-tag warn">deprecated</span>`}
+                        ${edited && html`<span class="dsy-tag edit">edited</span>`}
+                    </span>
+                    ${sub && html`<span class="dsy-row-sub">${sub}</span>`}
+                </span>
+                ${value && html`<span class="dsy-row-value">${value}</span>`}
+                <button
+                    type="button"
+                    class="dsy-row-open"
+                    aria-expanded=${open}
+                    aria-label=${`${open ? "Close" : "Open"} ${token.name}`}
+                    onClick=${(event) => {
+                        event.stopPropagation();
+                        env.toggleToken(token.name);
+                    }}
+                >
+                    <${Ico} name="down" size=${15} />
+                </button>
+            </div>
+            ${children}
+            ${
+                open &&
+                html`<${TokenEditor}
+                    model=${ctx.model}
+                    token=${token}
+                    modes=${ctx.modes}
+                    canEdit=${ctx.canEdit}
+                    narrow=${ctx.narrow}
+                />`
+            }
+        </li>`;
+    }
+
+    /** Whether a group is folded now: what the person chose, else how it starts. A search opens every group with a match. */
+    const foldedNow = (ctx, group) =>
+        ctx.query === "" && (ctx.s.sysFolded[group.id] ?? group.fold === true);
+
+    /** A group of tokens in a card, with a head that folds it. */
+    function Group({ ctx, group, strip, children, bare = false, note = "" }) {
+        const folded = foldedNow(ctx, group);
+
+        const more =
+            group.hidden > 0 &&
+            html`<button
+                type="button"
+                class="dsn-link dsy-more"
+                onClick=${() => env.showAll(group.id)}
+            >
+                Show ${group.hidden} more
+            </button>`;
+
+        if (bare) {
+            return html`<section class="dsy-group bare">${children}${more}</section>`;
+        }
+
+        return html`<section
+            class="dsy-group"
+            data-folded=${folded}
+            data-tier=${group.tier}
+            aria-label=${group.title}
+        >
+            <button
+                type="button"
+                class="dsy-group-head"
+                aria-expanded=${!folded}
+                onClick=${() => env.toggleGroup(group.id, !folded)}
+            >
+                <span class="dsy-group-title">${group.title}</span>
+                <span class="dsy-group-count">${group.total ?? group.tokens.length}</span>
+                ${note && html`<span class="dsy-group-note">${note}</span>`} ${strip}
+                <${Ico} name="down" size=${15} class="dsy-group-chev" />
+            </button>
+            ${!folded && html`<div class="dsy-group-body">${children}${more}</div>`}
+        </section>`;
+    }
+
+    const Empty = ({ text }) => html`<p class="dsy-empty muted">${text}</p>`;
+
+    /** A group shows this many tokens until its "Show more" is tapped: a big system stays quick to draw. */
+    const SHOWN = 120;
+
+    /** The groups of a section, filtered by the search; a long one is cut, with `hidden` the number it leaves out. */
+    function groupsFor(ctx, section) {
+        return groupsOf(ctx.model.tokens, section)
+            .map((group) => {
+                const found = group.tokens.filter((token) => matches(token, ctx.query));
+                const cut = ctx.query === "" && !ctx.s.sysAll[group.id] && found.length > SHOWN;
+
+                return {
+                    ...group,
+                    total: found.length,
+                    tokens: cut ? found.slice(0, SHOWN) : found,
+                    hidden: cut ? found.length - SHOWN : 0,
+                };
+            })
+            .filter((group) => group.tokens.length > 0);
+    }
+
+    // ─── Colors ──────────────────────────────────────────────────────────────
+
+    /**
+     * The system's look, for each mode, as a small card built from its own roles: a title, body text, quiet text, a primary
+     * button, and a chip for each status. The words are plain on purpose: they say nothing about any product.
+     */
+    function Overview({ ctx }) {
+        const found = ctx.model.roles();
+
+        if (found.canvas === undefined || found.surface === undefined || found.text === undefined) {
+            return null;
+        }
+
+        const chips = [
+            ["danger", "Error"],
+            ["warning", "Warning"],
+            ["success", "Success"],
+        ].filter(([role]) => found[role] !== undefined);
+
+        return html`<div class="dsy-overview" data-count=${ctx.modes.length}>
+            ${ctx.modes.map((mode) => {
+                const color = (role, fallback = "") => {
+                    const name = found[role];
+
+                    return name === undefined
+                        ? fallback
+                        : swatchCss(ctx.model.value(name, mode).value) || fallback;
+                };
+
+                const quiet = color("muted", color("text"));
+
+                return html`<figure
+                    class="dsy-look"
+                    key=${mode}
+                    style=${`background:${color("canvas")}`}
+                    aria-label=${`A card in ${mode}, drawn with the system's roles`}
+                >
+                    <div
+                        class="dsy-look-card"
+                        style=${`background:${color("surface")};box-shadow:0 0 0 1px ${color("border", "rgb(127 127 127 / .3)")}`}
+                    >
+                        <strong style=${`color:${color("text")}`}>Card title</strong>
+                        <span style=${`color:${color("text")}`}>Body text reads at a glance.</span>
+                        <span style=${`color:${quiet}`}>Muted text for the details.</span>
+                        <span class="dsy-look-row">
+                            <span
+                                class="dsy-look-button"
+                                style=${`background:${color("accent", color("text"))};color:${color("onAccent", color("surface"))}`}
+                                >Primary</span
+                            >
+                            <span
+                                class="dsy-look-button ghost"
+                                style=${`color:${color("text")};box-shadow:inset 0 0 0 1px ${color("border", quiet)}`}
+                                >Secondary</span
+                            >
+                        </span>
+                        ${
+                            chips.length > 0 &&
+                            html`<span class="dsy-look-chips">
+                                ${chips.map(
+                                    ([role, label]) =>
+                                        html`<span
+                                            class="dsy-look-chip"
+                                            key=${role}
+                                            style=${`color:${color("text")};box-shadow:inset 0 0 0 1px ${color("border", quiet)}`}
+                                            ><i style=${`background:${color(role)}`}></i
+                                            >${label}</span
+                                        >`,
+                                )}
+                            </span>`
+                        }
+                    </div>
+                    ${ctx.modes.length > 1 && html`<figcaption style=${`color:${quiet}`}>${mode}</figcaption>`}
+                </figure>`;
+            })}
+        </div>`;
+    }
+
+    /** Whether a color is the same in every mode shown: then it is drawn once, not once for each mode. */
+    const alike = (values) =>
+        values.every((each) => swatchCss(each.value) === swatchCss(values[0].value));
+
+    /** The editor of the open token of a group, under the group's cards or strip, in a box of its own. */
+    function Opened({ ctx, group }) {
+        const open = group.tokens.find((token) => token.name === ctx.s.sysOpen);
+
+        return (
+            open &&
+            html`<div class="dsy-ramp-editor" data-token=${open.name}>
+                <div class="dsy-ramp-editor-head">
+                    <${CopyName} name=${open.name} />
+                    ${
+                        ctx.modes.length === 1 &&
+                        ctx.model.modes.length > 1 &&
+                        html`<span class="dsy-mode-chip">${modeTitle(ctx.modes[0])}</span>`
+                    }
+                    <span class="grow"></span>
+                    <button
+                        type="button"
+                        class="icon-button"
+                        aria-label=${`Close ${open.name}`}
+                        onClick=${() => env.toggleToken(open.name)}
+                    >
+                        <${Ico} name="close" size=${15} />
+                    </button>
+                </div>
+                <${TokenEditor}
+                    model=${ctx.model}
+                    token=${open}
+                    modes=${ctx.modes}
+                    canEdit=${ctx.canEdit}
+                    narrow=${ctx.narrow}
+                />
+            </div>`
+        );
+    }
+
+    /** What the cards and strips of a color show of it: one swatch (split when its modes differ), its value, and its pair. */
+    function colorFacts(ctx, token) {
+        const all = ctx.modes.map((mode) => ctx.model.value(token.name, mode));
+        const infos = ctx.modes.map((mode) => ctx.model.contrastOf(token.name, mode));
+        // The same color, and the same fortune on its pair, in every mode: drawn once.
+        const merged =
+            ctx.modes.length > 1 &&
+            alike(all) &&
+            new Set(infos.map((info) => (info ? `${Math.round(info.ratio * 10)}${info.pass}` : "")))
+                .size === 1;
+
+        return {
+            values: merged ? all.slice(0, 1) : all,
+            modes: merged ? ctx.modes.slice(0, 1) : ctx.modes,
+            infos: merged ? infos.slice(0, 1) : infos,
+        };
+    }
+
+    /** Roles as cards in a grid: the swatch, the name, the value, and the contrast on its pair. A tap opens its editor. */
+    function RoleCards({ ctx, group }) {
+        const names = tails(group.tokens);
+
+        return html`<${Tiles}
+            ctx=${ctx}
+            group=${group}
+            size="role"
+            label=${(token) => {
+                const facts = colorFacts(ctx, token);
+                const pairs = facts.infos.flatMap((info, index) =>
+                    info
+                        ? [
+                              `${facts.modes.length > 1 ? `${modeTitle(facts.modes[index])} ` : ""}contrast ${ratioText(info.ratio)} ${verdictOf(info)}`,
+                          ]
+                        : [],
+                );
+
+                return [
+                    token.name,
+                    hexOf(facts.values[0].value),
+                    ...pairs,
+                    inheritedIn(ctx, token)
+                        ? `inherited from ${modeTitle(ctx.model.defaultMode)}`
+                        : "",
+                ]
+                    .filter(Boolean)
+                    .join(", ");
+            }}
+            tile=${(token) => {
+                const facts = colorFacts(ctx, token);
+
+                return html`<${Swatch}
+                        values=${facts.values.map((each) => each.value)}
+                        size=${46}
+                    />
+                    <span class="dsy-card-name mono">${names.get(token.name)}</span>
+                    <span class="dsy-card-meta">
+                        <span class="dsy-hex mono">${hexOf(facts.values[0].value) || "—"}</span>
+                        ${facts.infos.map(
+                            (info, index) =>
+                                html`<${ContrastBadge}
+                                    key=${facts.modes[index]}
+                                    info=${info}
+                                    mode=${facts.modes[index]}
+                                    modes=${facts.modes.length}
+                                />`,
+                        )}
+                    </span>`;
+            }}
+        />`;
+    }
+
+    /** A ramp as one strip: its swatches side by side, each a button that opens the editor of its step under the strip. */
+    function Strip({ ctx, group }) {
+        const names = tails(group.tokens);
+
+        return html`<div class="dsy-strip-row">
+            <div class="dsy-strip-head">
+                <strong>${group.title}</strong>
+                <span class="muted small">${group.tokens.length}</span>
+            </div>
+            <div class="dsy-strip-steps" role="group" aria-label=${`${group.title} palette`}>
+                ${group.tokens.map((token) => {
+                    const facts = colorFacts(ctx, token);
+                    const edited = ctx.modes.some((mode) => ctx.model.edited(token.name, mode));
+
+                    return html`<button
+                        type="button"
+                        key=${token.name}
+                        data-token=${token.name}
+                        class=${`dsy-step-tile ${token.name === ctx.s.sysOpen ? "on" : ""} ${edited ? "edited" : ""}`}
+                        aria-pressed=${token.name === ctx.s.sysOpen}
+                        aria-label=${`${token.name}, ${hexOf(facts.values[0].value)}`}
+                        title=${`${token.name} ${hexOf(facts.values[0].value)}`}
+                        onClick=${() => env.toggleToken(token.name)}
+                    >
+                        <${Swatch} values=${facts.values.map((each) => each.value)} size=${40} />
+                        <span class="dsy-step-label mono">${names.get(token.name)}</span>
+                    </button>`;
+                })}
+            </div>
+            <${Opened} ctx=${ctx} group=${group} />
+        </div>`;
+    }
+
+    /** The swatches of a group, overlapped, for its head. */
+    const stripOf = (ctx, group) =>
+        html`<span class="dsy-strip" aria-hidden="true">
+            ${group.tokens
+                .slice(0, 9)
+                .map(
+                    (token) =>
+                        html`<i
+                            key=${token.name}
+                            style=${`background:${swatchCss(ctx.model.value(token.name, ctx.modes[0]).value)}`}
+                        ></i>`,
+                )}
+        </span>`;
+
+    function Colors({ ctx }) {
+        const groups = groupsFor(ctx, "colors");
+
+        if (groups.length === 0) {
+            return html`<${Empty}
+                text=${ctx.query ? "No color matches." : "This system has no colors yet."}
+            />`;
+        }
+
+        const roles = groups.filter((group) => group.tier === "semantic");
+        const palette = groups.filter((group) => group.tier === "primitive");
+        const components = groups.filter((group) => group.tier === "component");
+        // All the ramps are one folded group: the roles are what people edit; the palette is what they point at.
+        const together = (id, title, list, tier) => ({
+            id: `colors:${id}`,
+            title,
+            tier,
+            tokens: list.flatMap((group) => group.tokens),
+            total: list.reduce((sum, group) => sum + (group.total ?? group.tokens.length), 0),
+            hidden: list.reduce((sum, group) => sum + (group.hidden ?? 0), 0),
+            // The palette starts folded when there are roles to look at; a system of nothing but a palette shows it.
+            fold: roles.length > 0 || tier === "component",
+        });
+
+        return html`${ctx.query === "" && html`<${Overview} ctx=${ctx} />`}
+        ${
+            roles.length > 0 &&
+            html`<h3 class="dsy-section-label">
+                Roles
+                <span class="dsy-group-count"
+                    >${roles.reduce((sum, group) => sum + group.total, 0)}</span
+                >
+            </h3>`
+        }
+        ${roles.map(
+            (group) =>
+                html`<${Group}
+                    key=${group.id}
+                    ctx=${ctx}
+                    group=${group}
+                    strip=${stripOf(ctx, group)}
+                >
+                    <${RoleCards} ctx=${ctx} group=${group} />
+                <//>`,
+        )}
+        ${
+            palette.length > 0 &&
+            html`<${Group}
+                ctx=${ctx}
+                group=${together("palette", "Palette", palette, "primitive")}
+                note="the raw colors that roles point at"
+            >
+                ${palette.map((group) => html`<${Strip} key=${group.id} ctx=${ctx} group=${group} />`)}
+            <//>`
+        }
+        ${
+            components.length > 0 &&
+            html`<${Group}
+                ctx=${ctx}
+                group=${together("components", "Component colors", components, "component")}
+                note="each component's own colors"
+            >
+                ${components.map(
+                    (group) =>
+                        html`<div class="dsy-sub" key=${group.id}>
+                            <h4 class="dsy-sub-title">${group.title}</h4>
+                            <${RoleCards} ctx=${ctx} group=${group} />
+                        </div>`,
+                )}
+            <//>`
+        }`;
+    }
+
+    // ─── Type ────────────────────────────────────────────────────────────────
+
+    function Type({ ctx }) {
+        const groups = groupsFor(ctx, "type");
+        const mode = ctx.modes[0];
+
+        if (groups.length === 0) {
+            return html`<${Empty}
+                text=${ctx.query ? "No type token matches." : "This system has no type tokens yet."}
+            />`;
+        }
+
+        const row = (token, group) => {
+            const now = ctx.model.value(token.name, mode);
+
+            if (token.type === "typography") {
+                return html`<${TokenRow}
+                    key=${token.name}
+                    ctx=${ctx}
+                    token=${token}
+                    stacked=${true}
+                    sub=${html`<span class="mono"
+                        >${typographyMeta(ctx.model, mode, now) ?? styleMeta(now.value)}</span
+                    >`}
+                >
+                    <p class="dsy-specimen" style=${typographyStyleOf(ctx.model, mode, now)}>
+                        ${SAMPLE}
+                    </p>
+                <//>`;
+            }
+
+            if (token.type === "fontFamily") {
+                const css = cssOf("fontFamily", now.value) ?? "";
+                const style = typographyStyle({ fontFamily: now.value });
+
+                return html`<${TokenRow}
+                    key=${token.name}
+                    ctx=${ctx}
+                    token=${token}
+                    visual=${html`<span class="dsy-glyph" style=${style}>Ag</span>`}
+                    sub=${html`<span class="mono">${css}</span>`}
+                    value=${html`<span class="dsy-hex mono">${showValue(token, now)}</span>`}
+                />`;
+            }
+
+            if (token.type === "fontWeight") {
+                return html`<${TokenRow}
+                    key=${token.name}
+                    ctx=${ctx}
+                    token=${token}
+                    visual=${html`<span class="dsy-glyph" style=${`font-weight:${safeCss(now.value) || 400}`}>Aa</span>`}
+                    value=${html`<span class="dsy-hex mono">${showValue(token, now)}</span>`}
+                />`;
+            }
+
+            if (token.type === "number") {
+                return html`<${TokenRow}
+                    key=${token.name}
+                    ctx=${ctx}
+                    token=${token}
+                    visual=${html`<span class="dsy-leading" style=${`line-height:${safeCss(now.value) || 1.4}`}>Aa<br />Aa</span>`}
+                    value=${html`<span class="dsy-hex mono">${showValue(token, now)}</span>`}
+                />`;
+            }
+
+            const px = pixelsOf(now.value);
+
+            return html`<${TokenRow}
+                key=${token.name}
+                ctx=${ctx}
+                token=${token}
+                visual=${html`<span class="dsy-glyph" style=${px === null ? "" : `font-size:${Math.min(px, 30)}px`}>Aa</span>`}
+                sub=${px === null ? null : html`<span class="mono">${px}px${px % 16 === 0 ? ` · ${px / 16}rem` : ""}</span>`}
+                value=${html`<span class="dsy-hex mono">${showValue(token, now)}</span>`}
+            />`;
+        };
+
+        return html`${groups.map(
+            (group) =>
+                html`<${Group} key=${group.id} ctx=${ctx} group=${group}>
+                    <ul class="dsy-rows">
+                        ${group.tokens.map((token) => row(token, group))}
+                    </ul>
+                <//>`,
+        )}`;
+    }
+
+    // ─── Spacing, radii, shadows ─────────────────────────────────────────────
+
+    /** Last words that say little alone (`in`, `out`, `md`, `default`): a tile with one gets its whole path. */
+    const VAGUE = new Set(
+        "in out on off sm md lg xs xl xxl x y top bottom left right start end inner outer base default main alt hover active".split(
+            " ",
+        ),
+    );
+
+    /**
+     * The names of a group's tiles: the shortest tail of the path that tells them apart, and for a token whose last word alone is
+     * not clear (`layout.gap.in`: not `in`) the whole path. The steps of a scale are their own numbers and sizes, as the
+     * head of their group says what they are the steps of.
+     */
+    const labelsOf = (group) => {
+        const names = tails(group.tokens);
+
+        if (group.kind === "steps" || group.kind === "scale") {
+            return names;
+        }
+
+        return new Map(
+            group.tokens.map((token) => {
+                const tail = names.get(token.name);
+                const last = token.path[token.path.length - 1].toLowerCase();
+
+                return [token.name, token.path.length > 1 && VAGUE.has(last) ? token.name : tail];
+            }),
+        );
+    };
+
+    /** What each kind of group says it is, in its head. */
+    const GROUP_NOTES = {
+        steps: "the scale that padding, margins, and gaps move in",
+        sizes: "heights and widths for controls, icons, and marks",
+        scale: "the corners: every role points at one of these",
+    };
+
+    /**
+     * Roles in a group, each under the step of the scale that it points at (`radius.card` under `lg · 8px`): roles may share a
+     * value and a step, and one that points at no step of the section is under "Own value". `steps` are the scale's tokens.
+     */
+    function ByStep({ ctx, group, steps, tile, size }) {
+        const mode = ctx.modes[0];
+        const px = (token) => pixelsOf(ctx.model.value(token.name, mode).value) ?? 0;
+        const ordered = [...steps].sort((a, b) => px(a) - px(b));
+        const names = new Set(ordered.map((token) => token.name));
+        const buckets = new Map(ordered.map((token) => [token.name, []]));
+        const own = [];
+
+        for (const token of group.tokens) {
+            const step = ctx.model
+                .chain(token.name, mode)
+                .slice(1)
+                .find((name) => names.has(name));
+
+            (step === undefined ? own : buckets.get(step)).push(token);
+        }
+
+        const sets = [
+            ...ordered.map((token) => [token, buckets.get(token.name)]),
+            [null, own],
+        ].filter(([, tokens]) => tokens.length > 0);
+        const label = tails(ordered);
+
+        return html`${sets.map(([step, tokens]) => {
+            const id = `${group.id}>${step?.name ?? ""}`;
+            const part = { ...group, id, tokens };
+
+            return html`<div class="dsy-by-step" key=${id}>
+                <h4 class="dsy-by-step-head">
+                    ${
+                        step
+                            ? html`<span class="mono"
+                                      >${/^\d+$/.test(label.get(step.name)) ? step.name : label.get(step.name)}</span
+                                  >
+                                  <span class="muted mono"
+                                      >${showValue(step, ctx.model.value(step.name, mode))}</span
+                                  >`
+                            : html`<span>Own value</span>
+                                  <span class="muted">not a step of the scale</span>`
+                    }
+                </h4>
+                <${Tiles}
+                    ctx=${ctx}
+                    group=${part}
+                    size=${size}
+                    tile=${(token) => tile(token, labelsOf(group))}
+                />
+            </div>`;
+        })}`;
+    }
+
+    /** The scale's tokens of a section, whatever the search has left out: what the roles are grouped under. */
+    const stepsOf = (ctx, section, kind) =>
+        groupsOf(ctx.model.tokens, section)
+            .filter((group) => group.kind === kind)
+            .flatMap((group) => group.tokens);
+
+    function Spacing({ ctx }) {
+        const groups = groupsFor(ctx, "spacing");
+        const mode = ctx.modes[0];
+
+        if (groups.length === 0) {
+            return html`<${Empty}
+                text=${ctx.query ? "No spacing token matches." : "This system has no spacing yet."}
+            />`;
+        }
+
+        const widest = Math.max(
+            1,
+            ...groups
+                .filter((group) => group.kind !== "sizes")
+                .flatMap((group) =>
+                    group.tokens.map(
+                        (token) => pixelsOf(ctx.model.value(token.name, mode).value) ?? 0,
+                    ),
+                ),
+        );
+
+        // A step or a role: a bar at its own scale (the longest step fills the tile). A size: a square of its own size.
+        const tileOf = (token, names, kind) => {
+            const now = ctx.model.value(token.name, mode);
+            const px = pixelsOf(now.value);
+
+            return html`${
+                    kind === "sizes"
+                        ? html`<span class="dsy-space"
+                              ><i
+                                  class="dsy-size"
+                                  style=${`width:${Math.min(px ?? 0, 44)}px;height:${Math.min(px ?? 0, 44)}px`}
+                              ></i
+                          ></span>`
+                        : html`<span class="dsy-space"
+                              ><i
+                                  style=${`width:${px === null ? 0 : Math.max(2, Math.min(100, (px / widest) * 100))}%`}
+                              ></i
+                          ></span>`
+                }
+                <span class="dsy-tile-name mono">${names.get(token.name)}</span>
+                <span class="dsy-tile-hex dsy-hex mono">${showValue(token, now)}</span>`;
+        };
+
+        return html`${groups.map(
+            (group) =>
+                html`<${Group}
+                    key=${group.id}
+                    ctx=${ctx}
+                    group=${group}
+                    note=${GROUP_NOTES[group.kind] ?? (group.kind === "roles" ? "where the system uses a step" : "")}
+                    bare=${groups.length === 1}
+                >
+                    ${
+                        group.kind === "roles"
+                            ? html`<${ByStep}
+                                  ctx=${ctx}
+                                  group=${group}
+                                  steps=${stepsOf(ctx, "spacing", "steps")}
+                                  size="space"
+                                  tile=${(token, names) => tileOf(token, names, "roles")}
+                              />`
+                            : html`<${Tiles}
+                                  ctx=${ctx}
+                                  group=${group}
+                                  size="space"
+                                  tile=${(token) => tileOf(token, labelsOf(group), group.kind)}
+                              />`
+                    }
+                <//>`,
+        )}`;
+    }
+
+    /** Tiles that open the editor of one token under the grid (roles, radii, shadows). `size` is the room each takes. */
+    /** Whether the one mode in view takes this token from the default mode, rather than setting it. */
+    const inheritedIn = (ctx, token) =>
+        ctx.modes.length === 1 &&
+        ctx.modes[0] !== ctx.model.defaultMode &&
+        !ctx.model.overridden(token.name, ctx.modes[0]);
+
+    function Tiles({ ctx, group, tile, label, extra, size = "sm" }) {
+        return html`<div class="dsy-ramp-wrap">
+            <div class="dsy-tiles" data-size=${size}>
+                ${group.tokens.map((token) => {
+                    const edited = ctx.modes.some((mode) => ctx.model.edited(token.name, mode));
+                    const button = html`<button
+                        type="button"
+                        key=${token.name}
+                        data-token=${token.name}
+                        class=${`dsy-card-tile ${token.name === ctx.s.sysOpen ? "on" : ""} ${edited ? "edited" : ""} ${inheritedIn(ctx, token) ? "inherited" : ""}`}
+                        title=${inheritedIn(ctx, token) ? `Inherited from ${modeTitle(ctx.model.defaultMode)}` : undefined}
+                        aria-pressed=${token.name === ctx.s.sysOpen}
+                        aria-label=${label ? label(token) : token.name}
+                        onClick=${() => env.toggleToken(token.name)}
+                    >
+                        ${tile(token)}
+                    </button>`;
+
+                    // What sits beside a tile and is a button of its own (a button does not hold another): the wrapper holds both.
+                    return extra
+                        ? html`<div class="dsy-tile-wrap" key=${token.name}>
+                              ${button}${extra(token)}
+                          </div>`
+                        : button;
+                })}
+            </div>
+            <${Opened} ctx=${ctx} group=${group} />
+        </div>`;
+    }
+
+    function Radii({ ctx }) {
+        const groups = groupsFor(ctx, "radii");
+        const mode = ctx.modes[0];
+
+        if (groups.length === 0) {
+            return html`<${Empty}
+                text=${ctx.query ? "No radius matches." : "This system has no corner radii yet."}
+            />`;
+        }
+
+        const tileOf = (token, names) => {
+            const now = ctx.model.value(token.name, mode);
+            const px = pixelsOf(now.value);
+
+            return html`<span
+                    class="dsy-corner"
+                    style=${`border-radius:${px === null ? 0 : Math.min(px, 36)}px`}
+                ></span>
+                <span class="dsy-tile-name mono">${names.get(token.name)}</span>
+                <span class="dsy-tile-hex mono">${showValue(token, now)}</span>`;
+        };
+
+        return html`${groups.map(
+            (group) =>
+                html`<${Group}
+                    key=${group.id}
+                    ctx=${ctx}
+                    group=${group}
+                    note=${GROUP_NOTES[group.kind] ?? (group.kind === "roles" ? "by use, under the step each points at" : "")}
+                    bare=${groups.length === 1}
+                >
+                    ${
+                        group.kind === "roles"
+                            ? html`<${ByStep}
+                                  ctx=${ctx}
+                                  group=${group}
+                                  steps=${stepsOf(ctx, "radii", "scale")}
+                                  size="sm"
+                                  tile=${tileOf}
+                              />`
+                            : html`<${Tiles}
+                                  ctx=${ctx}
+                                  group=${group}
+                                  tile=${(token) => tileOf(token, labelsOf(group))}
+                              />`
+                    }
+                <//>`,
+        )}`;
+    }
+
+    /** Every layer of a shadow, one line each, with its color: and, side by side, each mode's when they differ. */
+    function ShadowLines({ ctx, token }) {
+        const sets = ctx.modes.map((mode) => ({
+            mode,
+            lines: shadowLines(ctx.model.value(token.name, mode).value),
+        }));
+        const same = sets.every(
+            (set) => JSON.stringify(set.lines) === JSON.stringify(sets[0].lines),
+        );
+
+        return html`<span class="dsy-shadow-lines">
+            ${(same ? [sets[0]] : sets).map(
+                (set) =>
+                    html`<span class="dsy-shadow-set" key=${set.mode}>
+                        ${!same && html`<em>${modeTitle(set.mode)}</em>`}
+                        ${set.lines.map(
+                            (line, at) =>
+                                html`<span class="dsy-shadow-line" key=${at}>
+                                    <i
+                                        style=${`--c:${swatchCss(line.color)}`}
+                                        title=${typeof line.color === "string" ? line.color : undefined}
+                                        aria-hidden="true"
+                                    ></i>
+                                    <span class="mono">${line.words}</span>
+                                </span>`,
+                        )}
+                    </span>`,
+            )}
+        </span>`;
+    }
+
+    function Shadows({ ctx }) {
+        const groups = groupsFor(ctx, "shadows");
+        const found = ctx.model.roles();
+
+        if (groups.length === 0) {
+            return html`<${Empty}
+                text=${ctx.query ? "No shadow matches." : "This system has no shadows yet."}
+            />`;
+        }
+
+        return html`${groups.map(
+            (group) =>
+                html`<${Group}
+                    key=${group.id}
+                    ctx=${ctx}
+                    group=${group}
+                    bare=${groups.length === 1}
+                >
+                    <${Tiles}
+                        ctx=${ctx}
+                        group=${group}
+                        size="shadow"
+                        tile=${(token) =>
+                            html`<span class="dsy-stages">
+                                    ${ctx.modes.map((mode) => {
+                                        const now = ctx.model.value(token.name, mode);
+                                        const ground = found.canvas
+                                            ? swatchCss(ctx.model.value(found.canvas, mode).value)
+                                            : "";
+                                        const card = found.surface
+                                            ? swatchCss(ctx.model.value(found.surface, mode).value)
+                                            : "";
+
+                                        return html`<span
+                                            class="dsy-stage"
+                                            key=${mode}
+                                            style=${ground ? `background:${ground}` : ""}
+                                        >
+                                            <i
+                                                style=${`${card ? `background:${card};` : ""}box-shadow:${shadowOf(now.value) || "none"}`}
+                                            ></i>
+                                        </span>`;
+                                    })}
+                                </span>
+                                <span class="dsy-tile-name mono"
+                                    >${tails(group.tokens).get(token.name)}</span
+                                >
+                                <${ShadowLines} ctx=${ctx} token=${token} />`}
+                        extra=${(token) =>
+                            html`<button
+                                type="button"
+                                class="dsy-copy"
+                                title="Copy the CSS value"
+                                aria-label=${`Copy the CSS value of ${token.name}`}
+                                onClick=${async () => {
+                                    const css = shadowOf(
+                                        ctx.model.value(token.name, ctx.modes[0]).value,
+                                    );
+
+                                    if (css && (await copyText(css))) {
+                                        pocket.notify(
+                                            "info",
+                                            `Copied ${css.length > 60 ? `${css.slice(0, 60)}…` : css}`,
+                                        );
+                                    }
+                                }}
+                            >
+                                <${Ico} name="copy" size=${13} />
+                            </button>`}
+                    />
+                <//>`,
+        )}`;
+    }
+
+    // ─── Motion ──────────────────────────────────────────────────────────────
+
+    /** A dot that runs along a track once, there and back, for `ms` with `easing`. */
+    function useRun() {
+        const dot = useRef(null);
+        const track = useRef(null);
+
+        return {
+            dot,
+            track,
+            run(ms, easing) {
+                const element = dot.current;
+                const room = track.current;
+
+                if (!element || !room || typeof element.animate !== "function") {
+                    return;
+                }
+
+                for (const animation of element.getAnimations()) {
+                    animation.cancel();
+                }
+
+                const distance = Math.max(0, room.clientWidth - element.clientWidth);
+
+                element.animate(
+                    [{ transform: "translateX(0)" }, { transform: `translateX(${distance}px)` }],
+                    {
+                        duration: Math.max(1, Math.min(5000, ms)),
+                        easing,
+                        direction: "alternate",
+                        iterations: 2,
+                        delay: 0,
+                        endDelay: 120,
+                    },
+                );
+            },
+        };
+    }
+
+    function Track({ motion }) {
+        return html`<span class="dsy-track" ref=${motion.track}><i ref=${motion.dot}></i></span>`;
+    }
+
+    function DurationRow({ ctx, token, easing }) {
+        const motion = useRun();
+        const now = ctx.model.value(token.name, ctx.modes[0]);
+        const ms = millisecondsOf(now.value);
+
+        return html`<${TokenRow}
+            ctx=${ctx}
+            token=${token}
+            visual=${html`<button
+                type="button"
+                class="dsy-play"
+                aria-label=${`Play ${token.name}`}
+                disabled=${ms === null}
+                onClick=${(event) => {
+                    event.stopPropagation();
+                    motion.run(ms ?? 0, easing);
+                }}
+            >
+                <${Ico} name="play" size=${14} />
+            </button>`}
+            sub=${html`<${Track} motion=${motion} />`}
+            value=${html`<span class="dsy-hex mono">${showValue(token, now)}</span>`}
+        />`;
+    }
+
+    function EasingRow({ ctx, token }) {
+        const motion = useRun();
+        const now = ctx.model.value(token.name, ctx.modes[0]);
+        const curve = Array.isArray(now.value) && now.value.length === 4 ? now.value : null;
+        const css = cssOf("cubicBezier", now.value);
+
+        return html`<${TokenRow}
+            ctx=${ctx}
+            token=${token}
+            visual=${curve ? html`<${Curve} value=${curve} size=${56} />` : null}
+            sub=${html`<span class="dsy-motion-sub"><span class="mono">${showValue(token, now)}</span><${Track} motion=${motion} /></span>`}
+            value=${html`<button
+                type="button"
+                class="dsy-play"
+                aria-label=${`Play ${token.name}`}
+                disabled=${css === undefined}
+                onClick=${(event) => {
+                    event.stopPropagation();
+                    motion.run(900, css);
+                }}
+            >
+                <${Ico} name="play" size=${14} />
+            </button>`}
+        />`;
+    }
+
+    function Motion({ ctx }) {
+        const groups = groupsFor(ctx, "motion");
+
+        if (groups.length === 0) {
+            return html`<${Empty}
+                text=${ctx.query ? "No motion token matches." : "This system has no motion yet."}
+            />`;
+        }
+
+        // Durations play on the first easing the system has.
+        const first = ctx.model.tokens.find((token) => token.type === "cubicBezier");
+        const easing =
+            (first && cssOf("cubicBezier", ctx.model.value(first.name, ctx.modes[0]).value)) ||
+            "ease";
+
+        return html`${groups.map(
+            (group) =>
+                html`<${Group} key=${group.id} ctx=${ctx} group=${group}>
+                    <ul class="dsy-rows">
+                        ${group.tokens.map((token) =>
+                            token.type === "duration"
+                                ? html`<${DurationRow}
+                                      key=${token.name}
+                                      ctx=${ctx}
+                                      token=${token}
+                                      easing=${easing}
+                                  />`
+                                : token.type === "cubicBezier"
+                                  ? html`<${EasingRow}
+                                        key=${token.name}
+                                        ctx=${ctx}
+                                        token=${token}
+                                    />`
+                                  : html`<${TokenRow}
+                                        key=${token.name}
+                                        ctx=${ctx}
+                                        token=${token}
+                                        value=${html`<span class="dsy-hex mono">${showValue(token, ctx.model.value(token.name, ctx.modes[0]))}</span>`}
+                                    />`,
+                        )}
+                    </ul>
+                <//>`,
+        )}`;
+    }
+
+    function Other({ ctx }) {
+        const groups = groupsFor(ctx, "other");
+
+        return html`${groups.map(
+            (group) =>
+                html`<${Group} key=${group.id} ctx=${ctx} group=${group}>
+                    <ul class="dsy-rows">
+                        ${group.tokens.map((token) => {
+                            const now = ctx.model.value(token.name, ctx.modes[0]);
+
+                            return html`<${TokenRow}
+                                key=${token.name}
+                                ctx=${ctx}
+                                token=${token}
+                                sub=${token.description ?? ""}
+                                value=${html`<span class="dsy-hex mono">${showValue(token, now)}</span>`}
+                            />`;
+                        })}
+                    </ul>
+                <//>`,
+        )}`;
+    }
+
+    // ─── Components ──────────────────────────────────────────────────────────
+
+    /** One component in one mode: its states in a frame with no scripts and no network. The frame grows to fit them. */
+    function Specimen({ ctx, component, mode }) {
+        const frame = useRef(null);
+        const found = ctx.model.roles();
+        const color = (role, fallback) =>
+            (found[role] ? swatchCss(ctx.model.value(found[role], mode).value) : "") || fallback;
+        const scheme = ctx.model.system.schemes?.[mode];
+        const dark = scheme === undefined ? /dark/i.test(mode) : scheme === "dark";
+        const doc = specimenDocument({
+            component,
+            mode,
+            scheme,
+            theme: themeCss(ctx.model, mode),
+            colors: {
+                canvas: color("canvas", dark ? "#12131a" : "#f6f7fb"),
+                surface: color("surface", dark ? "#1c1e26" : "#ffffff"),
+                text: color("text", dark ? "#f6f7fb" : "#1c1e26"),
+            },
+        });
+
+        // No scripts and no network (a policy in the document, and no `allow-scripts`). `allow-same-origin` is only so that the
+        // page can read the frame's height once it loads: nothing in the frame can run to use it.
+        return html`<iframe
+            ref=${frame}
+            class="dsy-specimen-frame"
+            title=${`${component.name}, ${mode}`}
+            sandbox="allow-same-origin"
+            referrerpolicy="no-referrer"
+            srcdoc=${doc}
+            loading="lazy"
+            onLoad=${() => {
+                const body = frame.current?.contentDocument?.body;
+
+                if (body && frame.current) {
+                    frame.current.style.height = `${Math.min(900, Math.max(60, Math.ceil(body.getBoundingClientRect().height)))}px`;
+                }
+            }}
+        ></iframe>`;
+    }
+
+    function Components({ ctx }) {
+        const list = ctx.model.system.components.filter((component) => {
+            const words = ctx.query.trim().toLowerCase();
+
+            return (
+                words === "" ||
+                `${component.name} ${component.description} ${component.slug}`
+                    .toLowerCase()
+                    .includes(words)
+            );
+        });
+
+        if (list.length === 0) {
+            return html`<div class="dsy-blank">
+                <${Ico} name="box" size=${28} />
+                <h3>${ctx.query ? "No component matches." : "No components yet"}</h3>
+                ${
+                    !ctx.query &&
+                    html`<p class="muted">
+                        A component is a button, a field, or a card, written once with the system's
+                        tokens, with each of its states (default, hover, focus, disabled, error). Pi
+                        reuses their markup in designs.
+                    </p>`
+                }
+                ${
+                    !ctx.query &&
+                    ctx.canEdit &&
+                    html`<button
+                        type="button"
+                        class="button primary"
+                        onClick=${() => env.askPi("components")}
+                    >
+                        <${Ico} name="sparkle" size=${15} /> Ask Pi for the core components
+                    </button>`
+                }
+            </div>`;
+        }
+
+        return html`${list.map(
+            (component) =>
+                html`<article class="dsy-component" key=${component.slug}>
+                    <header>
+                        <h3>${component.name}</h3>
+                        <span class="dsy-chip-static mono"
+                            >${`${component.states.length} state${component.states.length === 1 ? "" : "s"}`}</span
+                        >
+                        <span class="grow"></span>
+                        <${CopyName} name=${component.slug} copy=${component.slug} />
+                    </header>
+                    ${component.description && html`<p class="muted dsy-component-note">${component.description}</p>`}
+                    <div class="dsy-specimens" data-count=${ctx.modes.length}>
+                        ${ctx.modes.map(
+                            (mode) =>
+                                html`<div class="dsy-specimen-box" key=${mode}>
+                                    ${ctx.modes.length > 1 && html`<span class="dsy-specimen-mode mono">${mode}</span>`}
+                                    <${Specimen} ctx=${ctx} component=${component} mode=${mode} />
+                                </div>`,
+                        )}
+                    </div>
+                    ${
+                        component.usage &&
+                        (component.usage.do.length > 0 || component.usage.dont.length > 0) &&
+                        html`<div class="dsy-usage">
+                            ${
+                                component.usage.do.length > 0 &&
+                                html`<ul class="do">
+                                    ${component.usage.do.slice(0, 6).map((line) => html`<li>${line}</li>`)}
+                                </ul>`
+                            }
+                            ${
+                                component.usage.dont.length > 0 &&
+                                html`<ul class="dont">
+                                    ${component.usage.dont.slice(0, 6).map((line) => html`<li>${line}</li>`)}
+                                </ul>`
+                            }
+                        </div>`
+                    }
+                    ${
+                        component.tokens.length > 0 &&
+                        html`<div class="dsy-used">
+                            ${component.tokens
+                                .slice(0, 8)
+                                .map(
+                                    (name) =>
+                                        html`<button
+                                            type="button"
+                                            class="dsy-chip"
+                                            key=${name}
+                                            disabled=${!ctx.model.has(name)}
+                                            onClick=${() => env.openToken(name)}
+                                        >
+                                            ${name}
+                                        </button>`,
+                                )}
+                            ${
+                                component.tokens.length > 8 &&
+                                html`<span class="muted small dsy-used-more"
+                                    >${`and ${component.tokens.length - 8} more`}</span
+                                >`
+                            }
+                        </div>`
+                    }
+                </article>`,
+        )}
+        ${
+            ctx.canEdit &&
+            ctx.query === "" &&
+            html`<button
+                type="button"
+                class="dsn-link dsy-more"
+                onClick=${() => env.askPi("component")}
+            >
+                <${Ico} name="sparkle" size=${14} /> Ask Pi for another component
+            </button>`
+        }`;
+    }
+
+    // ─── Guidelines ──────────────────────────────────────────────────────────
+
+    function Guidelines({ ctx }) {
+        const text = ctx.guidelines;
+        const writing = ctx.s.sysWriting;
+        const [draft, setDraft] = useState(null);
+        const area = useRef(null);
+
+        useEffect(() => {
+            if (writing) {
+                area.current?.focus({ preventScroll: true });
+            }
+        }, [writing]);
+
+        if (writing && ctx.canEdit) {
+            return html`<div class="dsy-write">
+                <textarea
+                    ref=${area}
+                    class="mono"
+                    value=${draft ?? text}
+                    maxlength="16000"
+                    spellcheck="true"
+                    aria-label="Guidelines, in Markdown"
+                    onInput=${(event) => {
+                        setDraft(event.currentTarget.value);
+                        env.editGuidelines(event.currentTarget.value);
+                    }}
+                ></textarea>
+                <div class="dsy-write-foot">
+                    <span class="muted small"
+                        >${(draft ?? text).length.toLocaleString()} of 16,000 characters.
+                        Markdown.</span
+                    >
+                    <span class="grow"></span>
+                    <button
+                        type="button"
+                        class="button small"
+                        onClick=${() => store.set({ sysWriting: false })}
+                    >
+                        Done
+                    </button>
+                </div>
+            </div>`;
+        }
+
+        if (text.trim() === "") {
+            return html`<div class="dsy-blank">
+                <${Ico} name="book" size=${28} />
+                <h3>No guidelines yet</h3>
+                <p class="muted">
+                    Guidelines are the rules in words: the voice, the layout, what to do and what
+                    not to do. Pi reads them before it designs.
+                </p>
+                ${
+                    ctx.canEdit &&
+                    html`<div class="dsy-blank-actions">
+                        <button
+                            type="button"
+                            class="button primary"
+                            onClick=${() => store.set({ sysWriting: true })}
+                        >
+                            <${Ico} name="pen" size=${15} /> Write them
+                        </button>
+                        <button
+                            type="button"
+                            class="button"
+                            onClick=${() => env.askPi("guidelines")}
+                        >
+                            <${Ico} name="sparkle" size=${15} /> Ask Pi
+                        </button>
+                    </div>`
+                }
+            </div>`;
+        }
+
+        return html`<article class="dsy-prose">
+            ${
+                ctx.canEdit &&
+                html`<button
+                    type="button"
+                    class="dsn-link dsy-edit-guidelines"
+                    onClick=${() => store.set({ sysWriting: true })}
+                >
+                    <${Ico} name="pen" size=${13} /> Edit
+                </button>`
+            }
+            <${Markdown} text=${text} />
+        </article>`;
+    }
+
+    return { Colors, Type, Spacing, Radii, Shadows, Motion, Other, Components, Guidelines };
+}

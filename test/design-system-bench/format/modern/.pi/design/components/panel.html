@@ -1,0 +1,23 @@
+<script type="application/json" id="pocket-component">
+    {
+        "name": "Panel",
+        "description": "A raised container.",
+        "states": ["default", "hover"],
+        "usage": { "do": ["Group related controls."], "dont": ["Nest more than two."] },
+        "tokens": ["color.bg.raised", "radius.lg", "shadow.card"]
+    }
+</script>
+<style>
+    .panel {
+        padding: var(--size-4);
+        background: var(--color-bg-raised);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-card);
+        transition: transform var(--motion-duration-fast) var(--motion-easing-standard);
+    }
+    .panel.is-hover {
+        transform: translateY(-2px);
+    }
+</style>
+<template data-state="default"><div class="panel">Panel</div></template>
+<template data-state="hover"><div class="panel is-hover">Panel</div></template>

@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Settings</title>
+        <link rel="stylesheet" href="ds/tokens.css" />
+        <style>
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                background: var(--color-bg-default);
+                color: var(--color-text-primary);
+                font: var(--font-weight-regular) var(--font-size-md) / var(--font-leading-normal)
+                    var(--font-family-body);
+            }
+            .top {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: var(--space-4);
+                padding: var(--space-2) var(--space-4);
+                background: var(--color-bg-surface);
+                border-bottom: var(--size-border) solid var(--color-border-default);
+            }
+            .brand {
+                display: inline-flex;
+                align-items: center;
+                min-height: var(--size-tap);
+                color: var(--color-text-primary);
+                font-weight: var(--font-weight-bold);
+                text-decoration: none;
+            }
+            .nav {
+                display: flex;
+                gap: var(--space-2);
+            }
+            .nav a {
+                display: inline-flex;
+                align-items: center;
+                min-height: var(--size-tap);
+                padding: 0 var(--space-3);
+                color: var(--color-text-muted);
+                border-radius: var(--radius-md);
+                text-decoration: none;
+            }
+            .nav a[aria-current] {
+                color: var(--color-text-primary);
+                background: var(--color-bg-subtle);
+            }
+            .main {
+                display: flex;
+                flex-direction: column;
+                gap: var(--space-6);
+                max-width: var(--size-container);
+                margin: 0 auto;
+                padding: var(--space-8) var(--space-4);
+            }
+            h1 {
+                font-size: var(--font-size-2xl);
+                font-weight: var(--font-weight-bold);
+                line-height: var(--font-leading-tight);
+            }
+            h2 {
+                font-size: var(--font-size-lg);
+                font-weight: var(--font-weight-bold);
+                line-height: var(--font-leading-tight);
+            }
+            h3 {
+                font-size: var(--font-size-md);
+                font-weight: var(--font-weight-bold);
+                line-height: var(--font-leading-tight);
+            }
+            .lede,
+            .hint {
+                color: var(--color-text-muted);
+            }
+            .hint {
+                font-size: var(--font-size-sm);
+            }
+            .card {
+                display: flex;
+                flex-direction: column;
+                gap: var(--space-3);
+                padding: var(--space-6);
+                background: var(--color-bg-surface);
+                border: var(--size-border) solid var(--color-border-default);
+                border-radius: var(--radius-lg);
+                box-shadow: var(--shadow-sm);
+            }
+            label {
+                font-size: var(--font-size-sm);
+                font-weight: var(--font-weight-medium);
+            }
+            input {
+                min-height: var(--size-tap);
+                padding: 0 var(--space-3);
+                color: inherit;
+                background: var(--color-bg-surface);
+                border: var(--size-border) solid var(--color-border-default);
+                border-radius: var(--radius-md);
+                font: inherit;
+            }
+            .btn {
+                min-height: var(--size-tap);
+                padding: 0 var(--space-4);
+                border: var(--size-border) solid transparent;
+                border-radius: var(--radius-md);
+                font: inherit;
+                font-weight: var(--font-weight-medium);
+                cursor: pointer;
+                transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+            }
+            .btn.primary {
+                color: var(--color-text-inverse);
+                background: var(--color-accent-default);
+            }
+            .btn.primary:hover {
+                background: var(--color-accent-hover);
+            }
+            .btn.secondary {
+                color: var(--color-text-primary);
+                background: var(--color-bg-surface);
+                border-color: var(--color-border-default);
+            }
+            .btn:focus-visible,
+            input:focus-visible,
+            a:focus-visible {
+                outline: var(--size-ring) solid var(--color-focus-ring);
+                outline-offset: var(--space-1);
+            }
+            .row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: var(--space-2);
+            }
+            .badge {
+                display: inline-flex;
+                align-items: center;
+                align-self: flex-start;
+                min-height: var(--space-6);
+                padding: 0 var(--space-2);
+                color: var(--color-success-default);
+                background: var(--color-bg-subtle);
+                border-radius: var(--radius-full);
+                font-size: var(--font-size-xs);
+                font-weight: var(--font-weight-medium);
+            }
+        </style>
+    </head>
+    <body data-pid="page">
+        <header class="top" data-pid="top">
+            <a class="brand" href="#" data-pid="brand">Fieldnotes</a>
+            <nav class="nav" data-pid="nav" aria-label="Main">
+                <a href="#" data-pid="nav-notes">Notes</a>
+                <a href="#" data-pid="nav-settings" aria-current="page">Settings</a>
+            </nav>
+        </header>
+        <main class="main" data-pid="main">
+            <h1 data-pid="title">Settings</h1>
+            <p class="lede" data-pid="lede">Choose how Fieldnotes looks and when it reminds you.</p>
+            <section class="card" data-pid="profile" aria-labelledby="profile-title">
+                <h2 id="profile-title" data-pid="profile-title">Profile</h2>
+                <label for="name" data-pid="name-label">Display name</label>
+                <input id="name" type="text" value="Sam Rivera" data-pid="name-input" />
+                <p class="hint" data-pid="name-hint">Shown on the notes you share.</p>
+                <div class="row" data-pid="profile-actions">
+                    <button class="btn primary" type="button" data-pid="save">Save changes</button>
+                    <button class="btn secondary" type="button" data-pid="cancel">Cancel</button>
+                </div>
+            </section>
+            <section class="card" data-pid="plan" aria-labelledby="plan-title">
+                <h2 id="plan-title" data-pid="plan-title">Plan</h2>
+                <img
+                    src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' rx='12' fill='%231f5fd6'/%3E%3C/svg%3E"
+                    alt="Fieldnotes logo"
+                    width="64"
+                    height="64"
+                    data-pid="plan-logo"
+                />
+                <span class="badge" data-pid="plan-badge">Active</span>
+                <p class="hint" data-pid="plan-hint">Your plan renews on the first of the month.</p>
+            </section>
+        </main>
+    </body>
+</html>

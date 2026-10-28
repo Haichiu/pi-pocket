@@ -4,13 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import {
-    LIMITS,
-    checkTokensBlock,
-    draftDesignSystem,
-    scanRoot,
-    scanTokens,
-} from "../src/server/design/scan.ts";
+import { LIMITS, checkTokensBlock, scanRoot, scanTokens } from "../src/server/design/scan.ts";
 import { designSystemTool } from "../src/server/design/system.ts";
 
 const dirs: string[] = [];
@@ -80,7 +74,8 @@ test("issue numbers in comments and ids in a selector list are not colors", () =
         scanTokens(dir)
             .colors.map((c) => c.value)
             .sort(),
-        ["#0a0a0a", "#111111", "#222222", "#fefefe"],
+        // `color: red` is a color name used as a value: it counts.
+        ["#0a0a0a", "#111111", "#222222", "#fefefe", "#ff0000"],
     );
 });
 
@@ -158,7 +153,7 @@ test("scanRoot: a missing path, a folder named ..x, and a deep tree", () => {
     assert.throws(() => scanRoot(dir, "nope"), /does not exist/);
     assert.doesNotThrow(() => scanRoot(dir, "..x"));
 
-    const deep = project({ "a/b/c/d/e/f/g/h/i.css": "a{color:#111}" });
+    const deep = project({ "a/b/c/d/e/f/g/h/i/j/k.css": "a{color:#111}" });
 
     assert.deepEqual(scanTokens(deep).files, []);
     assert.equal(scanTokens(deep).partial, true);
@@ -188,12 +183,6 @@ test("the file limit ends the walk and says so", () => {
 
     assert.equal(scan.files.length, LIMITS.files);
     assert.equal(scan.partial, true);
-});
-
-test("the draft's tokens block parses and passes the write check", () => {
-    const draft = draftDesignSystem(scanTokens(project({ "a.css": ":root{--c:#123}" })));
-
-    assert.equal(checkTokensBlock(draft), true);
 });
 
 test("checkTokensBlock: none is false, broken or non-object throws", () => {

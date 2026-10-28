@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>Corner Bakery - fresh bread daily</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="stylesheet" href="css/legacy.css" />
+        <style>
+            :root {
+                --brand: #b5651d;
+                --brand-dark: #8f4f14;
+                --radius: 6px;
+            }
+            html {
+                font-size: 16px;
+            }
+            body {
+                background: #faf3e8;
+                color: #333333;
+                font-family: "Open Sans", Arial, sans-serif;
+                font-size: 16px;
+                line-height: 1.5;
+                margin: 0;
+            }
+            h1,
+            h2,
+            h3 {
+                font-family: "Playfair Display", Georgia, serif;
+                color: #323232;
+                margin: 0 0 15px;
+            }
+            h1 {
+                font-size: 36px;
+            }
+            h2 {
+                font-size: 28px;
+                border-bottom: 1px solid #ddd;
+                padding-bottom: 8px;
+            }
+            h3 {
+                font-size: 24px;
+            }
+            a {
+                color: #3366cc;
+            }
+            a:hover {
+                color: #3366cd;
+            }
+            .wrap {
+                max-width: 960px;
+                margin: 0 auto;
+                padding: 0 16px;
+            }
+            .hero {
+                background: var(--brand);
+                color: white;
+                padding: 48px 0;
+                text-align: center;
+            }
+            .hero h1 {
+                color: #fffffe;
+                font-size: 48px;
+            }
+            .hero p {
+                font-size: 1.1rem;
+                margin: 0 0 20px;
+            }
+            .btn {
+                display: inline-block;
+                background: var(--brand);
+                color: #ffffff;
+                padding: 12px 24px;
+                border-radius: 3px;
+                border: 0;
+                font-size: 1rem;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+            }
+            .btn:hover {
+                background: var(--brand-dark);
+            }
+            .btn-alt {
+                background: #8f4f14;
+                color: #fff;
+                padding: 12px 24px;
+                border-radius: 4px;
+            }
+            .nav {
+                background: #2b1d14;
+                padding: 10px 0;
+            }
+            .nav a {
+                color: #fefefe;
+                margin-right: 20px;
+                font-size: 14px;
+            }
+            .card {
+                background: #fff;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                padding: 24px;
+                margin-bottom: 20px;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            }
+            .card h3 {
+                font-size: 1.5rem;
+                color: #333;
+            }
+            .card .price {
+                font-size: 20px;
+                color: #b6661e;
+                font-weight: bold;
+            }
+            .err {
+                color: rgb(211, 47, 47);
+                font-size: 12px;
+            }
+            .card .meta {
+                font-size: 14px;
+                color: #777;
+            }
+            .card2 {
+                background: #ffffff;
+                border: 1px solid #e0e0e0;
+                border-radius: 8px;
+                padding: 24px;
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            }
+            .sub {
+                font-size: 0.9rem;
+                color: #777777;
+            }
+            .lede {
+                font-size: 18px;
+                color: #333;
+            }
+            .big {
+                font-size: 1.3rem;
+            }
+            .sec {
+                font-size: 1.8rem;
+            }
+            .fine {
+                font-size: 11px;
+                color: #787878;
+            }
+            .caption {
+                font-size: 12.5px;
+                color: #999999;
+            }
+            .small {
+                font-size: 12px;
+            }
+            .pt {
+                font-size: 10pt;
+            }
+            .tag {
+                display: inline-block;
+                padding: 5px 10px;
+                border-radius: 4px;
+                background: #f5f5f5;
+                color: #777;
+                font-size: 12px;
+            }
+            .pill {
+                display: inline-block;
+                padding: 4px 8px;
+                border-radius: 999px;
+                background: #d32f2f;
+                color: #fff;
+                font-size: 12px;
+            }
+            .pill.ok {
+                background: #2e7d32;
+            }
+            .pill.warn {
+                background: #f9a825;
+                color: #333;
+            }
+            .avatar {
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                background: #dedede;
+            }
+            .input {
+                border: 1px solid #dcdcdc;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 14px;
+                font-family: inherit;
+            }
+            .input:focus {
+                outline: 0;
+                box-shadow: 0 0 0 3px rgba(51, 102, 204, 0.4);
+                border-color: #3365cc;
+            }
+            .input.bad {
+                border-color: #d33030;
+            }
+            .pop {
+                background: #fff;
+                border-radius: 12px;
+                padding: 32px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            }
+            .sticky {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: #f6f6f6;
+                padding: 10px 16px;
+                box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+            }
+            .code {
+                font-family: "Courier New", monospace;
+                background: #f5f5f5;
+                padding: 4px 8px;
+                border-radius: 3px;
+            }
+            .good {
+                color: #2f7d32;
+            }
+            .stripe td {
+                background: #f6f6f6;
+            }
+            .divider {
+                border-top: 1px solid #ddd;
+                margin: 40px 0;
+            }
+            @media (max-width: 600px) {
+                h1 {
+                    font-size: 28px;
+                }
+                .hero {
+                    padding: 32px 0;
+                }
+                .card {
+                    padding: 15px;
+                }
+            }
+            @media (prefers-color-scheme: dark) {
+                body {
+                    background: #1c1411;
+                    color: #f0e6da;
+                }
+                a {
+                    color: #8ab4f8;
+                }
+                .card {
+                    background: #2a201b;
+                }
+            }
+        </style>
+    </head>
+    <body id="top">
+        <div class="nav">
+            <div class="wrap">
+                <a href="#menu">Menu</a> <a href="#hours">Hours</a> <a href="#order">Order</a>
+            </div>
+        </div>
+        <div class="hero">
+            <div class="wrap">
+                <h1>Fresh bread, every morning</h1>
+                <p>Baked from 4 a.m. in the heart of the old town.</p>
+                <a class="btn" href="#order">Order now</a>
+                <a class="btn-alt" href="#menu">See the menu</a>
+            </div>
+        </div>
+        <div class="wrap">
+            <h2 id="menu">Today's bakes</h2>
+            <div class="card">
+                <h3>Sourdough loaf</h3>
+                <div class="price">$6.50</div>
+                <p class="meta">800 g, baked at 6 a.m.</p>
+                <span class="tag">vegan</span> <span class="pill ok">in stock</span>
+            </div>
+            <div class="card2" style="margin-top: 30px; padding: 24px; color: #333">
+                <h3 style="font-size: 24px; margin-bottom: 8px">Cinnamon swirl</h3>
+                <p class="sub">Sold out by nine. <span class="pill">sold out</span></p>
+                <p style="color: #d32f2f; font-size: 14px; margin: 0 0 4px">Only 2 left!</p>
+            </div>
+            <div class="divider"></div>
+            <h2 id="hours">Opening hours</h2>
+            <table class="tbl">
+                <tr>
+                    <td>Mon to Fri</td>
+                    <td>6:00 to 18:00</td>
+                </tr>
+                <tr class="stripe">
+                    <td>Sat</td>
+                    <td>7:00 to 15:00</td>
+                </tr>
+            </table>
+            <p class="fine">Closed on bank holidays. &#169; 2016 Corner Bakery &#9733;</p>
+            <p class="caption">Prices include tax.</p>
+            <h2 id="order">Order ahead</h2>
+            <div class="pop" style="padding: 32px">
+                <input class="input" placeholder="Your name" />
+                <input class="input bad" placeholder="Phone" />
+                <p class="err">Please enter a phone number.</p>
+                <p class="good" style="margin: 10px 0 0">We will text you when it is ready.</p>
+                <p class="lede">
+                    <span class="big">Pickup</span> <span class="pt">or</span>
+                    <span class="sec">delivery</span>
+                </p>
+                <p>
+                    <span class="small">Courier: </span><span class="code">BAKERY-42</span>
+                    <span class="avatar"></span>
+                </p>
+                <svg width="40" height="40" aria-hidden="true">
+                    <defs>
+                        <linearGradient id="grad">
+                            <stop offset="0" stop-color="#b5641c" />
+                            <stop offset="1" stop-color="#8f4f14" />
+                        </linearGradient>
+                    </defs>
+                    <circle cx="20" cy="20" r="18" fill="url(#grad)" />
+                </svg>
+            </div>
+        </div>
+        <div class="footer" style="margin-top: 48px">
+            <div class="wrap">
+                Corner Bakery &middot; 12 Mill Street <a href="#top">Back to top</a>
+            </div>
+        </div>
+        <div class="sticky">
+            <span class="muted">Open now</span> <span class="warn">Closing at 18:00</span>
+        </div>
+    </body>
+</html>

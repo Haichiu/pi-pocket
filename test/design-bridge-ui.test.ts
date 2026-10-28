@@ -95,6 +95,29 @@ const DESIGN = `<!doctype html><html><head><meta charset="utf-8"><title>Design</
 <script>document.getElementById("go").onclick = () => { window.clicked += 1; };</script>
 ${TEST_HOOKS}</body></html>`;
 
+/** A long page with a count of the hit tests that the bridge makes (a pin's place costs some): `pinwork` answers it. */
+const LONG = `<!doctype html><html><head><meta charset="utf-8"><title>Long</title>
+<style>body{font:16px/1.5 system-ui;margin:0}p{margin:0;padding:0 40px}</style></head>
+<body>${Array.from({ length: 160 }, (_, at) => `<p data-pid="p${at}">Row ${at}: boarding opens at nine, and the ferry leaves on the hour.</p>`).join("")}
+<script>
+window.hits = 0;
+const hitTest = document.elementsFromPoint.bind(document);
+document.elementsFromPoint = (x, y) => { window.hits += 1; return hitTest(x, y); };
+addEventListener("message", (event) => {
+    const data = event.data;
+    if (!data || data.type !== "pinwork" || typeof data.id !== "string") return;
+    if (data.reset) { window.hits = 0; }
+    if (data.scroll) { scrollBy(0, data.scroll); }
+    parent.postMessage({ id: data.id, hits: window.hits, scrollY: scrollY }, "*");
+});
+</script></body></html>`;
+
+/** A page with one element that has room around it, for a pin to sit above it: a tap on the pin, and where it is told to be. */
+const PINS = `<!doctype html><html><head><meta charset="utf-8"><title>Pins</title>
+<style>body{margin:0;height:1500px}#target{position:absolute;left:200px;top:700px;width:120px;height:40px;background:#cde}</style></head>
+<body><div id="target" data-pid="target">Target</div>
+${TEST_HOOKS}</body></html>`;
+
 const DECK = `<!doctype html><html><head><meta charset="utf-8"><title>Deck</title><meta name="pocket-kind" content="deck">
 <style>body{margin:8px}.slide{width:1920px;max-width:100%;min-width:10px;height:1080px;background:#123;color:#fff;font-size:80px}</style></head>
 <body><section class="slide"><h1>One</h1></section><section class="slide"><h1>Two</h1></section><section class="slide"><h1>Three</h1></section>
@@ -257,6 +280,8 @@ before(async () => {
     ({ id: session } = await app.commands.createSession(owner(app), { cwd: work }));
     await publish("design", DESIGN);
     await publish("deck", DECK);
+    await publish("long", LONG);
+    await publish("pins", PINS);
     await publish("intercept", INTERCEPT);
     await publish("cspdeck", CSP_DECK);
     await publish("csppage", CSP_PAGE);
@@ -600,6 +625,107 @@ test("pins show for a list of targets and clear on an empty list", real, async (
 });
 
 test(
+    "pins are placed once, and a scroll or a quiet page does not look at the page again",
+    real,
+    async () => {
+        await openDesign("long");
+
+        const work = (extra: object = {}) =>
+            ask<{ hits: number; scrollY: number }>({ type: "pinwork", ...extra });
+
+        // A hundred pins on a long page: the ones in view get a place, the rest are only rectangles.
+        assert.equal(
+            await send({
+                type: "pocket-highlight",
+                targets: Array.from({ length: 100 }, (_, at) => ({
+                    selector: `[data-pid="p${at}"]`,
+                    label: at + 1,
+                })),
+            }),
+            true,
+        );
+        await settle();
+        await settle();
+        assert.ok((await work()).hits > 0, "the pins in view were given a place");
+
+        // Nothing changes: every frame reads rectangles, and none of them is a hit test.
+        const quiet = await work({ reset: true });
+
+        assert.equal(quiet.hits, 0);
+        await settle();
+        assert.equal((await work()).hits, 0, "a quiet page costs no hit tests");
+
+        // A scroll moves the page and the pins together: the places that were found stay.
+        const before = await work({ reset: true });
+
+        assert.equal(before.hits, 0);
+
+        await work({ scroll: 5 });
+        await settle();
+
+        const scrolled = await work();
+
+        assert.equal(scrolled.scrollY, 5);
+        assert.ok(
+            scrolled.hits <= 12,
+            "a small scroll finds a place only for the pins that reach the edge",
+        );
+
+        await send({ type: "pocket-highlight", targets: [] });
+    },
+);
+
+test(
+    "a tap on a pin is told to the app, and a pin asked to come into view says where its element is",
+    real,
+    async () => {
+        await openDesign("pins");
+        await send({ type: "pocket-highlight", targets: [{ selector: "#target", label: 7 }] });
+        await settle();
+        await settle();
+
+        // The page is scrolled to the top: the element is below the frame's fold, so bring it in first.
+        await send({
+            type: "pocket-highlight",
+            targets: [{ selector: "#target", label: 7, reveal: true }],
+        });
+        await until(
+            async () => (await gotOf("pocket-pin")).some((each) => each.rect !== undefined),
+            "where the element is",
+            SLOW,
+        );
+
+        const told = (await gotOf("pocket-pin")).find((each) => each.rect !== undefined)!;
+
+        assert.equal(told.label, "7");
+        // The page scrolled it to the middle of the frame (600 px high), and says where it is now.
+        assert.ok(Math.abs(told.rect.y + told.rect.height / 2 - 300) < 3, JSON.stringify(told));
+        assert.equal(told.rect.x, 200);
+        assert.equal(told.rect.width, 120);
+
+        // The pin sits above its element, outside it: a tap on the pin is a message, with no rectangle.
+        await settle();
+
+        const above = told.rect.y - 22 - 3;
+
+        await page.click({ x: told.rect.x + 11, y: above + 11 });
+        await until(
+            async () => (await gotOf("pocket-pin")).some((each) => each.tap === true),
+            "the tap",
+            SLOW,
+        );
+        assert.deepEqual(
+            (await gotOf("pocket-pin")).find((each) => each.tap === true),
+            { type: "pocket-pin", label: "7", tap: true },
+        );
+
+        // The page does not see the tap (the pin is not in its tree), and nothing else of the page changed.
+        assert.equal((await dump()).clicked, 0);
+        await send({ type: "pocket-highlight", targets: [] });
+    },
+);
+
+test(
     "a deck shows one slide at a time, scaled to fit, with keys, swipes, and goto",
     real,
     async () => {
@@ -827,6 +953,26 @@ test("what a page says is checked for its shape and length", real, async () => {
     assert.equal(await deck(1001, 0), null);
     assert.equal(await deck("3", 0), null);
     assert.equal(await deck(3, 0.5), null);
+
+    // A pin: a tap (no other field comes through), or where its element is (finite numbers); nothing else.
+    const pin = (body: object) =>
+        check(`bridge.checkPageMessage({ type: "pocket-pin", ...${JSON.stringify(body)} })`);
+
+    assert.deepEqual(await pin({ label: "7", tap: true, extra: 1 }), {
+        type: "pocket-pin",
+        label: "7",
+        tap: true,
+    });
+    assert.deepEqual(
+        await pin({ label: "7", rect: { x: 1, y: 2, width: 3, height: 4, more: 5 } }),
+        { type: "pocket-pin", label: "7", rect: { x: 1, y: 2, width: 3, height: 4 } },
+    );
+    assert.equal(await pin({ label: "7" }), null, "neither a tap nor a place");
+    assert.equal(await pin({ label: "toolongalabel", tap: true }), null);
+    assert.equal(await pin({ tap: true }), null);
+    assert.equal(await pin({ label: "7", rect: { x: "1", y: 2, width: 3, height: 4 } }), null);
+    assert.equal(await pin({ label: "7", rect: { x: 1, y: 2, width: 3 } }), null);
+    assert.equal(await pin({ label: "7", rect: { x: 1e9, y: 2, width: 3, height: 4 } }), null);
 });
 
 test("the app's own messages are checked before they go", real, async () => {
@@ -857,6 +1003,15 @@ test("the app's own messages are checked before they go", real, async () => {
         ).error,
     );
     assert.ok((await check({ type: "pocket-run", html: "<p>" })).error);
+    // A pin may ask to be brought into view (a finding tapped in a list); only a boolean says so.
+    assert.ok(
+        (await check({ type: "pocket-highlight", targets: [{ selector: "p", reveal: true }] }))
+            .message,
+    );
+    assert.ok(
+        (await check({ type: "pocket-highlight", targets: [{ selector: "p", reveal: "yes" }] }))
+            .error,
+    );
 });
 
 test(

@@ -1,0 +1,41 @@
+{
+    "design": "seed-a11y",
+    "viewport": [1280, 800],
+    "colorSchemes": ["light"],
+    "findings": [
+        {
+            "rule": "tap-target",
+            "pid": "close",
+            "level": "error"
+        },
+        {
+            "rule": "tap-target",
+            "pid": "menu",
+            "level": "warning"
+        },
+        {
+            "rule": "tap-target",
+            "pid": "terms",
+            "level": "warning"
+        },
+        {
+            "rule": "image-alt",
+            "pid": "hero-img",
+            "level": "error"
+        },
+        {
+            "rule": "image-alt",
+            "pid": "avatar-img",
+            "level": "error"
+        },
+        {
+            "rule": "heading-order",
+            "pid": "sub-heading"
+        },
+        {
+            "rule": "focus-visible",
+            "pid": "bare"
+        }
+    ],
+    "description": "Tap targets of 16, 32 and 24 px, two images without alt, a skipped heading level, and a button with its focus ring removed."
+}

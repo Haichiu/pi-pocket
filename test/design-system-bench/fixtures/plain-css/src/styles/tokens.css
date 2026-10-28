@@ -1,0 +1,69 @@
+/* Fieldnotes design tokens. Change a value here, not in a component. */
+:root {
+    /* Surfaces and text */
+    --bg: #fbfaf7;
+    --surface: #ffffff;
+    --surface-sunken: #f3f1ec;
+    --text: #1f2328;
+    --text-muted: #626b76;
+    --border: #dedad1;
+    --scrim: rgb(16 24 40 / 0.5);
+
+    /* Brand and status */
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --danger: #c62828;
+    --warning: #b26a00;
+    --success: #1b7f4b;
+
+    /* Type */
+    --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.25rem;
+    --text-xl: 1.5rem;
+    --text-2xl: 2rem;
+    --leading-tight: 1.25;
+    --leading-body: 1.55;
+
+    /* Space (a 4 px grid) */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-12: 48px;
+
+    /* Shape and depth */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 16px;
+    --radius-full: 9999px;
+    --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.08);
+    --shadow-md: 0 4px 12px rgb(16 24 40 / 0.12);
+
+    /* Motion */
+    --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --duration: 160ms;
+}
+
+/* Dark theme: add class="dark" to <html>. Only what changes is listed. */
+.dark {
+    --bg: #0e1013;
+    --surface: #161a1f;
+    --surface-sunken: #0a0c0f;
+    --text: #e6e8eb;
+    --text-muted: #9aa4af;
+    --border: #2b323b;
+    --scrim: rgb(0 0 0 / 0.6);
+    --accent: #6ea0ff;
+    --accent-hover: #8db3ff;
+    --danger: #ff7b72;
+    --warning: #e3b341;
+    --success: #56d364;
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 4px 12px rgb(0 0 0 / 0.5);
+}

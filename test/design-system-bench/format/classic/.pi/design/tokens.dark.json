@@ -1,0 +1,22 @@
+{
+    "palette": {
+        "slate": {
+            "50": { "$value": "#0b1220" },
+            "200": { "$value": "#26334a" },
+            "500": { "$value": "#94a3b8" },
+            "950": { "$value": "#f1f5f9" }
+        },
+        "indigo": { "700": { "$value": "#818cf8" } },
+        "rose": { "600": { "$value": "#fb7185" } },
+        "amber": { "700": { "$value": "#fbbf24" } },
+        "emerald": { "700": { "$value": "#34d399" } },
+        "white": { "$value": "#111a2e" }
+    },
+    "color": {
+        "text": { "on-brand": { "$value": "#0b1220" } }
+    },
+    "shadow": {
+        "low": { "$value": "0 1px 2px rgb(0 0 0 / 0.5)" },
+        "high": { "$value": "0 12px 32px rgb(0 0 0 / 0.6)" }
+    }
+}

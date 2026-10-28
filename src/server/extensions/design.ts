@@ -2,7 +2,9 @@
  * Design: a canvas beside the chat for interactive designs. It shows an HTML artifact in a frame at phone, tablet, and
  * desktop sizes, keeps its versions to compare and go back to, holds shared comments pinned to elements, edit and tweak
  * modes, a grid for variations, and a present mode for decks, and hands each change to Pi as a message for the person to
- * send. The agent's side (tools, prompt guide, export) is in `../design/`; this module is the workspace.
+ * send. The agent's side (tools, prompt guide, export) is in `../design/`; this module is the workspace. The System view
+ * (the project's design system: read, edit, check a design against it, publish, export) has its routes in
+ * `design/system-routes.ts`.
  */
 import { randomUUID } from "node:crypto";
 import { defineExtension } from "@earendil-works/pi-durable";
@@ -16,12 +18,16 @@ import {
     type DesignItem,
 } from "../docs.ts";
 import type { ConversationWebRequest, ExtensionWeb, PocketHost } from "../host.ts";
+import { systemRoutes } from "./design/system-routes.ts";
 
 /** An artifact as the index keeps it, with the fields of bundles (`group`, `kind`) that an older index lacks. */
 type DesignArtifact = ArtifactMeta & { group?: string; kind?: string };
 
 const MAX_COMMENT = 2000;
 const MAX_COMMENTS = 200;
+const MAX_ACCEPTED = 500;
+/** A finding's id: its rule and ten hex digits of where it is, and a count when the same one repeats (`contrast-1a2b3c4d5e-2`). */
+const FINDING_ID = /^[a-z][a-z-]{0,40}-[0-9a-f]{10}(?:-\d{1,3})?$/;
 const MAX_ITEMS = 100;
 const MAX_KNOBS = 40;
 const MAX_PEOPLE = 50;
@@ -222,7 +228,7 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
         return doc.items[id]!;
     };
 
-    /** An item with no comments, tweaks, or restores keeps nothing: it goes, and its place with it. */
+    /** An item with no comments, tweaks, restores, or accepted findings keeps nothing: it goes, and its place with it. */
     const dropIfEmpty = (doc: { items: Record<string, DesignItem> }, id: string) => {
         const item = doc.items[id];
 
@@ -230,16 +236,18 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
             item !== undefined &&
             item.comments.length === 0 &&
             Object.keys(item.tweaks ?? {}).length === 0 &&
-            Object.keys(item.restores ?? {}).length === 0
+            Object.keys(item.restores ?? {}).length === 0 &&
+            Object.keys(item.accepted ?? {}).length === 0
         ) {
             delete doc.items[id];
         }
     };
 
-    /** The comments are everyone's; one person's tweaks are theirs alone. */
+    /** The comments and the accepted findings are everyone's; one person's tweaks are theirs alone. */
     const view = (item: DesignItem | undefined, person: string) => ({
         comments: item?.comments ?? [],
         tweaks: item?.tweaks?.[person]?.values ?? null,
+        accepted: item?.accepted ?? {},
     });
 
     const changed = (conversation: number, artifact: string) =>
@@ -410,6 +418,79 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
             changed(request.conversation.id, id);
 
             return {};
+        },
+        steer,
+    );
+
+    // Accept a finding of the Check for this design (a decision that the finding is fine as it is), by its stable id: it is
+    // everyone's, with who accepted it and when, and "undo" takes it back. The Check lists it apart and does not count it.
+    web.conversationRoute(
+        "POST",
+        "c/:conversation/designs/:artifact/accepted",
+        async (request) => {
+            const id = request.params.artifact!;
+
+            await requireArtifact(request, id);
+
+            const finding = request.body.id;
+
+            if (typeof finding !== "string" || !FINDING_ID.test(finding)) {
+                throw web.error(400, "Name the finding by its id.");
+            }
+
+            const entry = {
+                by: request.user.id,
+                byName: text(request.user.name, 80),
+                at: Date.now(),
+                rule: text(request.body.rule, 40),
+                message: text(request.body.message, 300),
+            };
+
+            await request.commit(async (tx) => {
+                const doc = await tx.doc(DesignCommentsDoc, request.conversation.id);
+                const item = itemOf(doc, id);
+                const accepted = item.accepted ?? {};
+
+                if (!Object.hasOwn(accepted, finding)) {
+                    if (Object.keys(accepted).length >= MAX_ACCEPTED) {
+                        throw web.error(
+                            409,
+                            `A design keeps up to ${MAX_ACCEPTED} accepted findings: undo some.`,
+                        );
+                    }
+
+                    item.accepted = { ...accepted, [finding]: entry };
+                }
+            });
+            changed(request.conversation.id, id);
+
+            return { id: finding };
+        },
+        steer,
+    );
+
+    // Undo an accept: the finding is counted again.
+    web.conversationRoute(
+        "DELETE",
+        "c/:conversation/designs/:artifact/accepted/:finding",
+        async (request) => {
+            const id = request.params.artifact!;
+            const finding = request.params.finding!;
+
+            await request.commit(async (tx) => {
+                const doc = await tx.doc(DesignCommentsDoc, request.conversation.id);
+                const item = Object.hasOwn(doc.items, id) ? doc.items[id]! : undefined;
+
+                if (item?.accepted !== undefined && Object.hasOwn(item.accepted, finding)) {
+                    const { [finding]: _gone, ...rest } = item.accepted;
+
+                    item.accepted = rest;
+                    dropIfEmpty(doc, id);
+                }
+            });
+            changed(request.conversation.id, id);
+
+            return { id: finding };
         },
         steer,
     );
@@ -599,8 +680,8 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
     // `/design-open [artifact]`: opens the workspace in the tab of the person who ran it. A command's name needs a dash,
     // so it is not `/design`.
     web.command("design-open", {
-        description: "Open the Design canvas",
-        args: "[artifact]",
+        description: "Open the Design canvas (or the design system, with `system`)",
+        args: "[artifact | system]",
         scope: "conversation",
         handler: (args, context) => {
             web.send(
@@ -615,6 +696,8 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
 
     // Export (`POST export`) is the agent side's; the file comes through core's download route.
     designRoutes(web, host);
+    // The System view: read and edit the design system, check a design against it, publish its docs, export it for code.
+    systemRoutes(web, host);
 
     return extension;
 }

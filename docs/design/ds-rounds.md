@@ -1,0 +1,160 @@
+# Design systems hill climb: rounds
+
+The plan and the rubric are in `design-system.md`. Each round records the streams, the merge, the bench numbers, and the judges' scores.
+
+## Round 1: build (started)
+
+| Stream                        | Branch      | Linked session                                 |
+| ----------------------------- | ----------- | ---------------------------------------------- |
+| T: tokens engine              | `ds/tokens` | `session-5a05dce4-b1c8-456a-8420-20cd0f421aab` |
+| V: verify and export          | `ds/verify` | `session-e215fa63-fe4d-4eef-8c8c-2d6b826691f8` |
+| U: System view                | `ds/ui`     | `session-9234a764-0b5d-4034-b421-962973805499` |
+| G: guide, docs page, flagship | `ds/guide`  | `session-f7f6426c-3294-43d2-acfc-c0575639c47f` |
+| B: bench                      | `ds/bench`  | `session-97947ee5-d638-4e0f-8fa7-39361867d98c` |
+
+All on `anthropic/claude-sonnet-5-5`; T and U at xhigh thinking, the others at high.
+
+### Round 1 merge (T, V, G, B; U pending)
+
+Merged into `feat/design-system` at 98e61e3. The two `tokens-stub.ts` stand-ins are gone; `guide.ts`, `index.ts`, and the test loader use `tokens.ts`. Test systems gained T's new `schemes` field. The bench reads `scanTokens(root).draft`.
+
+Bench (`node test/design-system-bench/run.ts`): overall **0.926**. Scan 0.869 (colors precision 0.48 to 0.72; roles wrong on 2 fixtures; scss-ts dark mode missed; messy radii 0.2). Format 0.99. Lint 0.772 (precision 0.815, recall 0.733: 5 contrast false positives, tap-target recall 0, 5 clean-design findings). Contrast 1. Docs 1 (structural).
+
+**Held-out set** (B, outside the repo; 3 scan projects, 4 lint designs; `--reference` scores 1.0): the round 1 code scores **0.853** (scan **0.544**, format 0.987, lint 0.734, contrast 1, docs 1). The scan's round 1 rules do not generalize (roles P 0.46 R 0.44, dark roles R 0.11; a dark theme object read as the default). The contrast false positives are general (8 of 11 on clean designs). T and V got general causes, not held-out details.
+
+### Round 1 complete (U merged, ed6b2e3)
+
+U's stand-ins replaced by the real engines. Full suite: 1155 of 1162 pass; 6 failures are U's tests meeting the real engines, 1 is V's render-queue timing test (sent back to U and V). Bench: overall 0.926 (unchanged). Held-out, `--no-browser`: scan 0.544, lint 0.734 (format and docs read low only because `--no-browser` skips their browser checks; run the held-out set with the browser from now on).
+
+Hands-on findings for U: the Check dock checks Light while the canvas shows Dark; section tabs overflow at about 650 px; the warnings box fills a third of a phone screen.
+
+### Round 2: V merged
+
+V's lint fixes (root cause: the DOM walk skipped `<body>`, so text was judged on white; findings now one per `data-pid` scope; tap targets per the plan; authored literals read). Bench lint 0.772 → **1.0**. Held-out lint 0.734 → **1.0** (precision 1, recall 1, 0 findings on clean designs): the fix generalizes. V's duplicate color math now imports T's `color.ts`.
+
+### Judges after round 2 (tree at about ab20007; scan fix not merged)
+
+| Line                   | Judge A (sonnet-5-5) | Judge B (glm-5.3-flash) | Score |
+| ---------------------- | -------------------- | ----------------------- | ----- |
+| 1 Token model          | 8                    | 9                       | **8** |
+| 2 Import (scan)        | 4                    | 4                       | **4** |
+| 3 Enforcement          | 7                    | 9                       | **7** |
+| 4 Accessibility        | 7                    | 9                       | **7** |
+| 5 Agent experience     | 7                    | 8                       | **7** |
+| 6 People experience    | 6                    | 7                       | **6** |
+| 7 Documentation output | 8                    | 8                       | **8** |
+| 8 Code handoff         | 6                    | 8                       | **6** |
+| 9 Engineering          | 6                    | 6                       | **6** |
+
+Shared top items: the scan does not generalize; Check checks Light while the canvas shows Dark (and has no high-contrast choice); phone layout (tabs, warnings box, Check dock); Colors opens on primitives; `tailwind.css` doubles every variable and `tokens.css` adds a `--dim-*` layer; docs copy errors; `features.md` and `map.md` out of date; the suite was red at the time of judging.
+
+Check-in (T's working tree, round 2 scan, not merged): bench scan 0.995, held-out scan **0.795** (from 0.544). The gap shows some bench fitting; T got four general causes (scales only as literals or SCSS/JS, SCSS dark forms, too many colors in a dark-first project, one role).
+
+T at e5e92b1 (27 blind projects written by 9 agents, 0.738 → 0.978 on them): held-out scan **0.869**. The integrator read the remaining failures and confirmed the expectations; 4 general faults remain (shadows by value syntax; status role words; `--dark-*` twins duplicated; vendor-prefixed theme attributes).
+
+Round 3 merged so far: G (flagship names, docs page phone layout and copy, guide example, counting rule, 2 flagship fixes from V's real-page check), V (role-aware suggestions, 25 pages: 51 false findings → 0, stable ids, concrete edits, named modes), U (roles first, palette strips, phone Check sheet, a11y, all modes in Check), B (CSS probe fix: the flagship's format is 1.0). The release's own suite has a pre-existing flaky deck test (fails under load at 7bd4e0b too).
+
+### Round 3 evaluation (0262a6c)
+
+`npm run check`, `npm run lint`, `npm test` green: **1258 of 1258**. Bench: **1.0** in every phase. Held-out: overall **0.974** (scan 0.869, format 0.999, lint 1.0, contrast 1.0, docs 1.0). Shots: 46 of 50 (Harbor's Radii and Shadows timed out). Flaky `mobile-ui` reconnect test: a timing bug in the test, exposed because the Design browser module grew from 129 KB to 366 KB and loads late (fixed in ddf81c9; U makes the module load lazily in round 4).
+
+Scan after T's rounds 3b and 3c (`ds/tokens` 995c1d8, not merged yet): held-out scan **0.994** (0.869 → 0.978 → 0.994). Bench 0.998; T's own 37 blind projects 0.975. The held-out set has now guided several fixes (described as general classes, with a synthetic example for the last two), so it is no longer fully independent: a fresh held-out set is needed before the final judging.
+
+### Judges after round 3 (0262a6c)
+
+| Line                   | R2  | R3 judge A | R3 judge B | **R3**                                      |
+| ---------------------- | --- | ---------- | ---------- | ------------------------------------------- |
+| 1 Token model          | 8   | 8          | 9          | **8**                                       |
+| 2 Import (scan)        | 4   | 7          | 8          | **7** (judged at held-out 0.869; now 0.994) |
+| 3 Enforcement          | 7   | 8          | 9          | **8**                                       |
+| 4 Accessibility        | 7   | 8          | 9          | **8**                                       |
+| 5 Agent experience     | 7   | 8          | 9          | **8**                                       |
+| 6 People experience    | 6   | 7          | 8          | **7**                                       |
+| 7 Documentation output | 8   | 8          | 8          | **8**                                       |
+| 8 Code handoff         | 6   | 7          | 9          | **7**                                       |
+| 9 Engineering          | 6   | 8          | 9          | **8**                                       |
+
+Every line rose or held. Disputed: the docs page's component frames are blank in the bench tiles and Harbor's Radii and Shadows shots timed out. Judge A traced both to capture (frames not painted off-screen; the shots script waited for 40 characters); judge B suspected real defects. Round 4 settles it with assertions.
+
+Merged after judging: T 995c1d8 (scan 0.994 held-out), U 00433fa and 49b3174 (shadow parts, inherited modes, all contrast pairs, exempt badges, lazy start), G f633029 (exempt pair, notes, use-it blocks).
+
+**Second held-out set** (B, `/mnt/games/Development/ds-holdout-2/`, made after all scan work; 5 projects: shadcn HSL triplets, Tokens Studio, vanilla-extract, Less with a vendored library, WordPress theme.json; 5 lint designs on the flagship): on 30617b7, overall **0.952**: scan **0.818** (Tokens Studio 0.44: one set read; theme.json 0.75: no font sizes or families; the other 3 at 0.95 to 0.98), lint **1.0** (28 of 28, 0 false findings), contrast 0.952 (the bench counted the exempt disabled pair; rule fixed in round 4), format 0.989, docs 1. T got the two formats as classes.
+
+G round 4 (not merged): the docs page's blank component frames were a real defect (an out-of-process sandboxed frame is not painted until it is scrolled into view, so captures, PDFs, and images showed blank components). G moved the states into shadow roots with a sanitizer. A security review found a script execution (SMIL `<animate>`/`<set>` setting `href` to `javascript:`, a denylist sanitizer, `script-src 'unsafe-inline'`), plus an SVG link click-guard gap and a page overlay. Sent back: an allowlist sanitizer, a nonce-only script-src, containment, and real-click tests.
+
+G's security fix (4c83a72): an allowlist sanitizer (`docsite-sanitize.ts`, a new tree from allowed HTML and SVG only), a nonce-only `script-src`, an SVG-aware click guard, contained stages, and 11 real-click probe tests. Re-reviewed: the exploit is gone, the nonce cannot leak, an overlay stays in its stage, and the tests fail with a weakened sanitizer. Merged (8eab207). Left: `cleanCss` is a regex denylist (CSS escapes and `image-set()` pass; the CSP blocks the request); G hardens it with tests.
+
+V round 4 merged (`applyExactFixes`, reduced motion, non-text contrast, check CLI). V's new non-text contrast rule found a real invisible focus ring (1.00:1) in a bench design that was labelled clean; B fixes the design. U round 4 merged; the integrator adapted V's `applyExactFixes` to U's route and removed the stand-in. Open: a UI test shows the whole workspace loading at start when earlier state is stored (U).
+
+### Round 4 evaluation (195b54e)
+
+`npm run check`, `npm run lint`, `npm run format:check` clean; `npm test` **1354 of 1354**. Bench: **1.0** overall (scan 0.998, format 1, lint 1, contrast 1, docs 1 with painted components, System view shots 50 of 50, every tab asserted). Held-out 1: 0.998 (scan 0.994). **Held-out 2** (fresh): overall **0.986**, scan **0.939** (from 0.818: Tokens Studio and WordPress theme.json), lint 1.0, contrast 1.0, docs 1.0.
+
+Round 4 merges also: G's counting rule (headline = role tokens, same as the System view), the CSS cleaner as a parser, T's docsite changes ported into G's split; U's start-budget test fixed (a same-URL navigation returned early); B's docs checks on shadow-root stages, exempt pairs, and the clean-pricing inverse focus ring (a real defect found by V's new rule).
+
+### Judges after round 4 (a46bb95)
+
+| Line                   | R3  | R4 judge A | R4 judge B | **R4** |
+| ---------------------- | --- | ---------- | ---------- | ------ |
+| 1 Token model          | 8   | 8          | 9          | **8**  |
+| 2 Import (scan)        | 7   | 8          | 9          | **8**  |
+| 3 Enforcement          | 8   | 8          | 9          | **8**  |
+| 4 Accessibility        | 8   | 9          | 9          | **9**  |
+| 5 Agent experience     | 8   | 8          | 9          | **8**  |
+| 6 People experience    | 7   | 7          | 9          | **7**  |
+| 7 Documentation output | 8   | 9          | 9          | **9**  |
+| 8 Code handoff         | 7   | 8          | 9          | **8**  |
+| 9 Engineering          | 8   | 8          | 9          | **8**  |
+
+Judge B: 9 on every line, "nothing broken in the first 5 minutes". Judge A (the bar): phone Check canvas at 29% and clipped phone tabs; the flagship's blue ramp is not monotonic, spacing mixes a scale with sizes, radii are a pile; Check flags browser-default values and suggests primitives for borders; one flat tool schema; `check-cli` undocumented; `map.md` behind the splits.
+
+**Third held-out set** (B, `/mnt/games/Development/ds-holdout-3/`; Panda CSS, Material 3 export, Style Dictionary repo, Ant Design dark algorithm, generated SCSS palette; 3 seeded and 2 clean lint designs, with browser-default traps): on cb038a5, overall **0.704**: scan **0.421** (Panda 0.99, Ant 0.66, M3 0.39, SCSS loops 0.12, Style Dictionary 0: no support), lint **0.101** (precision 0.055, 96 false findings: browser defaults reported as off-system; `missing-lang` and `missing-label` do not exist yet). V got the author-set rule and the rule names; T got three format classes (Style Dictionary, Material 3, SCSS color functions in loops). Ant Design was not described, so one project stays independent.
+
+Round 5 progress: V's checks reach **1.0** on the third held-out set (precision 0.055 → 1.0, recall 0.588 → 1.0) after the author-set rule (each longhand indexed separately, linked sheets read), page semantics (`missing-lang`, `form-label`, `accessible-name`, `missing-main`), and author-set `input-zoom`. Final rule names: `form-label` and `accessible-name` (after crossed messages). T's Style Dictionary, Material 3, and Sass evaluator: set 3 scan 0.421 → **0.686**; four classes remain (Style Dictionary mode configs, Panda/Chakra conditions, Sass module namespaces, Ant Design ThemeConfig, the last one held back until now). B makes a fourth set for the final judging.
+
+### Round 5 evaluation (f4ba521)
+
+`npm run check`, `lint`, `format:check` clean; `npm test` **1449 of 1449** (after the flake pass: 7 tests now wait for real conditions, and a deck repaints when its frame gets a size). Bench **1.0** (scan 0.998; 52 of 52 System view shots, the dirty state included).
+
+| Held-out                                                                          | Overall | Scan      | Lint |
+| --------------------------------------------------------------------------------- | ------- | --------- | ---- |
+| 1 (used)                                                                          | 0.998   | 0.994     | 1.0  |
+| 2 (used)                                                                          | 0.986   | 0.939     | 1.0  |
+| 3 (used in round 5)                                                               | 0.982   | 0.918     | 1.0  |
+| 4 (fresh: Mantine, MUI 6, Bootstrap 5.3 Sass, Tailwind 3 config, Figma Variables) | 0.923   | **0.617** | 1.0  |
+
+Lint generalizes to every set. The scan is strong on every format family it knows and weak on families it has never met (Figma Variables 0.11 on set 4): T's round 6 builds a rendered fallback and a shape-based theme-object reader instead of more formats one at a time.
+
+### Judges after round 5 (f4ba521)
+
+| Line                   | R4  | R5 judge A | R5 judge B | **R5**                     |
+| ---------------------- | --- | ---------- | ---------- | -------------------------- |
+| 1 Token model          | 8   | 8          | 9          | **8**                      |
+| 2 Import (scan)        | 8   | 7          | 8          | **7** (fresh set 4: 0.617) |
+| 3 Enforcement          | 8   | 8          | 9          | **8**                      |
+| 4 Accessibility        | 9   | 9          | 9          | **9**                      |
+| 5 Agent experience     | 8   | 8          | 9          | **8**                      |
+| 6 People experience    | 7   | 8          | 9          | **8**                      |
+| 7 Documentation output | 9   | 9          | 9          | **9**                      |
+| 8 Code handoff         | 8   | 8          | 9          | **8**                      |
+| 9 Engineering          | 8   | 9          | 9          | **9**                      |
+
+Judge A's concrete items: wrong suggestions (white text on blue → a yellow primitive; `#7aa2f7` → a component token although `color.blue.400` equals it; a gray border → a cyan info token), duplicate findings in separate rows; `bg-bg`, `text-text`, and a stale `tailwind.css` header; the System view's Spacing and Radii not grouped like the docs; shadow layers hidden; phone Check has an empty area and a stray page-level pin; "High contrast" overlaps its icon; flagship roles with one value (`bg.canvas`, `selected`, `sunken`); docs code without syntax color and with stretched panels; one flat tool schema. Judge B adds: accepted findings per design, a report of unchecked contrast, the Tokens Studio snippet's indent, truncated `tokens.css` comments.
+
+Round 6 assignments: T (the general scan paths and Figma Variables, measured on fresh set 4; principled Tailwind names with no stutter, a header test, full comments; a duplicate-value warning; splits), V (exact-match and role-and-hue-aware suggestions, grouped duplicates, accepted findings, unchecked-contrast report), U (System view groups by tier and group, full shadow layers, phone Check fixes, accepted-finding UI), G (syntax color, natural-height panels, collapsed identical values, shadow layers, the snippet indent, a `dist/README.md`, distinct flagship role values).
+
+### Stopped after round 6 (bae469d2): the owner's usage ran low
+
+Round 6 merged from every stream: T (a rendered fallback and a shape-based theme reader; fresh held-out set 4 scan 0.617 → **0.675**), V (role- and hue-aware suggestions, grouped findings, accepted ids, an unjudged-contrast count), U (grouped Spacing and Radii, every shadow layer, phone Check fixes, accepted findings with Undo), G (syntax color, one cell for equal values, shadow layers, distinct flagship roles). Final: `npm run check`, `lint`, `format:check` clean; `npm test` **1471 of 1471**; bench 0.996 (lint 0.983: one suggestion now differs from the bench's expectation).
+
+Not done: Figma Variables and other formats in the scan (T); a generated `dist/README.md` and full-length `tokens.css` comments (T); Tailwind names without `bg-bg` (T); a smaller tool schema (T); a route test for accepting a finding and new bench shots (U); round 6 judging.
+
+Round 5 assignments: U (phone Check bar and canvas, tab strip, pinned editor header, readable shadow values, focus-mode canvas, the fixture's broken image), G (flagship ramps, spacing groups, a radius scale; docs code blocks, the Tokens Studio snippet, the All tokens table, section anchors; split `docsite-assets.ts`), T (ramp-order warning, a names table, clearer utility names, scan report of skipped and low-confidence sources, a transcript test, split `scan-colors.ts`), V (author-set values only, role tokens first, page semantics checks, input zoom, `npm run design:check`, split `lint-page.ts`), B (a third fresh held-out set, a dirty-state shot), integrator (docs).
+
+Round 4 assignments: T (Tailwind namespaces and role utilities, one JSON convention plus a Tokens Studio export, committed flagship `dist/` with a diff test, DTCG 2025.10 forms, an example per tool action, component entry points in the summary, split `scan-infer.ts` and `scan-facts.ts`); U (roles count, shadow values on tiles, phone mode control and tab cue and Check sheet height, compact spacing rows, a fixed save bar, one-tap fixes through V's engine, Harbor tabs); V (`applyExactFixes`, reduced motion, non-text contrast, a small check CLI); G (docs component frames for certain, hero by role, shadow and radius layout, page under 600 KB, split `docsite.ts`); B (second held-out set, painted frames check, the shots script in the bench with per-tab assertions).
+
+Round 3 assignments: U (people experience), G (docs page, flagship naming, guide), V (role-aware suggestions, 15+ real pages, stable ids), T (scan, then handoff outputs), integrator (docs).
+
+Round 2 started at once on the bench's weakest phases: V on lint, T on scan, B on a held-out set outside the repo (`/mnt/games/Development/ds-holdout/`, never shown to T or V).
+
+Baseline (0.27.0-beta.1, before round 1): no token model, no compile, no lint, no System view, no docs page. Scan read 16 files of this repo and returned one flat list of 60 variables in walk order. Every rubric line is at 0 to 2.
