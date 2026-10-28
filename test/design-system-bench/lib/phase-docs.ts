@@ -117,8 +117,8 @@ export interface DocsShot {
     height?: number;
     /** Wider than the viewport: a horizontal scroll. */
     overflowX?: boolean;
-    /** The component frames of the page (`iframe.comp-frame`): how many, and how many had text and painted. */
-    frames?: { count: number; withText: number; painted: number; blank: string[] };
+    /** The component stages of the page (`.comp-stage`, one for each component): how many, and how many had text and painted. */
+    components?: { count: number; withText: number; painted: number; blank: string[] };
     errors: string[];
     external: string[];
     failed: string[];
@@ -207,11 +207,32 @@ export async function tileRects(
 
 /** A frame needs this many different colors in its screenshot to count as painted: one flat color is blank. */
 export const PAINTED_COLORS = 3;
-const FRAME_CLASS = "comp-frame";
+const STAGE = ".comp-stage";
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Put the page in the scheme through its own switch (so that its frames hear of it), else on `data-theme`. */
+/**
+ * Wait until the page says that it has drawn everything (`data-docs-ready` on `<html>`: the page builds each component
+ * state in a shadow root with a script, and sets it last). A page that never sets it is let go after the limit; its
+ * component checks then say what is missing.
+ */
+export async function waitForDocsReady(page: BenchPage, limitMs = 10_000): Promise<boolean> {
+    const started = Date.now();
+
+    while (Date.now() - started < limitMs) {
+        if (
+            await page.evaluate<boolean>(`document.documentElement.hasAttribute('data-docs-ready')`)
+        ) {
+            return true;
+        }
+
+        await pause(100);
+    }
+
+    return false;
+}
+
+/** Put the page in the scheme through its own switch (so that its component states follow it), else on `data-theme`. */
 async function switchScheme(page: BenchPage, scheme: "light" | "dark"): Promise<void> {
     await page.evaluate(`(() => {
         const theme = ${JSON.stringify(scheme)};
@@ -234,51 +255,52 @@ async function settle(page: BenchPage): Promise<void> {
     await pause(200);
 }
 
-/** The vertical extent of each component frame on the page (page coordinates). */
-const frameRects = (page: BenchPage) =>
-    page.evaluate<{ left: number; top: number; width: number; height: number }[]>(
-        `Array.from(document.querySelectorAll('iframe.${FRAME_CLASS}'), (frame) => { const r = frame.getBoundingClientRect(); return { left: Math.max(0, Math.round(r.left)), top: Math.round(r.top + scrollY), width: Math.ceil(r.width), height: Math.ceil(r.height) }; })`,
-    );
-
-/** Wait until the frames at `indexes` have a body with text (they load after the page, and only near the viewport). */
-async function waitForFrames(page: BenchPage, indexes: number[], limitMs = 6000): Promise<void> {
-    const started = Date.now();
-
-    while (indexes.length > 0 && Date.now() - started < limitMs) {
-        const texts = await page.frameTexts(FRAME_CLASS);
-
-        if (indexes.every((index) => (texts[index]?.text.length ?? 0) > 0)) {
-            return;
-        }
-
-        await pause(150);
-    }
-}
+/** What each component stage holds: its place on the page, and what its shadow root shows besides the state labels. */
+const stages = (page: BenchPage) =>
+    page.evaluate<
+        {
+            left: number;
+            top: number;
+            width: number;
+            height: number;
+            name: string;
+            ready: boolean;
+            cells: number;
+            text: number;
+        }[]
+    >(`Array.from(document.querySelectorAll('${STAGE}'), (stage) => {
+        const r = stage.getBoundingClientRect();
+        const shadow = stage.querySelector('.comp-host')?.shadowRoot;
+        const cells = shadow ? Array.from(shadow.querySelectorAll('.__c')) : [];
+        // The text of the states, not their labels (a stage that shows nothing still has the names of its states).
+        const text = cells.reduce((sum, cell) => { const copy = cell.cloneNode(true); copy.querySelectorAll('.__l').forEach((label) => label.remove()); return sum + (copy.textContent || '').replace(/\s+/g, ' ').trim().length; }, 0);
+        const article = stage.closest('article');
+        const name = article?.querySelector('h3, h2')?.textContent?.trim() || '';
+        return { left: Math.max(0, Math.round(r.left)), top: Math.round(r.top + scrollY), width: Math.ceil(r.width), height: Math.ceil(r.height), name, ready: stage.hasAttribute('data-ready'), cells: cells.length, text };
+    })`);
 
 /**
- * Photograph every component frame on its own, in view, and say whether it has text and is not one color. A frame that
- * is outside the viewport is not painted, so the page is scrolled to each frame first.
+ * Photograph every component stage on its own, in view, and say whether it has text and is not one color. The page is
+ * scrolled to each stage first (a thing outside the viewport may not be painted), and the viewport is as tall as a tile.
  */
-export async function checkFrames(
+export async function checkComponents(
     page: BenchPage,
     width: number,
-): Promise<NonNullable<DocsShot["frames"]>> {
+): Promise<NonNullable<DocsShot["components"]>> {
     const result = { count: 0, withText: 0, painted: 0, blank: [] as string[] };
-    const rects = await frameRects(page);
+    const first = await stages(page);
 
-    result.count = rects.length;
+    result.count = first.length;
 
-    for (const [index, rect] of rects.entries()) {
+    for (const [index, before] of first.entries()) {
         await page.evaluate(
-            `document.querySelectorAll('iframe.${FRAME_CLASS}')[${index}].scrollIntoView({ block: 'start', behavior: 'instant' })`,
+            `document.querySelectorAll('${STAGE}')[${index}].scrollIntoView({ block: 'start', behavior: 'instant' })`,
         );
-        await waitForFrames(page, [index]);
         await settle(page);
 
-        const texts = await page.frameTexts(FRAME_CLASS);
-        const now = (await frameRects(page))[index] ?? rect;
-        const title = texts[index]?.title || `frame ${index + 1}`;
-        const hasText = (texts[index]?.text.length ?? 0) > 0;
+        const now = (await stages(page))[index] ?? before;
+        const title = now.name || `component ${index + 1}`;
+        const hasText = now.ready && now.cells > 0 && now.text > 0;
         let painted = false;
 
         try {
@@ -291,7 +313,7 @@ export async function checkFrames(
                             now.left,
                             Math.max(top, now.top),
                             Math.max(1, Math.min(now.width, width - now.left)),
-                            Math.min(now.height, TILE_HEIGHT - 1),
+                            Math.max(1, Math.min(now.height, TILE_HEIGHT - 1)),
                         ),
                     ),
                 ) >= PAINTED_COLORS;
@@ -303,7 +325,9 @@ export async function checkFrames(
         result.painted += painted ? 1 : 0;
 
         if (!hasText || !painted) {
-            result.blank.push(`${title}${hasText ? " (one color)" : " (no text)"}`);
+            result.blank.push(
+                `${title}${!now.ready ? " (not drawn)" : now.cells === 0 ? " (no state)" : !hasText ? " (no text)" : " (one color)"}`,
+            );
         }
     }
 
@@ -401,7 +425,9 @@ export async function docsPhase(
                         colorScheme: scheme,
                     });
 
-                    // The page's own switch, so that its component frames hear of the scheme too.
+                    // The page draws each component state with a script and says when it is done.
+                    await waitForDocsReady(page);
+                    // The page's own switch, so that its component states follow the scheme too.
                     await switchScheme(page, scheme);
 
                     shot.overflowX =
@@ -431,26 +457,16 @@ export async function docsPhase(
                     );
 
                     // The rest as tiles of at most 2,000 px. A frame outside the viewport is not painted, so the viewport is
-                    // made as tall as a tile, each tile is scrolled to the top of it, and the frames in it are waited for.
+                    // made as tall as a tile, each tile is scrolled to the top of it, (each state is drawn in the page itself, so there is nothing else to wait for).
                     await page.resize(viewport.width, TILE_HEIGHT);
                     await page.evaluate(
                         `document.querySelectorAll('*').forEach((el) => { if (getComputedStyle(el).position === 'sticky') el.style.position = 'relative'; })`,
                     );
                     await settle(page);
 
-                    const rects = await frameRects(page);
-
                     for (const tile of (await tileRects(page, viewport)).slice(1)) {
                         await page.evaluate(
                             `window.scrollTo({ top: ${tile.y}, left: 0, behavior: 'instant' })`,
-                        );
-                        await waitForFrames(
-                            page,
-                            rects.flatMap((rect, index) =>
-                                rect.top < tile.y + tile.height && rect.top + rect.height > tile.y
-                                    ? [index]
-                                    : [],
-                            ),
                         );
                         await settle(page);
                         await save(
@@ -459,7 +475,7 @@ export async function docsPhase(
                         );
                     }
 
-                    shot.frames = await checkFrames(page, viewport.width);
+                    shot.components = await checkComponents(page, viewport.width);
                     shot.file = shot.tiles[0];
                     hashes.set(
                         `${viewport.name}-${scheme}`,
@@ -501,17 +517,18 @@ export async function docsPhase(
     const sectionRate =
         Object.values(phase.sections).filter(Boolean).length / Object.keys(SECTIONS).length;
 
-    // Every component of the system has a frame, and every frame has a body with text and is not one flat color.
-    const expectedFrames = system.components.length;
-    const frames = (
-        ok: (shot: DocsShot & { frames: NonNullable<DocsShot["frames"]> }) => boolean,
+    // Every component of the system has a stage on the page, every stage has text in its shadow root (besides the names
+    // of its states), and every stage's screenshot has more than two colors. A component that shows nothing fails both.
+    const expectedComponents = system.components.length;
+    const components = (
+        ok: (shot: DocsShot & { components: NonNullable<DocsShot["components"]> }) => boolean,
     ) =>
         rendered &&
         phase.shots.every(
             (shot) =>
-                shot.frames !== undefined &&
-                shot.frames.count >= expectedFrames &&
-                ok(shot as DocsShot & { frames: NonNullable<DocsShot["frames"]> }),
+                shot.components !== undefined &&
+                shot.components.count >= expectedComponents &&
+                ok(shot as DocsShot & { components: NonNullable<DocsShot["components"]> }),
         );
 
     phase.checks = {
@@ -532,8 +549,10 @@ export async function docsPhase(
         isSubstantial:
             text.length > 1500 &&
             phase.shots.some((shot) => shot.viewport === "desktop" && (shot.height ?? 0) > 1800),
-        componentFramesHaveText: frames((shot) => shot.frames.withText === shot.frames.count),
-        componentFramesPainted: frames((shot) => shot.frames.painted === shot.frames.count),
+        componentsHaveText: components(
+            (shot) => shot.components.withText === shot.components.count,
+        ),
+        componentsPainted: components((shot) => shot.components.painted === shot.components.count),
         namesTokens:
             system.tokens
                 .slice(0, 40)

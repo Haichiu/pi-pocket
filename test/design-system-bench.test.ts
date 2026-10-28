@@ -1321,18 +1321,32 @@ test("a tab passes only when it renders what the system has", () => {
 });
 
 test(
-    "the frame check scrolls each frame into view: far down the page, only a frame with text and colors counts",
+    "the component check reads each stage's shadow root and photographs it: a stage that shows nothing fails",
     { skip: browser === undefined, timeout: 120_000 },
     async () => {
         const { BenchBrowser, serveFiles } = await import("./design-system-bench/lib/chromium.ts");
-        const { checkFrames } = await import("./design-system-bench/lib/phase-docs.ts");
-        const frame = (title: string, body: string) =>
-            `<iframe class="comp-frame" title="${title}" sandbox="allow-scripts" style="width:600px;height:120px;border:0" srcdoc="${body.replace(/"/g, "&quot;")}"></iframe>`;
+        const { checkComponents, waitForDocsReady } =
+            await import("./design-system-bench/lib/phase-docs.ts");
+        // Each stage is a `.comp-stage` with a shadow root that a script fills, and the page says `data-docs-ready` at the end.
+        const stage = (name: string, cells: string, background: string) =>
+            `<article><h3>${name}</h3><div class="comp-stage" style="background:${background};width:600px;min-height:80px"><div class="comp-host"></div></div><script type="text/plain" class="cells">${cells}</script></article>`;
         const page = `<!doctype html><body style="margin:0;background:#eee"><div style="height:3000px"></div>
-            ${frame("Fine", '<body style="margin:0;background:#2456d6;color:#fff;font:20px sans-serif"><p>Save the draft</p><button>Go</button>')}
+            ${stage("Fine", '<div class="__c"><p class="__l">default</p><button style="background:#2456d6;color:#fff;font:20px sans-serif">Save the draft</button></div>', "#fff")}
             <div style="height:2500px"></div>
-            ${frame("Empty", '<body style="margin:0;background:#fff">')}
-            ${frame("Flat", '<body style="margin:0;background:#fff;color:#fff;font:20px sans-serif"><p>Invisible</p>')}</body>`;
+            ${stage("Labels only", '<div class="__c"><p class="__l" style="color:#fff">default</p></div>', "#fff")}
+            ${stage("Flat", '<div class="__c"><p class="__l" style="color:#fff">default</p><span style="color:#fff;font:20px sans-serif">Invisible</span></div>', "#fff")}
+            <script>
+            document.querySelectorAll(".comp-stage").forEach(function (stage) {
+                var host = stage.querySelector(".comp-host");
+                var shadow = host.attachShadow({ mode: "open" });
+                var cells = stage.parentElement.querySelector(".cells").textContent;
+                var wrap = document.createElement("div");
+                wrap.innerHTML = cells;
+                shadow.appendChild(wrap);
+                stage.setAttribute("data-ready", "");
+            });
+            setTimeout(function () { document.documentElement.setAttribute("data-docs-ready", ""); }, 300);
+            </script></body>`;
         const served = await serveFiles(
             new Map([["index.html", { type: "text/html; charset=utf-8", body: page }]]),
         );
@@ -1342,19 +1356,32 @@ test(
             const view = await chromium.page(served.url);
 
             await view.open(served.url, { width: 800, height: 900 });
+            assert.equal(await waitForDocsReady(view), true);
             await view.resize(800, 2000);
 
-            const result = await checkFrames(view, 800);
+            const result = await checkComponents(view, 800);
 
             assert.equal(result.count, 3);
-            assert.equal(result.withText, 2);
+            assert.equal(
+                result.withText,
+                2,
+                "the labels of the states are not the component's text",
+            );
             assert.equal(
                 result.painted,
                 1,
-                "only the frame with text in a second color is painted",
+                "only the stage with a button in a second color is painted",
             );
-            assert.deepEqual(result.blank.sort(), ["Empty (no text)", "Flat (one color)"]);
+            assert.deepEqual(result.blank.sort(), ["Flat (one color)", "Labels only (no text)"]);
             await view.close();
+
+            // A page that never says it is ready is let go after the limit.
+            const never = await chromium.page(served.url);
+
+            await never.open(served.url, { width: 800, height: 900 });
+            await never.evaluate(`document.documentElement.removeAttribute('data-docs-ready')`);
+            assert.equal(await waitForDocsReady(never, 300), false);
+            await never.close();
         } finally {
             await chromium.close();
             await served.close();

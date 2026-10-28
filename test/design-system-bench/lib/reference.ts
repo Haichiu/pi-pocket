@@ -257,19 +257,47 @@ export function draftFromExpected(expected: Expected): Draft {
     return { tokens: tree, modes: expected.dark.present ? { dark } : {} };
 }
 
-/** A component in a sandboxed frame, as the real page shows it: its name, then every state. */
-function componentFrame(system: DesignSystem, component: ComponentSpec): string {
+/**
+ * A component as the real page shows it: an article with its name, and a stage whose states are drawn by a script into a
+ * shadow root (`.comp-stage` > `.comp-host`, one `.__c` cell for each state with its `.__l` label). The stage says
+ * `data-ready` when drawn, and the page says `data-docs-ready` on `<html>` when every stage is.
+ */
+function componentStage(component: ComponentSpec): string {
     const escape = (text: string) => text.replace(/[&<>"]/g, (char) => `&#${char.charCodeAt(0)};`);
-    const cells = component.states
-        .map(
-            (state) =>
-                `<div class="c"><p>${escape(state)}</p>${component.markup[state] ?? ""}</div>`,
-        )
-        .join("");
-    const doc = `<!doctype html><meta charset="utf-8"><style>${system.compiled.css}\nbody{margin:0;padding:16px;background:var(--color-bg-surface,#fff);color:var(--color-text-primary,#111);font:14px system-ui}.c{display:inline-block;margin:0 24px 16px 0}.c p{font:11px monospace;text-transform:uppercase;opacity:.7}${component.css}</style><body>${cells}</body>`;
+    const spec = JSON.stringify({
+        css: component.css,
+        cells: component.states.map((state) => ({ state, html: component.markup[state] ?? "" })),
+    }).replace(/</g, "\\u003c");
 
-    return `<h3>${escape(component.name)}</h3><iframe class="comp-frame" title="${escape(component.name)}, all states" sandbox="allow-scripts" srcdoc="${escape(doc)}" style="width:100%;height:140px;border:1px solid var(--color-border-default,#ddd)"></iframe>`;
+    return `<article><h3>${escape(component.name)}</h3><div class="comp-stage"><script type="application/json" class="spec">${spec}</script></div></article>`;
 }
+
+const STAGE_SCRIPT = `(function () {
+    document.querySelectorAll(".comp-stage").forEach(function (stage) {
+        var spec = JSON.parse(stage.querySelector(".spec").textContent);
+        var host = document.createElement("div");
+        host.className = "comp-host";
+        stage.appendChild(host);
+        var shadow = host.attachShadow({ mode: "open" });
+        var style = document.createElement("style");
+        style.textContent = "*{box-sizing:border-box}.__c{display:inline-block;padding:16px 18px;margin:0 8px 8px 0;background:var(--color-bg-surface,#fff);color:var(--color-text-primary,#111);font:14px system-ui}.__l{margin:0 0 10px;font:11px monospace;text-transform:uppercase;opacity:.7}" + spec.css;
+        var wrap = document.createElement("div");
+        spec.cells.forEach(function (cell) {
+            var box = document.createElement("div");
+            var label = document.createElement("p");
+            box.className = "__c";
+            label.className = "__l";
+            label.textContent = cell.state;
+            box.appendChild(label);
+            box.insertAdjacentHTML("beforeend", cell.html);
+            wrap.appendChild(box);
+        });
+        shadow.appendChild(style);
+        shadow.appendChild(wrap);
+        stage.setAttribute("data-ready", "");
+    });
+    document.documentElement.setAttribute("data-docs-ready", "");
+})();`;
 
 /** A small, complete documentation page: navigation, every section, swatches, a theme switch. */
 export function referenceDoc(system: DesignSystem): {
@@ -338,7 +366,7 @@ export function referenceDoc(system: DesignSystem): {
         section(
             "components",
             "Components",
-            system.components.map((component) => componentFrame(system, component)).join("") ||
+            system.components.map((component) => componentStage(component)).join("") ||
                 "<p>No components yet.</p>",
         ),
     ].join("\n");
@@ -353,7 +381,7 @@ main{max-width:960px;margin:0 auto;padding:24px 16px}
 code{font-size:12px;overflow-wrap:anywhere}</style></head><body>
 <nav aria-label="Sections"><a href="#colors">Colors</a><a href="#typography">Typography</a><a href="#spacing">Spacing</a><a href="#radii">Radii</a><a href="#shadows">Shadows</a><a href="#motion">Motion</a><a href="#components">Components</a></nav>
 <main><h1>${escape(system.name)}</h1><p>${escape(system.description ?? "A design system.")} ${system.tokens.length} tokens in ${system.modes.length} modes.</p>${body}
-<p>${"This page lists every token with its variable name and value, so a person can copy one into code. ".repeat(12)}</p></main></body></html>`;
+<p>${"This page lists every token with its variable name and value, so a person can copy one into code. ".repeat(12)}</p></main><script>${STAGE_SCRIPT}</script></body></html>`;
 
     return { html, assets: [] };
 }
