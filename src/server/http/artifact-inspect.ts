@@ -346,44 +346,154 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         return false;
     };
 
-    const placePin = (pin, rect) => {
-        const w = Math.max(22, pin.node.offsetWidth || 22);
-        const h = 22;
-        const gap = 3;
-        const places = [
-            [rect.left, rect.top - h - gap],
-            [rect.left - w - gap, rect.top],
-            [rect.right + gap, rect.top],
-            [rect.right - w, rect.top - h - gap],
-            [rect.left, rect.bottom + gap],
-            [rect.right - w - 2, rect.top + 2],
-        ];
-        const inside = ([x, y]) => x >= 0 && y >= 0 && x + w <= win.innerWidth && y + h <= win.innerHeight;
-        const kept = pin.place;
+    // The places, in the order they are tried, for a badge w wide: outside the element above it, to its left, to its right,
+    // above its right edge, below it, and inside at its right edge.
+    const BADGE_H = 22;
 
-        // The place it had stays while it is still free (a scroll moves everything together).
-        if (kept !== undefined && inside(places[kept]) && !covered(places[kept][0], places[kept][1], w, h)) {
-            return places[kept];
-        }
+    const placesOf = (rect, w) => [
+        [rect.left, rect.top - BADGE_H - 3],
+        [rect.left - w - 3, rect.top],
+        [rect.right + 3, rect.top],
+        [rect.right - w, rect.top - BADGE_H - 3],
+        [rect.left, rect.bottom + 3],
+        [rect.right - w - 2, rect.top + 2],
+    ];
 
+    const onScreen = ([x, y], w) => x >= 0 && y >= 0 && x + w <= win.innerWidth && y + BADGE_H <= win.innerHeight;
+
+    // The first place on the screen that covers no text, else the first on the screen, else the first. It costs a hit test
+    // for each place, so it is worked out when a pin first shows and when its element's layout changes, not every frame.
+    const findPlace = (rect, w) => {
+        const places = placesOf(rect, w);
         let first = -1;
 
         for (let at = 0; at < places.length; at += 1) {
-            if (inside(places[at])) {
+            if (onScreen(places[at], w)) {
                 first = first === -1 ? at : first;
 
-                if (!covered(places[at][0], places[at][1], w, h)) {
-                    pin.place = at;
-
-                    return places[at];
+                if (!covered(places[at][0], places[at][1], w, BADGE_H)) {
+                    return at;
                 }
             }
         }
 
-        // None is free: the first that is on the screen, else the corner of the element, kept on the screen.
-        pin.place = first === -1 ? 0 : first;
+        return first === -1 ? 0 : first;
+    };
 
-        return places[pin.place];
+    // What may have changed the page's layout since a pin was placed: its size, or its content (a throttled stamp that a
+    // pin compares with its own).
+    let layoutStamp = 0;
+    let layoutDirty = false;
+    let stampedAt = 0;
+    let layoutWatch = null;
+    // How long one frame may spend finding places: the rest wait for the next frame (a pin is hidden until it has one).
+    const PLACE_BUDGET = 3;
+
+    const watchLayout = () => {
+        if (layoutWatch !== null || typeof win.ResizeObserver !== "function") {
+            return;
+        }
+
+        const dirty = () => {
+            layoutDirty = true;
+        };
+
+        layoutWatch = [new win.ResizeObserver(() => {
+            layoutStamp += 1;
+        }), typeof win.MutationObserver === "function" ? new win.MutationObserver(dirty) : null];
+        layoutWatch[0].observe(doc.documentElement);
+        layoutWatch[1]?.observe(doc.documentElement, { subtree: true, childList: true, characterData: true, attributes: true });
+    };
+
+    const unwatchLayout = () => {
+        if (layoutWatch !== null) {
+            layoutWatch[0].disconnect();
+            layoutWatch[1]?.disconnect();
+            layoutWatch = null;
+        }
+    };
+
+    // The pins: all the reads first, then all the writes, so that the page's layout is worked out once and not once for each
+    // pin. A pin whose element is off the screen is hidden and costs a rectangle; one whose place is known costs arithmetic.
+    const updatePins = () => {
+        const started = now();
+        const sx = win.scrollX;
+        const sy = win.scrollY;
+        const vw = win.innerWidth;
+        const vh = win.innerHeight;
+
+        // The page's content changes (a mutation that the page makes, at most once a second): the places are looked at again.
+        if (layoutDirty && started - stampedAt > 1000) {
+            layoutDirty = false;
+            stampedAt = started;
+            layoutStamp += 1;
+        }
+
+        const drawn = [];
+
+        for (const pin of pins) {
+            if (!pin.el || !pin.el.isConnected) {
+                pin.el = findPinTarget(pin.target);
+                pin.stamp = -1;
+            }
+
+            const rect = pin.el ? pin.el.getBoundingClientRect() : null;
+            const real = rect !== null && (rect.width > 0 || rect.height > 0);
+            const near = real && rect.bottom > -40 && rect.top < vh + 40 && rect.right > -40 && rect.left < vw + 40;
+            let at = null;
+
+            if (near) {
+                // Where the element is on the page, and how big: a scroll changes neither.
+                const key = rect.left + sx + "," + (rect.top + sy) + "," + rect.width + "," + rect.height;
+                const known =
+                    pin.place !== undefined &&
+                    pin.key === key &&
+                    pin.stamp === layoutStamp &&
+                    (pin.fallback === true || onScreen(placesOf(rect, pin.w)[pin.place], pin.w));
+
+                // (one that has a place moves to its new one at once; one with none waits, when the frame's time is spent)
+                if (!known && (pin.place !== undefined || now() - started < PLACE_BUDGET)) {
+                    pin.place = findPlace(rect, pin.w);
+                    pin.key = key;
+                    pin.stamp = layoutStamp;
+                    pin.fallback = !onScreen(placesOf(rect, pin.w)[pin.place], pin.w);
+                }
+
+                if (pin.place !== undefined) {
+                    at = placesOf(rect, pin.w)[pin.place];
+                }
+            }
+
+            drawn.push([pin, near ? rect : null, at]);
+        }
+
+        for (const [pin, rect, at] of drawn) {
+            const mine = pin.drawn;
+            const shown = rect !== null && at !== null;
+            const move = shown
+                ? "translate(" + Math.round(Math.min(Math.max(at[0], 2), vw - pin.w - 2)) + "px," + Math.round(Math.min(Math.max(at[1], 2), vh - BADGE_H - 2)) + "px)"
+                : "";
+            const box = shown
+                ? "translate(" + Math.round(rect.left) + "px," + Math.round(rect.top) + "px)"
+                : "";
+            const size = shown ? Math.round(rect.width) + "x" + Math.round(rect.height) : "";
+
+            if (mine.node !== move) {
+                css(pin.node, shown ? { display: "flex", transform: move } : { display: "none" });
+                mine.node = move;
+            }
+
+            if (pin.outline && (mine.box !== box || mine.size !== size)) {
+                css(
+                    pin.outline,
+                    shown
+                        ? { display: "block", transform: box, width: Math.round(rect.width) + "px", height: Math.round(rect.height) + "px" }
+                        : { display: "none" },
+                );
+                mine.box = box;
+                mine.size = size;
+            }
+        }
     };
 
     const update = () => {
@@ -393,6 +503,8 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                 overlay = null;
             }
 
+            unwatchLayout();
+
             return false;
         }
 
@@ -401,32 +513,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         place(shown.hover, hoverEl && hoverEl !== pickedEl ? hoverEl : null, true);
         place(shown.picked, pickedEl, true);
 
-        for (const pin of pins) {
-            if (!pin.el || !pin.el.isConnected) {
-                pin.el = findPinTarget(pin.target);
-            }
-
-            const rect = pin.el ? pin.el.getBoundingClientRect() : null;
-            const visible = rect !== null && (rect.width > 0 || rect.height > 0);
-
-            const at = visible ? placePin(pin, rect) : null;
-
-            css(pin.node, {
-                display: visible ? "flex" : "none",
-                left: at ? Math.min(Math.max(at[0], 2), win.innerWidth - 26) + "px" : "0",
-                top: at ? Math.min(Math.max(at[1], 2), win.innerHeight - 24) + "px" : "0",
-            });
-
-            if (pin.outline) {
-                css(pin.outline, {
-                    display: visible ? "block" : "none",
-                    left: visible ? rect.left + "px" : "0",
-                    top: visible ? rect.top + "px" : "0",
-                    width: visible ? rect.width + "px" : "0",
-                    height: visible ? rect.height + "px" : "0",
-                });
-            }
-        }
+        updatePins();
 
         return true;
     };
@@ -458,6 +545,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
     const highlight = (targets) => {
         pins = [];
+        unwatchLayout();
 
         if (overlay) {
             overlay.layer.replaceChildren();
@@ -476,6 +564,8 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                 const text = typeof target.label === "string" || typeof target.label === "number" ? clip(target.label, 8) : String(index + 1);
                 const outline = css(doc.createElement("div"), {
                     position: "absolute",
+                    left: "0",
+                    top: "0",
                     display: "none",
                     "box-sizing": "border-box",
                     border: "1px solid " + ACCENT,
@@ -484,6 +574,8 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                 });
                 const node = css(doc.createElement("div"), {
                     position: "absolute",
+                    left: "0",
+                    top: "0",
                     display: "none",
                     "align-items": "center",
                     "justify-content": "center",
@@ -503,7 +595,8 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
                 const pin = { selector: clip(target.selector, 500), pid: typeof target.pid === "string" ? clip(target.pid, 200) : "" };
 
-                pins.push({ target: pin, el: null, node, outline });
+                // w: the width the badge has (its words and its padding), for finding it a place before it is drawn.
+                pins.push({ target: pin, el: null, node, outline, w: Math.max(22, 12 + 8 * text.length), drawn: {} });
 
                 // One that is asked for comes into view (the app asks for the one that a person tapped in a list).
                 if (target.reveal === true) {
@@ -517,6 +610,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                     }
                 }
             });
+            watchLayout();
         }
 
         paint();
@@ -1338,6 +1432,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
             hoverEl = null;
             pickedEl = null;
             pins = [];
+            unwatchLayout();
             inspectOn = false;
             editOn = false;
             ready = false;
