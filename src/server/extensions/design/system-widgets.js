@@ -35,7 +35,7 @@ const round = (value) => Math.round(value * 10000) / 10000;
 
 export function createSystemWidgets(env) {
     const { pocket } = env;
-    const { html, useEffect, useRef, useState } = pocket;
+    const { html, useState } = pocket;
     const { Ico, Popover } = env.parts;
 
     /** A color, or a pair of them (a split swatch: one half for each mode). */

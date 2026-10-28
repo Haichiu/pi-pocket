@@ -4,7 +4,6 @@
 import { parseColor, swatchCss, toHex } from "./color.js";
 import { specimenDocument } from "./specimen.js";
 import {
-    amountOf,
     cssOf,
     groupsOf,
     matches,

@@ -22,7 +22,7 @@ const STACK = 560;
 export function createWorkspace(env) {
     const { pocket, store, data, parts, app } = env;
     const { html, useEffect, useMemo, useRef, useState } = pocket;
-    const { Ico, Popover, Segmented, useSize, ago } = parts;
+    const { Ico, Popover, Segmented, useSize } = parts;
     const canvas = createCanvas(env);
     const docks = createDocks(env);
     const views = createViews(env, canvas);
