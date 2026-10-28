@@ -198,7 +198,7 @@ function afterWrite(system: DesignSystem, headline: string): string {
 
     return [
         headline,
-        `Design system "${system.name}": ${system.tokens.length} tokens, modes ${system.modes.join(", ")}, ${system.components.length} component${system.components.length === 1 ? "" : "s"}. Compiled .pi/design/dist/: tokens.css ${sizeOf(dist.css)}, tailwind.css ${sizeOf(dist.tailwind)}, tokens.<mode>.resolved.json for ${Object.keys(dist.modes ?? {}).length} mode${Object.keys(dist.modes ?? {}).length === 1 ? "" : "s"}, tokens.studio.json, tokens.resolved.json (compact) ${sizeOf(dist.json)}, components.css ${sizeOf(dist.components)}.`,
+        `Design system "${system.name}": ${system.tokens.length} tokens, modes ${system.modes.join(", ")}, ${system.components.length} component${system.components.length === 1 ? "" : "s"}. Compiled .pi/design/dist/: tokens.css ${sizeOf(dist.css)}, tailwind.css ${sizeOf(dist.tailwind)}, tokens.<mode>.resolved.json for ${Object.keys(dist.modes ?? {}).length} mode${Object.keys(dist.modes ?? {}).length === 1 ? "" : "s"}, tokens.studio.json, names.md, tokens.resolved.json (compact) ${sizeOf(dist.json)}, components.css ${sizeOf(dist.components)}.`,
         problemsText(system),
         'A design uses it with <link rel="stylesheet" href="ds/tokens.css"> (and ds/components.css): the artifact tool attaches the current files.',
     ]
@@ -284,7 +284,7 @@ export function designSystemTool(): ToolRegistration {
     return defineTool({
         name: "design_system",
         description: [
-            `The project's design system, kept in .pi/design/: DTCG design tokens (tokens.json), modes such as dark (tokens.dark.json), component specimens (components/<name>.html), and guidelines.md. It compiles to dist/tokens.css (CSS variables), dist/tailwind.css (Tailwind v4 @theme), tokens.<mode>.resolved.json (DTCG, one per mode; the main JSON), tokens.studio.json (Tokens Studio), tokens.resolved.json (a compact summary), and components.css. A design links it with <link rel="stylesheet" href="ds/tokens.css"> and uses only var(--…) values.`,
+            `The project's design system, kept in .pi/design/: DTCG design tokens (tokens.json), modes such as dark (tokens.dark.json), component specimens (components/<name>.html), and guidelines.md. It compiles to dist/tokens.css (CSS variables), dist/tailwind.css (Tailwind v4 @theme), tokens.<mode>.resolved.json (DTCG, one per mode; the main JSON), tokens.studio.json (Tokens Studio), names.md (each token with its variables and Tailwind utilities), tokens.resolved.json (a compact summary), and components.css. A design links it with <link rel="stylesheet" href="ds/tokens.css"> and uses only var(--…) values.`,
             "Actions: read (a summary, or one file with file), scan (draft tokens from the project's style files; saves nothing), init (save the first tokens: your DTCG object, or fromScan), set (add, change, or remove single tokens), component (add, replace, or drop a specimen), guidelines (replace guidelines.md), validate (check; writes nothing), compile (rewrite dist/). Every change is checked first, and nothing is written when it adds an error. A parameter belongs to certain actions; a call that gives one to another action is refused with the action it fits.",
             [
                 "Example calls, one for each action:",
