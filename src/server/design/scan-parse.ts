@@ -596,7 +596,10 @@ export function objectStyles(source: string): Decl[] {
         const owner = enclosingKey(source, match.index);
 
         decls.push({
-            prop: kebab(key),
+            // React Native's `paddingHorizontal` is CSS's `padding-inline`.
+            prop: kebab(key)
+                .replace(/-horizontal$/, "-inline")
+                .replace(/-vertical$/, "-block"),
             value: value.trim().slice(0, MAX_VALUE),
             selector: owner === undefined ? "" : `.${owner}`,
             at: [],

@@ -781,10 +781,10 @@ test("scales: sizes a pixel apart merge, a percent radius is not a size, a pill 
     );
     assert.deepEqual(
         scan.inferred.spacing.steps,
-        [4, 10, 16],
-        "15 and 16 are one, 4 and 5 are one",
+        [4, 16],
+        "15 and 16 are one, 4 and 5 are one; 10px is used once and is no step",
     );
-    assert.ok(token(system, "space.2-5"), "10px is step 2.5");
+    assert.ok(!token(system, "space.2-5"), "a one-off off the grid is no step");
     assert.equal(token(system, "radius.md")!.modes.light!.css, "6px");
     assert.ok(token(system, "radius.4"), "a used radius the project does not name");
     assert.ok(!token(system, "radius.3"), "3px is 4px");
@@ -1673,4 +1673,193 @@ test("a scan of a folder names the folder in the next call, and a project with n
         scanReport(scanTokens(project({ "a.css": "body { margin: 0 }" }))),
         /Next call: design_system with action init and tokens/,
     );
+});
+
+// --- Round 3b: dark mode in SCSS, scales without tokens, dark-first pages ----------------------------------------------
+
+test("SCSS dark mode written as a mixin: @include dark-mode { … }, a mixin that wraps the dark mode, and if($theme == dark, …)", () => {
+    const scan = scanTokens(
+        project({
+            "_mixins.scss": `@mixin dark-mode { .theme-dark & { @content; } }
+@mixin when-night { @media (prefers-color-scheme: dark) { @content; } }
+@mixin respect($what) { @media (prefers-color-scheme: dark) { @content; } }`,
+            "main.scss": `@import "mixins";
+body { background: #f7f7f5; color: #1b1c1f; @include dark-mode { background: #101114; color: #ececf0; } }
+.card { background: #ffffff; border: 1px solid #dcdde0; @include respect(x) { background: #1a1c21; border-color: #2a2c31; } }
+.meta { color: #6a6e78; @include when-night { color: #9ca0aa; } }
+a { color: #0b6bcb; @include dark-mode { color: #5aa2f0; } }`,
+            "_theme.scss": `$theme: light !default;
+$muted: if($theme == dark, #9ca0aa, #6a6e78);`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f7f7f5");
+    assert.equal(roles.background!.dark, "#101114", "@include dark-mode");
+    assert.equal(
+        roles.surface!.dark,
+        "#1a1c21",
+        "a mixin whose body wraps the dark media query, defined in another file",
+    );
+    assert.equal(roles.text!.dark, "#ececf0");
+    assert.equal(roles.accent!.dark, "#5aa2f0");
+    assert.equal(roles.muted!.dark, "#9ca0aa");
+});
+
+test("indented Sass and Stylus are read: nested rules, a mixin for the dark mode, and the scales in them", () => {
+    const sass = scanTokens(
+        project({
+            "main.sass": `=dark
+  @media (prefers-color-scheme: dark)
+    @content
+.card
+  padding: 12px 16px
+  border-radius: 10px
+  box-shadow: 0 2px 6px rgba(0,0,0,.12)
+  background: #fff
+  +dark
+    background: #1a1c21
+  &:hover
+    box-shadow: 0 8px 24px rgba(0,0,0,.18)
+.btn
+  padding: 8px 12px
+  border-radius: 10px
+.tag
+  padding: 4px 8px
+  border-radius: 6px`,
+        }),
+    );
+
+    assert.deepEqual(sass.inferred.spacing.steps, [4, 8, 12, 16]);
+    assert.equal(sass.inferred.radii.length, 2);
+    assert.equal(sass.inferred.shadows, 2);
+    assert.equal(sass.inferred.hasDark, true, "+dark is @include dark");
+
+    const styl = scanTokens(
+        project({
+            "main.styl": `.card
+  padding 12px 16px
+  border-radius 10px
+  box-shadow 0 2px 6px rgba(0,0,0,.12)
+.btn
+  padding 8px 12px
+  border-radius 10px
+.tag
+  padding 4px 8px
+  border-radius 6px`,
+        }),
+    );
+
+    assert.deepEqual(styl.inferred.spacing.steps, [4, 8, 12, 16]);
+    assert.equal(styl.inferred.shadows, 1);
+});
+
+test("scales that are only literals in rules: React Native shadows from four properties, Angular styles, Vue SCSS", () => {
+    const scan = scanTokens(
+        project({
+            "src/Card.js": `import { StyleSheet } from 'react-native';
+export const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#f4f5f7' },
+  card: { padding: 16, borderRadius: 12, backgroundColor: '#ffffff', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
+  row: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
+});`,
+            "src/app/x.component.ts": `@Component({ selector: 'x', template: '', styles: [\`
+  .box { padding: 24px 32px; border-radius: 6px; }
+  .box h2 { margin: 0 0 8px; }
+\`] })
+export class X {}`,
+        }),
+    );
+
+    assert.equal(scan.inferred.shadows, 1, "0 2px 8px rgba(0, 0, 0, 0.12)");
+    assert.deepEqual(scan.inferred.spacing.steps, [8, 12, 16, 24, 32]);
+    assert.equal(scan.inferred.radii.length, 2);
+    assert.equal(scan.inferred.roles.background!.value, "#f4f5f7", "the container is the page");
+    assert.equal(scan.inferred.roles.surface!.value, "#ffffff", "the card is the surface");
+});
+
+test("a dark-first page with unusual names: the page is read by use, .light and the light media query are the other mode", () => {
+    const scan = scanTokens(
+        project({
+            "tokens.css": `:root { --base: #0f1418; --panel: #171e24; --ink: #e7ebee; --faded: #8fa0ab; --rim: #29323a; --glow: #40d787; --glow-deep: #2fa263; --go: #1c7d46; --stop: #e0564f; --wait: #d9a13b; --drop-1: 0 1px 2px rgba(9,14,18,.2) }
+.light { --base: #f5f6f4; --panel: #ffffff; --ink: #1e252b; --faded: #5b6b76; --rim: #d7dcd8; --glow: #0d8a4e; --go: #14603a; --stop: #c23b35; --wait: #a06a10 }
+body { background: var(--base); color: var(--ink) } .card { background: var(--panel); border: 1px solid var(--rim) } a { color: var(--glow) }
+.hero { background: linear-gradient(135deg, #1e1b4b, #312e81) } .chart { fill: #22d3ee } .chart2 { fill: #a78bfa } .badge { background: #fde68a }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(scan.inferred.modes.default, "dark");
+    assert.equal(roles.background!.value, "#0f1418", "the page, by how it is painted");
+    assert.equal(roles.background!.dark, "#f5f6f4", "the other mode (here the light one)");
+    assert.equal(roles.muted!.value, "#8fa0ab", "`faded`");
+    assert.equal(roles.border!.value, "#29323a", "`rim`");
+    assert.equal(roles.accent!.value, "#40d787");
+    assert.equal(
+        roles.danger!.value,
+        "#e0564f",
+        "a red that a variable names, though no rule uses it",
+    );
+    assert.equal(
+        roles.success!.value,
+        "#1c7d46",
+        "the green with its own name, not --glow-deep, a step of the accent",
+    );
+    assert.equal(roles.warning!.value, "#d9a13b");
+    assert.equal(
+        scan.inferred.shadows,
+        1,
+        "a shadow by its value, whatever the variable is called",
+    );
+
+    const palette = Object.values(scan.inferred.palette).reduce((sum, count) => sum + count, 0);
+
+    assert.ok(
+        palette <= 11,
+        `${palette} colors: the one-offs of a dark-first page (gradient stops, a chart) are left out`,
+    );
+});
+
+test("SCSS variables a custom property is set from are that property; prefers-color-scheme: light is the other mode", () => {
+    const scan = scanTokens(
+        project({
+            "_tokens.scss": `$dark-bg: #131015; $dark-surface: #1d1822; $dark-ink: #ece7f1; $dark-brand: #f0717f;
+:root { --bg: #{$dark-bg}; --surface: #{$dark-surface}; --ink: #{$dark-ink}; --brand: #{$dark-brand}; }
+@media (prefers-color-scheme: light) { :root:not(.dark-theme) { --bg: #faf7f5; --surface: #ffffff; --ink: #221c28; --brand: #d8394d; } }`,
+        }),
+    );
+    const system = load(scan);
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#131015");
+    assert.equal(roles.background!.dark, "#faf7f5");
+    assert.equal(roles.accent!.dark, "#d8394d");
+    assert.ok(
+        !system.tokens.some((each) => each.name.startsWith("color.dark")),
+        "no token for $dark-bg beside --bg",
+    );
+});
+
+test("a one-off used once is left out of a large palette, kept in a small one; a spacing used once off the grid is no step", () => {
+    const small = scanTokens(
+        project({
+            "a.css": `body { background: #fff; color: #111 } .a { color: #36f } .b { border: 1px solid #ddd } .c { background: #fde68a }`,
+        }),
+    );
+    const many = Array.from(
+        { length: 20 },
+        (_, at) =>
+            `.x${at} { color: #${(0x112233 + at * 0x050607).toString(16)}; padding: ${at === 0 ? "6px" : "8px"} }`,
+    ).join("\n");
+    const big = scanTokens(
+        project({
+            "a.css": `${many}\nbody { background: #fff; color: #111 } .a { color: #36f } .a2 { color: #36f }`,
+        }),
+    );
+    const count = (scan: ReturnType<typeof scanTokens>) =>
+        Object.values(scan.inferred.palette).reduce((sum, each) => sum + each, 0);
+
+    assert.ok(count(small) >= 4, "a small page keeps its yellow");
+    assert.ok(count(big) <= 14, `${count(big)} colors out of 20 one-offs`);
+    assert.deepEqual(big.inferred.spacing.steps, [8], "6px used once is no step");
 });

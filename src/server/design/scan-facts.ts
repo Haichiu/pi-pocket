@@ -137,7 +137,14 @@ export interface Facts {
     /** The mode that the file being read is named for (`dark.less`), when it is one. */
     fileMode?: Scope;
     /** Declarations that compute a size from custom properties (`calc(var(--gap) * 2)`): the scan resolves them later. */
-    deferred: { prop: string; value: string; selector: string }[];
+    deferred: {
+        prop: string;
+        value: string;
+        selector: string;
+        scope: Scope;
+        file?: string;
+        line?: number;
+    }[];
     /** 3 or 4: which defaults the utility classes mean. */
     tailwindVersion: 3 | 4;
     /** How the project uses Tailwind's default colors by class (`bg-slate-200`, `text-white`), by color name. */
@@ -555,7 +562,14 @@ export function ingest(facts: Facts, decl: Decl): void {
                 !/\$\{/.test(decl.value))) &&
         facts.deferred.length < 1500
     ) {
-        facts.deferred.push({ prop: decl.prop, value: decl.value, selector: decl.selector });
+        facts.deferred.push({
+            prop: decl.prop,
+            value: decl.value,
+            selector: decl.selector,
+            scope: decl.scope,
+            ...(facts.file === undefined ? {} : { file: facts.file }),
+            ...(decl.line === undefined ? {} : { line: decl.line }),
+        });
 
         return;
     }

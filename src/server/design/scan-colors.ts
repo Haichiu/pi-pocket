@@ -931,7 +931,13 @@ export function chooseRoles(
     if (chosen.accent === undefined) {
         const statusSingles = new Set(
             chroma
-                .filter((color) => !used(color.hex) && color.uses <= 1 && color.c >= 0.1)
+                .filter(
+                    (color) =>
+                        !used(color.hex) &&
+                        color.uses <= 1 &&
+                        color.names.length === 0 &&
+                        color.c >= 0.1,
+                )
                 .flatMap((color) =>
                     (["danger", "warning", "success"] as const).filter((role) =>
                         hueOk(role, color),
@@ -947,6 +953,7 @@ export function chooseRoles(
                     !(
                         statusSingles >= 2 &&
                         color.uses <= 1 &&
+                        color.names.length === 0 &&
                         color.c >= 0.1 &&
                         (["danger", "warning", "success"] as const).some((role) =>
                             hueOk(role, color),
@@ -958,6 +965,8 @@ export function chooseRoles(
                 (color.fact?.text ?? 0) +
                 (color.fact?.border ?? 0) +
                 (color.fact?.fill ?? 0) +
+                // A color a variable names is a token of the design; a literal in a gradient is a decoration.
+                (color.names.length > 0 ? 2 : 0) +
                 color.c * 5,
         )[0];
 
@@ -1007,7 +1016,11 @@ export function chooseRoles(
                                     Math.abs(((color.h - accentColor.h + 540) % 360) - 180) < 8
                                 ))),
                 ),
-                (color) => Math.log2(1 + color.uses) * 2 + closeness(color) * 3,
+                // A color a variable names is the design's; a literal used once may be a decoration.
+                (color) =>
+                    Math.log2(1 + color.uses) * 2 +
+                    closeness(color) * 3 +
+                    (color.names.length > 0 ? 3 : 0),
             )[0];
 
             if (top !== undefined) {

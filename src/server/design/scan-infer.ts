@@ -1453,7 +1453,7 @@ function resolveDeferred(facts: Facts, prep: Prepared): void {
         return target === undefined ? undefined : follow(prep.index, target, "light")?.text;
     };
 
-    for (const { prop, value, selector } of facts.deferred.splice(0)) {
+    for (const { prop, value, selector, scope, file, line } of facts.deferred.splice(0)) {
         let resolved = value.replace(/calc\(((?:[^()]|\([^()]*\))*)\)/g, (all, inner: string) => {
             return evalMath(inner, lookup) ?? all;
         });
@@ -1473,14 +1473,16 @@ function resolveDeferred(facts: Facts, prep: Prepared): void {
         });
 
         if (!/calc\(|var\(|(?<![\w-])[$@][A-Za-z_]/.test(resolved)) {
+            facts.file = file;
             ingest(facts, {
                 prop,
                 value: resolved,
                 selector,
                 at: [],
-                scope: "default",
+                scope,
                 theme: false,
                 inline: false,
+                ...(line === undefined ? {} : { line }),
             });
         }
     }
