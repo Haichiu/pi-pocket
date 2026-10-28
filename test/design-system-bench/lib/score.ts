@@ -83,14 +83,14 @@ export interface PRF {
     applicable: boolean;
 }
 
-export function prf(expected: number, actual: number, matched: number): PRF {
+export function prf(expected: number, actual: number, matched: number, credit = 0): PRF {
     if (expected === 0 && actual === 0) {
         return { expected, actual, matched, precision: 1, recall: 1, f1: 1, applicable: false };
     }
 
-    // Claiming nothing is never wrong, so precision is 1; recall then says what was missed.
+    // Claiming nothing is never wrong, so precision is 1; recall then says what was missed. `credit` adds to recall only.
     const precision = actual === 0 ? 1 : matched / actual;
-    const recall = expected === 0 ? 1 : matched / expected;
+    const recall = expected === 0 ? 1 : (matched + credit) / expected;
     const f1 = precision + recall === 0 ? 0 : (2 * precision * recall) / (precision + recall);
 
     return { expected, actual, matched, precision, recall, f1, applicable: true };
@@ -176,7 +176,7 @@ export function scoreSizes(
     const claimed = entries.filter((accept) => !actual.some((size) => fits(accept, size)));
     const implied = claimed.filter((accept) => extra.some((size) => fits(accept, size))).length;
 
-    return prf(entries.length, actual.length, real + implied);
+    return prf(entries.length, actual.length, real, implied);
 }
 
 const sameLayer = (first: ShadowLayer, second: ShadowLayer) =>
@@ -402,10 +402,7 @@ export function extract(system: FlatSystem): Extracted {
     const darkColors: Rgba[] = [];
 
     const addUnique = (list: Rgba[], color: Rgba | undefined) => {
-        if (
-            color !== undefined &&
-            !list.some((item) => sameColor(item, color, 0.5, ALPHA_TOLERANCE))
-        ) {
+        if (color !== undefined && !list.some((item) => sameColor(item, color, 0.5, 0.01))) {
             list.push(color);
         }
     };
@@ -487,9 +484,11 @@ export function extract(system: FlatSystem): Extracted {
         }
     }
 
-    const uniqueSizes = (list: number[]) => [
-        ...new Set(list.map((value) => Math.round(value * 100) / 100)),
-    ];
+    // Zero is "none", not a step of a scale.
+    const uniqueSizes = (list: number[]) =>
+        [...new Set(list.map((value) => Math.round(value * 100) / 100))].filter(
+            (value) => value > 0,
+        );
     const spacingTokens = dimensions(
         system,
         ["space", "spacing", "spacer", "gap", "inset", "pad", "padding", "margin", "unit"],

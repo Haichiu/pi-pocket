@@ -28,7 +28,11 @@ export interface ContrastPhase {
     score: number;
 }
 
-export function contrastPhase(system: DesignSystem | undefined, label: string): ContrastPhase {
+export function contrastPhase(
+    system: DesignSystem | undefined,
+    label: string,
+    counts = true,
+): ContrastPhase {
     if (system === undefined) {
         return {
             system: label,
@@ -75,7 +79,8 @@ export function contrastPhase(system: DesignSystem | undefined, label: string): 
                     ? 0
                     : Math.round((impliedPassing / implied.length) * 1000) / 1000,
         },
-        score: Math.round(passRate * 1000) / 1000,
+        // The bench's own system is shown for reference but earns nothing: only the flagship can.
+        score: counts ? Math.round(passRate * 1000) / 1000 : 0,
     };
 }
 

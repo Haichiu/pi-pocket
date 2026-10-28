@@ -56,9 +56,16 @@ export function loadLintCases(root = join(LINT_DIR, "designs")): LintCase[] {
         .sort((a, b) => Number(a.clean) - Number(b.clean) || a.name.localeCompare(b.name));
 }
 
-/** The bench system that the lint designs link: T's load when it works, the bench's own reader otherwise. */
-export function lintSystem(modules: Modules): { system: DesignSystem; source: string } {
-    if (modules.load !== undefined) {
+/**
+ * The bench system that is handed to `checkDesign`. By default it is read by the bench's own reader, so the lint score does
+ * not depend on the tokens engine (the format phase checks the engine on this same system). `prefer: "engine"` loads it
+ * with `loadDesignSystem`, as the docs phase does, so that components and compiled files are there.
+ */
+export function lintSystem(
+    modules: Modules,
+    prefer: "bench" | "engine" = "bench",
+): { system: DesignSystem; source: string } {
+    if (prefer === "engine" && modules.load !== undefined) {
         try {
             const loaded = modules.load(LINT_SYSTEM);
 

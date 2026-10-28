@@ -123,7 +123,9 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
         (options.reference === true ? referenceModules(browser) : await loadModules());
 
     notes.push(...modules.notes);
-    const flagship = findFlagship(parent, options.flagship);
+    // The ceiling run has no flagship of its own: the bench's system stands in, so every phase can reach 1.
+    const flagship =
+        options.reference === true ? LINT_SYSTEM : findFlagship(parent, options.flagship);
 
     mkdirSync(out, { recursive: true });
 
@@ -237,19 +239,30 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
             };
 
             if (flagship !== undefined) {
-                primary = load(flagship);
                 label = "flagship";
+                primary = load(flagship);
 
+                // The tokens engine may be missing or may refuse the flagship; the bench's reader gives the contrast.
                 if (primary === undefined) {
-                    notes.push(
-                        "The flagship did not load: contrast and docs use the bench's own system.",
-                    );
+                    try {
+                        primary = systemFromFlat(
+                            readFlat(join(flagship, ".pi", "design")),
+                            "flagship",
+                        );
+                        notes.push(
+                            "The flagship was read by the bench's own reader (the tokens engine did not load it).",
+                        );
+                    } catch (error) {
+                        notes.push(
+                            `The flagship could not be read: ${String((error as Error).message).split("\n")[0]}`,
+                        );
+                    }
                 }
             }
 
             if (primary === undefined) {
                 label = "bench";
-                primary = lintSystem(modules).system;
+                primary = lintSystem(modules, "engine").system;
             }
         }
 
@@ -267,10 +280,12 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
         }
 
         if (only.includes("contrast")) {
-            report.contrast = contrastPhase(primary, label);
+            report.contrast = contrastPhase(primary, label, label === "flagship");
             report.scores.contrast = report.contrast.score;
 
-            if (report.contrast.declared === 0) {
+            if (label !== "flagship") {
+                notes.push("Contrast earns nothing until the flagship is in the tree.");
+            } else if (report.contrast.declared === 0) {
                 notes.push(`The ${label} system declares no contrast pairs: contrast scores 0.`);
             }
         }
@@ -312,7 +327,9 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
                 report.lint?.cleanFindings === 0 &&
                 (report.lint?.cases.every((item) => item.error === undefined) ?? false),
             "contrast: every declared pair passes in every mode":
-                (report.contrast?.declared ?? 0) > 0 && report.contrast?.passRate === 1,
+                report.contrast?.system === "flagship" &&
+                (report.contrast?.declared ?? 0) > 0 &&
+                report.contrast?.passRate === 1,
             "format: every system scores 1":
                 (report.format?.systems.length ?? 0) > 0 &&
                 report.format!.systems.every((item) => item.score === 1),
