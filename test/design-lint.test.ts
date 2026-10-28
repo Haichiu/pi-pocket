@@ -323,8 +323,8 @@ test(
                     `<div style="background:#1c1e26"><div style="background:rgba(255,255,255,0.1)"><p class="t" data-pid="low-alpha" style="color:#444a5a">Alpha layer</p></div></div>` +
                     // A translucent text color mixes with its background: 40% black on white is light grey.
                     `<p class="t" data-pid="low-text-alpha" style="color:rgba(0,0,0,0.45);background:#fff">Alpha text</p>` +
-                    // Opacity lowers the contrast of everything inside.
-                    `<div style="opacity:0.4"><p class="t" data-pid="low-opacity" style="color:#1c1e26;background:#fff">Faded</p></div>` +
+                    // Partial opacity makes the result depend on the state the page is caught in: not judged.
+                    `<div style="opacity:0.4"><p class="t" data-pid="ok-opacity" style="color:#1c1e26;background:#fff">Faded</p></div>` +
                     // Large text needs 3:1 only: #777 on white is 4.48:1 (fails 4.5, passes 3), #aaa is 2.3:1.
                     `<p class="t" data-pid="ok-large" style="font-size:24px;color:#8a8a8a;background:#fff">Large</p><p class="t" data-pid="low-large" style="font-size:24px;color:#aaa;background:#fff">Large low</p>` +
                     `<p class="t" data-pid="low-bold" style="font-size:19px;font-weight:700;color:#a0a0a0;background:#fff">Bold low</p><p class="t" data-pid="ok-bold" style="font-size:19px;font-weight:700;color:#8a8a8a;background:#fff">Bold</p>` +
@@ -345,7 +345,6 @@ test(
             "low-alpha",
             "low-bold",
             "low-large",
-            "low-opacity",
             "low-parent",
             "low-text-alpha",
         ]);
@@ -357,6 +356,45 @@ test(
         assert.match(onPid(report, "contrast", "low-large")!.message, /large text needs 3:1/);
     },
 );
+
+test("contrast is judged only where the background is certain", browser, async () => {
+    const gif = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
+    const css =
+        ".t{margin:0;padding:8px}" +
+        ".night{background:#10141c;color:#e8ecf2;padding:16px}.night .card{background:#fff;color:#1c1e26;padding:16px}" +
+        ".scope{--ink:#e8ecf2;--paper:#171c24;background:var(--paper);color:var(--ink)}" +
+        ".glass{background:rgba(255,255,255,.08)}" +
+        ".hero{position:relative;background:#eee;color:#fff;padding:16px}.hero::before{content:'';position:absolute;inset:0;background:rgba(0,0,0,.6)}.hero>*{position:relative}" +
+        ".box{position:relative;height:60px;background:#fff}.box img{position:absolute;inset:0;width:100%;height:60px}" +
+        ".btn{border:0;padding:12px;background:#1f5fd6;color:#fff;font:inherit}.ghost{background:transparent;color:#1f5fd6;border:1px solid #1f5fd6}" +
+        ".sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.sr2{position:absolute;clip-path:inset(50%);height:20px}" +
+        ".over{position:absolute;left:0;top:0;width:100%;height:40px;background:#000}" +
+        "input::placeholder{color:#bbb}";
+    const body =
+        // Judged: certain backgrounds.
+        `<section class="night" data-pid="night"><p class="t" data-pid="ok-on-night">Light on dark</p><p class="t" data-pid="low-on-night" style="color:#2b3140">Dark on dark</p><div class="card"><p class="t" data-pid="ok-card">Card text</p><p class="t" data-pid="low-card" style="color:#ddd">Pale on the card</p></div></section>` +
+        `<section class="scope" data-pid="scope"><p class="t" data-pid="ok-scope">Scoped variables</p></section>` +
+        `<section class="night"><div class="glass" data-pid="glass"><p class="t" data-pid="ok-glass">Glass over dark</p></div></section>` +
+        `<button class="btn" data-pid="ok-btn">Primary</button><button class="btn ghost" data-pid="ok-ghost">Ghost</button>` +
+        `<input data-pid="ok-placeholder" placeholder="Email" style="padding:8px">` +
+        // Not judged: the background cannot be known.
+        `<section class="hero" data-pid="hero"><p class="t" data-pid="ok-hero">Over an overlay drawn by ::before</p></section>` +
+        `<div class="box" data-pid="box"><img alt="" src="${gif}"><p class="t" data-pid="ok-image" style="position:absolute;margin:0;color:#ccc">Over an image</p></div>` +
+        `<div data-pid="grad" style="background:linear-gradient(#fff,#eee)"><p class="t" data-pid="ok-grad" style="color:#ccc">Over a gradient</p></div>` +
+        `<div data-pid="blur" style="backdrop-filter:blur(4px);background:rgba(255,255,255,.2)"><p class="t" data-pid="ok-blur" style="color:#fff">Backdrop blur</p></div>` +
+        `<div data-pid="blend" style="mix-blend-mode:multiply"><p class="t" data-pid="ok-blend" style="color:#ddd">Blend</p></div>` +
+        `<div data-pid="faded" style="opacity:0.5"><p class="t" data-pid="ok-faded" style="color:#1c1e26">Faded parent</p></div>` +
+        `<div data-pid="under" style="position:relative;height:40px"><p class="t" data-pid="ok-under" style="margin:0;color:#fff">Under a panel</p><div class="over"></div></div>` +
+        `<span class="sr" data-pid="ok-sr">hidden</span><span class="sr2" data-pid="ok-sr2" style="color:#fff">hidden too</span>`;
+    const report = await check(page(css, body), { viewport: "desktop" }, null);
+
+    assert.deepEqual(
+        ofRule(report, "contrast")
+            .map((item) => item.pid)
+            .sort(),
+        ["low-card", "low-on-night"],
+    );
+});
 
 test("a contrast finding names the system color that passes", browser, async () => {
     const report = await check(
