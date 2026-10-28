@@ -2474,12 +2474,39 @@ test(
     "the app loads little of Design when it starts, the workspace when the panel opens, and the System view when it opens",
     real,
     async (t) => {
-        // A page that starts with the panel shut: only the module's own file, the store, and the icon of the rail button.
+        // A page that starts with the panel shut: only the module's own file, the store, and the icon of the rail button. The
+        // worst that a browser keeps for Design is set on purpose (its saved look, and the design it had open in this
+        // session): none of it may bring the workspace in before the panel is opened.
         await inPage(
             `const { closeExtPanel } = await import("/extension-ui.js"); closeExtPanel(); return "null";`,
         );
         await waitFor("the panel closed", `return JSON.stringify(!document.querySelector(".dsn"))`);
-        await go(session);
+        await inPage(`
+            localStorage.setItem("x.design.prefs", JSON.stringify({ device: "custom", custom: { w: 700, h: 500 }, zoom: 0.5, backdrop: "dark" }));
+            sessionStorage.setItem("x.design.pick", JSON.stringify({ "${session}": { artifact: "exact", version: 1 } }));
+            window.__before = true;
+            return "null";
+        `);
+
+        // A page that is new: not the one that was there, and nothing asked of it while it goes. (A navigation can report that it
+        // is done while the old page is still there, and what the resource list holds then is everything that old page loaded
+        // since it began; a question put to a page as it is replaced is one that never comes back.)
+        for (let attempt = 0; ; attempt += 1) {
+            await page.navigate(`${base}/s/${session}`);
+            await new Promise((resolve) => setTimeout(resolve, 1200));
+
+            if (
+                await evaluate<boolean>(
+                    page,
+                    `return JSON.stringify(window.__before === undefined)`,
+                )
+            ) {
+                break;
+            }
+
+            assert.ok(attempt < 3, "the page was not replaced");
+        }
+
         await waitFor(
             "the module",
             `return JSON.stringify(performance.getEntriesByType("resource").some((each) => /\\/x\\/design\\/[^/]+\\/index\\.js$/.test(new URL(each.name).pathname)))`,
