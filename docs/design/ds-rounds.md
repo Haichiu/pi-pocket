@@ -28,6 +28,10 @@ U's stand-ins replaced by the real engines. Full suite: 1155 of 1162 pass; 6 fai
 
 Hands-on findings for U: the Check dock checks Light while the canvas shows Dark; section tabs overflow at about 650 px; the warnings box fills a third of a phone screen.
 
+### Round 2: V merged
+
+V's lint fixes (root cause: the DOM walk skipped `<body>`, so text was judged on white; findings now one per `data-pid` scope; tap targets per the plan; authored literals read). Bench lint 0.772 → **1.0**. Held-out lint 0.734 → **1.0** (precision 1, recall 1, 0 findings on clean designs): the fix generalizes. V's duplicate color math now imports T's `color.ts`.
+
 Round 2 started at once on the bench's weakest phases: V on lint, T on scan, B on a held-out set outside the repo (`/mnt/games/Development/ds-holdout/`, never shown to T or V).
 
 Baseline (0.27.0-beta.1, before round 1): no token model, no compile, no lint, no System view, no docs page. Scan read 16 files of this repo and returned one flat list of 60 variables in walk order. Every rubric line is at 0 to 2.
