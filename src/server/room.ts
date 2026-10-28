@@ -45,6 +45,7 @@ import {
     WatchDoc,
 } from "./docs.ts";
 import { COMMAND_ENTRY, SHELL_ENTRY } from "./entry-format.ts";
+import { presentationOptions } from "./entry-presentation.ts";
 import { agentInfo } from "./models.ts";
 import {
     type ClientBlock,
@@ -470,6 +471,7 @@ export class Room {
 
         if (kind === AuthorsDoc.definition.kind) {
             this.authors = { ...((value?.entries as Record<string, string>) ?? {}) };
+            this.#projected.clear();
         } else if (kind === ArtifactsDoc.definition.kind) {
             this.artifacts = { ...((value?.items as Record<string, ArtifactMeta>) ?? {}) };
         } else if (kind === SubagentsDoc.definition.kind) {
@@ -511,12 +513,23 @@ export class Room {
         }, 90);
     }
 
+    /** Presentations changed: the next update projects entries again. */
+    reproject(): void {
+        this.#projected.clear();
+        this.schedule();
+    }
+
     #entry(entry: EntryRecord): ClientEntry | null {
         const id = entry.id as unknown as number;
         let projected = this.#projected.get(id);
 
         if (projected === undefined) {
-            projected = projectEntry(entry) ?? null;
+            projected =
+                projectEntry(
+                    entry,
+                    false,
+                    presentationOptions(this.#app.webs.presentations(), this.authors, id),
+                ) ?? null;
             this.#projected.set(id, projected);
         }
 

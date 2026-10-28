@@ -16,6 +16,14 @@ import {
     type ShellData,
     splitAttachments,
 } from "./entry-format.ts";
+import {
+    type EntryPresentationView,
+    matchPrefix,
+    presentationPeek,
+    presentationSummary,
+    type ProjectOptions,
+    type RegisteredPresentation,
+} from "./entry-presentation.ts";
 import type { WaitView } from "./limit-gate.ts";
 import type { StreamTiming } from "./timing.ts";
 
@@ -45,6 +53,8 @@ export type ClientEntry =
           from?: string;
           files?: string[];
           at?: number;
+          /** Set while a module presents this input. Nothing here is stored. */
+          presentation?: EntryPresentationView;
       }
     | {
           id: number;
@@ -451,43 +461,98 @@ function madeAt(message: Record<string, unknown> | undefined): { at?: number } {
     return typeof at === "number" && Number.isFinite(at) && at > 0 ? { at } : {};
 }
 
-/** One entry for the browser, or undefined for bookkeeping entries the UI does not show. */
-export function projectEntry(entry: EntryRecord, full = false): ClientEntry | undefined {
+/** The text, images, and file names of a user message. File contents stay out of the view. */
+function userPieces(message: Record<string, unknown> | undefined): {
+    raw: string;
+    images: number;
+    files?: string[];
+} {
+    const content = message?.content;
+    const images = countImages(content);
+    const parts = Array.isArray(content) ? (content as ContentPart[]) : undefined;
+    const isFile = (part: ContentPart, index: number) =>
+        index > 0 &&
+        part.type === "text" &&
+        typeof part.text === "string" &&
+        part.text.startsWith(FILE_BLOCK);
+    const files = (parts ?? [])
+        .filter(isFile)
+        .map((part) => String(part.text).slice(FILE_BLOCK.length).split('"', 1)[0]!);
+    const raw = textOfContent(
+        parts === undefined ? content : parts.filter((part, index) => !isFile(part, index)),
+    );
+
+    return files.length === 0 ? { raw, images } : { raw, images, files };
+}
+
+/**
+ * A user row. With `spec`, the live view clips the text and the row carries `presentation`. `keepPrefix` leaves a
+ * registered prefix in the text; otherwise a `[from: …]` prefix becomes `from`, as a person's message does.
+ */
+function projectUserMessage(
+    id: number,
+    message: Record<string, unknown> | undefined,
+    pieces: { raw: string; images: number; files?: string[] },
+    data: unknown,
+    full: boolean,
+    spec: RegisteredPresentation | undefined,
+    keepPrefix: boolean,
+): ClientEntry {
+    const prefixed = keepPrefix ? null : FROM_PREFIX.exec(pieces.raw);
+    const text = prefixed === null ? pieces.raw : pieces.raw.slice(prefixed[0].length);
+    const shown = spec === undefined || full ? { text } : clip(text, OUTPUT_LIMIT);
+    const summary = spec === undefined ? undefined : presentationSummary(data);
+    const named = pieces.files === undefined ? {} : { files: pieces.files };
+
+    return {
+        id,
+        kind: "user",
+        text: shown.text,
+        images: pieces.images,
+        ...(prefixed === null ? {} : { from: prefixed[1]! }),
+        ...named,
+        ...madeAt(message),
+        ...(spec === undefined
+            ? {}
+            : {
+                  presentation: {
+                      entryKind: spec.kind,
+                      label: spec.label,
+                      ...(summary === undefined ? {} : { summary }),
+                      ...(shown.clipped === undefined ? {} : { clipped: shown.clipped }),
+                  },
+              }),
+    };
+}
+
+/**
+ * One entry for the browser, or undefined for bookkeeping entries the UI does not show. `options` is the registry of
+ * modules that are on, and whether a person wrote this entry. Without it, a custom kind stays `{ kind: "other" }`.
+ */
+export function projectEntry(
+    entry: EntryRecord,
+    full = false,
+    options?: ProjectOptions,
+): ClientEntry | undefined {
     const message = entry.model?.[0] as Record<string, unknown> | undefined;
     const id = entry.id as unknown as number;
+    const presentations = options?.presentations;
 
     switch (entry.kind) {
         case "pi.user": {
-            const content = message?.content;
-            const images = countImages(content);
-            // Files sent along (parts after the message's own text) show by name: their contents would only weigh down
-            // every browser's view.
-            const parts = Array.isArray(content) ? (content as ContentPart[]) : undefined;
-            const isFile = (part: ContentPart, index: number) =>
-                index > 0 &&
-                part.type === "text" &&
-                typeof part.text === "string" &&
-                part.text.startsWith(FILE_BLOCK);
-            const files = (parts ?? [])
-                .filter(isFile)
-                .map((part) => String(part.text).slice(FILE_BLOCK.length).split('"', 1)[0]!);
-            const text = textOfContent(
-                parts === undefined ? content : parts.filter((part, index) => !isFile(part, index)),
-            );
-            const named = files.length === 0 ? {} : { files };
-            const prefixed = FROM_PREFIX.exec(text);
+            const pieces = userPieces(message);
+            const spec =
+                options?.authored === true ? undefined : matchPrefix(pieces.raw, presentations);
 
-            return prefixed === null
-                ? { id, kind: "user", text, images, ...named, ...madeAt(message) }
-                : {
-                      id,
-                      kind: "user",
-                      text: text.slice(prefixed[0].length),
-                      images,
-                      from: prefixed[1]!,
-                      ...named,
-                      ...madeAt(message),
-                  };
+            return projectUserMessage(
+                id,
+                message,
+                pieces,
+                entry.data,
+                full,
+                spec,
+                spec !== undefined,
+            );
         }
 
         case "pi.assistant": {
@@ -597,8 +662,24 @@ export function projectEntry(entry: EntryRecord, full = false): ClientEntry | un
             };
         }
 
-        default:
+        default: {
+            const spec = presentations?.byKind.get(entry.kind);
+
+            // A registered kind whose model message is a user message is that input, clipped until a full read.
+            if (spec !== undefined && message?.role === "user") {
+                return projectUserMessage(
+                    id,
+                    message,
+                    userPieces(message),
+                    entry.data,
+                    full,
+                    spec,
+                    true,
+                );
+            }
+
             return { id, kind: "other", entryKind: entry.kind };
+        }
     }
 }
 
@@ -992,6 +1073,17 @@ export function peekLines(
     for (const entry of entries) {
         switch (entry.kind) {
             case "user": {
+                if (entry.presentation !== undefined) {
+                    lines.push({
+                        kind: "event",
+                        text: snippet(
+                            presentationPeek(entry.presentation.label, entry.presentation.summary),
+                            PEEK_TEXT,
+                        ),
+                    });
+                    break;
+                }
+
                 const text = snippet(entryText(entry), PEEK_TEXT);
 
                 if (text !== "" || entry.images > 0 || (entry.files?.length ?? 0) > 0) {
