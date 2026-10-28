@@ -469,7 +469,10 @@ export function designSystemTool(): ToolRegistration {
 
             switch (args.action) {
                 case "scan": {
-                    const draft = scanReport(await scanProject(scanRoot(cwd, args.path)), args.path);
+                    const draft = scanReport(
+                        await scanProject(scanRoot(cwd, args.path)),
+                        args.path,
+                    );
 
                     return text(draft);
                 }

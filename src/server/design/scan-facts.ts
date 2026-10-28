@@ -5,6 +5,7 @@
  */
 import { type Scope } from "./scan-parse.ts";
 import { type Imported } from "./scan-import.ts";
+import { noteChannels } from "./scan-channels.ts";
 import type { Skipped } from "./scan-files.ts";
 
 /** A list of words from one string. */
@@ -173,6 +174,8 @@ export interface Facts {
     classWeight: Map<string, number>;
     /** Scopes that set custom properties but are neither the root nor dark mode, by selector. */
     scoped: Map<string, number>;
+    /** Custom properties used inside a color function (`rgb(var(--c-brand))`), and which function: their values are channels. */
+    channels: Map<string, string>;
     /** Tokens already written in a DTCG, Style Dictionary, or Tokens Studio file. */
     imported: Imported;
 }
@@ -214,6 +217,7 @@ export function newFacts(): Facts {
         classRadius: new Map(),
         classWeight: new Map(),
         scoped: new Map(),
+        channels: new Map(),
         skipped: [],
         sassExpanded: new Map(),
         imported: {
@@ -271,6 +275,8 @@ export function namespaceOf(name: string): { category: Category; rest: string } 
 }
 
 export function addVar(facts: Facts, fact: Omit<VarFact, "order" | "rank">): void {
+    noteChannels(facts, fact.value);
+
     // A file that is the other mode's (`dark.less`, `themes/night/colors.css`) sets that mode's values.
     const scope =
         fact.scope === "default" && facts.fileMode !== undefined ? facts.fileMode : fact.scope;

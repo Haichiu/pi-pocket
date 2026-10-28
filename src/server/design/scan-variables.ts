@@ -248,6 +248,7 @@ export function follow(
 
         return undefined;
     };
+
     let current = start;
     // Sass interpolation of one variable (`#{$dark-bg}`) is the variable.
     const bare = (value: string | undefined) => value?.replace(/#\{\s*([$@][\w-]+)\s*\}/g, "$1");

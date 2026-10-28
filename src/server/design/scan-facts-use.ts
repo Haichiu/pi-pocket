@@ -6,6 +6,7 @@ import { colorsIn, commaParts, type Decl, isDarkSelector, parts, px } from "./sc
 import { nameScore, words } from "./scan-colors.ts";
 import { addVar, bump, type ColorFact, emptyKinds, type Facts, type Kinds } from "./scan-facts.ts";
 import { sassMapVars } from "./scan-facts-sass.ts";
+import { noteChannels } from "./scan-channels.ts";
 
 const COLOR_PROPERTY: [RegExp, "bg" | "text" | "border" | "fill" | "shadow"][] = [
     [
@@ -297,6 +298,8 @@ const SCALE_PROPS =
 
 /** Counts a declaration (not a custom property) in all the tallies. */
 export function ingest(facts: Facts, decl: Decl): void {
+    noteChannels(facts, decl.value);
+
     // A length variable shows what it is for by the property that takes it: `padding: var(--size-4)` is spacing.
     if (decl.value.includes("var(")) {
         const group = SPACING_PROPS.test(decl.prop)

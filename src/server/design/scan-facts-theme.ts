@@ -46,9 +46,9 @@ function typographyVars(
 
     for (const [key, child] of Object.entries(variants)) {
         if (key === "fontFamily") {
-            add(heading ? "heading" : "base", "font", child);
+            add("base", "font", child);
         } else if (key === "fontSize") {
-            add(heading ? "heading" : "base", "text", child);
+            add("base", "text", child);
         } else if (typeof child === "object" && child !== null && !Array.isArray(child)) {
             const variant = child as Record<string, Literal>;
 
@@ -199,28 +199,12 @@ export function themeVars(facts: Facts, file: string, text: string): void {
         return end === undefined ? [] : [{ at: open.index, end }];
     });
 
-    const block = [...text.matchAll(/(?<![\w$.])(?:headings|typography)\s*:\s*(?=\{)/g)].flatMap(
-        (open) => {
-            const end = braceEnd(text, open.index + open[0].length);
-
-            return end === undefined ? [] : [{ at: open.index, end }];
-        },
-    );
-
     for (const match of text.matchAll(heads)) {
         if (++seen > 60) {
             break;
         }
 
         if (semantic.some((span) => span.at < match.index && match.index < span.end)) {
-            continue;
-        }
-
-        // The family and the size inside `headings: {…}` or `typography: {…}` are the headings', read as a block.
-        if (
-            match[3] !== undefined &&
-            block.some((span) => span.at < match.index && match.index < span.end)
-        ) {
             continue;
         }
 

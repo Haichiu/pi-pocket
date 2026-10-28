@@ -198,11 +198,23 @@ export function shapeThemes(facts: Facts, root: string, files: string[]): void {
         const emit: Emit = (name, value, scope, hint = "color") => {
             const key = `${rel}|${scope}|${name}|${value}`;
 
-            if (!seen.has(key) && seen.size < 6000) {
+            // A scale the theme reader of the file already took (the same value in the same file) is not taken twice.
+            const twice =
+                hint !== "color" &&
+                facts.vars.some(
+                    (each) =>
+                        each.file === rel &&
+                        each.hint === hint &&
+                        each.value === value &&
+                        each.name !== name,
+                );
+
+            if (!seen.has(key) && !twice && seen.size < 6000) {
                 seen.add(key);
                 addVar(facts, { name, value, scope, kind: "js", file: rel, hint });
             }
         };
+
         const antd = hasAntdTheme(text);
         const fileMode: Scope | undefined = rel
             .replace(/\.[^./]+$/, "")
@@ -313,6 +325,7 @@ function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: E
     if (typeof node.primaryColor === "string" && isObject(node.colors)) {
         const chosen = node.colors[node.primaryColor];
         const shade = node.primaryShade;
+
         const pick = (list: Literal | undefined, step: number): string | undefined => {
             const value = Array.isArray(list)
                 ? list[step]
@@ -322,6 +335,7 @@ function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: E
 
             return isColor(value) ? value : undefined;
         };
+
         const light = pick(
             chosen,
             typeof shade === "number"
@@ -536,6 +550,11 @@ function flat(node: { [key: string]: Literal }, path: string[], mode: Scope, emi
 
         const words = wordsOf(key);
         const text = typeof value === "number" ? `${value}px` : value;
+
+        // A shadow's own parts (`shadowRadius: 8`, `shadowColor: '#000'`) are not a radius or a shadow.
+        if (words.includes("shadow") && !/^(?:inset\s+)?-?[\d.]+(?:px|rem|em)?\s/.test(text)) {
+            continue;
+        }
 
         if (words.includes("font") && words.includes("size") && /^\d/.test(text)) {
             emit(`${prefix}${key}`, text, mode, "text");

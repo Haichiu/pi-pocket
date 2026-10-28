@@ -253,6 +253,7 @@ export function planRender(root: string): RenderPlan | undefined {
     }
 
     const texts = new Map<string, string>();
+
     const read = (rel: string, limit: number) => {
         if (!texts.has(rel)) {
             try {
@@ -264,6 +265,7 @@ export function planRender(root: string): RenderPlan | undefined {
 
         return texts.get(rel)!;
     };
+
     const ranked = htmlFiles
         .slice(0, 120)
         .map((file) => ({ rel: file.rel, score: pageScore(file.rel, read(file.rel, LIMITS.html)) }))

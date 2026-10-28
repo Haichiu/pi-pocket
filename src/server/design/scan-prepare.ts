@@ -38,7 +38,10 @@ export function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
     const index = new Map<string, Variable>();
 
     for (const variable of all) {
-        index.set(`${variable.kind === "theme" ? "css" : variable.kind}:${variable.name}`, variable);
+        index.set(
+            `${variable.kind === "theme" ? "css" : variable.kind}:${variable.name}`,
+            variable,
+        );
     }
 
     const classified: Classified[] = [];

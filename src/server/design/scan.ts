@@ -21,6 +21,7 @@ import {
 } from "./scan-render.ts";
 import { ingestStyles } from "./scan-facts-use.ts";
 import { shapeThemes } from "./scan-theme-shapes.ts";
+import { resolveChannels } from "./scan-channels.ts";
 import { indentedToBraces } from "./scan-parse.ts";
 import { LIMITS, collectFiles, readHead, type Skipped } from "./scan-files.ts";
 import { colorsIn, darkMixinsIn } from "./scan-parse.ts";
@@ -222,6 +223,9 @@ export function readFacts(root: string, rendered?: Rendered): Facts {
     } catch {
         // A script that cannot be read as a theme must not end the scan.
     }
+
+    // Colors written in parts: the properties that hold channels, and the colors built of them.
+    resolveChannels(facts);
 
     // What a browser showed of the project's pages is read last: it fills what the files did not say.
     if (rendered !== undefined) {

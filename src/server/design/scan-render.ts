@@ -287,6 +287,7 @@ function declsOf(reading: Reading, scope: Scope, known: Known, against?: Reading
     const dark = scope === "dark";
     const same = (a: Record<string, number> | undefined, key: string) =>
         a !== undefined && key in a;
+
     // A color the files hold is already counted by them; a new one is the page's own.
     const fresh = (css: string) => {
         const hex = hexOf(css);
