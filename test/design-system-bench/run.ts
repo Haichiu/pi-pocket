@@ -12,6 +12,7 @@ import type { DesignSystem } from "../../src/server/design/system-types.ts";
 import { BenchBrowser } from "./lib/chromium.ts";
 import { loadModules, ROOT, type Modules } from "./lib/modules.ts";
 import { referenceModules } from "./lib/reference.ts";
+import { runShots, type ShotsReport } from "./shots.ts";
 import { contrastPhase, docsPhase, type ContrastPhase, type DocsPhase } from "./lib/phase-docs.ts";
 import { formatPhase, isFolder, type FormatPhase, type SystemSource } from "./lib/phase-format.ts";
 import {
@@ -27,7 +28,9 @@ import { COLOR_TOLERANCE, SCAN_CATEGORIES, SIZE_TOLERANCE } from "./lib/score.ts
 import { readFlat, systemFromFlat } from "./lib/system.ts";
 
 export const PHASES = ["scan", "format", "lint", "contrast", "docs"] as const;
-export type Phase = (typeof PHASES)[number];
+/** `shots` is not in the default run: it starts a throwaway app (`--shots`, or `--only shots`). */
+export const ALL_PHASES = [...PHASES, "shots"] as const;
+export type Phase = (typeof ALL_PHASES)[number];
 
 /** Where Stream G's flagship may be, in order. A folder with `.pi/design/` in it, or the contents of `.pi/design/`. */
 export const FLAGSHIP_CANDIDATES = [
@@ -45,6 +48,10 @@ export interface BenchOptions {
     reference?: boolean;
     /** A flagship folder, instead of looking in FLAGSHIP_CANDIDATES. */
     flagship?: string;
+    /** Also take the System view screenshots (a throwaway app) and check that every tab shows its tokens. */
+    shots?: boolean;
+    /** The checkout whose throwaway app and flagship the System view shots use. Default: this one. */
+    tree?: string;
     /** A folder of fixture projects (each with `expected.json`), instead of `fixtures/`. */
     fixtures?: string;
     /** A folder of lint designs (each a folder with `index.html` and `expected-findings.json`), instead of `lint/designs/`. */
@@ -66,6 +73,8 @@ export interface BenchReport {
     lint?: LintPhase;
     contrast?: ContrastPhase;
     docs?: DocsPhase;
+    /** The System view: every tab, both sizes, both systems, with the check that each shows its tokens. */
+    systemView?: ShotsReport;
     /** 0 to 1 for each phase that ran. The rubric lines they feed: scan 2, lint 3, contrast 4, docs 7. */
     scores: Partial<Record<Phase, number>> & { overall: number };
     /** Whether each number reaches its target (docs/design/design-system.md, Rubric). */
@@ -130,7 +139,10 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
     const started = Date.now();
     const log = options.log ?? (() => {});
     const out = resolve(options.out ?? "/tmp/ds-bench");
-    const only = options.only ?? [...PHASES];
+    const only: Phase[] = [
+        ...(options.only ?? PHASES),
+        ...(options.shots === true ? (["shots"] as const) : []),
+    ];
     const parent = mkdtempSync(join(tmpdir(), "pocket-bench-run-"));
     const notes: string[] = [];
     const browser =
@@ -357,7 +369,44 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
             }
         }
 
-        const run = PHASES.filter((phase) => only.includes(phase));
+        if (only.includes("shots")) {
+            log("phase shots");
+
+            // One folder for the judges: the docs tiles are in `docs/`, the System view PNGs in `system-view/`.
+            const view = await runShots({ tree: options.tree, out: join(out, "system-view"), log });
+
+            report.systemView = view;
+            report.scores.shots =
+                view.tabs.length === 0
+                    ? 0
+                    : round(view.tabs.filter((tab) => tab.ok).length / view.tabs.length);
+            notes.push(
+                `System view screenshots: ${view.saved.length} PNGs in ${view.folder} (<system>-<size>-<tab>.png; see systemView.saved).`,
+            );
+
+            for (const tab of view.tabs.filter((item) => !item.ok)) {
+                notes.push(
+                    `System view, ${tab.system} ${tab.size} ${tab.tab}: ${tab.reason ?? "failed"}.`,
+                );
+            }
+
+            for (const failure of view.failed) {
+                notes.push(`System view shot failed: ${failure}`);
+            }
+        }
+
+        if (only.includes("docs") && report.docs !== undefined) {
+            const tiles = report.docs.shots.reduce(
+                (sum, shot) => sum + (shot.tiles?.length ?? 0),
+                0,
+            );
+
+            notes.push(
+                `Docs tiles: ${tiles} PNGs in ${join(out, "docs")} (docs-<viewport>-<scheme>-<NN>-<section>.png).`,
+            );
+        }
+
+        const run = ALL_PHASES.filter((phase) => only.includes(phase));
 
         // A phase that failed has no report and scores 0.
         for (const phase of run) {
@@ -388,6 +437,12 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
             "format: every system scores 1":
                 (report.format?.systems.length ?? 0) > 0 &&
                 report.format!.systems.every((item) => item.score === 1),
+            ...(only.includes("shots")
+                ? {
+                      "system view: every tab shows its tokens (harbor and flagship, desktop and phone)":
+                          report.systemView?.ok === true,
+                  }
+                : {}),
             "docs: every check passes":
                 report.docs?.available === true &&
                 Object.values(report.docs.checks).length > 0 &&
@@ -421,6 +476,10 @@ function parseArgs(argv: string[]): BenchOptions & { help: boolean } {
             options.lint = argv[++index];
         } else if (arg === "--no-browser") {
             options.browser = false;
+        } else if (arg === "--shots") {
+            options.shots = true;
+        } else if (arg === "--tree") {
+            options.tree = argv[++index];
         } else if (arg === "--reference") {
             options.reference = true;
         } else if (arg === "--help" || arg === "-h") {
@@ -431,8 +490,8 @@ function parseArgs(argv: string[]): BenchOptions & { help: boolean } {
     }
 
     for (const phase of options.only ?? []) {
-        if (!PHASES.includes(phase)) {
-            throw new Error(`--only takes ${PHASES.join(", ")}.`);
+        if (!ALL_PHASES.includes(phase)) {
+            throw new Error(`--only takes ${ALL_PHASES.join(", ")}.`);
         }
     }
 
@@ -440,6 +499,7 @@ function parseArgs(argv: string[]): BenchOptions & { help: boolean } {
         ["--flagship", options.flagship],
         ["--fixtures", options.fixtures],
         ["--lint", options.lint],
+        ["--tree", options.tree],
     ] as const) {
         if (folder !== undefined && !isFolder(resolve(folder))) {
             throw new Error(`${flag} ${folder} is not a folder.`);
@@ -455,7 +515,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
 
         if (options.help) {
             console.error(
-                "node test/design-system-bench/run.ts [--out dir] [--only scan,format,lint,contrast,docs] [--flagship dir] [--no-browser] [--reference] [--fixtures dir] [--lint dir]",
+                "node test/design-system-bench/run.ts [--out dir] [--only scan,format,lint,contrast,docs] [--flagship dir] [--no-browser] [--reference] [--shots] [--tree dir] [--fixtures dir] [--lint dir]",
             );
         } else {
             const report = await runBench({

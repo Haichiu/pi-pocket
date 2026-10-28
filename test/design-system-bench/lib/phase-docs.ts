@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { DesignSystem } from "../../../src/server/design/system-types.ts";
 import { BenchBrowser, serveFiles, typeOf, type BenchPage, type FileEntry } from "./chromium.ts";
 import type { Modules } from "./modules.ts";
+import { decodePng, distinctColors } from "./png.ts";
 import { contrastPairs, impliedPairs } from "./system.ts";
 
 export interface ContrastPhase {
@@ -94,6 +95,8 @@ export interface DocsShot {
     height?: number;
     /** Wider than the viewport: a horizontal scroll. */
     overflowX?: boolean;
+    /** The component frames of the page (`iframe.comp-frame`): how many, and how many had text and painted. */
+    frames?: { count: number; withText: number; painted: number; blank: string[] };
     errors: string[];
     external: string[];
     failed: string[];
@@ -178,6 +181,111 @@ export async function tileRects(
     }
 
     return out.filter((tile) => tile.height > 0);
+}
+
+/** A frame needs this many different colors in its screenshot to count as painted: one flat color is blank. */
+export const PAINTED_COLORS = 3;
+const FRAME_CLASS = "comp-frame";
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Put the page in the scheme through its own switch (so that its frames hear of it), else on `data-theme`. */
+async function switchScheme(page: BenchPage, scheme: "light" | "dark"): Promise<void> {
+    await page.evaluate(`(() => {
+        const theme = ${JSON.stringify(scheme)};
+        for (const button of document.querySelectorAll('button[data-theme]')) {
+            if (button.getAttribute('data-theme') === theme) { button.click(); return; }
+        }
+        const select = document.querySelector('.modesel');
+        const option = select ? Array.from(select.options).find((item) => item.getAttribute('data-theme') === theme) : undefined;
+        if (select && option) { select.value = option.value; select.dispatchEvent(new Event('change', { bubbles: true })); return; }
+        document.documentElement.setAttribute('data-theme', theme);
+    })()`);
+    await pause(400);
+}
+
+/** Two frames and a short wait: what painting needs after a scroll. */
+async function settle(page: BenchPage): Promise<void> {
+    await page.evaluate(
+        `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
+    );
+    await pause(200);
+}
+
+/** The vertical extent of each component frame on the page (page coordinates). */
+const frameRects = (page: BenchPage) =>
+    page.evaluate<{ left: number; top: number; width: number; height: number }[]>(
+        `Array.from(document.querySelectorAll('iframe.${FRAME_CLASS}'), (frame) => { const r = frame.getBoundingClientRect(); return { left: Math.max(0, Math.round(r.left)), top: Math.round(r.top + scrollY), width: Math.ceil(r.width), height: Math.ceil(r.height) }; })`,
+    );
+
+/** Wait until the frames at `indexes` have a body with text (they load after the page, and only near the viewport). */
+async function waitForFrames(page: BenchPage, indexes: number[], limitMs = 6000): Promise<void> {
+    const started = Date.now();
+
+    while (indexes.length > 0 && Date.now() - started < limitMs) {
+        const texts = await page.frameTexts(FRAME_CLASS);
+
+        if (indexes.every((index) => (texts[index]?.text.length ?? 0) > 0)) {
+            return;
+        }
+
+        await pause(150);
+    }
+}
+
+/**
+ * Photograph every component frame on its own, in view, and say whether it has text and is not one color. A frame that
+ * is outside the viewport is not painted, so the page is scrolled to each frame first.
+ */
+export async function checkFrames(
+    page: BenchPage,
+    width: number,
+): Promise<NonNullable<DocsShot["frames"]>> {
+    const result = { count: 0, withText: 0, painted: 0, blank: [] as string[] };
+    const rects = await frameRects(page);
+
+    result.count = rects.length;
+
+    for (const [index, rect] of rects.entries()) {
+        await page.evaluate(
+            `document.querySelectorAll('iframe.${FRAME_CLASS}')[${index}].scrollIntoView({ block: 'start', behavior: 'instant' })`,
+        );
+        await waitForFrames(page, [index]);
+        await settle(page);
+
+        const texts = await page.frameTexts(FRAME_CLASS);
+        const now = (await frameRects(page))[index] ?? rect;
+        const title = texts[index]?.title || `frame ${index + 1}`;
+        const hasText = (texts[index]?.text.length ?? 0) > 0;
+        let painted = false;
+
+        try {
+            const top = await page.evaluate<number>(`window.scrollY`);
+
+            painted =
+                distinctColors(
+                    decodePng(
+                        await page.clipInView(
+                            now.left,
+                            Math.max(top, now.top),
+                            Math.max(1, Math.min(now.width, width - now.left)),
+                            Math.min(now.height, TILE_HEIGHT - 1),
+                        ),
+                    ),
+                ) >= PAINTED_COLORS;
+        } catch {
+            painted = false;
+        }
+
+        result.withText += hasText ? 1 : 0;
+        result.painted += painted ? 1 : 0;
+
+        if (!hasText || !painted) {
+            result.blank.push(`${title}${hasText ? " (one color)" : " (no text)"}`);
+        }
+    }
+
+    return result;
 }
 
 export async function docsPhase(
@@ -271,11 +379,8 @@ export async function docsPhase(
                         colorScheme: scheme,
                     });
 
-                    // A page with its own switch reads `data-theme`; one that follows the system already has the scheme.
-                    await page.evaluate(
-                        `document.documentElement.setAttribute('data-theme', ${JSON.stringify(scheme)})`,
-                    );
-                    await new Promise((resolve) => setTimeout(resolve, 150));
+                    // The page's own switch, so that its component frames hear of the scheme too.
+                    await switchScheme(page, scheme);
 
                     shot.overflowX =
                         (await page.evaluate<number>(`document.documentElement.scrollWidth`)) >
@@ -288,18 +393,51 @@ export async function docsPhase(
                     const png = await page.screenshot(true);
                     const prefix = `docs-${viewport.name}-${scheme}`;
 
+                    const save = async (name: string, bytes: Buffer) => {
+                        const file = `${prefix}-${String(shot.tiles!.length).padStart(2, "0")}-${name}.png`;
+
+                        writeFileSync(join(shots, file), bytes);
+                        shot.tiles!.push(join("docs", file));
+                    };
+
                     shot.tiles = [];
 
-                    for (const tile of await tileRects(page, viewport)) {
-                        const name = `${prefix}-${String(shot.tiles.length).padStart(2, "0")}-${tile.name}.png`;
+                    // The first screen, at the size of the screen.
+                    await save(
+                        "first-screen",
+                        await page.clipInView(0, 0, viewport.width, viewport.height),
+                    );
 
-                        writeFileSync(
-                            join(shots, name),
-                            await page.clip(0, tile.y, viewport.width, tile.height),
+                    // The rest as tiles of at most 2,000 px. A frame outside the viewport is not painted, so the viewport is
+                    // made as tall as a tile, each tile is scrolled to the top of it, and the frames in it are waited for.
+                    await page.resize(viewport.width, TILE_HEIGHT);
+                    await page.evaluate(
+                        `document.querySelectorAll('*').forEach((el) => { if (getComputedStyle(el).position === 'sticky') el.style.position = 'relative'; })`,
+                    );
+                    await settle(page);
+
+                    const rects = await frameRects(page);
+
+                    for (const tile of (await tileRects(page, viewport)).slice(1)) {
+                        await page.evaluate(
+                            `window.scrollTo({ top: ${tile.y}, left: 0, behavior: 'instant' })`,
                         );
-                        shot.tiles.push(join("docs", name));
+                        await waitForFrames(
+                            page,
+                            rects.flatMap((rect, index) =>
+                                rect.top < tile.y + tile.height && rect.top + rect.height > tile.y
+                                    ? [index]
+                                    : [],
+                            ),
+                        );
+                        await settle(page);
+                        await save(
+                            tile.name,
+                            await page.clipInView(0, tile.y, viewport.width, tile.height),
+                        );
                     }
 
+                    shot.frames = await checkFrames(page, viewport.width);
                     shot.file = shot.tiles[0];
                     hashes.set(
                         `${viewport.name}-${scheme}`,
@@ -341,6 +479,19 @@ export async function docsPhase(
     const sectionRate =
         Object.values(phase.sections).filter(Boolean).length / Object.keys(SECTIONS).length;
 
+    // Every component of the system has a frame, and every frame has a body with text and is not one flat color.
+    const expectedFrames = system.components.length;
+    const frames = (
+        ok: (shot: DocsShot & { frames: NonNullable<DocsShot["frames"]> }) => boolean,
+    ) =>
+        rendered &&
+        phase.shots.every(
+            (shot) =>
+                shot.frames !== undefined &&
+                shot.frames.count >= expectedFrames &&
+                ok(shot as DocsShot & { frames: NonNullable<DocsShot["frames"]> }),
+        );
+
     phase.checks = {
         rendered,
         noScriptErrors: rendered && phase.shots.every((shot) => shot.errors.length === 0),
@@ -359,6 +510,8 @@ export async function docsPhase(
         isSubstantial:
             text.length > 1500 &&
             phase.shots.some((shot) => shot.viewport === "desktop" && (shot.height ?? 0) > 1800),
+        componentFramesHaveText: frames((shot) => shot.frames.withText === shot.frames.count),
+        componentFramesPainted: frames((shot) => shot.frames.painted === shot.frames.count),
         namesTokens:
             system.tokens
                 .slice(0, 40)
