@@ -47,6 +47,9 @@ export interface RawPage {
         ratio?: number;
         /** The colors that make a form field's edge: its fill and borders, as authored. */
         edges?: number[][];
+        /** What the pair is: a form field's edge (default), a focus ring, or an icon. */
+        what?: string;
+        tag?: string;
     })[];
     targets: (RawGroup & { level: string; width: number; height: number; tag: string })[];
     overflow?: {
@@ -61,6 +64,15 @@ export interface RawPage {
     fontFaces: (RawGroup & { family: string; why: string; failed: boolean })[];
     focus: (RawGroup & { tag: string; outlineNone: boolean })[];
     pids: (RawGroup & { tag: string })[];
+    motion?: {
+        count: number;
+        longest: number;
+        /** The page's CSS has a prefers-reduced-motion rule. */
+        override: boolean;
+        /** A style sheet could not be read (another origin), so its rules are unknown. */
+        unreadable: boolean;
+        el?: RawElement;
+    };
 }
 
 export const PAGE_SCRIPT = String.raw`(async (input) => {
@@ -72,6 +84,60 @@ const XHTML = 'http://www.w3.org/1999/xhtml';
 const MAX_ELEMENTS = 4000;
 const MAX_GROUPS = 300;
 const round = (n) => Math.round(n * 100) / 100;
+
+// Motion first: the calm style below would hide it. A transition or animation that runs longer than 500 ms, or an
+// animation that repeats forever, is motion that a person who asks for less (prefers-reduced-motion) should not get,
+// unless the page's CSS has a prefers-reduced-motion rule.
+const MOTION_MS = 500;
+const motion = { count: 0, longest: 0, first: null, override: false, unreadable: false };
+const toMs = (text) => text.split(',').map((part) => { const t = part.trim(); return t.endsWith('ms') ? parseFloat(t) : t.endsWith('s') ? parseFloat(t) * 1000 : 0; });
+
+for (const el of [...(body ? body.querySelectorAll('*') : [])].slice(0, 3000)) {
+    const style = getComputedStyle(el);
+
+    if (style.display === 'none') continue;
+
+    const props = style.transitionProperty.split(',').map((part) => part.trim());
+    const transition = Math.max(0, ...toMs(style.transitionDuration).filter((ms, at) => props[at % props.length] !== 'none'));
+    const names = style.animationName.split(',').map((part) => part.trim());
+    const durations = toMs(style.animationDuration);
+    const repeats = style.animationIterationCount.split(',').map((part) => part.trim());
+    let animation = 0;
+
+    names.forEach((name, at) => {
+        const ms = durations[at % durations.length];
+
+        if (name === 'none' || !(ms > 0)) return;
+
+        animation = Math.max(animation, repeats[at % repeats.length] === 'infinite' ? Math.max(ms, MOTION_MS + 1) : ms);
+    });
+
+    const longest = Math.max(transition, animation);
+
+    if (longest > MOTION_MS) {
+        motion.count++;
+        motion.longest = Math.max(motion.longest, Math.round(longest));
+        if (!motion.first) motion.first = el;
+    }
+}
+
+const reducedRule = (rules) => {
+    for (const rule of rules) {
+        if (rule.media && /prefers-reduced-motion/.test(rule.media.mediaText || '')) return true;
+        if (rule.conditionText && /prefers-reduced-motion/.test(rule.conditionText)) return true;
+        if (rule.cssRules && reducedRule(rule.cssRules)) return true;
+    }
+
+    return false;
+};
+
+for (const sheet of doc.styleSheets) {
+    try {
+        if (reducedRule(sheet.cssRules)) motion.override = true;
+    } catch {
+        motion.unreadable = true;
+    }
+}
 
 // A style that stops transitions and animations, so every computed value is the resting one.
 const calm = doc.createElement('style');
@@ -164,6 +230,14 @@ const mix = (back, front, alpha) => [
     front[1] * alpha + back[1] * (1 - alpha),
     front[2] * alpha + back[2] * (1 - alpha),
 ];
+
+// WCAG contrast of two opaque colors (0 to 255 channels).
+const contrastOf = (a, b) => {
+    const lum = (c) => c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+    const [la, lb] = [lum(a), lum(b)].map((c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]);
+
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+};
 
 const rootStyle = getComputedStyle(root);
 const darkCanvas = /dark/.test(rootStyle.colorScheme) && win.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -929,6 +1003,61 @@ for (const [family, el] of textFamilies) {
 
 meter.remove();
 
+// Icons that are the whole of a control (a button with only an SVG): their strokes and fills need 3:1 (WCAG 1.4.11)
+// against what is behind them, judged only when every color that the icon paints fails.
+for (const control of [...doc.querySelectorAll(pointed)].slice(0, 300)) {
+    const icon = control.querySelector('svg');
+
+    if (!icon || (control.textContent || '').trim() !== '' || control.localName === 'input' || control.matches(':disabled')) continue;
+
+    const box = control.getBoundingClientRect();
+    let node = icon.parentElement;
+
+    while (node && !states.get(node)) node = node.parentElement;
+
+    const state = node ? states.get(node) : null;
+
+    if (!state || state.uncertain || box.width <= 0 || box.height <= 0 || getComputedStyle(control).visibility !== 'visible') continue;
+
+    const painted = [];
+    let unknown = false;
+
+    for (const shape of [...icon.querySelectorAll('path,circle,rect,line,polyline,polygon,ellipse')].slice(0, 60)) {
+        const look = getComputedStyle(shape);
+
+        if (look.display === 'none' || look.visibility !== 'visible') continue;
+
+        // The default fill of a shape is black: it counts only when the icon says so (an attribute or a style), as a line
+        // drawn with a stroke has no area to fill.
+        let said = false;
+
+        for (let each = shape; each && each !== icon.parentElement; each = each.parentElement) {
+            if (each.hasAttribute('fill') || (each.style && each.style.fill)) said = true;
+        }
+
+        for (const [paint, on] of [[look.fill, look.fill !== 'none' && (said || look.fill !== 'rgb(0, 0, 0)')], [look.stroke, look.stroke !== 'none' && pxOf(look.strokeWidth) > 0]]) {
+            if (!on) continue;
+
+            const rgba = toRgba(paint);
+
+            if (!rgba) unknown = true;
+            else if (rgba[3] * state.cum > 0.05) painted.push(rgba);
+        }
+    }
+
+    if (unknown || painted.length === 0) continue;
+
+    const ratios = painted.map((rgba) => contrastOf(mix(state.back, rgba, rgba[3]), state.back));
+
+    if (Math.max(...ratios) < 3) {
+        const best = painted[ratios.indexOf(Math.max(...ratios))];
+        const fg = mix(state.back, best, best[3]).map(Math.round);
+        const bg = state.back.map(Math.round);
+
+        group(groups.contrast, 'icon|' + fg + '|' + bg, () => ({ fg, bg, size: 0, large: false, ui: true, ratio: Math.max(...ratios), what: 'icon', tag: control.localName, edges: [] }), control);
+    }
+}
+
 // Focus: put the focus on one element of each kind and see whether anything about it, or around it, changes.
 const focusProps = ['outlineStyle', 'outlineWidth', 'outlineColor', 'boxShadow', 'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor', 'borderTopWidth', 'backgroundColor', 'color', 'textDecorationLine', 'textDecorationColor', 'filter', 'opacity', 'transform', 'backgroundImage'];
 const snapshot = (list) => list.map((node) => { const s = getComputedStyle(node); return focusProps.map((p) => s[p]).join('|'); }).join('||');
@@ -949,6 +1078,10 @@ for (const { el, count } of [...focusCandidates.values()].slice(0, 40)) {
 
     const list = [...scope];
     const before = snapshot(list);
+    const rest = getComputedStyle(el);
+    const restOutline = [rest.outlineStyle, rest.outlineWidth, rest.outlineColor].join('|');
+    const restShadow = rest.boxShadow;
+    const restRing = restOutline + '|' + restShadow;
 
     try {
         el.focus({ preventScroll: true, focusVisible: true });
@@ -961,6 +1094,38 @@ for (const { el, count } of [...focusCandidates.values()].slice(0, 40)) {
     const after = snapshot(list);
     const style = getComputedStyle(el);
     const ring = !/^(none|hidden)$/.test(style.outlineStyle) && pxOf(style.outlineWidth) !== 0 && (toRgba(style.outlineColor) || [0, 0, 0, 0])[3] > 0;
+
+    // The ring that the focus draws (an outline or a spread-only shadow that was not there at rest), and how it reads
+    // against what is around it: 3:1 (WCAG 1.4.11). The browser's own auto ring is two-toned and is left alone.
+    const drawn = [style.outlineStyle, style.outlineWidth, style.outlineColor, style.boxShadow].join('|');
+    const state = states.get(el);
+
+    if (state && !state.uncertain && drawn !== restRing && style.outlineStyle !== 'auto') {
+        const rings = [];
+
+        if (ring && restOutline !== [style.outlineStyle, style.outlineWidth, style.outlineColor].join('|')) {
+            const color = toRgba(style.outlineColor);
+
+            rings.push({ color, back: pxOf(style.outlineOffset) < 0 ? state.back : state.before });
+        }
+
+        for (const layer of style.boxShadow === restShadow ? [] : style.boxShadow.split(/,(?![^(]*\))/)) {
+            const m = /^\s*(rgba?\([^)]*\)|color\([^)]*\)|#[0-9a-f]+)\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s+([\d.]+)px\s+([\d.]+)px\s*$/i.exec(layer);
+
+            if (m && parseFloat(m[2]) === 0 && parseFloat(m[3]) === 0 && parseFloat(m[4]) === 0 && parseFloat(m[5]) >= 1) rings.push({ color: toRgba(m[1]), back: state.before });
+        }
+
+        const ratios = rings.filter((item) => item.color && item.color[3] > 0).map((item) => ({ ratio: contrastOf(mix(item.back, item.color, item.color[3]), item.back), item }));
+
+        // Every ring that it draws must fail: a double ring (a light gap, then a dark ring) passes by its best.
+        if (ratios.length > 0 && Math.max(...ratios.map((r) => r.ratio)) < 3) {
+            const worst = ratios.sort((a, b) => b.ratio - a.ratio)[0];
+            const fg = mix(worst.item.back, worst.item.color, worst.item.color[3]).map(Math.round);
+            const bg = worst.item.back.map(Math.round);
+
+            group(groups.contrast, 'ring|' + fg + '|' + bg, () => ({ fg, bg, size: 0, large: false, ui: true, ratio: worst.ratio, what: 'focus', tag: el.localName, edges: [] }), el);
+        }
+    }
 
     el.blur();
 
@@ -990,5 +1155,6 @@ return {
     fontFaces,
     focus: focusResults,
     pids: finish(groups.pids),
+    motion: { count: motion.count, longest: motion.longest, override: motion.override, unreadable: motion.unreadable, el: motion.first ? infoOf(motion.first) : undefined },
 };
 })`;

@@ -74,13 +74,19 @@ const RULE_ORDER: CheckRule[] = [
     "image-alt",
     "missing-viewport",
     "focus-visible",
+    "reduced-motion",
     "heading-order",
     "missing-pid",
 ];
+
+/** Motion longer than this, in milliseconds, or an animation that repeats forever, needs a reduced-motion rule. */
+export const MOTION_MS = 500;
 /** Two colors this close (see `colorDistance`) are the same: a little over 2 steps of 8 bits. */
 const SAME_COLOR = 1;
 /** A nearest token farther than this is no help as a suggestion. */
 const FAR_COLOR = 20;
+/** A color this close to a token is the token's color to the last digit (a fix may replace it). */
+const EXACT_COLOR = 0.3;
 /** Lengths this close, in pixels, are the same. */
 const SAME_LENGTH = 0.5;
 const MAX_TEXT = 300;
@@ -208,6 +214,54 @@ const USE_PROPERTY: Record<string, string> = {
     border: "border-color",
     outline: "outline-color",
 };
+
+/** The properties that can hold a color of each use, longhands and the shorthands that carry one (`fix.properties`). */
+const USE_PROPERTIES: Record<string, string[]> = {
+    text: ["color", "-webkit-text-fill-color"],
+    background: ["background-color", "background"],
+    border: [
+        "border-color",
+        "border",
+        "border-top",
+        "border-right",
+        "border-bottom",
+        "border-left",
+        "border-top-color",
+        "border-right-color",
+        "border-bottom-color",
+        "border-left-color",
+    ],
+    outline: ["outline-color", "outline"],
+};
+
+/** The properties that can hold a length of each group (`props` of a size group), with their sides and shorthands. */
+const LENGTH_PROPERTIES: Record<string, string[]> = {
+    padding: ["padding", "padding-top", "padding-right", "padding-bottom", "padding-left"],
+    margin: ["margin", "margin-top", "margin-right", "margin-bottom", "margin-left"],
+    gap: ["gap", "row-gap", "column-gap", "grid-gap"],
+    "font-size": ["font-size", "font"],
+    "border-radius": [
+        "border-radius",
+        "border-top-left-radius",
+        "border-top-right-radius",
+        "border-bottom-right-radius",
+        "border-bottom-left-radius",
+    ],
+};
+
+/** The tokens that a color equals to the last digit, the one for the use first (a role token, then a palette step). */
+function exactColorToken(set: TokenSet, color: RgbaTuple, use: string | undefined) {
+    const role = use === undefined ? undefined : USE_ROLE[use];
+    const same = set.colors.filter(
+        (token) => token.rgba !== undefined && colorDistance(color, token.rgba) <= EXACT_COLOR,
+    );
+
+    return [...same].sort(
+        (a, b) =>
+            Number(colorRoleOf(b.name) === role) - Number(colorRoleOf(a.name) === role) ||
+            TIER_RANK[a.tier] - TIER_RANK[b.tier],
+    )[0];
+}
 
 /** How a page uses a color (`useColor` in the page script) as a token role. */
 const USE_ROLE: Record<string, ColorRole> = {
@@ -385,6 +439,11 @@ export function analyze(
                     ? ` It is a ${given} token, and the system has no ${wanted} token this close.`
                     : "";
 
+            const exact =
+                onSystem && group.literal === true
+                    ? exactColorToken(tokens, rgba, main?.[0])
+                    : undefined;
+
             add(
                 {
                     rule: "off-system-color",
@@ -392,6 +451,18 @@ export function analyze(
                     ...elementOf(group.el),
                     value,
                     ...(near === undefined ? {} : { suggestion: tokenRef(near.token) }),
+                    ...(exact === undefined
+                        ? {}
+                        : {
+                              fix: {
+                                  kind: "color" as const,
+                                  properties: USE_PROPERTIES[main?.[0] ?? "text"] ?? ["color"],
+                                  literal: value,
+                                  token: exact.name,
+                                  cssVar: exact.cssVar,
+                                  mode: tokens.mode,
+                              },
+                          }),
                     message: onSystem
                         ? `${value} is written as a literal (${roles}), so it does not follow the system.` +
                           (near === undefined ? "" : `${edit}${roleNote}`)
@@ -420,6 +491,15 @@ export function analyze(
 
             const list = clip(group.list);
             const token = suggestFont(tokens, list);
+            const names = familyList(list);
+            const exact =
+                onSystem && group.literal === true
+                    ? tokens.fonts.find(
+                          (font) =>
+                              font.families.length === names.length &&
+                              font.families.every((name, index) => name === names[index]),
+                      )
+                    : undefined;
 
             add(
                 {
@@ -428,6 +508,18 @@ export function analyze(
                     ...elementOf(group.el),
                     value: list,
                     ...(token === undefined ? {} : { suggestion: tokenRef(token) }),
+                    ...(exact === undefined
+                        ? {}
+                        : {
+                              fix: {
+                                  kind: "font" as const,
+                                  properties: ["font-family"],
+                                  literal: list,
+                                  token: exact.name,
+                                  cssVar: exact.cssVar,
+                                  mode: tokens.mode,
+                              },
+                          }),
                     message:
                         (onSystem
                             ? `Font ${list} is written as a literal (${plural(num(group.count), "element")}), so it does not follow the system.`
@@ -473,6 +565,13 @@ export function analyze(
                 .map((prop) => clip(prop, 30))
                 .join(", ");
             const step = equal ?? nearest;
+            const exact =
+                group.literal === true
+                    ? scale.find((token) => Math.abs(token.px - px) <= 0.01)
+                    : undefined;
+            const properties = (Array.isArray(group.props) ? group.props : []).flatMap(
+                (prop) => LENGTH_PROPERTIES[String(prop)] ?? [],
+            );
 
             add(
                 {
@@ -481,6 +580,18 @@ export function analyze(
                     ...elementOf(group.el),
                     value: `${px}px`,
                     suggestion: tokenRef(step),
+                    ...(exact === undefined || properties.length === 0
+                        ? {}
+                        : {
+                              fix: {
+                                  kind: "length" as const,
+                                  properties,
+                                  literal: `${px}px`,
+                                  token: exact.name,
+                                  cssVar: exact.cssVar,
+                                  mode: tokens.mode,
+                              },
+                          }),
                     message:
                         equal === undefined
                             ? `${props === "" ? kind : props} ${px}px is not on ${names[kind]} (${plural(num(group.count), "use")}). ${sizeEdit(group.props, kind, nearest, px)}`
@@ -526,13 +637,34 @@ export function analyze(
                 continue;
             }
 
+            const part = group.what === "focus" || group.what === "icon" ? group.what : "field";
+            const tag = clip(group.tag, 20);
+            const found =
+                tokens === undefined
+                    ? undefined
+                    : nearestPassing(tokens, [...fg, 1] as RgbaTuple, bg, 3);
+            const property = part === "focus" ? "outline-color" : "color";
+            const edit =
+                found === undefined
+                    ? part === "field"
+                        ? " Give the border a stronger color."
+                        : ` Use ${part === "focus" ? "a ring" : "an icon"} color that reaches 3:1 on ${formatColor(bg)}.`
+                    : ` Set \`${property}: ${tokenRef(found.token)}\` (${formatColor(found.token.rgba!)}, ${found.ratio.toFixed(2)}:1)${part === "icon" ? " on the icon (or its `fill`)" : ""} instead of ${formatColor(fg)}.`;
+            const what =
+                part === "focus"
+                    ? `The focus ring of a <${tag}> is ${shown} against what is around it`
+                    : part === "icon"
+                      ? `The icon in a <${tag}> is ${shown} against what it sits on`
+                      : `The edge of a form field is ${shown} against what it sits on`;
+
             add(
                 {
                     rule: "contrast",
                     level: "warning",
                     ...elementOf(group.el),
                     value: shown,
-                    message: `The edge of a form field is ${shown} against what it sits on; WCAG 1.4.11 needs 3:1. Give the border a stronger color${more(num(group.count))}.`,
+                    ...(found === undefined ? {} : { suggestion: tokenRef(found.token) }),
+                    message: `${what}; WCAG 1.4.11 needs 3:1${more(num(group.count))}.${edit}`,
                 },
                 num(group.count),
             );
@@ -661,6 +793,26 @@ export function analyze(
             },
             num(group.count),
         );
+    }
+
+    // Motion with no way to ask for less: one finding for the page.
+    const motion = raw.motion;
+
+    if (
+        motion !== undefined &&
+        num(motion.count) > 0 &&
+        motion.override !== true &&
+        motion.unreadable !== true
+    ) {
+        add({
+            rule: "reduced-motion",
+            level: "warning",
+            ...elementOf(motion.el),
+            value: `${num(motion.longest)}ms`,
+            message:
+                `${plural(num(motion.count), "element")} use a transition or an animation longer than ${MOTION_MS} ms, or one that repeats forever (the longest is ${num(motion.longest)} ms), and the page has no \`@media (prefers-reduced-motion: reduce)\` rule. ` +
+                "Add \`@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }\`.",
+        });
     }
 
     // `data-pid`: one finding in all, naming the tags.
