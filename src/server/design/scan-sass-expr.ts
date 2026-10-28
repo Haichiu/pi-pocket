@@ -9,6 +9,7 @@ import {
     callBuiltin,
     colorFromText,
     equal,
+    itemsOf,
     list,
     num,
     str,
@@ -36,6 +37,7 @@ type Tok =
 type Part = string | { interp: string };
 
 const OPERATORS = [
+    "...",
     "==",
     "!=",
     "<=",
@@ -263,6 +265,7 @@ export type Node =
     | { k: "str"; parts: Part[]; quoted: boolean }
     | { k: "color"; text: string }
     | { k: "var"; name: string; ns?: string }
+    | { k: "spread"; value: Node }
     | { k: "call"; name: string; args: Node[]; named: [string, Node][] }
     | { k: "list"; items: Node[]; sep: "comma" | "space"; bracket: boolean }
     | { k: "map"; entries: [Node, Node][] }
@@ -559,10 +562,16 @@ class Parser {
                 if (here.k === "var" && this.isOp(":", after)) {
                     this.at += 2;
                     named.push([here.name.replace(/^\$/, ""), this.spaceList()]);
-                } else if (here.k === "op" && here.op === ".") {
-                    throw new Unsupported("rest arguments");
                 } else {
-                    args.push(this.spaceList());
+                    const value = this.spaceList();
+
+                    // `$list...`: the items of a list are arguments; the pairs of a map are keyword arguments.
+                    if (this.isOp("...")) {
+                        this.at += 1;
+                        args.push({ k: "spread", value });
+                    } else {
+                        args.push(value);
+                    }
                 }
 
                 if (this.isOp(",")) {
@@ -730,6 +739,9 @@ export function evaluate(node: Node, env: Env): Value {
             return value.t === "str" ? str(value.s, false) : str(text(value));
         }
 
+        case "spread":
+            throw new Unsupported("spread outside a call");
+
         case "var": {
             const value = env.get(node.name.replace(/^\$/, ""), node.ns);
 
@@ -842,10 +854,30 @@ export function evaluate(node: Node, env: Env): Value {
                 return NULL;
             }
 
-            const positional = node.args.map((arg) => evaluate(arg, env));
-            const named = new Map(
-                node.named.map(([key, value]) => [key, evaluate(value, env)] as const),
-            );
+            const positional: Value[] = [];
+            const named = new Map<string, Value>();
+
+            for (const arg of node.args) {
+                if (arg.k !== "spread") {
+                    positional.push(evaluate(arg, env));
+
+                    continue;
+                }
+
+                const spread = evaluate(arg.value, env);
+
+                if (spread.t === "map") {
+                    for (const [key, value] of spread.entries) {
+                        named.set(text(key), value);
+                    }
+                } else {
+                    positional.push(...(spread.t === "list" ? spread.items : itemsOf(spread)));
+                }
+            }
+
+            for (const [key, value] of node.named) {
+                named.set(key, evaluate(value, env));
+            }
             const user = env.call(name, positional, named);
 
             if (user !== undefined) {

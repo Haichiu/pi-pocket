@@ -903,8 +903,17 @@ class Run implements Env {
             }
 
             const keyword = /^\$([\w-]+)\s*:\s*([\s\S]+)$/.exec(trimmed);
+            const spread = /^([\s\S]+?)\.\.\.$/.exec(trimmed);
 
-            if (keyword !== null) {
+            if (spread !== null) {
+                const value = evaluate(parseExpression(spread[1]!), this);
+
+                if (value.t === "map") {
+                    value.entries.forEach(([key, item]) => named.set(text(key), item));
+                } else {
+                    positional.push(...itemsOf(value));
+                }
+            } else if (keyword !== null) {
                 named.set(keyword[1]!, evaluate(parseExpression(keyword[2]!), this));
             } else {
                 positional.push(evaluate(parseExpression(trimmed), this));
