@@ -181,14 +181,14 @@ export function createCheck(env, DockHead) {
                     report &&
                     html`<div class="dsy-check-summary">
                             <span class=${`dsy-stat ${report.summary.errors > 0 ? "bad" : "ok"}`}>
-                                <strong>${report.summary.errors}</strong>
-                                error${report.summary.errors === 1 ? "" : "s"}
+                                <strong>${report.summary.errors}</strong
+                                >${` error${report.summary.errors === 1 ? "" : "s"}`}
                             </span>
                             <span
                                 class=${`dsy-stat ${report.summary.warnings > 0 ? "warn" : "ok"}`}
                             >
-                                <strong>${report.summary.warnings}</strong>
-                                warning${report.summary.warnings === 1 ? "" : "s"}
+                                <strong>${report.summary.warnings}</strong
+                                >${` warning${report.summary.warnings === 1 ? "" : "s"}`}
                             </span>
                             <span class="muted small">${report.summary.elements} elements</span>
                         </div>
@@ -232,7 +232,7 @@ export function createCheck(env, DockHead) {
             </div>
             ${
                 canEdit &&
-                html`<footer class="dsn-dock-foot">
+                html`<footer class="dsn-dock-foot dsy-check-foot">
                     ${
                         report &&
                         shownFindings.length > 0 &&

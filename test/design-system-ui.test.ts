@@ -753,6 +753,38 @@ test("sizes, times, and easings are edited with fields of their kind", real, asy
     );
 });
 
+test(
+    "Ctrl+Z and Ctrl+Shift+Z undo and redo, and Ctrl+S saves, where no field has the keys",
+    real,
+    async () => {
+        await openSystem();
+        await section("Colors");
+        await openToken("color.border.focus");
+        await filled('input[aria-label="color.border.focus in light: color"]', "#11aa33");
+        await waitFor(
+            "the edit",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-count-note")))`,
+        );
+        await inPage(`document.activeElement?.blur(); return "null";`);
+        await page.press("Control+z");
+        await waitFor(
+            "the undo",
+            `return JSON.stringify(!document.querySelector(".dsy-count-note"))`,
+        );
+        await page.press("Control+Shift+Z");
+        await waitFor(
+            "the redo",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-count-note")))`,
+        );
+        await page.press("Control+s");
+        await waitFor(
+            "the save",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-saved")))`,
+        );
+        assert.equal(tokenFile().color.border.focus.$value, "#11aa33");
+    },
+);
+
 test("search narrows a section to the tokens that match", real, async () => {
     await openSystem();
     await section("Colors");

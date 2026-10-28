@@ -2100,8 +2100,9 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
 }
 
 .dsy-amount input {
-    flex: 1;
-    max-width: 110px;
+    flex: 1 1 64px;
+    min-width: 64px;
+    max-width: 120px;
     text-align: center;
 }
 
@@ -2128,6 +2129,8 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
 }
 
 .dsy-unit {
+    flex: none;
+    width: 78px;
     padding: 0 6px;
 }
 
@@ -3206,4 +3209,23 @@ button.dsy-chip:disabled {
 
 .dsy-unsaved {
     background: var(--dsn-accent-soft);
+}
+
+/* The check's two buttons share a row, and on a narrow panel its options are icons: the findings keep the room. */
+.dsy-check-foot {
+    flex-direction: row;
+}
+
+.dsy-check-foot .button {
+    flex: 1;
+    width: auto;
+}
+
+.dsn[data-size="narrow"] .dsy-check-options {
+    flex-wrap: nowrap;
+    margin-bottom: 8px;
+}
+
+.dsn[data-size="narrow"] .dsy-check-options .dsn-seg button span {
+    display: none;
 }

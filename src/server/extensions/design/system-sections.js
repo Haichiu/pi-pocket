@@ -452,7 +452,7 @@ export function createSystemSections(env, widgets) {
                                 ctx=${ctx}
                                 token=${token}
                                 visual=${html`<span class="dsy-space"><i style=${`width:${px === null ? 0 : Math.max(2, Math.min(100, (px / widest) * 100))}%`}></i></span>`}
-                                sub=${px === null ? null : html`<span class="mono">${px}px${px % 16 === 0 && px > 0 ? ` · ${px / 16}rem` : ""}</span>`}
+                                sub=${px === null ? null : html`<span class="mono">${`${Math.round((px / 16) * 1000) / 1000}rem at 16px`}</span>`}
                                 value=${html`<span class="dsy-hex mono">${showValue(token, now)}</span>`}
                             />`;
                         })}
