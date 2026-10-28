@@ -471,9 +471,14 @@ function buildContext(system: DesignSystem): Ctx {
 /** A contrast ratio with one decimal, cut and not rounded, so that 4.48 never shows as the 4.5 it does not reach. */
 const fmtRatio = (ratio: number) => (Math.floor(ratio * 10 + 1e-9) / 10).toFixed(1);
 
-function ratioPill(ratio: number, min: number | undefined): string {
+function ratioPill(ratio: number, min: number | undefined, exempt?: string): string {
     const label = rating(ratio);
     const passes = min === undefined ? label !== "fail" : ratio >= min;
+
+    // An exempt pair (disabled or decorative text) is not a failure: it says why it is left out.
+    if (!passes && exempt !== undefined) {
+        return `<span class="ratio">${fmtRatio(ratio)}:1</span> <span class="pill">exempt (${esc(exempt)})</span>`;
+    }
 
     return `<span class="ratio">${fmtRatio(ratio)}:1</span> <span class="pill ${passes ? "ok" : "bad"}">${passes ? label : "Fails"}</span>`;
 }
@@ -552,8 +557,8 @@ function swatchCard(ctx: Ctx, token: ResolvedToken): string {
 
             return fg === undefined || bg === undefined
                 ? "—"
-                : ratioPill(contrastRatio(fg, bg), min);
-        })} <span class="desc">needs ${min}:1 on ${esc(pair.name)}</span></div>`;
+                : ratioPill(contrastRatio(fg, bg), min, token.contrast?.exempt);
+        })} <span class="desc">${token.contrast.exempt === undefined ? "needs" : `exempt (${esc(token.contrast.exempt)}); would need`} ${min}:1 on ${esc(pair.name)}</span></div>`;
     }
 
     const deprecated =
@@ -609,29 +614,34 @@ function pairRows(ctx: Ctx): { total: number; passing: number; table: string } {
     const declared = ctx.system.tokens.filter((token) => token.contrast !== undefined);
     let total = 0;
     let passing = 0;
-    const rows = declared.map((token) => {
-        const pair = ctx.byName.get(nameOfRef(token.contrast!.on));
-        const cells = ctx.modes.map((mode) => {
-            const fg = colorOf(token, mode);
-            const bg = colorOf(pair, mode);
+    // A token may declare several pairs: a row for each. An exempt pair is shown, and counted in neither number.
+    const rows = declared.flatMap((token) =>
+        (token.contrasts ?? [token.contrast!]).map((pairOf) => {
+            const pair = ctx.byName.get(nameOfRef(pairOf.on));
+            const cells = ctx.modes.map((mode) => {
+                const fg = colorOf(token, mode);
+                const bg = colorOf(pair, mode);
 
-            if (fg === undefined || bg === undefined) {
-                return `<td class="num">—</td>`;
-            }
+                if (fg === undefined || bg === undefined) {
+                    return `<td class="num">—</td>`;
+                }
 
-            const ratio = contrastRatio(fg, bg);
+                const ratio = contrastRatio(fg, bg);
 
-            total++;
+                if (pairOf.exempt === undefined) {
+                    total++;
 
-            if (ratio >= token.contrast!.min) {
-                passing++;
-            }
+                    if (ratio >= pairOf.min) {
+                        passing++;
+                    }
+                }
 
-            return `<td class="num">${ratioPill(ratio, token.contrast!.min)}</td>`;
-        });
+                return `<td class="num">${ratioPill(ratio, pairOf.min, pairOf.exempt)}</td>`;
+            });
 
-        return `<tr data-q="${esc(`${token.name} ${token.contrast!.on}`.toLowerCase())}"><td><span class="mini-sw" style="background:${varOf(token)}"></span><button class="tk" data-copy="${esc(token.name)}">${esc(token.name)}</button></td><td><button class="tk" data-copy="${esc(nameOfRef(token.contrast!.on))}">${esc(nameOfRef(token.contrast!.on))}</button></td><td class="num">${token.contrast!.min}:1</td>${cells.join("")}</tr>`;
-    });
+            return `<tr data-q="${esc(`${token.name} ${pairOf.on}`.toLowerCase())}"><td><span class="mini-sw" style="background:${varOf(token)}"></span><button class="tk" data-copy="${esc(token.name)}">${esc(token.name)}</button></td><td><button class="tk" data-copy="${esc(nameOfRef(pairOf.on))}">${esc(nameOfRef(pairOf.on))}</button></td><td class="num">${pairOf.exempt === undefined ? `${pairOf.min}:1` : `exempt (${esc(pairOf.exempt)})`}</td>${cells.join("")}</tr>`;
+        }),
+    );
 
     return {
         total,
@@ -1510,13 +1520,59 @@ function problemsHtml(ctx: Ctx): string {
         .join("")}</ul></details>`;
 }
 
+/** Notes that need no action (an exempt contrast pair, for one): a small area of their own, apart from problems. */
+function notesHtml(ctx: Ctx): string {
+    const notes = ctx.system.notes ?? [];
+
+    if (notes.length === 0) {
+        return "";
+    }
+
+    return `<details class="notes"><summary>${plural(notes.length, "note")} from the validator</summary><ul>${notes
+        .slice(0, 50)
+        .map(
+            (note) =>
+                `<li>${note.file === undefined ? "" : `<code>${esc(note.file)}</code> `}${note.token === undefined ? "" : `<code>${esc(note.token)}</code>: `}${esc(clip(note.message, 300))}</li>`,
+        )
+        .join("")}</ul></details>`;
+}
+
+/** A snippet in a box with a Copy button; the text is project data, so it is escaped. */
+function snippet(id: string, text: string): string {
+    return `<div class="snip-wrap"><button class="copy" type="button" data-copy-from="${esc(id)}" data-copy="">Copy</button><pre class="snip" id="${esc(id)}"><code>${esc(text)}</code></pre></div>`;
+}
+
+/** What the generated files are and how to use each: CSS, Tailwind v4, and JSON for Style Dictionary or Tokens Studio. */
 function codeSection(ctx: Ctx): { html: string; count: number } {
     const { compiled } = ctx.system;
     const first = ctx.modes[0]!;
     const sample =
+        findToken(ctx, BASE_GROUNDS) ??
         ctx.system.tokens.find((token) => token.type === "color" && token.tier === "semantic") ??
         ctx.system.tokens[0];
+    // A middle step of the spacing scale reads better than step zero.
+    const steps = ctx.system.tokens.filter(
+        (token) =>
+            sectionOf(token) === "spacing" &&
+            token.tier !== "component" &&
+            (pxOf(valueIn(token, first)?.value) ?? 0) > 0,
+    );
+    const spacing =
+        steps.find((token) => pxOf(valueIn(token, first)?.value) === 16) ??
+        steps[Math.floor(steps.length / 2)];
     const dark = ctx.modes.find((mode) => ctx.theme.get(mode) === "dark" && mode !== first);
+    const cssVar = sample?.cssVar ?? "--color-bg-surface";
+    const css = `<link rel="stylesheet" href="tokens.css">\n\n.card {\n    background: var(${cssVar});\n    padding: var(${spacing?.cssVar ?? "--space-4"});\n}${dark === undefined ? "" : `\n\n<!-- ${modeLabel(dark)} mode -->\n<html data-theme="${dark}">`}`;
+    const utility = cssVar.startsWith("--color-")
+        ? `bg-${cssVar.slice("--color-".length)}`
+        : "bg-surface";
+    const tailwind = `@import "tailwindcss";\n@import "./tailwind.css";\n\n<div class="${utility} p-4">…</div>`;
+    const modeFiles = Object.entries(compiled.modes ?? {});
+    const jsonName =
+        modeFiles[0] === undefined
+            ? "tokens.resolved.json"
+            : `tokens.${modeFiles[0][0]}.resolved.json`;
+    const json = `// Style Dictionary (v4 reads DTCG as it is)\n{\n    "source": ["${jsonName}"],\n    "platforms": {\n        "css": {\n            "transformGroup": "css",\n            "buildPath": "build/",\n            "files": [{ "destination": "variables.css", "format": "css/variables" }]\n        }\n    }\n}\n\n// Tokens Studio: Tools, Load from file or URL, then pick ${jsonName}.`;
     const files = [
         {
             id: "code-css",
@@ -1527,7 +1583,7 @@ function codeSection(ctx: Ctx): { html: string; count: number } {
         {
             id: "code-tailwind",
             title: "tailwind.css",
-            note: "A Tailwind v4 @theme block over the same variables.",
+            note: "A Tailwind v4 @theme block, one variable for each token.",
             text: compiled.tailwind,
         },
         {
@@ -1536,14 +1592,27 @@ function codeSection(ctx: Ctx): { html: string; count: number } {
             note: "The CSS of every component.",
             text: compiled.components,
         },
+        {
+            id: "code-json",
+            title: "tokens.resolved.json",
+            note: "Every token and its value in each mode, compact.",
+            text: compiled.json,
+        },
+        ...modeFiles.map(([mode, text], index) => ({
+            id: `code-mode-${index}`,
+            title: `tokens.${mode}.resolved.json`,
+            note: `The ${modeLabel(mode).toLowerCase()} mode as a DTCG file (with $value and $type).`,
+            text,
+        })),
     ].filter((file) => file.text.trim() !== "");
-    const usage = `<link rel="stylesheet" href="tokens.css">\n\n.card {\n    background: var(${sample?.cssVar ?? "--color-bg-surface"});\n    padding: var(--space-4);\n}${dark === undefined ? "" : `\n\n<!-- ${modeLabel(dark)} mode -->\n<html data-theme="${dark}">`}`;
+    const use = (title: string, note: string, id: string, text: string) =>
+        `<div class="use"><h4>${esc(title)}</h4><p class="sub">${note}</p>${snippet(id, text)}</div>`;
 
     return {
-        html: `<p class="intro">Link the generated CSS and read tokens as variables. Never copy a value by hand.</p><div class="snip-wrap"><button class="copy" type="button" data-copy-from="code-usage" data-copy="">Copy</button><pre class="snip" id="code-usage"><code>${esc(usage)}</code></pre></div>${files
+        html: `<p class="intro">The files that the system generates in <code>.pi/design/dist/</code>. Read tokens as variables, classes, or JSON. Never copy a value by hand.</p><div class="uses">${use("CSS", "Link tokens.css, then read a token with var(). Set data-theme for a mode.", "code-use-css", css)}${use("Tailwind v4", "Import Tailwind, then tailwind.css. Each token is a variable, so the utilities follow it.", "code-use-tailwind", tailwind)}${use("JSON", "For Style Dictionary or Tokens Studio. One DTCG file for each mode, and one compact file for all.", "code-use-json", json)}</div><h3>The files</h3>${files
             .map(
                 (file) =>
-                    `<details class="code"><summary>${esc(file.title)}<span class="desc" style="margin-left:10px;font-weight:400">${esc(file.note)}</span></summary><div class="code-body"><div class="snip-wrap"><button class="copy" type="button" data-copy-from="${file.id}" data-copy="">Copy</button><pre class="snip" id="${file.id}"><code>${esc(clip(file.text, MAX_CODE))}</code></pre></div></div></details>`,
+                    `<details class="code"><summary>${esc(file.title)}<span class="desc" style="margin-left:10px;font-weight:400">${esc(file.note)}</span></summary><div class="code-body">${file.id.startsWith("code-mode") && file.text.length > 6_000 ? `<p class="sub">The first 6 KB of ${Math.round(file.text.length / 1024)} KB.</p>${snippet(file.id, clip(file.text, 6_000))}` : snippet(file.id, clip(file.text, MAX_CODE))}</div></details>`,
             )
             .join("")}`,
         count: files.length,
@@ -1629,7 +1698,7 @@ function sampler(ctx: Ctx): string {
     const take = (token: ResolvedToken) => {
         const hex = colorValueText(valueIn(token, ctx.modes[0]!)?.value);
 
-        if (hex !== undefined && !seen.has(hex) && chosen.length < 14) {
+        if (hex !== undefined && !seen.has(hex) && chosen.length < 12) {
             seen.add(hex);
             chosen.push(token);
         }
@@ -1833,7 +1902,7 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
     // The number, and its noun in the right number: "1 mode", "3 modes".
     const stat = (count: number, noun: string) =>
         statText(String(count), plural(count, noun).slice(String(count).length + 1));
-    const overview = `<section class="block" id="overview" data-pid="overview" aria-labelledby="overview-title"><div class="hero"><p class="eyebrow">Design system</p><h1 id="overview-title">${esc(name)}</h1>${system.description === undefined ? "" : `<p class="lead">${esc(clip(system.description, 400))}</p>`}${sampler(ctx)}<div class="stats">${stat(ctx.system.tokens.length, "token")}${stat(roleCount, "color role")}${stat(ctx.modes.length, "mode")}${stat(ctx.system.components.length, "component")}${pairs.total > 0 ? statText(`${pairs.passing}/${pairs.total}`, pairs.total === 1 ? "contrast check passes" : "contrast checks pass") : ""}</div></div><div class="tiles">${tiles}</div>${problemsHtml(ctx)}${system.tokens.length > MAX_TOKENS ? `<p class="sub" style="margin-top:14px">This page shows the first ${MAX_TOKENS} of ${system.tokens.length} tokens.</p>` : ""}</section>`;
+    const overview = `<section class="block" id="overview" data-pid="overview" aria-labelledby="overview-title"><div class="hero"><p class="eyebrow">Design system</p><h1 id="overview-title">${esc(name)}</h1>${system.description === undefined ? "" : `<p class="lead">${esc(clip(system.description, 400))}</p>`}${sampler(ctx)}<div class="stats">${stat(ctx.system.tokens.length, "token")}${stat(roleCount, "color role")}${stat(ctx.modes.length, "mode")}${stat(ctx.system.components.length, "component")}${pairs.total > 0 ? statText(`${pairs.passing}/${pairs.total}`, pairs.total === 1 ? "contrast check passes" : "contrast checks pass") : ""}</div></div><div class="tiles">${tiles}</div>${problemsHtml(ctx)}${notesHtml(ctx)}${system.tokens.length > MAX_TOKENS ? `<p class="sub" style="margin-top:14px">This page shows the first ${MAX_TOKENS} of ${system.tokens.length} tokens.</p>` : ""}</section>`;
     const body = sections
         .map(
             (section) =>

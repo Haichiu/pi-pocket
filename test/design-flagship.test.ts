@@ -153,7 +153,18 @@ test("every contrast pair passes in every mode, and text roles pass on every gro
             parseColor(tokens.get(bg)!.modes[mode]!.value)!,
         );
 
-    for (const token of loaded.tokens.filter((item) => item.contrast !== undefined)) {
+    // Disabled text is exempt from contrast (WCAG): its pair is declared, and the engine notes it instead of failing it.
+    const exempt = loaded.tokens.filter((item) => item.contrast?.exempt !== undefined);
+
+    assert.deepEqual(
+        exempt.map((item) => item.name),
+        ["color.text.disabled"],
+    );
+    assert.equal(exempt[0]!.contrast!.exempt, "disabled");
+
+    for (const token of loaded.tokens.filter(
+        (item) => item.contrast !== undefined && item.contrast.exempt === undefined,
+    )) {
         for (const mode of loaded.modes) {
             const on = token.contrast!.on.replace(/[{}]/g, "");
 

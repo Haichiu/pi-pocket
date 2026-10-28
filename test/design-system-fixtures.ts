@@ -81,7 +81,23 @@ export const TOKENS = {
                 $extensions: ext(on("color.bg.surface", 3)),
             },
             inverse: { $value: "{color.white}", $extensions: ext(on("color.accent.default")) },
-            link: { $value: "{color.blue.700}", $extensions: ext(on("color.bg.surface")) },
+            // Two pairs: the link is read on a card and on the page.
+            link: {
+                $value: "{color.blue.700}",
+                $extensions: ext({
+                    contrast: [
+                        { on: "{color.bg.surface}", min: 4.5 },
+                        { on: "{color.bg.canvas}", min: 4.5 },
+                    ],
+                }),
+            },
+            placeholder: {
+                $value: "{color.gray.400}",
+                $description: "Hint text in a field: it fades on purpose, and its pair is exempt.",
+                $extensions: ext({
+                    contrast: { on: "{color.bg.surface}", min: 4.5, exempt: "decorative" },
+                }),
+            },
         },
         accent: {
             default: { $value: "{color.blue.600}", $description: "Buttons, links, and focus." },
@@ -213,12 +229,13 @@ export const TOKENS = {
                 spread: px(-4),
             },
         },
+        // Made of parts that link to other tokens: a color of the palette, and two steps of the spacing scale.
         lg: {
             $value: {
-                color: black(0.22),
+                color: "{color.scrim.40}",
                 offsetX: px(0),
-                offsetY: px(18),
-                blur: px(40),
+                offsetY: "{space.4}",
+                blur: "{space.12}",
                 spread: px(-12),
             },
         },

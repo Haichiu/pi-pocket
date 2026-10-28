@@ -1,5 +1,6 @@
-// What a person does in the System view, as functions of the store: open it, edit a token, undo and redo, fold a group,
-// jump to a token, and ask Pi for what the view does not edit. They are added to the workspace's `env`.
+// What a person does in the System view, as functions of the store: edit a token, undo and redo, fold a group, jump to a
+// token, and ask Pi for what the view does not edit. They are added to the workspace's `env` when the System view loads (the
+// ones that the rest of the workspace needs, `openSystem` and `focusFinding`, are in `app.js`).
 import { systemRequest, tokenRequest } from "./messages.js";
 import {
     editsOf,
@@ -21,20 +22,6 @@ export function createSystemActions(env, systemData) {
     const fresh = (s) => (s.save.status === "saving" ? s.save : IDLE);
 
     return {
-        /** Show the System view in place of the design. */
-        openSystem() {
-            store.set({
-                view: "system",
-                mode: "view",
-                dock: null,
-                draft: null,
-                present: false,
-                compare: null,
-                sysPane: "system",
-            });
-            void systemData.load({ quiet: store.get().system.status === "ready" });
-        },
-
         /** Change one token in one mode to `raw`: `{ alias: "color.blue.500" }` or `{ value }`. */
         editToken(name, mode, raw) {
             store.set((s) => ({
@@ -61,8 +48,16 @@ export function createSystemActions(env, systemData) {
             for (const [, op] of editsOf(history)) {
                 if (op.kind === "token" && op.token === name) {
                     const saved = token.modes[op.mode];
+                    const own = system.data.overrides?.[op.mode];
+                    // What a mode's file does not set, it takes from the default again; what it sets, it has as saved.
                     const raw =
-                        saved.alias === undefined ? { value: saved.value } : { alias: saved.alias };
+                        op.mode !== system.data.modes[0] &&
+                        Array.isArray(own) &&
+                        !own.includes(name)
+                            ? { inherit: true }
+                            : saved.alias === undefined
+                              ? { value: saved.value }
+                              : { alias: saved.alias };
 
                     next = push(next, tokenEdit(op.mode, name, raw), Date.now(), false);
                 }
@@ -71,18 +66,17 @@ export function createSystemActions(env, systemData) {
             store.set({ history: next });
         },
 
-        /** A mode takes the default mode's value of a token. */
-        matchDefault(name, mode) {
-            const token = store.get().system.data?.tokens.find((each) => each.name === name);
-            const base = token?.modes[store.get().system.data.modes[0]];
+        /**
+         * A mode takes the default mode's value of a token again: its file stops setting the token. It is a removal that a save
+         * writes, not a copy of the default's value (a copy would stop following the default).
+         */
+        inheritToken(name, mode) {
+            env.editToken(name, mode, { inherit: true });
+        },
 
-            if (base !== undefined) {
-                env.editToken(
-                    name,
-                    mode,
-                    base.alias === undefined ? { value: base.value } : { alias: base.alias },
-                );
-            }
+        /** Open the list of tokens that a part of a shadow (`part`: `{ layer, key, type }`) may link to. */
+        pickPart(token, mode, part) {
+            store.set({ sysPick: { token, mode, part } });
         },
 
         undo() {
@@ -104,14 +98,6 @@ export function createSystemActions(env, systemData) {
 
         setSection(sysSection) {
             store.set({ sysSection, sysOpen: null, sysPick: null });
-        },
-
-        /**
-         * Show a finding of the page check on the page: its pin, scrolled into view in the frame. A canvas that is zoomed in
-         * goes back to fit first, so that the frame's own scroll is the only one left and the pin is on the screen.
-         */
-        focusFinding(number) {
-            store.set({ checkFocus: { number, at: Date.now() }, zoom: "fit" });
         },
 
         /** Open the list of tokens that `token` may link to, in `mode`. */

@@ -316,7 +316,14 @@ export function createSystemSections(env, widgets) {
                         : [],
                 );
 
-                return [token.name, hexOf(facts.values[0].value), ...pairs]
+                return [
+                    token.name,
+                    hexOf(facts.values[0].value),
+                    ...pairs,
+                    inheritedIn(ctx, token)
+                        ? `inherited from ${modeTitle(ctx.model.defaultMode)}`
+                        : "",
+                ]
                     .filter(Boolean)
                     .join(", ");
             }}
@@ -598,6 +605,12 @@ export function createSystemSections(env, widgets) {
     }
 
     /** Tiles that open the editor of one token under the grid (roles, radii, shadows). `size` is the room each takes. */
+    /** Whether the one mode in view takes this token from the default mode, rather than setting it. */
+    const inheritedIn = (ctx, token) =>
+        ctx.modes.length === 1 &&
+        ctx.modes[0] !== ctx.model.defaultMode &&
+        !ctx.model.overridden(token.name, ctx.modes[0]);
+
     function Tiles({ ctx, group, tile, label, size = "sm" }) {
         return html`<div class="dsy-ramp-wrap">
             <div class="dsy-tiles" data-size=${size}>
@@ -608,7 +621,8 @@ export function createSystemSections(env, widgets) {
                         type="button"
                         key=${token.name}
                         data-token=${token.name}
-                        class=${`dsy-card-tile ${token.name === ctx.s.sysOpen ? "on" : ""} ${edited ? "edited" : ""}`}
+                        class=${`dsy-card-tile ${token.name === ctx.s.sysOpen ? "on" : ""} ${edited ? "edited" : ""} ${inheritedIn(ctx, token) ? "inherited" : ""}`}
+                        title=${inheritedIn(ctx, token) ? `Inherited from ${modeTitle(ctx.model.defaultMode)}` : undefined}
                         aria-pressed=${token.name === ctx.s.sysOpen}
                         aria-label=${label ? label(token) : token.name}
                         onClick=${() => env.toggleToken(token.name)}
