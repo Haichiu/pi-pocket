@@ -95,6 +95,23 @@ const DESIGN = `<!doctype html><html><head><meta charset="utf-8"><title>Design</
 <script>document.getElementById("go").onclick = () => { window.clicked += 1; };</script>
 ${TEST_HOOKS}</body></html>`;
 
+/** A long page with a count of the hit tests that the bridge makes (a pin's place costs some): `pinwork` answers it. */
+const LONG = `<!doctype html><html><head><meta charset="utf-8"><title>Long</title>
+<style>body{font:16px/1.5 system-ui;margin:0}p{margin:0;padding:0 40px}</style></head>
+<body>${Array.from({ length: 160 }, (_, at) => `<p data-pid="p${at}">Row ${at}: boarding opens at nine, and the ferry leaves on the hour.</p>`).join("")}
+<script>
+window.hits = 0;
+const hitTest = document.elementsFromPoint.bind(document);
+document.elementsFromPoint = (x, y) => { window.hits += 1; return hitTest(x, y); };
+addEventListener("message", (event) => {
+    const data = event.data;
+    if (!data || data.type !== "pinwork" || typeof data.id !== "string") return;
+    if (data.reset) { window.hits = 0; }
+    if (data.scroll) { scrollBy(0, data.scroll); }
+    parent.postMessage({ id: data.id, hits: window.hits, scrollY: scrollY }, "*");
+});
+</script></body></html>`;
+
 const DECK = `<!doctype html><html><head><meta charset="utf-8"><title>Deck</title><meta name="pocket-kind" content="deck">
 <style>body{margin:8px}.slide{width:1920px;max-width:100%;min-width:10px;height:1080px;background:#123;color:#fff;font-size:80px}</style></head>
 <body><section class="slide"><h1>One</h1></section><section class="slide"><h1>Two</h1></section><section class="slide"><h1>Three</h1></section>
@@ -257,6 +274,7 @@ before(async () => {
     ({ id: session } = await app.commands.createSession(owner(app), { cwd: work }));
     await publish("design", DESIGN);
     await publish("deck", DECK);
+    await publish("long", LONG);
     await publish("intercept", INTERCEPT);
     await publish("cspdeck", CSP_DECK);
     await publish("csppage", CSP_PAGE);
@@ -598,6 +616,57 @@ test("pins show for a list of targets and clear on an empty list", real, async (
         false,
     );
 });
+
+test(
+    "pins are placed once, and a scroll or a quiet page does not look at the page again",
+    real,
+    async () => {
+        await openDesign("long");
+
+        const work = (extra: object = {}) =>
+            ask<{ hits: number; scrollY: number }>({ type: "pinwork", ...extra });
+
+        // A hundred pins on a long page: the ones in view get a place, the rest are only rectangles.
+        assert.equal(
+            await send({
+                type: "pocket-highlight",
+                targets: Array.from({ length: 100 }, (_, at) => ({
+                    selector: `[data-pid="p${at}"]`,
+                    label: at + 1,
+                })),
+            }),
+            true,
+        );
+        await settle();
+        await settle();
+        assert.ok((await work()).hits > 0, "the pins in view were given a place");
+
+        // Nothing changes: every frame reads rectangles, and none of them is a hit test.
+        const quiet = await work({ reset: true });
+
+        assert.equal(quiet.hits, 0);
+        await settle();
+        assert.equal((await work()).hits, 0, "a quiet page costs no hit tests");
+
+        // A scroll moves the page and the pins together: the places that were found stay.
+        const before = await work({ reset: true });
+
+        assert.equal(before.hits, 0);
+
+        await work({ scroll: 5 });
+        await settle();
+
+        const scrolled = await work();
+
+        assert.equal(scrolled.scrollY, 5);
+        assert.ok(
+            scrolled.hits <= 12,
+            "a small scroll finds a place only for the pins that reach the edge",
+        );
+
+        await send({ type: "pocket-highlight", targets: [] });
+    },
+);
 
 test(
     "a deck shows one slide at a time, scaled to fit, with keys, swipes, and goto",
