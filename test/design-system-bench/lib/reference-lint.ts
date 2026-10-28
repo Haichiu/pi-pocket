@@ -162,10 +162,10 @@ const SCRIPT = String.raw`(() => {
         }
         return (el.getAttribute('title') || '').trim();
     };
-    // A form control (or a form role), a button, a link, a tab, a menu item, or a switch needs an accessible name: a
-    // missing-label finding. A placeholder is not a name.
+    // A form control (or a form role) needs a label: a form-label finding. A button, link, tab, menu item or switch needs an
+    // accessible name: an accessible-name finding. A placeholder is not a label for either.
     const FORM = 'input:not([type=hidden]):not([type=submit]):not([type=reset]):not([type=button]):not([type=image]), select, textarea, [role=textbox], [role=searchbox], [role=combobox], [role=listbox], [role=spinbutton], [role=slider], [role=checkbox], [role=radio]';
-    const NAMED = 'button, a[href], summary, [role=button], [role=link], [role=tab], [role=menuitem], [role=switch]';
+    const NAMED = 'button, a[href], summary, [role=button], [role=link], [role=switch], [role=tab], [role=menuitem], [role=menuitemcheckbox], [role=menuitemradio], [role=option]';
     for (const [selector, form] of [[FORM, true], [NAMED, false]]) {
         for (const el of document.body.querySelectorAll(selector)) {
             if (hiddenNode(el) || (!form && el.matches(FORM))) continue;
@@ -430,7 +430,7 @@ export async function referenceCheck(
 
     for (const item of facts.nameless) {
         add({
-            rule: "missing-label",
+            rule: item.form ? "form-label" : "accessible-name",
             level: "error",
             selector: item.selector,
             pid: item.pid,
