@@ -155,7 +155,7 @@ width that was asked for, not `innerWidth`.
 ## 4. Contrast
 
 Every token with `contrast: { on, min }` is checked in every mode with the bench's own WCAG math (alpha is composited). The
-pair passes when it passes in all modes. `passRate` is the share of pairs that pass; 0 when none are declared. The report also
+pair passes when it passes in all modes. A pair that declares `exempt` (`"disabled"` or `"decorative"`: WCAG 1.4.3 leaves out disabled controls and decoration) is not a failure and not a declared pair: it is listed apart in `contrast.exempt` with its ratio in each mode. A token may declare a list of pairs; each is checked. `passRate` is the share of pairs that pass; 0 when none are declared. The report also
 gives `implied`: text roles over fill roles that the names imply, declared or not. The system is the flagship when it is in
 the tree, else the bench's own (`system` says which).
 
