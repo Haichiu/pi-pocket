@@ -199,3 +199,23 @@ export function renderMarkdown(source: string, maxBytes = 16_384): string {
 
     return out.join("\n");
 }
+
+/** "1 role", "2 roles": a count with its noun in the right number. `many` is for an irregular plural. */
+export function plural(count: number, one: string, many = `${one}s`): string {
+    return `${count} ${count === 1 ? one : many}`;
+}
+
+/** The noun's own word for "a" or "an", by its sound: `an info`, `a unit`, `an hour`. */
+export function article(word: string): "a" | "an" {
+    const text = word.trim().toLowerCase();
+
+    if (/^(hour|honest|heir|honou?r)/.test(text)) {
+        return "an";
+    }
+
+    if (/^(uni|use|usa|usu|eu|one|once|ubiq)/.test(text)) {
+        return "a";
+    }
+
+    return /^[aeiou]/.test(text) ? "an" : "a";
+}

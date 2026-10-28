@@ -374,7 +374,8 @@ h4 {
 }
 
 .lead {
-    max-width: 62ch;
+    max-width: 58ch;
+    text-wrap: balance;
     margin-top: 14px;
     color: var(--dd-muted);
     font-size: 17px;
@@ -1484,6 +1485,27 @@ pre.snip {
         max-width: 38vw;
     }
 
+    /* Rows that fill: three to a row where they fit, and the last row's cards grow to the width. */
+    .stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .stat {
+        flex: 1 1 88px;
+        padding: 12px;
+    }
+
+    .stat b {
+        font-size: 22px;
+    }
+
+    .stat span {
+        font-size: 12px;
+        line-height: 1.3;
+    }
+
     .tiles {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
@@ -1491,6 +1513,11 @@ pre.snip {
 
     .tile {
         padding: 12px;
+    }
+
+    /* An odd last card takes the whole row, so none stands alone at half width. */
+    .tile:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
     }
 
     .tile span {

@@ -11,7 +11,12 @@ import {
     readableOn,
     toHex,
 } from "../src/server/design/docsite-color.ts";
-import { escapeHtml, renderMarkdown } from "../src/server/design/docsite-markdown.ts";
+import {
+    article,
+    escapeHtml,
+    plural,
+    renderMarkdown,
+} from "../src/server/design/docsite-markdown.ts";
 import { renderSystemDoc } from "../src/server/design/docsite.ts";
 import { withRender } from "../src/server/design/render.ts";
 import type { PocketHost } from "../src/server/host.ts";
@@ -605,4 +610,76 @@ test("a ratio is written with one decimal, cut and never rounded up; cards copy 
     // A phone gets a menu for the modes and keeps the system's name in the header.
     assert.match(html, /<select class="modesel"/);
     assert.match(html, /<span class="brand-name">Pi Pocket<\/span>/);
+});
+
+test("the page's sentences have the right number and article", () => {
+    assert.equal(plural(0, "mode"), "0 modes");
+    assert.equal(plural(1, "mode"), "1 mode");
+    assert.equal(plural(2, "text style"), "2 text styles");
+    assert.equal(plural(2, "category", "categories"), "2 categories");
+    assert.equal(article("info"), "an");
+    assert.equal(article("danger"), "a");
+    assert.equal(article("hour"), "an");
+    assert.equal(article("unit"), "a");
+    assert.equal(article("user"), "a");
+    assert.equal(article("Error"), "an");
+
+    // Every sentence the page generates, for a system with one of each and for the flagship.
+    const one: DesignSystem = {
+        name: "One",
+        modes: ["default"],
+        schemes: { default: "light" },
+        tokens: [
+            token("color.bg.base", "color", { default: "#ffffff" }),
+            token(
+                "color.text.primary",
+                "color",
+                { default: "#000000" },
+                { contrast: { on: "{color.bg.base}", min: 4.5 } },
+            ),
+            token("font.family.sans", "fontFamily", { default: ["Arial"] }),
+            token("font.size.md", "dimension", { default: "14px" }),
+        ],
+        components: [],
+        guidelines: "",
+        problems: [
+            { level: "error", message: "x" },
+            { level: "warning", message: "y" },
+        ],
+        compiled: { css: "", tailwind: "", json: "{}", components: "" },
+    };
+    const text = (html: string) =>
+        outsideFrames(html)
+            .replace(/<style>[\s\S]*?<\/style>|<script[\s\S]*?<\/script>|<pre[\s\S]*?<\/pre>/g, " ")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&[a-z#0-9]+;/g, " ")
+            .replace(/\s+/g, " ");
+
+    for (const system of [one, flagship()]) {
+        const words = text(renderSystemDoc(system).html);
+
+        assert.doesNotMatch(
+            words,
+            /\b(a|A) [aeiou]\w+/,
+            "a before a vowel: " + words.match(/\b(a|A) [aeiou]\w+/)?.[0],
+        );
+        assert.doesNotMatch(words, /\b(an|An) [bcdfgjklmnpqrstvwxz]\w+/, "an before a consonant");
+        assert.doesNotMatch(words, /\bEvery contrast checks?\b/);
+        assert.doesNotMatch(words, /\b1 (modes|tokens|components|sizes|roles|errors|warnings)\b/);
+        assert.doesNotMatch(
+            words,
+            /\b(?!1\b)\d+ (mode|token|size|role|error|warning|typeface)\b(?!s)/,
+        );
+    }
+
+    const words = text(renderSystemDoc(one).html);
+
+    assert.match(words, /The contrast check meets its minimum\./);
+    assert.match(words, /2 roles/);
+    assert.match(words, /1 typeface, 1 size/);
+    assert.match(words, /1 error and 1 warning from the validator/);
+    assert.match(
+        text(renderSystemDoc(flagship()).html),
+        /All 20 contrast checks meet their minimum|All \d+ contrast checks meet their minimum/,
+    );
 });
