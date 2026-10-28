@@ -33,6 +33,8 @@ interface Fn {
 
 /** The variables, functions, and mixins of a project. */
 export class Project {
+    /** When the work for the whole project must stop: a project of many stylesheets must not hold the scan. */
+    deadline = Date.now() + 4000;
     vars = new Map<string, Value>();
     functions = new Map<string, Fn>();
     mixins = new Map<string, Fn>();
@@ -126,6 +128,10 @@ class Run implements Env {
     tick(): void {
         if (++this.ticks > LIMITS.ticks) {
             throw new Unsupported("too much work");
+        }
+
+        if ((this.ticks & 255) === 0 && Date.now() > this.project.deadline) {
+            throw new Unsupported("out of time");
         }
     }
 
@@ -884,6 +890,11 @@ export function expandSassFiles(files: { rel: string; text: string }[]): Map<str
     const out = new Map<string, string>();
 
     for (const file of ordered) {
+        // A project of many stylesheets gets a fixed time: what is not run in it is read as written.
+        if (Date.now() > project.deadline) {
+            break;
+        }
+
         const result = evaluateSass(file.text, project);
 
         if (result !== undefined && NEEDS_EVAL.test(file.text)) {

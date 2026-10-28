@@ -548,3 +548,15 @@ test("hostile Sass runs in bounded time and never throws: an unclosed map, paren
 
     assert.ok(Date.now() - started < 6000, `${Date.now() - started} ms`);
 });
+
+test("a project of many stylesheets is run for a fixed time, and what is not run is read as it was written", () => {
+    const files = Array.from({ length: 80 }, (_, at) => ({
+        rel: `p${String(at).padStart(2, "0")}.scss`,
+        text: `@for $i from 1 through 2000 { @for $j from 1 through 20 { .a-#{$i}-#{$j} { color: mix(#fff, #000, $j * 1%); width: $i * 1px; } } }`,
+    }));
+    const started = Date.now();
+    const made = expandSassFiles(files);
+
+    assert.ok(Date.now() - started < 9000, `${Date.now() - started} ms`);
+    assert.ok(made.size >= 1, "the files that were run are written");
+});
