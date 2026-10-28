@@ -121,6 +121,8 @@ export interface Facts {
     files: string[];
     partial: boolean;
     tailwind: boolean;
+    /** The mode that the file being read is named for (`dark.less`), when it is one. */
+    fileMode?: Scope;
     /** Declarations that compute a size from custom properties (`calc(var(--gap) * 2)`): the scan resolves them later. */
     deferred: { prop: string; value: string; selector: string }[];
     /** 3 or 4: which defaults the utility classes mean. */
@@ -609,7 +611,11 @@ export function namespaceOf(name: string): { category: Category; rest: string } 
 }
 
 function addVar(facts: Facts, fact: Omit<VarFact, "order" | "rank">): void {
-    facts.vars.push({ ...fact, order: facts.vars.length, rank: facts.rank });
+    // A file that is the other mode's (`dark.less`, `themes/night/colors.css`) sets that mode's values.
+    const scope =
+        fact.scope === "default" && facts.fileMode !== undefined ? facts.fileMode : fact.scope;
+
+    facts.vars.push({ ...fact, scope, order: facts.vars.length, rank: facts.rank });
 }
 
 /** The keys of a JavaScript theme, and what each holds. */
@@ -739,6 +745,52 @@ function typographyVars(facts: Facts, file: string, scope: Scope, block: Literal
     }
 }
 
+/** The index after the brace that closes the one at `open`, skipping strings; undefined when it does not close in reach. */
+function braceEnd(text: string, open: number): number | undefined {
+    let depth = 0;
+    let quote = "";
+
+    for (let at = open; at < Math.min(text.length, open + 60_000); at++) {
+        const char = text[at]!;
+
+        if (quote !== "") {
+            if (char === "\\") {
+                at += 1;
+            } else if (char === quote) {
+                quote = "";
+            } else if (char === "\n" && quote !== "`") {
+                quote = "";
+            }
+        } else if (char === '"' || char === "'" || char === "`") {
+            quote = char;
+        } else if (char === "{") {
+            depth += 1;
+        } else if (char === "}") {
+            depth -= 1;
+
+            if (depth === 0) {
+                return at + 1;
+            }
+        }
+    }
+
+    return undefined;
+}
+
+/** The mode that a name stands for (`darkTheme`, `theme_light`, `NIGHT`): dark, light, or none. */
+function modeOf(name: string): Scope | undefined {
+    const words = name
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .toLowerCase()
+        .split(/[^a-z0-9]+/);
+
+    if (words.some((word) => word === "dark" || word === "night" || word === "dim")) {
+        return "dark";
+    }
+
+    return words.some((word) => word === "light" || word === "day") ? "light" : undefined;
+}
+
 /** Reads theme objects from a JavaScript or TypeScript file: `colors: { … }`, `const palette = { … }`. */
 function themeVars(facts: Facts, file: string, text: string): void {
     const keys = Object.keys(THEME_KEYS).join("|");
@@ -746,13 +798,55 @@ function themeVars(facts: Facts, file: string, text: string): void {
         String.raw`(?<![\w$.])(${keys})\s*:\s*(?=[{[])|(?<![\w$.])(?:const|let|var)\s+(${keys})\s*(?::[^=\n]{1,80})?=\s*(?=[{[])`,
         "g",
     );
-    // The object a key sits in: the nearest declaration (`const darkTheme = …`) or `dark: {` before it. A name with
-    // "dark" or "night" in it holds the dark mode's values.
+    // The objects the file declares by name (`const brand = { 50: "#e3f0ff" }`), for `colors: { brand }`.
+    const env = new Map<string, Literal>();
+
+    for (const match of text.matchAll(
+        /(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]{1,80})?=\s*(?=[{[])/g,
+    )) {
+        if (env.size >= 40) {
+            break;
+        }
+
+        const literal = readLiteral(text, match.index + match[0].length);
+
+        if (typeof literal === "object" && literal !== null) {
+            env.set(match[1]!, literal);
+        }
+    }
+
+    // The objects a key sits in: a declaration (`const darkTheme = {…}`), or a key (`dark: {…}`, `light: {…}`). A name
+    // with a mode word in it ("dark", "night", "light", "day") holds that mode's values; the nearest such object around
+    // the key decides.
     const owners = [
         ...text.matchAll(
-            /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)|(?<![\w$.])((?:dark|night|light|day)[A-Za-z]*)\s*:\s*(?=\{)/gi,
+            /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)|(?<![\w$.])([A-Za-z_$][\w$]*)\s*:\s*(?=\{)/g,
         ),
-    ].map((owner) => ({ at: owner.index, name: owner[1] ?? owner[2]! }));
+    ]
+        .filter((owner) => modeOf(owner[1] ?? owner[2]!) !== undefined)
+        .slice(0, 200)
+        .flatMap((owner) => {
+            const name = owner[1] ?? owner[2]!;
+            const from = owner.index + owner[0].length;
+            const open = owner[2] === undefined ? text.indexOf("{", from) : from;
+
+            // A declaration owns the first object after its `=` (or the call that wraps it), unless a statement ends first.
+            if (
+                open === -1 ||
+                (owner[2] === undefined &&
+                    (open - from > 160 || text.slice(from, open).includes(";")))
+            ) {
+                return [];
+            }
+
+            const end = braceEnd(text, open);
+
+            return end === undefined ? [] : [{ at: owner.index, end, name, mode: modeOf(name) }];
+        });
+    const scopeAt = (index: number): Scope =>
+        owners
+            .filter((owner) => owner.at < index && index < owner.end && owner.mode !== undefined)
+            .at(-1)?.mode ?? "default";
     let seen = 0;
 
     // A base unit written as a number: `spacing: 8`, `shape: { borderRadius: 4 }` (Material UI, Chakra).
@@ -763,17 +857,17 @@ function themeVars(facts: Facts, file: string, text: string): void {
             break;
         }
 
-        const owner = owners.findLast((each) => each.at < match.index);
-
         addVar(facts, {
             name: match[1]!,
             value: `${match[2]}px`,
-            scope: owner !== undefined && /dark|night/i.test(owner.name) ? "dark" : "default",
+            scope: scopeAt(match.index),
             kind: "js",
             file,
             hint: match[1] === "spacing" ? "space" : "radius",
         });
     }
+
+    const paletteTree: Record<string, Literal> = {};
 
     for (const match of text.matchAll(heads)) {
         if (++seen > 60) {
@@ -782,15 +876,13 @@ function themeVars(facts: Facts, file: string, text: string): void {
 
         const key = match[1] ?? match[2]!;
         const category = THEME_KEYS[key]!;
-        const literal = readLiteral(text, match.index + match[0].length);
+        const literal = readLiteral(text, match.index + match[0].length, env);
 
         if (literal === undefined || literal === UNKNOWN) {
             continue;
         }
 
-        const owner = owners.findLast((each) => each.at < match.index);
-        const scope: Scope =
-            owner !== undefined && /dark|night/i.test(owner.name) ? "dark" : "default";
+        const scope = scopeAt(match.index);
 
         if (key === "typography") {
             typographyVars(facts, file, scope, literal);
@@ -805,9 +897,9 @@ function themeVars(facts: Facts, file: string, text: string): void {
             literal.every((item) => typeof item === "number")
         ) {
             for (const size of literal as number[]) {
-                if (scope === "default" && category === "space" && size > 0) {
+                if (scope !== "dark" && category === "space" && size > 0) {
                     bump(facts.spacing, size, 2);
-                } else if (scope === "default" && category === "text" && size >= 8 && size <= 160) {
+                } else if (scope !== "dark" && category === "text" && size >= 8 && size <= 160) {
                     const fact = facts.sizes.get(size) ?? {
                         count: 0,
                         body: 0,
@@ -826,6 +918,10 @@ function themeVars(facts: Facts, file: string, text: string): void {
 
         const found: { path: string[]; value: string }[] = [];
 
+        if (category === "color" && typeof literal === "object" && !Array.isArray(literal)) {
+            Object.assign(paletteTree, literal);
+        }
+
         leaves(literal, [], found, category);
 
         for (const leaf of found) {
@@ -842,6 +938,140 @@ function themeVars(facts: Facts, file: string, text: string): void {
                 hint: category,
             });
         }
+    }
+
+    semanticTokens(facts, file, text, env, paletteTree, scopeAt);
+}
+
+/** A color that a semantic token names: the color itself, or a path into the palette (`gray.50`, `colors.brand.500`). */
+function paletteColor(
+    ref: string,
+    tree: Record<string, Literal>,
+    env: ReadonlyMap<string, Literal>,
+): string | undefined {
+    const text = ref.trim().replace(/^\{|\}$/g, "");
+
+    if (/^#[0-9a-f]{3,8}$|^(?:rgba?|hsla?|oklch|oklab|hwb|lab|lch)\(/i.test(text)) {
+        return text;
+    }
+
+    const path = text.split(".").filter((part) => part !== "");
+
+    if (path[0] === "colors") {
+        path.shift();
+    }
+
+    let node: Literal | undefined = tree;
+
+    // A name the palette does not have may be an object the file declares (`const gray = { … }`).
+    if (path[0] !== undefined && tree[path[0]] === undefined && env.has(path[0])) {
+        node = env.get(path.shift()!);
+    }
+
+    for (const part of path) {
+        node =
+            typeof node === "object" && node !== null && !Array.isArray(node)
+                ? node[part]
+                : undefined;
+    }
+
+    if (typeof node === "object" && node !== null && !Array.isArray(node)) {
+        node = node.DEFAULT ?? node.default;
+    }
+
+    return typeof node === "string" ? node : undefined;
+}
+
+/**
+ * Chakra's `semanticTokens.colors`: a name with a value for each mode (`{ default: "gray.50", _dark: "gray.900" }`),
+ * written as a color or as a path into the palette. Each is a variable with two values.
+ */
+function semanticTokens(
+    facts: Facts,
+    file: string,
+    text: string,
+    env: ReadonlyMap<string, Literal>,
+    tree: Record<string, Literal>,
+    scopeAt: (index: number) => Scope,
+): void {
+    for (const match of [...text.matchAll(/(?<![\w$.])semanticTokens\s*:\s*(?=\{)/g)].slice(0, 4)) {
+        const literal = readLiteral(text, match.index + match[0].length, env);
+        const colors =
+            typeof literal === "object" && literal !== null && !Array.isArray(literal)
+                ? literal.colors
+                : undefined;
+
+        if (typeof colors !== "object" || colors === null || Array.isArray(colors)) {
+            continue;
+        }
+
+        const base = scopeAt(match.index);
+        let count = 0;
+
+        const walk = (node: Literal, path: string[]): void => {
+            if (++count > 200 || path.length > 4) {
+                return;
+            }
+
+            if (typeof node === "string") {
+                const value = paletteColor(node, tree, env);
+
+                if (value !== undefined && path.length > 0) {
+                    addVar(facts, {
+                        name: path.join("-"),
+                        value,
+                        scope: base,
+                        kind: "js",
+                        file,
+                        hint: "color",
+                    });
+                }
+
+                return;
+            }
+
+            if (typeof node !== "object" || node === null || Array.isArray(node)) {
+                return;
+            }
+
+            const modes = Object.keys(node).filter((key) =>
+                /^(?:default|_light|_dark|_?light|_?dark)$/.test(key),
+            );
+
+            if (modes.length > 0 && path.length > 0) {
+                for (const key of modes) {
+                    const value =
+                        typeof node[key] === "string"
+                            ? paletteColor(node[key], tree, env)
+                            : undefined;
+
+                    if (value !== undefined) {
+                        const scope: Scope = /dark/.test(key)
+                            ? "dark"
+                            : /light/.test(key)
+                              ? "light"
+                              : base;
+
+                        addVar(facts, {
+                            name: path.join("-"),
+                            value,
+                            scope,
+                            kind: "js",
+                            file,
+                            hint: "color",
+                        });
+                    }
+                }
+
+                return;
+            }
+
+            for (const [key, child] of Object.entries(node)) {
+                walk(child, [...path, ...key.split(".")]);
+            }
+        };
+
+        walk(colors as Literal, []);
     }
 }
 
@@ -879,7 +1109,116 @@ const SPACING_CLASS =
 const THEMEISH =
     /(?:^|\/)(?:tailwind\.config|[^/]*(?:theme|tokens?|colors?|palette|design|variables|styles?|constants?|config)[^/]*)\.(?:[cm]?[jt]s|tsx?)$|\/(?:theme|themes|tokens|styles|design|constants)\/[^/]+\.[cm]?[jt]sx?$/i;
 
-function ingestStyles(facts: Facts, file: string, decls: Decl[]): void {
+/** One entry of a Sass map: its key, and its value as text, or as entries when the value is a map. */
+interface MapEntry {
+    key: string;
+    value: string;
+    map?: MapEntry[];
+}
+
+/** Reads a Sass map `(a: 1, b: (c: 2))`; undefined when the text is not one. */
+function sassMap(text: string, depth = 0): MapEntry[] | undefined {
+    const inner = text.trim();
+
+    if (depth > 3 || !inner.startsWith("(") || !inner.endsWith(")")) {
+        return undefined;
+    }
+
+    const entries: MapEntry[] = [];
+
+    // A value with commas of its own (a shadow with two layers) continues the entry before it.
+    const parts: string[] = [];
+
+    for (const part of commaParts(inner.slice(1, -1))) {
+        if (parts.length > 0 && !/^["']?[\w-]{1,40}["']?\s*:/.test(part)) {
+            parts[parts.length - 1] += `, ${part}`;
+        } else {
+            parts.push(part);
+        }
+    }
+
+    for (const part of parts.slice(0, 120)) {
+        const colon = part.indexOf(":");
+        const key = part
+            .slice(0, colon)
+            .trim()
+            .replace(/^["']|["']$/g, "");
+        const value = part.slice(colon + 1).trim();
+
+        if (colon <= 0 || !/^[\w-]{1,40}$/.test(key) || value === "") {
+            continue;
+        }
+
+        const map = sassMap(value, depth + 1);
+
+        entries.push(map === undefined ? { key, value } : { key, value, map });
+    }
+
+    return entries;
+}
+
+/**
+ * A Sass map is one variable for each entry: `$spacers: (1: 0.25rem, 2: 0.5rem)` is `spacers-1` and `spacers-2`. A map
+ * of modes (`$themes: (light: (bg: #fff), dark: (bg: #000))`) holds the variables of each mode; a map of names that
+ * each hold modes (`primary: (light: #fff, dark: #000)`) holds one variable with two values.
+ */
+function sassMapVars(facts: Facts, file: string, name: string, text: string, scope: Scope): void {
+    const entries = sassMap(text);
+
+    if (entries === undefined) {
+        return;
+    }
+
+    const modeKey = (key: string): Scope | undefined =>
+        /^(?:default|base|root|standard)$/i.test(key) ? "default" : modeOf(key);
+    const add = (variable: string, value: string, at: Scope) =>
+        addVar(facts, {
+            name: variable,
+            value: value.slice(0, 400),
+            scope: at,
+            kind: "scss",
+            file,
+        });
+    const modes = entries.filter(
+        (entry) => entry.map !== undefined && modeKey(entry.key) !== undefined,
+    );
+
+    if (modes.length > 0 && modes.length * 2 >= entries.length) {
+        for (const entry of modes) {
+            for (const inner of entry.map!) {
+                if (inner.map === undefined) {
+                    add(inner.key, inner.value, modeKey(entry.key)!);
+                }
+            }
+        }
+
+        return;
+    }
+
+    for (const entry of entries) {
+        if (entry.map === undefined) {
+            add(`${name}-${entry.key}`, entry.value, scope);
+        } else if (entry.map.some((inner) => modeKey(inner.key) !== undefined)) {
+            for (const inner of entry.map) {
+                const at = modeKey(inner.key);
+
+                if (at !== undefined && inner.map === undefined) {
+                    add(`${name}-${entry.key}`, inner.value, at);
+                }
+            }
+        }
+    }
+}
+
+function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
+    const mode = facts.fileMode;
+    const decls =
+        mode === undefined
+            ? all
+            : all.map((decl) =>
+                  decl.scope === "default" && !decl.inline ? { ...decl, scope: mode } : decl,
+              );
+
     for (const decl of decls) {
         if (decl.prop.startsWith("--")) {
             const name = decl.prop.slice(2);
@@ -902,30 +1241,7 @@ function ingestStyles(facts: Facts, file: string, decls: Decl[]): void {
         }
 
         if (decl.prop.startsWith("$") && /^\(.*\)$/s.test(decl.value)) {
-            // An SCSS map: `$spacers: (1: 0.25rem, 2: 0.5rem)` is one variable for each entry.
-            for (const entry of commaParts(decl.value.slice(1, -1)).slice(0, 80)) {
-                const colon = entry.indexOf(":");
-                const key = entry
-                    .slice(0, colon)
-                    .trim()
-                    .replace(/^["']|["']$/g, "");
-                const value = entry.slice(colon + 1).trim();
-
-                if (
-                    colon > 0 &&
-                    /^[\w-]{1,40}$/.test(key) &&
-                    value !== "" &&
-                    !value.startsWith("(")
-                ) {
-                    addVar(facts, {
-                        name: `${decl.prop.slice(1)}-${key}`,
-                        value: value.slice(0, 400),
-                        scope: decl.scope,
-                        kind: "scss",
-                        file,
-                    });
-                }
-            }
+            sassMapVars(facts, file, decl.prop.slice(1), decl.value, decl.scope);
 
             continue;
         }
@@ -965,6 +1281,12 @@ function breakpointsIn(facts: Facts, query: string): void {
 /** Reads one file's text into the facts. `extension` is the lower-case ending with its dot. */
 export function ingestFile(facts: Facts, rel: string, extension: string, raw: string): void {
     const text = stripComments(raw);
+    const parts = rel.split("/");
+    // `dark.less`, `theme.dark.css`, `variables-night.scss`, `themes/dark/colors.css`.
+    const named = modeOf(parts.at(-1)!.replace(/\.[^.]+$/, ""));
+    const mode = named ?? (parts.length > 1 ? modeOf(parts.at(-2)!) : undefined);
+
+    facts.fileMode = mode === "dark" || mode === "light" ? mode : undefined;
 
     // `$x` and `@x` are uses of a stylesheet variable.
     if (extension === ".scss" || extension === ".sass" || extension === ".less") {

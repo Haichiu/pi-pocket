@@ -238,7 +238,7 @@ const STATE = new Set(
 );
 const SURFACEISH = new Set(
     w(
-        "surface card panel elevated raised container popover modal dialog sheet input button btn header footer nav navbar sidebar menu tooltip toast overlay code table row layer tile well",
+        "surface card panel elevated raised container popover modal dialog sheet input button btn header footer nav navbar sidebar menu tooltip toast overlay code table row layer tile well component",
     ),
 );
 const OTHER_ROLE = new Set(
@@ -304,7 +304,7 @@ export function nameScore(role: RoleName, segs: string[]): number {
             const named = has(
                 segs,
                 w(
-                    "surface card panel elevated raised container popover layer sheet tile well paper",
+                    "surface card panel elevated raised container popover layer sheet tile well paper component",
                 ),
             );
             const layered =
@@ -410,7 +410,11 @@ export function nameScore(role: RoleName, segs: string[]): number {
                 return 70;
             }
 
-            return segs.length === 1 && segs[0] === "muted" ? 45 : 0;
+            // A name that is only the word (`muted`, `subtle`, `faint`, `dim`) is the quiet text.
+            return segs.length === 1 &&
+                w("muted subtle faint dim quiet weak hint").includes(segs[0]!)
+                ? 45
+                : 0;
         }
 
         case "border": {
@@ -839,7 +843,8 @@ export function chooseRoles(
                     ratio < contrastRatio(ink.rgba, page.rgba) - 0.5
                 );
             }),
-            (color) => color.fact?.text ?? 0,
+            // A quiet text is a gray: a tinted color (a light link color) is a weaker candidate than a gray.
+            (color) => (color.fact?.text ?? 0) * (color.c < 0.05 ? 1 : 0.3),
         )[0];
 
         if (top !== undefined) {

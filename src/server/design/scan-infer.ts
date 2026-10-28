@@ -60,6 +60,12 @@ export type { Draft, Inferred };
 const vkey = (variable: { kind: VarFact["kind"]; hint?: Category; name: string }) =>
     `${variable.kind === "theme" ? "css" : variable.kind}:${variable.hint ?? ""}:${variable.name}`;
 
+const kebab = (name: string) =>
+    name
+        .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-");
+
 const slug = (text: string) =>
     text
         .toLowerCase()
@@ -77,6 +83,8 @@ interface Variable {
     dark?: VarFact;
     /** A value from the other mode's scope, used only when the default scope has none. */
     spare?: VarFact;
+    /** It holds the other mode's value of another variable (`--dark-bg` beside `--bg`). */
+    twin?: boolean;
     hint?: Category;
 }
 
@@ -114,9 +122,77 @@ function variables(facts: Facts, alt: "dark" | "light"): Variable[] {
         variable.light ??= variable.spare;
     }
 
+    pairModeTwins(map, alt);
+
     return [...map.values()].filter(
         (variable) => variable.light !== undefined || variable.dark !== undefined,
     );
+}
+
+/**
+ * Variables that a project keeps for the other mode under their own names (`--dark-bg`, `--bg-dark`, `$night-ink`) are
+ * the other mode's value of the plain variable (`--bg`): they are not colors of their own. A dark-named variable that the
+ * plain one points at in the dark scope (`--bg: var(--dark-bg)`) is one for sure; without that, three pairs make a scheme,
+ * and a name that has a `-light` or `-main` sibling (`primary-dark` beside `primary-light`) is a shade, not a mode.
+ */
+function pairModeTwins(map: Map<string, Variable>, alt: "dark" | "light"): void {
+    const mode = alt === "dark" ? /^(?:dark|night)$/ : /^(?:light|day)$/;
+    const plain = (name: string) => kebab(name).replace(/^(?:color|colour|clr)-/, "");
+    const byName = new Map<string, Variable>();
+
+    for (const [key, variable] of map) {
+        if (
+            key.startsWith("css:") ||
+            key.startsWith("scss:") ||
+            key.startsWith("less:") ||
+            key.startsWith("js:")
+        ) {
+            byName.set(`${variable.kind}:${plain(variable.name)}`, variable);
+        }
+    }
+
+    const pairs: { twin: Variable; base: Variable; sure: boolean }[] = [];
+
+    for (const variable of map.values()) {
+        const words = plain(variable.name).split("-");
+        const at = words.findIndex((word) => mode.test(word));
+
+        if (at === -1 || words.length < 2 || variable.light === undefined) {
+            continue;
+        }
+
+        const base = byName.get(
+            `${variable.kind}:${words.filter((_, index) => index !== at).join("-")}`,
+        );
+
+        if (base === undefined || base === variable) {
+            continue;
+        }
+
+        const target = new RegExp(String.raw`var\(\s*--${variable.name}\s*[,)]`);
+        const sure = base.dark !== undefined && target.test(base.dark.value);
+        const shade =
+            at === words.length - 1 &&
+            [...map.values()].some(
+                (other) =>
+                    /^(?:light|main|base|default)$/.test(
+                        plain(other.name).slice(words.slice(0, at).join("-").length + 1),
+                    ) && plain(other.name).startsWith(`${words.slice(0, at).join("-")}-`),
+            );
+
+        if (sure || !shade) {
+            pairs.push({ twin: variable, base, sure });
+        }
+    }
+
+    if (pairs.length < 3 && !pairs.some((pair) => pair.sure)) {
+        return;
+    }
+
+    for (const { twin, base } of pairs) {
+        base.dark ??= { ...twin.light!, scope: alt };
+        twin.twin = true;
+    }
 }
 
 /** A variable's value with its references followed. `via` is the variable it points at first. */
@@ -785,8 +861,9 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
     const classified: Classified[] = [];
 
     for (const variable of all) {
-        // `--text-hero--line-height` belongs to `--text-hero`; it is not a token of its own.
-        if (variable.name.includes("--")) {
+        // `--text-hero--line-height` belongs to `--text-hero`; it is not a token of its own. A variable that holds the
+        // other mode's value of another one (`--dark-bg`) is not either.
+        if (variable.name.includes("--") || variable.twin === true) {
             continue;
         }
 
@@ -1218,7 +1295,12 @@ export function infer(facts: Facts, folder: string): Inferred {
     const pendingDark: { path: string[]; hex: string }[] = [];
     // The light color each color token holds, so that two files that name one token agree on which color it is.
     const lightHexOf = new Map<string, string>();
-    const lightAlias = (hex: string) => `{${palette(hex, asValue(hex, lightColors)).join(".")}}`;
+    // The default-mode colors that a dark-first project keeps on its roles as they are, so the palette skips them.
+    const changing = new Set<string>();
+    const lightAlias = (hex: string) =>
+        changing.has(hex)
+            ? asValue(hex, lightColors)
+            : `{${palette(hex, asValue(hex, lightColors)).join(".")}}`;
 
     for (const role of Object.keys(ROLE_PATHS) as RoleName[]) {
         const light = lightRoles[role];
@@ -1229,6 +1311,14 @@ export function infer(facts: Facts, folder: string): Inferred {
 
         const path = ROLE_PATHS[role];
         const dark = darkRoles[role];
+        // A dark-first project keeps the colors that change as they are in the default mode: its light mode is the file
+        // that changes them, and a palette of dark-only grays would show up in the light mode.
+        const changes = dark !== undefined && dark.hex !== light.hex;
+
+        if (alt === "light" && changes) {
+            changing.add(light.hex);
+        }
+
         const node: Obj = { $value: lightAlias(light.hex), $type: "color" };
 
         const source = colorVars.find((entry) => entry.variable.name === light.source);
@@ -1266,10 +1356,33 @@ export function infer(facts: Facts, folder: string): Inferred {
         const poolOf = (
             roles: Partial<Record<RoleName, RoleChoice>>,
             entries: Map<string, ColorEntry>,
-        ) =>
-            [roles.background?.hex, roles.text?.hex, "#ffffff", "#000000"].filter(
-                (hex): hex is string => hex !== undefined && entries.has(hex),
+        ) => {
+            const given = new Set(
+                Object.values(roles)
+                    .map((role) => role?.hex)
+                    .filter((hex): hex is string => hex !== undefined),
             );
+            // A gray that the mode uses only as text (a dark label on a light button) is a color the project has too.
+            const labels = [...entries.values()]
+                .filter(
+                    (each) =>
+                        !given.has(each.hex) &&
+                        each.c < 0.06 &&
+                        each.rgba.a > 0.9 &&
+                        (each.fact?.text ?? 0) > 0 &&
+                        (each.fact?.bg ?? 0) === 0 &&
+                        (each.fact?.border ?? 0) === 0,
+                )
+                .map((each) => each.hex);
+
+            return [
+                ...[roles.background?.hex, roles.text?.hex, "#ffffff", "#000000"].filter(
+                    (hex): hex is string => hex !== undefined && entries.has(hex),
+                ),
+                ...labels,
+            ];
+        };
+
         // White is what a project already puts on its accent when it uses white as a text color and it reads well enough.
         const whiteText =
             (facts.colors.get("#ffffff")?.text ?? 0) > 0 && lightColors.has("#ffffff");
@@ -1301,7 +1414,7 @@ export function infer(facts: Facts, folder: string): Inferred {
 
         if (onLight !== undefined) {
             book.add(path, {
-                $value: `{${palette(onLight, asValue(onLight, lightColors)).join(".")}}`,
+                $value: lightAlias(onLight),
                 $type: "color",
             });
         }
@@ -1324,6 +1437,7 @@ export function infer(facts: Facts, folder: string): Inferred {
         [...lightColors.values()].filter(
             (entry) =>
                 !hexPath.has(entry.hex) &&
+                !changing.has(entry.hex) &&
                 entry.rgba.a > 0.05 &&
                 entry.uses >= 1 &&
                 known.every((other) => !nearColors(other, entry)),
@@ -1337,11 +1451,14 @@ export function infer(facts: Facts, folder: string): Inferred {
     }
 
     // The rest of the project's own color variables, under their own names, as aliases of the palette.
+    const roleNames = new Set([...roleVars].map(kebab));
     const rest = classified.filter(
         (entry) =>
             entry.category === "color" &&
             !scaleVars.has(entry) &&
-            !roleVars.has(entry.variable.name),
+            !roleVars.has(entry.variable.name) &&
+            // The same variable from another file (`inkSubtle` in a theme, `--ink-subtle` in a stylesheet).
+            !roleNames.has(kebab(entry.variable.name)),
     );
 
     for (const entry of topBy(rest, (each) => uses(each.variable) + 0.01, 40)) {

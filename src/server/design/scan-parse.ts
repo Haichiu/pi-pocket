@@ -28,6 +28,8 @@ export interface Decl {
 }
 
 export const MAX_VALUE = 400;
+/** The most text of a Sass map. */
+export const MAX_MAP = 8000;
 
 /**
  * Comments hold notes (`fixes #123`) and old code, not the styles in use. Each becomes a line break. An unclosed comment
@@ -167,7 +169,11 @@ export function parseStyles(source: string): Decl[] {
 
         decls.push({
             prop: prop.startsWith("--") || /^[$@]/.test(prop) ? prop : prop.toLowerCase(),
-            value: value.slice(0, MAX_VALUE),
+            // A Sass map (`$themes: (light: (…), dark: (…))`) is long: it is read whole.
+            value: value.slice(
+                0,
+                prop.startsWith("$") && value.startsWith("(") ? MAX_MAP : MAX_VALUE,
+            ),
             selector: here,
             at,
             theme,
@@ -240,7 +246,7 @@ export function parseStyles(source: string): Decl[] {
             buffer += char;
         }
 
-        if (buffer.length > 4000) {
+        if (buffer.length > (buffer.trimStart().startsWith("$") ? MAX_MAP * 2 : 4000)) {
             // A statement this long is not a declaration: drop it rather than grow without bound.
             buffer = buffer.slice(-2000);
         }
@@ -393,7 +399,11 @@ export type Literal =
  * be bare or quoted; values may be strings, numbers, nested literals, or something it cannot know (then `UNKNOWN`, and
  * it skips to the next comma). Bounded by depth and node count. Returns undefined if `start` is not a literal.
  */
-export function readLiteral(text: string, start: number): Literal | undefined {
+export function readLiteral(
+    text: string,
+    start: number,
+    env: ReadonlyMap<string, Literal> = new Map(),
+): Literal | undefined {
     let at = start;
     let nodes = 0;
 
@@ -557,6 +567,9 @@ export function readLiteral(text: string, start: number): Literal | undefined {
                     if (key !== "__proto__" && key !== "constructor" && key !== "prototype") {
                         out[key] = child;
                     }
+                } else if ((text[at] === "," || text[at] === "}") && env.has(key)) {
+                    // `{ brand, gray }`: the objects that the file declares above.
+                    out[key] = env.get(key)!;
                 } else {
                     // `{ shorthand }` or a method: not a value we can read.
                     skipValue();
@@ -630,6 +643,22 @@ export function readLiteral(text: string, start: number): Literal | undefined {
             at += word[0].length;
 
             return word[1] === "null" ? null : word[1] === "true";
+        }
+
+        // `key: brand`: an object that the file declares above.
+        const name = /^[A-Za-z_$][\w$]*/.exec(text.slice(at, at + 80));
+
+        if (name !== null && env.has(name[0])) {
+            const here = at;
+
+            at += name[0].length;
+            skip();
+
+            if (text[at] === "," || text[at] === "}" || text[at] === "]") {
+                return env.get(name[0])!;
+            }
+
+            at = here;
         }
 
         return skipValue();
