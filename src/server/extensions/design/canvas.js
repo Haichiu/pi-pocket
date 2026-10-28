@@ -2,8 +2,10 @@
 // fit, with the page's side of Design mode (inspect, edit text, tweaks, pins, slides) spoken through the bridge.
 import { useArtifactBridge } from "/artifact-bridge.js";
 import { percent, scaleOf, stepZoom } from "./devices.js";
+import { pinsOfReport } from "./check.js";
 import { pinsOf } from "./comments.js";
 import { addEdit } from "./edits.js";
+import { checkKey } from "./system-data.js";
 import { forPage, normalizeKnobs, usable } from "./tweaks.js";
 
 /** As the artifact viewer's frame (`web/sheets/viewers.js`): scripts and forms run; the app and its cookies are out of reach. */
@@ -16,6 +18,8 @@ export const frameUrl = (conversation, id, version) =>
 
 const NO_KNOBS = [];
 const NO_VALUES = {};
+/** The bridge takes at most 100 values in one message. */
+const BATCH = 100;
 const num = (value) => typeof value === "number" && Number.isFinite(value);
 
 export function createCanvas(env) {
@@ -110,7 +114,19 @@ export function createCanvas(env) {
         const key = `${src}#${s.reload}`;
         const notes = s.notes[design.id];
         const comments = notes?.comments ?? [];
+        const checking = s.dock === "check";
         const pins = s.mode === "comment" || s.dock === "comments" ? pinsOf(comments, version) : [];
+        // The pins of a page check are its findings'; those of comments, the open comments'.
+        const targets = checking
+            ? pinsOfReport(
+                  s.checks[checkKey(design.id, version, s.checkWith.scheme, s.checkWith.size)]
+                      ?.report,
+              )
+            : pins.map((comment, index) => ({
+                  ...(comment.target.pid ? { pid: comment.target.pid } : {}),
+                  selector: comment.target.selector,
+                  label: index + 1,
+              }));
         // The knobs are this frame's: a page that was just replaced has none until it says so.
         const knobs = s.knobsKey === key ? s.knobs : NO_KNOBS;
         const values = s.tweaks[design.id] ?? NO_VALUES;
@@ -212,17 +228,10 @@ export function createCanvas(env) {
         }, [ready, s.mode, readOnly]);
 
         // Numbered pins on the elements that have open comments on this version.
-        const pinKey = pins.map((comment) => comment.id).join();
+        const pinKey = targets.map((target) => `${target.label}${target.selector}`).join("\n");
 
         useEffect(() => {
-            send({
-                type: "pocket-highlight",
-                targets: pins.slice(0, 100).map((comment, index) => ({
-                    ...(comment.target.pid ? { pid: comment.target.pid } : {}),
-                    selector: comment.target.selector,
-                    label: index + 1,
-                })),
-            });
+            send({ type: "pocket-highlight", targets: targets.slice(0, 100) });
         }, [ready, pinKey]);
 
         // The saved tweaks, once the page has said what its knobs are and the server what was saved.
@@ -257,6 +266,52 @@ export function createCanvas(env) {
                 sent.current.values = next;
             }
         }, [key, ready, knobs, values]);
+
+        // The design system's edits and mode, as custom properties: only what differs from what was last sent (a new page has been
+        // sent none). A property that is no longer needed is removed again with null.
+        const sentVars = useRef({ at: "", vars: {} });
+        const wanted = s.previewVars;
+
+        useEffect(() => {
+            if (sentVars.current.at !== `${key}:${ready}`) {
+                sentVars.current = { at: `${key}:${ready}`, vars: {} };
+            }
+
+            const have = sentVars.current.vars;
+            const out = {};
+
+            for (const [name, css] of Object.entries(wanted)) {
+                if (have[name] !== css) {
+                    out[name] = css;
+                }
+            }
+
+            for (const name of Object.keys(have)) {
+                if (!Object.hasOwn(wanted, name)) {
+                    out[name] = null;
+                }
+            }
+
+            const names = Object.keys(out);
+
+            if (names.length === 0) {
+                return;
+            }
+
+            let all = true;
+
+            for (let at = 0; at < names.length; at += BATCH) {
+                const part = Object.fromEntries(
+                    names.slice(at, at + BATCH).map((name) => [name, out[name]]),
+                );
+
+                all = send({ type: "pocket-tweak-set", values: part }) && all;
+            }
+
+            if (all) {
+                sentVars.current.vars = { ...wanted };
+            }
+        }, [key, ready, wanted]);
 
         return html`<div
             class="dsn-canvas has-zoom"

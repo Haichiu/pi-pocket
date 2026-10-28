@@ -2,7 +2,7 @@
 // tokens group, the value a token has once the person's unsaved edits are laid over the saved ones (aliases followed), the
 // contrast of a text color, the history of edits (undo and redo), and the change a save sends. The system is data from the
 // project's files: every value read here is checked before it is used.
-import { contrast, grade, parseColor, toHex, writeColor } from "./color.js";
+import { contrast, grade, parseColor, swatchCss, toHex, writeColor } from "./color.js";
 
 /** The sections of the view, in order. `Other` shows only when something is in it. */
 export const SECTIONS = [
@@ -807,19 +807,28 @@ export function varsOf(model, mode) {
 }
 
 /**
- * What the open design is told, to show `mode` with the edits: the custom properties whose CSS is not what the design gets
- * from the saved default mode already, as `{ name: css }`. The bridge refuses a value past 200 characters (and a refused
- * batch changes nothing), so a long one is left out.
+ * What the open design is told, to show `mode` with the edits, as `{ name: css }`: the custom properties that this mode
+ * has other than the saved default's, and those that any mode sets other than the default, set to this mode's value (a
+ * page that follows the system's dark setting by itself shows `mode` all the same). The bridge refuses a value past 200
+ * characters, and a refused batch changes nothing, so a long one is left out.
  */
 export function previewVars(model, mode) {
-    const base = new Map(
-        model.tokens.map((token) => [token.cssVar, token.modes[model.defaultMode]?.css]),
-    );
+    const base = model.defaultMode;
     const out = {};
 
-    for (const [name, css] of varsOf(model, mode)) {
-        if (css !== base.get(name) && css.length <= 200 && bridgeName(name)) {
-            out[name] = css;
+    for (const token of model.tokens) {
+        const css = safeCss(model.value(token.name, mode).css);
+        const varies = model.modes.some(
+            (other) => token.modes[other]?.css !== token.modes[base]?.css,
+        );
+
+        if (
+            css !== "" &&
+            css.length <= 200 &&
+            bridgeName(token.cssVar) &&
+            (varies || css !== token.modes[base]?.css)
+        ) {
+            out[token.cssVar] = css;
         }
     }
 
@@ -831,4 +840,76 @@ export function themeCss(model, mode) {
     return `:root{${varsOf(model, mode)
         .map(([name, css]) => `${name}:${css}`)
         .join(";")}}`;
+}
+
+// ─── Specimens drawn from a resolved value ───────────────────────────────
+
+/** The font names of the app, for the system's own: a specimen in Geist shows in the font the app has. */
+const FONTS = [
+    [/(^|[\s,"'])Geist(?=[\s,"']|$)/g, '$1"Pocket Sans", Geist'],
+    [/(^|[\s,"'])JetBrains Mono(?=[\s,"']|$)/g, '$1"Pocket Mono", "JetBrains Mono"'],
+];
+
+export const fontStack = (css) =>
+    FONTS.reduce((text, [pattern, to]) => text.replace(pattern, to), css);
+
+/** The style text of a resolved typography value (family, size, weight, line height, letter spacing), or "". */
+export function typographyStyle(value) {
+    if (!isObject(value)) {
+        return "";
+    }
+
+    const parts = [];
+
+    const add = (name, css) => {
+        const safe = css === undefined ? "" : safeCss(css);
+
+        if (safe !== "") {
+            parts.push(`${name}:${safe}`);
+        }
+    };
+
+    const family = cssOf("fontFamily", value.fontFamily);
+
+    add("font-family", family === undefined ? undefined : fontStack(family));
+    add("font-size", cssOf("dimension", value.fontSize));
+    add(
+        "font-weight",
+        typeof value.fontWeight === "number" || typeof value.fontWeight === "string"
+            ? String(value.fontWeight)
+            : undefined,
+    );
+    add(
+        "line-height",
+        typeof value.lineHeight === "number"
+            ? String(value.lineHeight)
+            : cssOf("dimension", value.lineHeight),
+    );
+    add("letter-spacing", cssOf("dimension", value.letterSpacing));
+
+    return parts.join(";");
+}
+
+/** The `box-shadow` of a resolved shadow value (one layer or a list), or "" when it has none that can be drawn. */
+export function shadowOf(value) {
+    const layers = Array.isArray(value) ? value : [value];
+    const css = layers
+        .map((layer) => {
+            if (!isObject(layer)) {
+                return "";
+            }
+
+            const color = swatchCss(layer.color);
+            const sizes = ["offsetX", "offsetY", "blur", "spread"].map((key) =>
+                cssOf("dimension", layer[key] ?? "0px"),
+            );
+
+            return color === "" || sizes.includes(undefined)
+                ? ""
+                : `${layer.inset === true ? "inset " : ""}${sizes.join(" ")} ${color}`;
+        })
+        .filter(Boolean)
+        .join(", ");
+
+    return safeCss(css);
 }

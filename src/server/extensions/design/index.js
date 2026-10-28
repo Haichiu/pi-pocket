@@ -11,6 +11,9 @@ import { clampSize } from "./devices.js";
 import { variationMessage } from "./messages.js";
 import { createParts, PATHS } from "./parts.js";
 import { createStore, initialState, loadPick, savePrefs, sessionState } from "./state.js";
+import { createSystemActions } from "./system-actions.js";
+import { createSystemData } from "./system-data.js";
+import { watchPreview } from "./system-preview.js";
 import { createWorkspace } from "./workspace.js";
 
 export const pocketApi = 1;
@@ -26,6 +29,7 @@ export default function setup(pocket) {
 
     const store = createStore(initialState());
     const data = createData(pocket, store);
+    const systemData = createSystemData(pocket, store, data);
     const parts = createParts(pocket);
     const canEdit = () => app.state.me?.role !== undefined && app.state.me.role !== "viewer";
     /** The mode goes off, so an editor's comments or edits dock goes too, or its tab stays lit. */
@@ -36,6 +40,7 @@ export default function setup(pocket) {
         pocket,
         store,
         data,
+        systemData,
         parts,
         app,
         /** The page's frame, for the parts that talk to it (the slide strip): `{ send, goto, supported }`, or null. */
@@ -138,6 +143,7 @@ export default function setup(pocket) {
                 edit: { mode: "edit", dock: "edits" },
                 tweaks: { mode: "view", dock: "tweaks" },
                 versions: { mode: "view", dock: "versions" },
+                check: { mode: "view", dock: "check" },
             };
             const next = tabs[tab] ?? tabs.view;
             const same = s.mode === next.mode && s.dock === next.dock;
@@ -203,11 +209,38 @@ export default function setup(pocket) {
         },
     };
 
+    Object.assign(env, createSystemActions(env, systemData), {
+        /** Hide the conversation, so the panel has the whole width; or show it again. */
+        toggleFocus() {
+            store.set((s) => ({ focus: !s.focus }));
+        },
+        /** The design the System view shows its edits on (the System view stays). */
+        previewDesign(id) {
+            store.set({ artifact: id, version: null, slide: 0 });
+        },
+        /** The open design's Check dock. */
+        openCheck() {
+            store.set({ view: "canvas", mode: "view", dock: "check", draft: null });
+        },
+    });
+
     const { Workspace } = createWorkspace(env);
 
     function Panel() {
         return pocket.html`<${Workspace} />`;
     }
+
+    // The unsaved edits of the System view, and the mode in view, shown on the open design.
+    const stopPreview = watchPreview(store);
+
+    // Focus mode is a mark on the page that the module's stylesheet reads: the conversation goes, the panel grows.
+    let focused = false;
+    const stopFocus = store.subscribe((s) => {
+        if (s.focus !== focused) {
+            focused = s.focus;
+            document.documentElement.toggleAttribute("data-dsn-focus", focused);
+        }
+    });
 
     // How the canvas looks is kept in this browser.
     let looks = "";
@@ -273,15 +306,26 @@ export default function setup(pocket) {
         }
     });
 
-    const ask = (artifact, version) => {
-        store.set({ wanted: { artifact: String(artifact ?? ""), version: version ?? null } });
+    const ask = (artifact, version, system = false) => {
+        store.set({
+            wanted: { artifact: String(artifact ?? ""), version: version ?? null, system },
+        });
         pocket.openPanel("design");
     };
 
-    // `/design-open [artifact]`, run on the server, asks this tab to open the panel.
+    // `/design-open [artifact]` and `/design-system`, run on the server, ask this tab to open the panel.
     const stopOpen = pocket.on("open", (event) => {
         if (event?.conversation === store.get().conversation) {
-            ask(event.artifact);
+            ask(event.artifact, null, event.system === true);
+        }
+    });
+
+    // Someone saved the design system (or Pi did, through a route): read it again if this tab has it.
+    const stopSystem = pocket.on("system", (event) => {
+        const s = store.get();
+
+        if (event?.conversation === s.conversation && s.system.status !== "idle") {
+            void systemData.load({ quiet: true });
         }
     });
 
@@ -291,6 +335,7 @@ export default function setup(pocket) {
             wanted: {
                 artifact: String(event.detail?.artifact ?? ""),
                 version: event.detail?.version ?? null,
+                system: false,
             },
         });
     };
@@ -314,9 +359,30 @@ export default function setup(pocket) {
         keywords: ["design", "canvas", "prototype", "mockup", "deck", "slides"],
         panel: "design",
     });
+    pocket.launcher({
+        id: "design-system",
+        label: "Open the design system",
+        detail: "Colors, type, spacing, and components of the project",
+        icon: "palette",
+        keywords: [
+            "design",
+            "system",
+            "tokens",
+            "colors",
+            "type",
+            "theme",
+            "components",
+            "palette",
+        ],
+        run: () => ask("", null, true),
+    });
 
     return () => {
         removeEventListener("pocket:design-open", onOpen);
+        document.documentElement.removeAttribute("data-dsn-focus");
+        stopPreview();
+        stopFocus();
+        stopSystem();
         clearTimeout(later);
         stopConversation();
         stopApp();

@@ -43,6 +43,17 @@ export function siblingsOf(designs, artifact) {
     return designs.filter((each) => each.group === artifact.group);
 }
 
+/** Save a file that the server wrote in the session's folder, through core's download route (an attachment). */
+export function downloadFile(conversation, made) {
+    const link = document.createElement("a");
+
+    link.href = `/api/c/${encodeURIComponent(conversation)}/download?${new URLSearchParams({ path: made.relative })}`;
+    link.download = made.name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+}
+
 export function createData(pocket, store) {
     const conversationOf = () => store.get().conversation;
     let listing = 0;
@@ -225,14 +236,9 @@ export function createData(pocket, store) {
                     format,
                     ...(viewport ? { viewport } : {}),
                 });
-                // The core route streams the file from the session's folder as an attachment.
-                const link = document.createElement("a");
 
-                link.href = `/api/c/${encodeURIComponent(conversation)}/download?${new URLSearchParams({ path: made.relative })}`;
-                link.download = made.name;
-                document.body.append(link);
-                link.click();
-                link.remove();
+                // The core route streams the file from the session's folder as an attachment.
+                downloadFile(conversation, made);
                 pocket.notify("info", `Saved ${made.name}. It is also at ${made.path}`);
 
                 return true;

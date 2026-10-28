@@ -407,3 +407,30 @@ export function writeSystemFixture(cwd: string, { dark = true } = {}): void {
 
     writeFileSync(join(root, "guidelines.md"), GUIDELINES);
 }
+
+/**
+ * A page that uses the system: its variables inline (what `ds/tokens.css` is), `data-pid`s, and two things the check finds on
+ * purpose: a color that is no token, and an image with no alt text.
+ */
+export const ferryPage = (tokensCss: string) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ferry</title>
+<style>${tokensCss}</style>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; padding: var(--space-6); background: var(--color-bg-canvas); color: var(--color-text-primary); font: var(--font-size-base)/1.5 var(--font-family-sans); }
+h1 { margin: 0 0 var(--space-2); font-size: var(--font-size-2xl); line-height: 1.15; }
+p { margin: 0 0 var(--space-4); color: var(--color-text-muted); }
+.card { max-width: 420px; padding: var(--space-6); border-radius: var(--radius-lg); background: var(--color-bg-surface); box-shadow: var(--shadow-md); }
+.row { display: flex; gap: var(--space-2); align-items: center; margin-top: var(--space-4); }
+.btn { border: 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--color-accent-default); color: var(--color-text-inverse); font: 600 14px var(--font-family-sans); }
+.ok { padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill); background: var(--color-status-success-subtle); color: var(--color-status-success); font: 600 12px var(--font-family-sans); }
+</style></head><body>
+<div class="card" data-pid="card">
+<h1 data-pid="title">The 9:15 to Harbor Island</h1>
+<p data-pid="sub">Boarding opens at 9:00. Bring a ticket and a coat.</p>
+<img data-pid="photo" width="40" height="40" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
+<p data-pid="note" style="color:#7ba3f8">Off-system blue on purpose.</p>
+<div class="row"><button class="btn" data-pid="book">Book a ticket</button><span class="ok" data-pid="status">On time</span></div>
+</div>
+</body></html>`;

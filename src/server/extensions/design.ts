@@ -614,6 +614,21 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
         },
     });
 
+    // `/design-system`: opens the workspace on the System view, in the tab of the person who ran it.
+    web.command("design-system", {
+        description: "Open the design system",
+        scope: "conversation",
+        handler: (_args, context) => {
+            web.send(
+                "open",
+                { conversation: context.conversationId, artifact: "", system: true },
+                { to: context.user.id },
+            );
+
+            return { type: "toast", level: "info", message: "Opening the design system" };
+        },
+    });
+
     // Export (`POST export`) is the agent side's; the file comes through core's download route.
     designRoutes(web, host);
     // The System view: read and edit the design system, check a design against it, publish its docs, export it for code.

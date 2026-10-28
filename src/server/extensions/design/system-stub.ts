@@ -609,6 +609,45 @@ export interface CheckOptions {
 
 const HEX = /#[0-9a-f]{3,8}\b/gi;
 
+/** A `#rrggbb` color as three numbers, or undefined. */
+function rgbOf(value: unknown): [number, number, number] | undefined {
+    const text = typeof value === "string" ? value : isObject(value) ? value.hex : undefined;
+    const match = typeof text === "string" ? /^#([0-9a-f]{6})/i.exec(text) : null;
+
+    return match
+        ? ([0, 2, 4].map((at) => parseInt(match[1]!.slice(at, at + 2), 16)) as [
+              number,
+              number,
+              number,
+          ])
+        : undefined;
+}
+
+/** The system's color token closest to `color` (`#rrggbb`), as a `var(...)`; semantic tokens win a tie. */
+function nearestColor(system: DesignSystem, color: string): string | undefined {
+    const want = rgbOf(color);
+    let best: { name: string; distance: number } | undefined;
+
+    for (const token of system.tokens) {
+        const have =
+            token.type === "color" ? rgbOf(token.modes[system.modes[0]!]?.value) : undefined;
+
+        if (want === undefined || have === undefined) {
+            continue;
+        }
+
+        const distance =
+            Math.hypot(want[0] - have[0], want[1] - have[1], want[2] - have[2]) -
+            (token.tier === "semantic" ? 1 : 0);
+
+        if (best === undefined || distance < best.distance) {
+            best = { name: token.cssVar, distance };
+        }
+    }
+
+    return best === undefined ? undefined : `var(${best.name})`;
+}
+
 /**
  * A static scan of the page's source: colors that are no token, a missing viewport, images with no alt. The real check
  * renders the page and walks its elements; this one finds enough to show what the view does with a report.
@@ -665,6 +704,7 @@ export async function checkDesign(
                     selector: pid ? `[data-pid="${pid}"]` : tag[1]!,
                     ...(pid ? { pid } : {}),
                     value: color,
+                    ...(system === undefined ? {} : { suggestion: nearestColor(system, color) }),
                     message: `${color} is not a color of the system.`,
                 });
             }

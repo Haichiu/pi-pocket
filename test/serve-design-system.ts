@@ -13,8 +13,9 @@ import { join } from "node:path";
 import { APP_ROOT } from "../src/server/config.ts";
 import { createHandler } from "../src/server/http.ts";
 import { watchTree } from "../src/server/reload.ts";
-import { publishAll } from "./design-fixtures.ts";
-import { writeSystemFixture } from "./design-system-fixtures.ts";
+import { publishAll, publishDesign } from "./design-fixtures.ts";
+import { ferryPage, writeSystemFixture } from "./design-system-fixtures.ts";
+import { loadDesignSystem } from "../src/server/extensions/design/system-api.ts";
 
 const args = process.argv.slice(2).filter((each) => !each.startsWith("--"));
 const port = Number(args[0] ?? 8913);
@@ -35,6 +36,14 @@ if (!process.argv.includes("--no-system")) {
 }
 
 await publishAll(app, session);
+
+const system = process.argv.includes("--no-system") ? undefined : loadDesignSystem(work);
+
+await publishDesign(app, session, {
+    id: "ferry",
+    title: "Ferry booking",
+    content: ferryPage(system?.compiled.css ?? ""),
+});
 await say(app, session, "Hello from the copy");
 
 const guest = app.config.addUser("Guest", "guest");

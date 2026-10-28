@@ -407,15 +407,16 @@ test("a save is what differs from the saved values: a revert changes nothing, an
     );
 });
 
-test("the CSS a design is told is what differs from the saved default, and untrusted CSS is dropped", () => {
+test("the CSS a design is told is the mode in view where the modes differ, and what an edit changes", () => {
     const model = sys.createModel(system);
-
-    // The saved default mode is what the design has already.
-    assert.deepEqual(sys.previewVars(model, "light"), {});
-
+    const light = sys.previewVars(model, "light");
     const dark = sys.previewVars(model, "dark");
 
+    // A page that follows the system's dark setting by itself still shows the mode in view: the tokens that vary are set.
+    assert.equal(light["--color-bg-canvas"], "var(--color-gray-50)");
     assert.equal(dark["--color-bg-canvas"], "var(--color-gray-950)");
+    // A primitive that is the same in every mode is left to the page.
+    assert.equal(light["--color-gray-50"], undefined);
     assert.equal(dark["--color-gray-50"], undefined);
     assert.ok(Object.keys(dark).length > 5);
     assert.ok(Object.keys(dark).every((name) => /^--[A-Za-z0-9_-]{1,78}$/.test(name)));
@@ -430,7 +431,8 @@ test("the CSS a design is told is what differs from the saved default, and untru
         ),
     );
 
-    assert.deepEqual(sys.previewVars(edited, "light"), { "--color-blue-600": "#ff0000" });
+    assert.equal(sys.previewVars(edited, "light")["--color-blue-600"], "#ff0000");
+    assert.equal(sys.previewVars(edited, "light")["--color-gray-50"], undefined);
 
     assert.equal(sys.safeCss("#fff"), "#fff");
     assert.equal(sys.safeCss("0 1px 2px rgb(0 0 0 / 0.2)"), "0 1px 2px rgb(0 0 0 / 0.2)");
