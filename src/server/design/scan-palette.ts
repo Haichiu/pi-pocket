@@ -89,6 +89,7 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
                 hexOf(entry.lightColor ?? entry.darkColor),
             ]),
         );
+
     const twin = (family: string, list: Classified[]) => {
         const mine = stepsOf(list);
 

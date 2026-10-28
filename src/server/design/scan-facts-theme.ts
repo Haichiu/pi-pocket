@@ -98,20 +98,22 @@ function braceEnd(text: string, open: number): number | undefined {
 export function themeVars(facts: Facts, file: string, text: string): void {
     const keys = Object.keys(THEME_KEYS).join("|");
     const heads = new RegExp(
-        String.raw`(?<![\w$.])(${keys})\s*:\s*(?=[{[])|(?<![\w$.])(?:const|let|var)\s+(${keys})\s*(?::[^=\n]{1,80})?=\s*(?=[{[])|(?<![\w$.])(fontFamily|fontFamilyMonospace|fontSize|borderRadius)\s*:\s*(?=["'])`,
+        String.raw`(?<![\w$.])(${keys})\s*:\s*(?=[{[])|(?<![\w$.])(?:const|let|var)\s+(${keys})\s*(?::[^=\n]{1,80})?=\s*(?:[A-Za-z_$][\w$.]*\s*\(\s*)?(?=[{[])|(?<![\w$.])(fontFamily|fontFamilyMonospace|fontSize|borderRadius)\s*:\s*(?=["'])`,
         "g",
     );
     // The objects the file declares by name (`const brand = { 50: "#e3f0ff" }`), for `colors: { brand }`.
     const env = new Map<string, Literal>();
+    let declared = 0;
 
     for (const match of text.matchAll(
-        /(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]{1,80})?=\s*(?=[{[])/g,
+        /(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]{1,80})?=\s*(?:[A-Za-z_$][\w$.]*\s*\(\s*)?(?=[{[])/g,
     )) {
-        if (env.size >= 40) {
+        // Bounded: a file can open thousands of unclosed objects, and each one is read to the end of the file.
+        if (env.size >= 40 || ++declared > 80) {
             break;
         }
 
-        const literal = readLiteral(text, match.index + match[0].length);
+        const literal = readLiteral(text, match.index + match[0].length, env);
 
         if (typeof literal === "object" && literal !== null) {
             env.set(match[1]!, literal);
@@ -181,13 +183,15 @@ export function themeVars(facts: Facts, file: string, text: string): void {
     const references: { name: string; target: string; hint: Category }[] = [];
 
     // `semanticTokens` hold a value for each condition: `semanticTokens()` reads them, so the keys in them are not a palette.
-    const semantic = [...text.matchAll(/(?<![\w$.])semanticTokens\s*:\s*(?=\{)/g)].flatMap(
-        (open) => {
-            const end = braceEnd(text, open.index + open[0].length);
+    const semantic = [
+        ...text.matchAll(
+            /(?<![\w$.])semanticTokens\s*:\s*(?:[A-Za-z_$][\w$.]*\s*\(\s*)?(?=\{)|(?<![\w$.])defineSemanticTokens(?:\.\w+)?\(\s*(?=\{)/g,
+        ),
+    ].flatMap((open) => {
+        const end = braceEnd(text, open.index + open[0].length);
 
-            return end === undefined ? [] : [{ at: open.index, end }];
-        },
-    );
+        return end === undefined ? [] : [{ at: open.index, end }];
+    });
 
     for (const match of text.matchAll(heads)) {
         if (++seen > 60) {

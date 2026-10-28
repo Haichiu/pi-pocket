@@ -1,4 +1,5 @@
 /** Themes written as lists and by mode (stream T): daisyUI theme lists, Mantine shades, Chakra `semanticTokens`, and objects named for a mode. */
+import { NAMED_COLORS } from "./color.ts";
 import { colorsIn, type Literal, readLiteral, type Scope } from "./scan-parse.ts";
 import { addVar, type Category, type Facts, GENERIC } from "./scan-facts.ts";
 
@@ -309,6 +310,11 @@ function paletteColor(
         node = node.value;
     }
 
+    // A color keyword that the palette does not name (`white`, `transparent`) is the color.
+    if (node === undefined && path.length === 1 && NAMED_COLORS.has(path[0]!.toLowerCase())) {
+        return path[0]!.toLowerCase();
+    }
+
     return typeof node === "string" ? node : undefined;
 }
 
@@ -384,8 +390,20 @@ export function semanticTokens(
 ): void {
     const conditions = conditionsIn(text, env);
 
-    for (const match of [...text.matchAll(/(?<![\w$.])semanticTokens\s*:\s*(?=\{)/g)].slice(0, 4)) {
-        const literal = readLiteral(text, match.index + match[0].length, env);
+    // `semanticTokens: { … }`, `semanticTokens: defineSemanticTokens({ … })`, `semanticTokens: tokens`, or just `semanticTokens`.
+    const heads = [
+        ...text.matchAll(
+            /(?<![\w$.])semanticTokens\s*(?::\s*(?:[A-Za-z_$][\w$.]*\s*\(\s*)?(?=\{)|:\s*(?=[A-Za-z_$])|(?=\s*[,}]))/g,
+        ),
+    ];
+
+    for (const match of heads.slice(0, 4)) {
+        const at = match.index + match[0].length;
+        const named = /^[A-Za-z_$][\w$]*/.exec(text.slice(at, at + 80))?.[0];
+        const literal =
+            text[at] === "{"
+                ? readLiteral(text, at, env)
+                : env.get(match[0].includes(":") ? (named ?? "") : "semanticTokens");
         const colors =
             typeof literal === "object" && literal !== null && !Array.isArray(literal)
                 ? literal.colors

@@ -177,10 +177,10 @@ test("a namespace keeps two modules apart: their variables, functions, and mixin
     const got = made(NAMESPACES, "main.scss");
 
     assert.equal(got["--a-primary"], "#3366cc");
-    assert.ok(near(got["--a-tint"], "#5c85d6"), got["--a-tint"]);
+    assert.ok(near(got["--a-tint"], "#5c85d6"), `${JSON.stringify(got)}`.slice(0, 200));
     assert.equal(got["--a-gap"], "24px", "a's $gap is 8px: 3 * 8");
     assert.equal(got["--bee-primary"], "#00aa55", "the configured value");
-    assert.ok(near(got["--bee-tint"], "#80d5aa"), got["--bee-tint"]);
+    assert.ok(near(got["--bee-tint"], "#80d5aa"), `${JSON.stringify(got)}`.slice(0, 200));
     assert.equal(got["--bee-gap"], "24px", "b's $gap is 4px and its function doubles: 3 * 4 * 2");
     assert.equal(got["--a-name"], "a");
     assert.equal(got["--b-name"], "b");
@@ -196,7 +196,7 @@ test("`as *` opens a module, a built-in module keeps its namespace or opens, and
         near(got["--dark"], "#442200"),
         `${got["--dark"]}: the configured #aa5500, 20% darker`,
     );
-    assert.ok(near(got["--light"], "#ff9933"), got["--light"]);
+    assert.ok(near(got["--light"], "#ff9933"), `${JSON.stringify(got)}`.slice(0, 200));
     assert.equal(got["--ratio"], "1.5", "`div` from `sass:math` opened with `as *`");
     assert.ok(near(got["--k"], "#404040"), `${got["--k"]}: sass:color as k`);
     assert.equal(got["--pi"], "314", "math.$pi");
@@ -360,14 +360,14 @@ test("a generated palette behind namespaces and forwards is found whole: every s
     const { roles } = scan.inferred;
 
     assert.equal(Object.keys(roles).length, 9, "all nine roles");
-    assert.ok(near(roles.background?.value, "#ebeef1"), roles.background?.value);
-    assert.ok(near(roles.text?.value, "#242a32"), roles.text?.value);
-    assert.ok(near(roles.muted?.value, "#74849a"), roles.muted?.value);
-    assert.ok(near(roles.border?.value, "#c4cbd4"), roles.border?.value);
-    assert.ok(near(roles.accent?.value, "#0a58d6"), roles.accent?.value);
-    assert.ok(near(roles.danger?.value, "#ce1212"), roles.danger?.value);
-    assert.ok(near(roles.success?.value, "#21c05b"), roles.success?.value);
-    assert.ok(near(roles.warning?.value, "#f5a519"), roles.warning?.value);
+    assert.ok(near(roles.background?.value, "#ebeef1"), "role");
+    assert.ok(near(roles.text?.value, "#242a32"), "role");
+    assert.ok(near(roles.muted?.value, "#74849a"), "role");
+    assert.ok(near(roles.border?.value, "#c4cbd4"), "role");
+    assert.ok(near(roles.accent?.value, "#0a58d6"), "role");
+    assert.ok(near(roles.danger?.value, "#ce1212"), "role");
+    assert.ok(near(roles.success?.value, "#21c05b"), "role");
+    assert.ok(near(roles.warning?.value, "#f5a519"), "role");
 
     for (const hue of ["blue", "green", "red", "amber", "slate"]) {
         assert.equal(scan.inferred.palette[hue], 11, `${hue}: 11 shades`);
@@ -390,4 +390,43 @@ $brand-ramp: ();
 
     assert.equal(scan.inferred.palette.brand, 3);
     assert.equal(scan.inferred.palette["brand-ramp"], undefined);
+});
+
+test("hostile modules run in bounded time and never throw: cycles, long chains, thousands of forwards, and a deep configuration", () => {
+    const started = Date.now();
+    const chain = Array.from({ length: 60 }, (_, at) => ({
+        rel: `m${at}.scss`,
+        text: `@use "m${at + 1}" as n with ($a: ${at}); @forward "m${at + 1}"; $v${at}: ${at}; :root { --x: #{n.$a}; @each $i in 1 { --c-#{$i}: #{$v${at}}; } }`,
+    }));
+    const forwards = {
+        rel: "index.scss",
+        text: Array.from({ length: 2000 }, (_, at) => `@forward "p${at}" as p${at}-*;`).join("\n"),
+    };
+    const partials = Array.from({ length: 300 }, (_, at) => ({
+        rel: `p${at}.scss`,
+        text: `$x: ${at}px; @use "index" as i; @each $k in 1 { --k: #{i.$x}; }`,
+    }));
+
+    for (const files of [
+        chain,
+        [forwards, ...partials],
+        [{ rel: "a.scss", text: `@use "a"; @forward "a"; @each $i in 1 { --a: #{a.$x}; }` }],
+        [
+            {
+                rel: "a.scss",
+                text: `@use "b" with (${"$a: 1, ".repeat(5000)}$z: 1); @each $i in 1 { --a: 1; }`,
+            },
+            { rel: "b.scss", text: "$a: 0 !default;" },
+        ],
+        [
+            {
+                rel: "a.scss",
+                text: `@use "sass:math" as m with ($a: 1); @use "x" as; @use ; @forward "a" as * hide; @each $i in 1 { --a: #{m.$pi}; }`,
+            },
+        ],
+    ]) {
+        assert.doesNotThrow(() => expandSassFiles(files));
+    }
+
+    assert.ok(Date.now() - started < 8000, `${Date.now() - started} ms`);
 });

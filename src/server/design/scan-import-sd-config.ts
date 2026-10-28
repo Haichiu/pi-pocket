@@ -184,7 +184,8 @@ function listValues(text: string, list: string): string[] {
  * of ["light", "dark"])`, `["light", "dark"].forEach((theme) => …)`), the arguments of the function that takes it
  * (`const getConfig = (theme) => ({ … })`, called as `getConfig("dark")`), or a list that is named for it (`themes`).
  */
-function valuesOf(text: string, name: string, at: number): string[] {
+function valuesOf(text: string, rawName: string, at: number): string[] {
+    const name = rawName.replace(/[$]/g, "\\$&");
     const list = String.raw`(\[[^\]]{0,600}\]|[A-Za-z_$][\w$]*)`;
     const found = new Set<string>();
     const add = (values: string[]) => values.forEach((value) => found.add(value));
@@ -214,7 +215,7 @@ function valuesOf(text: string, name: string, at: number): string[] {
             ),
         ),
     ].at(-1);
-    const fnName = fn?.[1] ?? fn?.[2];
+    const fnName = (fn?.[1] ?? fn?.[2])?.replace(/[$]/g, "\\$&");
 
     if (fnName !== undefined) {
         for (const call of text.matchAll(
@@ -264,6 +265,7 @@ function configsOfObject(
 
         return close === undefined ? [] : stringsIn(text.slice(at, close));
     };
+
     const include = listAt("include");
     const source = listAt("source");
 
@@ -325,9 +327,11 @@ export function sdConfigsIn(dir: string, file: string, text: string): SdConfig[]
 
     const out: SdConfig[] = [];
     const seen = new Set<number>();
+    let tried = 0;
 
     for (const match of text.matchAll(/(?<![\w$.])["']?source["']?\s*:\s*(?=\[)/g)) {
-        if (out.length >= 8) {
+        // Bounded: a file can repeat `source: [` thousands of times.
+        if (out.length >= 8 || ++tried > 40) {
             break;
         }
 

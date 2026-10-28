@@ -9,6 +9,7 @@
  */
 import { readLiteral, type Literal, type Scope } from "./scan-parse.ts";
 import { addVar, type Category, type Facts } from "./scan-facts.ts";
+import { modeOf } from "./scan-facts-lists.ts";
 import { closeOf, openAround, topLevelValue } from "./scan-braces.ts";
 
 /** How a seed token is read: the name of the variable, and what it is. */
@@ -131,7 +132,14 @@ export function antdTheme(
             /darkAlgorithm/.test(algorithm) &&
             !/defaultAlgorithm/.test(algorithm);
         const named = scopeAt(match.index);
-        const scope: Scope = dark ? "dark" : named;
+        // A file named for the dark mode (`dark.ts`, `theme/dark/index.ts`) holds it, whatever its objects are called.
+        const fileMode = file
+            .replace(/\.[^./]+$/, "")
+            .split("/")
+            .some((part) => modeOf(part) === "dark")
+            ? "dark"
+            : undefined;
+        const scope: Scope = dark ? "dark" : named !== "default" ? named : (fileMode ?? named);
 
         // The tokens of a component are inside `components`, not here; `token` is the seed and the map.
         let unit: number | undefined;

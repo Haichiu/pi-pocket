@@ -259,6 +259,7 @@ function baseOf(configs: SdConfig[]): SdConfig | undefined {
 function filesOfMode(files: SdFile[], config: SdConfig, base: SdFile[]): SdFile[] {
     const own = orderByConfig(files, config) ?? [];
     const have = new Set(own.map((item) => item.file));
+
     const fits = (item: SdFile) => {
         const mode = modeOfFile(item.file);
 

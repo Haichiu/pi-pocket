@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { scanReport, scanTokens, type TokenScan } from "../src/server/design/scan.ts";
 import { globToRegExp, sdConfigIn } from "../src/server/design/scan-import-sd.ts";
+import { modeOfConfigFile, sdConfigsIn } from "../src/server/design/scan-import-sd-config.ts";
 import type { DesignSystem } from "../src/server/design/system-types.ts";
 import { buildSystem } from "../src/server/design/tokens-model.ts";
 
@@ -418,4 +419,283 @@ test("the report names the Style Dictionary reading, and a repository with only 
     );
 
     assert.equal(empty.inferred.imported, 0);
+});
+
+// --- Configs for modes ----------------------------------------------------------------------------------------------------
+
+const PLATFORMS = `platforms: { css: { transformGroup: "css", buildPath: "build/", files: [{ destination: "v.css", format: "css/variables" }] } }`;
+const JSON_PLATFORMS = { css: { transformGroup: "css", buildPath: "build/", files: [] } };
+
+/** The colors of a design: a palette, the roles in light, and the roles that dark changes. */
+const palette = {
+    color: {
+        base: {
+            gray: {
+                "50": classic("#f8fafc"),
+                "200": classic("#e2e8f0"),
+                "500": classic("#64748b"),
+                "800": classic("#1e293b"),
+                "900": classic("#0f172a"),
+            },
+            blue: { "400": classic("#60a5fa"), "500": classic("#3b82f6") },
+            red: { "400": classic("#f87171"), "500": classic("#ef4444") },
+            white: classic("#ffffff"),
+        },
+    },
+};
+const light = {
+    color: {
+        bg: {
+            page: classic("{color.base.gray.50.value}"),
+            surface: classic("{color.base.white.value}"),
+        },
+        text: {
+            primary: classic("{color.base.gray.900.value}"),
+            muted: classic("{color.base.gray.500.value}"),
+        },
+        border: { default: classic("{color.base.gray.200.value}") },
+        accent: { default: classic("{color.base.blue.500.value}") },
+        danger: { default: classic("{color.base.red.500.value}") },
+    },
+};
+const dark = {
+    color: {
+        bg: {
+            page: classic("{color.base.gray.900.value}"),
+            surface: classic("{color.base.gray.800.value}"),
+        },
+        text: {
+            primary: classic("{color.base.gray.50.value}"),
+            muted: classic("{color.base.gray.200.value}"),
+        },
+        border: { default: classic("{color.base.gray.800.value}") },
+        accent: { default: classic("{color.base.blue.400.value}") },
+        danger: { default: classic("{color.base.red.400.value}") },
+    },
+};
+
+/** The roles of a scan, light and dark, as hex. */
+function roles(scan: TokenScan) {
+    const system = load(scan);
+
+    return Object.fromEntries(
+        [
+            "bg.page",
+            "bg.surface",
+            "text.primary",
+            "text.muted",
+            "border.default",
+            "accent.default",
+            "danger.default",
+        ].map((name) => [
+            name,
+            [hex(system, `color.${name}`), hex(system, `color.${name}`, "dark")],
+        ]),
+    );
+}
+
+const DARK_ROLES = {
+    "bg.page": ["#f8fafc", "#0f172a"],
+    "bg.surface": ["#ffffff", "#1e293b"],
+    "text.primary": ["#0f172a", "#f8fafc"],
+    "text.muted": ["#64748b", "#e2e8f0"],
+    "border.default": ["#e2e8f0", "#1e293b"],
+    "accent.default": ["#3b82f6", "#60a5fa"],
+    "danger.default": ["#ef4444", "#f87171"],
+};
+
+test("a config for a mode: config.json builds the base, config.dark.json adds the dark folder over it", () => {
+    const scan = scanTokens(
+        project({
+            "config.json": { source: ["tokens/base/**/*.json"], platforms: JSON_PLATFORMS },
+            "config.dark.json": {
+                include: ["tokens/base/**/*.json"],
+                source: ["tokens/dark/**/*.json"],
+                platforms: JSON_PLATFORMS,
+            },
+            "tokens/base/palette.json": palette,
+            "tokens/base/semantic.json": light,
+            "tokens/dark/semantic.json": dark,
+        }),
+    );
+
+    assert.deepEqual(roles(scan), DARK_ROLES);
+    assert.ok(scan.inferred.notes.some((note) => /configs for modes: dark/.test(note)));
+});
+
+test("a mode config whose source is only the mode's file, config-<mode>.json and a dark word in a folder's name, in any case", () => {
+    for (const [darkConfig, source] of [
+        ["config-dark.json", ["tokens/dark.json"]],
+        ["style-dictionary.config.Dark.json", ["tokens/semantic.dark.json"]],
+        ["dark/config.json", ["tokens/themes/night.json"]],
+    ] as const) {
+        const scan = scanTokens(
+            project({
+                "config.json": {
+                    source: ["tokens/*.json"].concat("tokens/palette/*.json"),
+                    platforms: JSON_PLATFORMS,
+                },
+                [darkConfig]: { source, platforms: JSON_PLATFORMS },
+                "tokens/palette/palette.json": palette,
+                "tokens/semantic.json": light,
+                [source[0]!.replace("tokens/", "tokens/")]: dark,
+            }),
+        );
+
+        assert.deepEqual(roles(scan), DARK_ROLES, darkConfig);
+    }
+});
+
+test("configs in one script: a list of configs, a function that returns one for each theme, and a loop", () => {
+    const tokens = {
+        "tokens/core/palette.json": palette,
+        "tokens/light/semantic.json": light,
+        "tokens/dark/semantic.json": dark,
+    };
+
+    for (const [file, text] of [
+        [
+            "build.js",
+            `const SD = require("style-dictionary");
+module.exports = [
+  { source: ["tokens/core/**/*.json", "tokens/light/**/*.json"], ${PLATFORMS} },
+  { source: ["tokens/core/**/*.json", "tokens/dark/**/*.json"], ${PLATFORMS} },
+];`,
+        ],
+        [
+            "build.mjs",
+            `import StyleDictionary from "style-dictionary";
+function getConfig(theme) {
+  return { include: ["tokens/core/**/*.json"], source: [\`tokens/\${theme}/**/*.json\`], ${PLATFORMS} };
+}
+for (const theme of ["light", "dark"]) { await new StyleDictionary(getConfig(theme)).buildAllPlatforms(); }`,
+        ],
+        [
+            "sd.config.ts",
+            `const THEMES = ["light", "dark"];
+THEMES.forEach((theme) => {
+  const sd = StyleDictionary.extend({ source: ["tokens/core/**/*.json", \`tokens/\${theme}/**/*.json\`], ${PLATFORMS} });
+  sd.buildAllPlatforms();
+});`,
+        ],
+        [
+            "build.js",
+            `const build = (mode) => ({ source: ["tokens/core/**/*.json", \`tokens/\${mode}/*.json\`], ${PLATFORMS} });
+["light", "dark"].map(build).forEach((config) => StyleDictionary.extend(config).buildAllPlatforms());`,
+        ],
+    ] as const) {
+        assert.deepEqual(
+            roles(scanTokens(project({ ...tokens, [file]: text }))),
+            DARK_ROLES,
+            text.slice(0, 80),
+        );
+    }
+});
+
+test("the mode of a config: a name, a key, the folders of its globs; a config for a platform is no mode", () => {
+    assert.deepEqual(
+        scanTokens(
+            project({
+                "config.json": { source: ["tokens/*.json"], platforms: JSON_PLATFORMS },
+                "config.android.json": { source: ["tokens/*.json"], platforms: JSON_PLATFORMS },
+                "config.web.json": { source: ["tokens/*.json"], platforms: JSON_PLATFORMS },
+                "tokens/a.json": { size: { radius: { md: classic("8px") } } },
+            }),
+        ).inferred.notes.filter((note) => /configs for modes/.test(note)),
+        [],
+    );
+
+    const scan = scanTokens(
+        project({
+            "config.json": { source: ["tokens/global/**/*.json"], platforms: JSON_PLATFORMS },
+            "config.acme.json": {
+                source: ["tokens/global/**/*.json", "tokens/brands/acme/*.json"],
+                platforms: JSON_PLATFORMS,
+            },
+            "tokens/global/color.json": {
+                color: {
+                    accent: { default: classic("#3b82f6") },
+                    text: { primary: classic("#111111") },
+                    bg: { page: classic("#ffffff") },
+                },
+            },
+            "tokens/brands/acme/color.json": { color: { accent: { default: classic("#e11d48") } } },
+        }),
+    );
+
+    assert.equal(hex(load(scan), "color.accent.default"), "#3b82f6");
+    assert.equal(scan.draft.modes.acme !== undefined, true, "a mode for the brand");
+    assert.equal(
+        JSON.stringify(scan.draft.modes.acme).includes("#e11d48"),
+        true,
+        "the brand changes the accent",
+    );
+});
+
+test("the configs of a script: the globs, the modes, and what cannot be read", () => {
+    const configs = (text: string, file = "build.js") =>
+        sdConfigsIn("", file, text).map((each) => [each.mode, each.source]);
+
+    assert.deepEqual(
+        configs(
+            `module.exports = [{ theme: "dark", source: ["a/*.json"], platforms: {} }, { source: ["b/*.json"], platforms: {} }]`,
+        ),
+        [
+            ["dark", ["a/*.json"]],
+            [undefined, ["b/*.json"]],
+        ],
+    );
+    assert.deepEqual(
+        configs(
+            `const modes = ["light", "dark"]; const f = (mode) => ({ source: [\`t/\${mode}/*.json\`], platforms: {} }); modes.map(f);`,
+        ),
+        [
+            ["light", ["t/light/*.json"]],
+            ["dark", ["t/dark/*.json"]],
+        ],
+    );
+    assert.deepEqual(
+        configs(
+            `const f = (platform) => ({ source: [\`t/\${platform}/*.json\`], platforms: {} }); f("web"); f("ios");`,
+        ),
+        [[undefined, ["t/${platform}/*.json"]]],
+        "a platform is not a mode: the template is left",
+    );
+    assert.deepEqual(configs(`config.source = getSources(); const p = { platforms: {} }`), []);
+    assert.deepEqual(
+        configs(`const c = { source: ["a/*.json"] }`),
+        [],
+        "no platforms: not a config",
+    );
+    assert.equal(modeOfConfigFile("sd.config.dark.js"), "dark");
+    assert.equal(modeOfConfigFile("config/dark.config.mjs"), "dark");
+    assert.equal(modeOfConfigFile("themes/acme/config.json"), "acme");
+    assert.equal(modeOfConfigFile("config.json"), undefined);
+    assert.equal(modeOfConfigFile("config.web.json"), undefined);
+    assert.equal(modeOfConfigFile("build.js"), undefined);
+});
+
+test("hostile configs run in bounded time: thousands of `source: [`, templates with `$`, and a list that does not close", () => {
+    const started = Date.now();
+
+    for (const text of [
+        `const platforms = {};\n${"x = { source: [".repeat(8000)}`,
+        `${"{ source: ['a'], platforms: {} },".repeat(3000)}`,
+        `const f = ($t) => ({ source: [\`tokens/\${$t}/*.json\`], platforms: {} }); f("dark"); f("light");`,
+        `const f = (theme) => ({ source: [\`\${theme}/\${theme}/\${theme}\`], platforms: {} });\n${'["a","b"].map((theme) => f(theme));'.repeat(500)}`,
+        `{ "source": [${'"a",'.repeat(50_000)}`,
+        `({ source: ['a'], platforms: ${"{".repeat(30_000)}`,
+    ]) {
+        assert.doesNotThrow(() => sdConfigsIn("", "build.js", text), text.slice(0, 50));
+    }
+
+    assert.deepEqual(
+        sdConfigsIn(
+            "",
+            "b.js",
+            `const f = ($t) => ({ source: [\`tokens/\${$t}/*.json\`], platforms: {} }); f("dark"); f("light");`,
+        ).map((each) => each.mode),
+        ["dark", "light"],
+    );
+    assert.ok(Date.now() - started < 3000, `${Date.now() - started} ms`);
 });

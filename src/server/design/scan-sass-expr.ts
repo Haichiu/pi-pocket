@@ -878,6 +878,7 @@ export function evaluate(node: Node, env: Env): Value {
             for (const [key, value] of node.named) {
                 named.set(key, evaluate(value, env));
             }
+
             const user = env.call(name, positional, named);
 
             if (user !== undefined) {
