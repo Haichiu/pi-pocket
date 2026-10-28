@@ -67,9 +67,8 @@
         place-items: center;
         width: var(--step-mark-size);
         height: var(--step-mark-size);
-        border: var(--border-width-thick) solid var(--step-ink);
+        border: var(--border-width-thick) solid transparent;
         border-radius: var(--radius-pill);
-        color: var(--step-ink);
         font-size: var(--font-size-2xs);
         font-weight: var(--font-weight-bold);
         line-height: 1;
@@ -93,8 +92,9 @@
         font-size: var(--font-size-xs);
     }
 
-    .pk-step--running {
-        --step-ink: var(--step-running);
+    .pk-step--running .pk-step__mark {
+        border-color: var(--step-running);
+        color: var(--step-running);
     }
 
     .pk-step--running .pk-step__mark {
@@ -102,16 +102,19 @@
         animation: pk-step-spin calc(var(--duration-560) * 2) linear infinite;
     }
 
-    .pk-step--done {
-        --step-ink: var(--step-done);
+    .pk-step--done .pk-step__mark {
+        border-color: var(--step-done);
+        color: var(--step-done);
     }
 
-    .pk-step--failed {
-        --step-ink: var(--step-failed);
+    .pk-step--failed .pk-step__mark {
+        border-color: var(--step-failed);
+        color: var(--step-failed);
     }
 
-    .pk-step--waiting {
-        --step-ink: var(--step-waiting);
+    .pk-step--waiting .pk-step__mark {
+        border-color: var(--step-waiting);
+        color: var(--step-waiting);
     }
 
     @keyframes pk-step-spin {

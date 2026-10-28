@@ -27,11 +27,7 @@ test("the flagship has what a complete system has: tiers, modes, scales, compone
 
     assert.equal(loaded.name, "Pi Pocket");
     assert.deepEqual(loaded.modes, ["light", "dark", "high-contrast"]);
-    assert.deepEqual(
-        loaded.problems.filter((problem) => problem.level === "error"),
-        [],
-        "no validation error",
-    );
+    assert.deepEqual(loaded.problems, [], "no validation error and no warning");
 
     // Every kind of token the plan names.
     const types = new Set(loaded.tokens.map((token) => token.type));

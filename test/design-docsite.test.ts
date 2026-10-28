@@ -171,7 +171,13 @@ test("the page asks for nothing: no external request, no script or style file", 
     for (const text of [html, ...frames]) {
         assert.doesNotMatch(text, /<link[\s>]/i, "no <link>");
         assert.doesNotMatch(text, /<script[^>]*\ssrc=/i, "no script file");
-        assert.doesNotMatch(text, /@import/i, "no @import");
+        // `@import` may appear as text in a code listing (the generated Tailwind file says how to import it), but never
+        // in a style that the page or a frame runs.
+        const styles = [...text.matchAll(/<style>([\s\S]*?)<\/style>/g)]
+            .map((match) => match[1])
+            .join("\n");
+
+        assert.doesNotMatch(styles, /@import/i, "no @import in a style");
         assert.doesNotMatch(text, /url\(\s*['"]?(https?:)?\/\//i, "no remote url()");
         assert.doesNotMatch(
             text,

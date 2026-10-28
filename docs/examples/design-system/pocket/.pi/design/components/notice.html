@@ -49,9 +49,8 @@
         gap: var(--space-3);
         max-width: 420px;
         padding: var(--notice-padding);
-        border: var(--border-width-hairline) solid var(--notice-line);
+        border: var(--border-width-hairline) solid transparent;
         border-radius: var(--notice-radius);
-        background: var(--notice-bg);
         color: var(--color-text-secondary);
         font-family: var(--font-family-sans);
         font-size: var(--font-size-sm);
@@ -64,8 +63,6 @@
         width: var(--size-icon-lg);
         height: var(--size-icon-lg);
         border-radius: var(--radius-pill);
-        background: var(--notice-ink);
-        color: var(--notice-bg);
         font-size: var(--font-size-xs);
         font-weight: var(--font-weight-bold);
         line-height: 1;
@@ -73,7 +70,6 @@
 
     .pk-notice__title {
         margin: 0;
-        color: var(--notice-ink);
         font-weight: var(--font-weight-semibold);
     }
 
@@ -82,27 +78,59 @@
     }
 
     .pk-notice--info {
-        --notice-bg: var(--color-info-soft);
-        --notice-line: var(--color-info-line);
-        --notice-ink: var(--color-info-default);
+        background: var(--color-info-soft);
+        border-color: var(--color-info-line);
+    }
+
+    .pk-notice--info .pk-notice__title {
+        color: var(--color-info-default);
+    }
+
+    .pk-notice--info .pk-notice__mark {
+        background: var(--color-info-default);
+        color: var(--color-info-soft);
     }
 
     .pk-notice--success {
-        --notice-bg: var(--color-success-soft);
-        --notice-line: var(--color-success-line);
-        --notice-ink: var(--color-success-default);
+        background: var(--color-success-soft);
+        border-color: var(--color-success-line);
+    }
+
+    .pk-notice--success .pk-notice__title {
+        color: var(--color-success-default);
+    }
+
+    .pk-notice--success .pk-notice__mark {
+        background: var(--color-success-default);
+        color: var(--color-success-soft);
     }
 
     .pk-notice--warning {
-        --notice-bg: var(--color-warning-soft);
-        --notice-line: var(--color-warning-line);
-        --notice-ink: var(--color-warning-default);
+        background: var(--color-warning-soft);
+        border-color: var(--color-warning-line);
+    }
+
+    .pk-notice--warning .pk-notice__title {
+        color: var(--color-warning-default);
+    }
+
+    .pk-notice--warning .pk-notice__mark {
+        background: var(--color-warning-default);
+        color: var(--color-warning-soft);
     }
 
     .pk-notice--danger {
-        --notice-bg: var(--color-danger-soft);
-        --notice-line: var(--color-danger-line);
-        --notice-ink: var(--color-danger-default);
+        background: var(--color-danger-soft);
+        border-color: var(--color-danger-line);
+    }
+
+    .pk-notice--danger .pk-notice__title {
+        color: var(--color-danger-default);
+    }
+
+    .pk-notice--danger .pk-notice__mark {
+        background: var(--color-danger-default);
+        color: var(--color-danger-soft);
     }
 </style>
 <template data-state="info">
