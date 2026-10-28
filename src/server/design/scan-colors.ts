@@ -396,7 +396,10 @@ export function nameScore(role: RoleName, segs: string[]): number {
             );
             const weakAt = segs.findIndex((seg) => ["secondary", "tertiary"].includes(seg));
             const quiet =
-                has(segs, w("muted subtle dim dimmed faint soft weak hint quiet caption meta")) ||
+                has(
+                    segs,
+                    w("muted subtle dim dimmed faint faded soft weak hint quiet caption meta"),
+                ) ||
                 (weakAt >= 0 && inkAt >= 0 && inkAt < weakAt);
 
             if (
@@ -437,7 +440,7 @@ export function nameScore(role: RoleName, segs: string[]): number {
 
             return segs[0] === "muted"
                 ? 45
-                : w("subtle faint dim quiet weak hint").includes(segs[0]!)
+                : w("subtle faint faded dim quiet weak hint").includes(segs[0]!)
                   ? 62
                   : 0;
         }
@@ -445,7 +448,7 @@ export function nameScore(role: RoleName, segs: string[]): number {
         case "border": {
             const named = has(
                 segs,
-                w("border outline divider separator stroke line hairline rule"),
+                w("border outline divider separator stroke line hairline rule rim edge"),
             );
 
             if (
@@ -966,6 +969,16 @@ export function chooseRoles(
     // The hue each status color sits nearest to (Oklch degrees): a red close to 27° is an error, not an orange.
     const centers = { danger: 27, warning: 70, success: 148 } as const;
     const accentColor = chosen.accent === undefined ? undefined : entry(chosen.accent.hex);
+    // A color named for the accent's variable and a suffix (`--glow-deep`, `--brandHover`) is a step of the accent.
+    const variantOfAccent = (color: ColorEntry) =>
+        (accentColor?.names ?? []).some((stem) =>
+            color.names.some(
+                (each) =>
+                    each.name !== stem.name &&
+                    each.name.startsWith(stem.name) &&
+                    /^[-_A-Z0-9]/.test(each.name.slice(stem.name.length)),
+            ),
+        );
 
     for (const role of ["danger", "warning", "success"] as const) {
         if (chosen[role] === undefined) {
@@ -981,12 +994,16 @@ export function chooseRoles(
                         !used(color.hex) &&
                         hueOk(role, color) &&
                         color.c >= 0.1 &&
-                        color.uses >= 1 &&
-                        // A shade of the accent (near it, or of the same hue) is not a status color.
+                        // Used, or named by a variable (`--stop` is defined, and no rule needs to use it).
+                        (color.uses >= 1 || color.names.length > 0) &&
+                        !variantOfAccent(color) &&
+                        // A shade of the accent (near it, or of the same hue) is not a status color; a color that has a
+                        // name of its own (`--go` beside `--glow`) is its own.
                         (accentColor === undefined ||
                             (distance(color, accentColor) > 0.06 &&
                                 !(
                                     accentColor.c >= 0.07 &&
+                                    color.names.length === 0 &&
                                     Math.abs(((color.h - accentColor.h + 540) % 360) - 180) < 8
                                 ))),
                 ),
@@ -994,7 +1011,15 @@ export function chooseRoles(
             )[0];
 
             if (top !== undefined) {
-                set(role, top.hex, "use", `used ${top.uses}× with the hue of ${role}`, 30);
+                set(
+                    role,
+                    top.hex,
+                    "use",
+                    top.uses === 0
+                        ? `named ${top.names[0]!.name}, with the hue of ${role}`
+                        : `used ${top.uses}× with the hue of ${role}`,
+                    30,
+                );
             }
         }
     }

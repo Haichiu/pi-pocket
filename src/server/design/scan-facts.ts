@@ -240,7 +240,7 @@ const COLOR_PROPERTY: [RegExp, "bg" | "text" | "border" | "fill" | "shadow"][] =
 
 /** Selectors of the page's root: `body`, `html`, `:root`, `#app`, `#root`, `main`. */
 const ROOTISH =
-    /^(?:html|body|:root|#root|#app|#__next|main|\.app|\.App|#app-root|\.(?:page|wrapper|layout|site|shell|root|app-shell|page-wrapper|site-wrapper|app-wrapper)|#(?:page|wrapper|main|site|layout))(?:[.#:[][^\s,>+~]*)?$/;
+    /^(?:html|body|:root|#root|#app|#__next|main|\.app|\.App|#app-root|\.(?:page|wrapper|layout|site|shell|root|app-shell|page-wrapper|site-wrapper|app-wrapper|container|screen|safeArea|safe-area)|#(?:page|wrapper|main|site|layout))(?:[.#:[][^\s,>+~]*)?$/;
 const rootish = (selector: string) =>
     selector !== "" &&
     selector

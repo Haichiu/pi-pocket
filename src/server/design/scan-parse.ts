@@ -65,13 +65,20 @@ const ROOT_ANY = /^(?:html|body|:root|\*|:host)(?:\s*:not\([^)]*\))?$/i;
 export const isDarkSelector = (selector: string) => DARK_ANY.test(selector);
 
 /** The scope of one selector of the rule: dark, light (explicitly), the default, or none of them. */
-function partScope(part: string, dark: boolean): Scope {
+function partScope(part: string, dark: boolean, light = false): Scope {
     if (DARK_ROOT.test(part)) {
         return "dark";
     }
 
     if (LIGHT_ROOT.test(part)) {
         return "light";
+    }
+
+    if (light) {
+        // Inside `prefers-color-scheme: light`, the root selectors define the light values (a dark-first project's other mode).
+        return ROOT_ANY.test(part) || ROOT_ONLY.test(part) || /^:root\b/i.test(part)
+            ? "light"
+            : "other";
     }
 
     if (dark) {
@@ -92,15 +99,15 @@ function partScope(part: string, dark: boolean): Scope {
  * The scope of the rule for a custom property: which mode its values belong to. A rule for `:root, [data-theme=light]`
  * is the default; `.dark` is dark; `:root[data-mode="light"]` is light (the mode of a dark-first project).
  */
-function varScope(selector: string, dark: boolean): Scope {
+function varScope(selector: string, dark: boolean, light = false): Scope {
     const scopes = selector
         .split(",")
         .map((part) => part.trim())
         .filter(Boolean)
-        .map((part) => partScope(part, dark));
+        .map((part) => partScope(part, dark, light));
 
     if (scopes.length === 0) {
-        return dark ? "dark" : "default";
+        return dark ? "dark" : light ? "light" : "default";
     }
 
     if (scopes.includes("default")) {
@@ -337,6 +344,9 @@ export function parseStyles(
                     darkQueries.some((name) => new RegExp(`\\(\\s*${name}\\s*\\)`).test(part))) ||
                 isDarkInclude(part, darkMixins),
         );
+        const light = at.some((part) =>
+            /^@media\b[^{]*prefers-color-scheme\s*:\s*light/i.test(part),
+        );
         const here = selector();
         const theme = at.some((part) => /^@theme\b/i.test(part));
 
@@ -359,7 +369,7 @@ export function parseStyles(
                 prop.startsWith("--") || prop.startsWith("$") || prop.startsWith("@")
                     ? theme
                         ? "default"
-                        : varScope(here, dark)
+                        : varScope(here, dark, light)
                     : dark || isDarkSelector(here)
                       ? "dark"
                       : "default",
@@ -541,6 +551,29 @@ const PIXEL_KEYS = new Set([
     "letterSpacing",
 ]);
 
+/** The key of the object that an index sits in (`card` for `card: { padding: 8 }`), looking back at most 2,000 characters. */
+function enclosingKey(source: string, index: number): string | undefined {
+    let depth = 0;
+
+    for (let at = index - 1; at >= Math.max(0, index - 2000); at--) {
+        const char = source[at];
+
+        if (char === "}") {
+            depth += 1;
+        } else if (char === "{") {
+            if (depth === 0) {
+                return /([A-Za-z_$][\w$]*)\s*(?::|=)\s*(?:\w+\.create\(\s*)?$/.exec(
+                    source.slice(Math.max(0, at - 80), at),
+                )?.[1];
+            }
+
+            depth -= 1;
+        }
+    }
+
+    return undefined;
+}
+
 /** Style objects in JavaScript: `{ backgroundColor: "#fff", padding: 8 }` as inline declarations. */
 export function objectStyles(source: string): Decl[] {
     const decls: Decl[] = [];
@@ -559,11 +592,13 @@ export function objectStyles(source: string): Decl[] {
         }
 
         const value = match[3] ?? (PIXEL_KEYS.has(key) ? `${match[4]!}px` : match[4]!);
+        // The style's own name (`styles.container`, `card: {…}`) says what it paints.
+        const owner = enclosingKey(source, match.index);
 
         decls.push({
             prop: kebab(key),
             value: value.trim().slice(0, MAX_VALUE),
-            selector: "",
+            selector: owner === undefined ? "" : `.${owner}`,
             at: [],
             scope: "default",
             theme: false,
