@@ -256,14 +256,14 @@ test("the route cleans what a report adds: elements, accepted findings, and what
     assert.equal(cleaned.summary.notJudged!.contrast.count, 3);
     assert.equal(cleaned.summary.notJudged!.contrast.elements.length, 8);
     assert.ok(cleaned.summary.notJudged!.contrast.elements.every((each) => each.length <= 500));
-    // Nothing accepted, nothing unjudged: no fields.
+    // Nothing accepted, nothing unjudged: an empty accepted list (the app always reads one), and no summary fields.
     const bare = cleanReport({
         ...report,
         accepted: [],
         summary: { ...report.summary, accepted: undefined, notJudged: undefined },
     } as unknown as CheckReport);
 
-    assert.equal(bare.accepted, undefined);
+    assert.deepEqual(bare.accepted, []);
     assert.equal(bare.summary.accepted, undefined);
     assert.equal(bare.summary.notJudged, undefined);
     void testSystem;

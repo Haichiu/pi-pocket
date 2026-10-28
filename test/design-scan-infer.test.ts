@@ -634,7 +634,6 @@ test("a symlinked token file, style file, or folder is never read", () => {
 });
 
 test("hostile inputs scan in bounded time: thousands of braces, variables, and colors", () => {
-    const started = Date.now();
     const dir = project({
         "a.css": `${"a{".repeat(50_000)}`.slice(0, 190_000),
         "b.css": Array.from(
@@ -648,8 +647,15 @@ test("hostile inputs scan in bounded time: thousands of braces, variables, and c
         "e.html": `<div style="${"color:#fff;".repeat(20_000)}">`,
     });
 
+    // CPU time of this process, not wall time: the scan is synchronous, and a full parallel test run slows the clock, not the work.
+    const before = process.cpuUsage();
+
     scanTokens(dir);
-    assert.ok(Date.now() - started < 8000, `${Date.now() - started} ms`);
+
+    const used = process.cpuUsage(before);
+    const ms = Math.round((used.user + used.system) / 1000);
+
+    assert.ok(ms < 8000, `${ms} ms of CPU`);
 });
 
 test("a project with nothing to read gives a draft with no tokens, and the report says to write them", () => {
