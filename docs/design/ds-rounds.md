@@ -92,6 +92,24 @@ V round 4 merged (`applyExactFixes`, reduced motion, non-text contrast, check CL
 
 Round 4 merges also: G's counting rule (headline = role tokens, same as the System view), the CSS cleaner as a parser, T's docsite changes ported into G's split; U's start-budget test fixed (a same-URL navigation returned early); B's docs checks on shadow-root stages, exempt pairs, and the clean-pricing inverse focus ring (a real defect found by V's new rule).
 
+### Judges after round 4 (a46bb95)
+
+| Line                   | R3  | R4 judge A | R4 judge B | **R4** |
+| ---------------------- | --- | ---------- | ---------- | ------ |
+| 1 Token model          | 8   | 8          | 9          | **8**  |
+| 2 Import (scan)        | 7   | 8          | 9          | **8**  |
+| 3 Enforcement          | 8   | 8          | 9          | **8**  |
+| 4 Accessibility        | 8   | 9          | 9          | **9**  |
+| 5 Agent experience     | 8   | 8          | 9          | **8**  |
+| 6 People experience    | 7   | 7          | 9          | **7**  |
+| 7 Documentation output | 8   | 9          | 9          | **9**  |
+| 8 Code handoff         | 7   | 8          | 9          | **8**  |
+| 9 Engineering          | 8   | 8          | 9          | **8**  |
+
+Judge B: 9 on every line, "nothing broken in the first 5 minutes". Judge A (the bar): phone Check canvas at 29% and clipped phone tabs; the flagship's blue ramp is not monotonic, spacing mixes a scale with sizes, radii are a pile; Check flags browser-default values and suggests primitives for borders; one flat tool schema; `check-cli` undocumented; `map.md` behind the splits.
+
+Round 5 assignments: U (phone Check bar and canvas, tab strip, pinned editor header, readable shadow values, focus-mode canvas, the fixture's broken image), G (flagship ramps, spacing groups, a radius scale; docs code blocks, the Tokens Studio snippet, the All tokens table, section anchors; split `docsite-assets.ts`), T (ramp-order warning, a names table, clearer utility names, scan report of skipped and low-confidence sources, a transcript test, split `scan-colors.ts`), V (author-set values only, role tokens first, page semantics checks, input zoom, `npm run design:check`, split `lint-page.ts`), B (a third fresh held-out set, a dirty-state shot), integrator (docs).
+
 Round 4 assignments: T (Tailwind namespaces and role utilities, one JSON convention plus a Tokens Studio export, committed flagship `dist/` with a diff test, DTCG 2025.10 forms, an example per tool action, component entry points in the summary, split `scan-infer.ts` and `scan-facts.ts`); U (roles count, shadow values on tiles, phone mode control and tab cue and Check sheet height, compact spacing rows, a fixed save bar, one-tap fixes through V's engine, Harbor tabs); V (`applyExactFixes`, reduced motion, non-text contrast, a small check CLI); G (docs component frames for certain, hero by role, shadow and radius layout, page under 600 KB, split `docsite.ts`); B (second held-out set, painted frames check, the shots script in the bench with per-tab assertions).
 
 Round 3 assignments: U (people experience), G (docs page, flagship naming, guide), V (role-aware suggestions, 15+ real pages, stable ids), T (scan, then handoff outputs), integrator (docs).
