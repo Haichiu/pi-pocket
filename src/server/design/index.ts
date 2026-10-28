@@ -4,8 +4,18 @@ import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { ExtensionWeb, PocketHost } from "../host.ts";
 import { readBundle } from "./bundle.ts";
 import { EXPORT_TYPES, type ExportFormat, saveDesignExport } from "./export.ts";
-import { VIEWPORTS, viewportOf, withRender } from "./render.ts";
+import { checkPage, mergeFindings, modeFor, reportOf } from "./lint.ts";
+import {
+    designActions,
+    tweakValues,
+    VIEWPORTS,
+    viewportOf,
+    withRender,
+    type DesignPage,
+} from "./render.ts";
 import { designSystemTool } from "./system.ts";
+import type { CheckFinding, CheckReport, DesignSystem } from "./system-types.ts";
+import { loadDesignSystem } from "./tokens-stub.ts";
 
 export { designGuide } from "./guide.ts";
 
@@ -22,12 +32,131 @@ const formatSchema = Type.Union([
     Type.Literal("html"),
 ]);
 
-export function designTools(host: PocketHost): ToolRegistration[] {
+/** What the tools read besides the host. Tests give their own. */
+export interface DesignToolDeps {
+    /** The project's design system: `loadDesignSystem` of `tokens.ts`. */
+    loadSystem?: (cwd: string) => DesignSystem | undefined;
+}
+
+const tweakSchema = Type.Record(
+    Type.String({ maxLength: 80 }),
+    Type.Union([Type.String({ maxLength: 200 }), Type.Number(), Type.Boolean()]),
+    { maxProperties: 40, description: "Tweak values, as the Tweaks panel sets them." },
+);
+const slideSchema = Type.Union([Type.Integer({ minimum: 1, maximum: 100 }), Type.Literal("all")]);
+
+const MAX_FINDINGS = 30;
+
+type Output = (
+    { type: "text"; text: string } | { type: "image"; data: string; mimeType: string }
+)[];
+
+/** One line for a finding: level, rule, where, and the message (which carries the value, the count, and the fix). */
+function findingLine(finding: CheckFinding, views: string, all: number): string {
+    const where = finding.selector === "" ? "page" : finding.selector;
+
+    return `- ${finding.level} ${finding.rule} ${where}${views.length > 0 && views.split(", ").length < all ? ` (${views})` : ""}: ${finding.message}`;
+}
+
+/** The compact text of the checks: a summary line, then the worst findings. */
+export function checkText(
+    reports: { view: string; report: CheckReport }[],
+    system: DesignSystem | undefined,
+    modeName: string | undefined,
+    notes: string[],
+): string {
+    const merged = new Map<string, { finding: CheckFinding; views: string[] }>();
+
+    for (const { view, report } of reports) {
+        for (const finding of report.findings) {
+            const key = [finding.rule, finding.level, finding.selector, finding.value ?? ""].join(
+                "|",
+            );
+            const found = merged.get(key);
+
+            if (found === undefined) {
+                merged.set(key, { finding, views: [view] });
+            } else {
+                found.views.push(view);
+            }
+        }
+    }
+
+    const items = [...merged.values()];
+    const errors = items.filter((item) => item.finding.level === "error").length;
+    const warnings = items.length - errors;
+    const where = `${reports.map((item) => item.view).join(", ")}; ${reports[0]?.report.colorScheme ?? "light"}`;
+    const against =
+        system === undefined
+            ? "no design system, so no off-system rules"
+            : `system "${system.name}", mode ${modeName ?? system.modes[0]}`;
+    const lines = [
+        `Checks (${where}; ${against}): ${plural(errors, "error")}, ${plural(warnings, "warning")}.`,
+    ];
+
+    for (const item of items.slice(0, MAX_FINDINGS)) {
+        lines.push(findingLine(item.finding, item.views.join(", "), reports.length));
+    }
+
+    if (items.length > MAX_FINDINGS) {
+        lines.push(
+            `… and ${items.length - MAX_FINDINGS} more (fix these first, then preview again).`,
+        );
+    }
+
+    if (items.length === 0) {
+        lines.push("No findings.");
+    }
+
+    for (const note of notes) {
+        lines.push(`Note: ${note}`);
+    }
+
+    return lines.join("\n");
+}
+
+/** The text after the screenshots: the checks, then what the console and the network reported. */
+function renderNotes(
+    page: Pick<DesignPage, "errors" | "failedRequests">,
+    reports: { view: string; report: CheckReport }[],
+    system: DesignSystem | undefined,
+    modeName: string | undefined,
+    notes: string[],
+): string {
+    const lines: string[] = [];
+
+    if (reports.length > 0) {
+        lines.push(checkText(reports, system, modeName, notes));
+    } else {
+        lines.push(...notes.map((note) => `Note: ${note}`));
+    }
+
+    const list = (title: string, items: string[]) =>
+        items.length === 0
+            ? undefined
+            : `${title} (${items.length}): ${items
+                  .slice(0, 5)
+                  .map((item) => item.slice(0, 200))
+                  .join("; ")}${items.length > 5 ? "; …" : ""}`;
+    const problems = [
+        list("Console errors", page.errors),
+        list("Failed requests", page.failedRequests),
+    ].filter((line) => line !== undefined);
+
+    lines.push(...(problems.length > 0 ? problems : ["No console errors or failed requests."]));
+
+    return lines.join("\n");
+}
+
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRegistration[] {
+    const loadSystem = deps.loadSystem ?? loadDesignSystem;
     const preview = Object.assign(
         defineTool({
             name: "design_preview",
             description:
-                "Check an HTML design in private headless Chromium pages, never the shared browser. Returns screenshots, console errors, and failed requests. Slide numbers start at 1.",
+                "Check an HTML design in private headless Chromium pages, never the shared browser. Returns screenshots, console errors, failed requests, and (checks, on by default) a compact list of problems: values that are not design-system tokens (with the nearest token), contrast, tap targets, overflow, alt text, headings, fonts, and focus. Fix every error, then preview again. Optional: tweaks (values to apply), colorScheme, page (another HTML page of the bundle), actions (hover, click, or focus a selector before the screenshot). Slide numbers start at 1.",
             parameters: Type.Object({
                 id: Type.String(),
                 version,
@@ -36,6 +165,32 @@ export function designTools(host: PocketHost): ToolRegistration[] {
                 ),
                 fullPage: Type.Optional(Type.Boolean()),
                 slide: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+                checks: Type.Optional(
+                    Type.Boolean({ description: "Run the design checks. Default: true." }),
+                ),
+                tweaks: Type.Optional(tweakSchema),
+                colorScheme: Type.Optional(
+                    Type.Union([Type.Literal("light"), Type.Literal("dark")]),
+                ),
+                page: Type.Optional(
+                    Type.String({
+                        maxLength: 200,
+                        description: "Another HTML page of the bundle, such as about.html.",
+                    }),
+                ),
+                actions: Type.Optional(
+                    Type.Array(
+                        Type.Object({
+                            type: Type.Union([
+                                Type.Literal("hover"),
+                                Type.Literal("click"),
+                                Type.Literal("focus"),
+                            ]),
+                            selector: Type.String({ minLength: 1, maxLength: 300 }),
+                        }),
+                        { maxItems: 10 },
+                    ),
+                ),
             }),
             replay: "safe",
             execute: async (args, api, context) => {
@@ -48,21 +203,104 @@ export function designTools(host: PocketHost): ToolRegistration[] {
                     context,
                 );
                 const views = args.viewports ?? ["mobile", "desktop"];
+                const tweaks = tweakValues(args.tweaks);
+                const actions = designActions(args.actions);
+                const colorScheme = args.colorScheme ?? "light";
+                const checks = args.checks !== false;
+                const notes: string[] = [];
+                let system: DesignSystem | undefined;
+                let picked: ReturnType<typeof modeFor> | undefined;
+
+                if (args.page !== undefined) {
+                    const asset = bundle.assets.find((item) => item.name === args.page);
+
+                    if (asset === undefined || !/^text\/html\b/.test(asset.type)) {
+                        const pages = bundle.assets
+                            .filter((item) => /^text\/html\b/.test(item.type))
+                            .map((item) => item.name);
+
+                        throw new Error(
+                            `The bundle has no HTML page ${args.page}. Pages: ${pages.join(", ") || "none"}.`,
+                        );
+                    }
+                }
+
+                if (checks) {
+                    const cwd = (await api.agent(context)).cwd;
+
+                    try {
+                        system = cwd === undefined ? undefined : loadSystem(cwd);
+                    } catch (error) {
+                        notes.push(
+                            `The design system could not be read: ${error instanceof Error ? error.message : String(error)}`,
+                        );
+                    }
+
+                    picked = system === undefined ? undefined : modeFor(system, colorScheme);
+                }
 
                 return withRender(bundle, host, context.abortSignal, async (page) => {
-                    const output: (
-                        | { type: "text"; text: string }
-                        | { type: "image"; data: string; mimeType: string }
-                    )[] = [];
+                    const output: Output = [];
+                    const reports: { view: string; report: CheckReport }[] = [];
 
                     for (const view of views) {
                         const size = VIEWPORTS[view];
 
-                        await page.load(size);
+                        await page.load(size, { page: args.page });
+                        await page.applyView({ colorScheme, theme: picked?.theme, tweaks });
+
                         const slide = args.slide ?? ((await page.isDeck()) ? 1 : undefined);
 
                         if (slide !== undefined) {
                             await page.showSlide(slide, size);
+                        }
+
+                        const check = async () => {
+                            if (!checks) {
+                                return undefined;
+                            }
+
+                            try {
+                                return await checkPage(page, system, {
+                                    viewport: size,
+                                    colorScheme,
+                                    mode: picked?.mode,
+                                });
+                            } catch (error) {
+                                notes.push(
+                                    `Checks failed in ${view}: ${error instanceof Error ? error.message : String(error)}`,
+                                );
+
+                                return undefined;
+                            }
+                        };
+
+                        const found: CheckReport[] = [];
+                        const first = await check();
+
+                        if (first !== undefined) {
+                            found.push(first);
+                        }
+
+                        if (actions.length > 0) {
+                            notes.push(...(await page.act(actions)));
+                            const after = await check();
+
+                            if (after !== undefined) {
+                                found.push(after);
+                            }
+                        }
+
+                        if (found.length > 0) {
+                            reports.push({
+                                view,
+                                report: reportOf(
+                                    mergeFindings(found),
+                                    { viewport: size, colorScheme },
+                                    found[0]!.summary.elements,
+                                    system === undefined,
+                                ),
+                            });
                         }
 
                         output.push({
@@ -78,10 +316,7 @@ export function designTools(host: PocketHost): ToolRegistration[] {
 
                     output.push({
                         type: "text",
-                        text: JSON.stringify({
-                            errors: page.errors,
-                            failedRequests: page.failedRequests,
-                        }),
+                        text: renderNotes(page, checks ? reports : [], system, picked?.mode, notes),
                     });
 
                     return {
@@ -92,6 +327,20 @@ export function designTools(host: PocketHost): ToolRegistration[] {
                             viewports: views,
                             errors: page.errors,
                             failedRequests: page.failedRequests,
+                            ...(checks
+                                ? {
+                                      // Plain JSON, as details must be.
+                                      checks: JSON.parse(
+                                          JSON.stringify(
+                                              reports.map(({ view, report }) => ({
+                                                  view,
+                                                  summary: report.summary,
+                                                  findings: report.findings.slice(0, 200),
+                                              })),
+                                          ),
+                                      ),
+                                  }
+                                : {}),
                         },
                     };
                 });
@@ -102,7 +351,7 @@ export function designTools(host: PocketHost): ToolRegistration[] {
     const exportTool = defineTool({
         name: "design_export",
         description:
-            "Export an HTML design as PNG, PDF, PPTX (image slides with text notes), or an HTML bundle zip. Writes inside the session folder, by default exports/<id>-v<version>.<ext>. Existing output files are replaced. PPTX requires a deck.",
+            "Export an HTML design as PNG, PDF, PPTX (image slides with text notes), or an HTML bundle zip. Writes inside the session folder, by default exports/<id>-v<version>.<ext>. Existing output files are replaced. PPTX requires a deck. A page's PNG and PDF use the viewport's width (a preset, or { width, height }). tweaks applies tweak values first. For a deck's PNG, slide picks a slide (from 1; default 1), or \"all\" writes a zip with every slide.",
         parameters: Type.Object({
             id: Type.String(),
             version,
@@ -117,6 +366,8 @@ export function designTools(host: PocketHost): ToolRegistration[] {
                 ]),
             ),
             path: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+            tweaks: Type.Optional(tweakSchema),
+            slide: Type.Optional(slideSchema),
         }),
         execute: async (args, api, context) => {
             const bundle = await readBundle(
@@ -141,6 +392,8 @@ export function designTools(host: PocketHost): ToolRegistration[] {
                     cwd,
                     viewport: args.viewport,
                     path: args.path,
+                    tweaks: tweakValues(args.tweaks),
+                    slide: args.slide,
                     signal: context.abortSignal,
                 },
                 host,
@@ -167,6 +420,22 @@ export function designTools(host: PocketHost): ToolRegistration[] {
     return [preview, exportTool, designSystemTool()];
 }
 
+/** The `slide` of an export request: a slide number from 1, or `all`. */
+function slideOf(value: unknown): number | "all" | undefined {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+
+    if (
+        value === "all" ||
+        (Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 100)
+    ) {
+        return value as number | "all";
+    }
+
+    throw new Error('Slide must be a whole number from 1 to 100, or "all".');
+}
+
 /**
  * `POST c/:conversation/export` for the workspace: the same export as `design_export`, written in the session folder at its default
  * path. It answers `{ path, name, size }`; the browser downloads the file through the core file route.
@@ -183,7 +452,14 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
             const id = typeof body.id === "string" ? body.id : "";
             const format = typeof body.format === "string" ? body.format : "";
             const selectedVersion = body.version === undefined ? undefined : Number(body.version);
-            const viewport = typeof body.viewport === "string" ? body.viewport : "desktop";
+            const size = body.viewport as
+                { width?: unknown; height?: unknown } | string | undefined;
+            const viewport =
+                typeof size === "string"
+                    ? size
+                    : typeof size === "object" && size !== null
+                      ? { width: Number(size.width), height: Number(size.height) }
+                      : "desktop";
 
             if (!Object.hasOwn(EXPORT_TYPES, format)) {
                 throw web.error(400, "Choose png, pdf, pptx, or html.");
@@ -195,6 +471,8 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
 
             try {
                 viewportOf(viewport);
+                const tweaks = tweakValues(body.tweaks);
+                const slide = slideOf(body.slide);
                 const bundle = await readBundle(
                     host,
                     request.snapshot,
@@ -210,6 +488,8 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
                         format: format as ExportFormat,
                         cwd,
                         viewport,
+                        tweaks,
+                        slide,
                         signal: request.signal,
                     },
                     host,
