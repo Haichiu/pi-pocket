@@ -62,13 +62,86 @@ var URL_ATTR = setOf(${JSON.stringify(URL_ATTRIBUTES)});
 var MAX_NODES = 4000;
 var MAX_DEPTH = 40;
 
-// CSS text: no @import, and a url() only to an element of the picture (#id) or to a small image in the text itself.
-function cleanCss(text) {
-    return String(text)
-        .replace(/@import[^;]*;?/gi, "")
-        .replace(/url\\(\\s*(["']?)(?!#|data:image\\/(png|gif|jpeg|webp)[;,])[^)]*\\)/gi, "none")
-        .replace(/expression\\s*\\(|behavior\\s*:|-moz-binding/gi, "x");
+// CSS. A regex that looks for bad words misses an escape (\\69mport, u\\72l) and a function that takes an address
+// (image-set, image, cross-fade, element, src), so this reads the CSS as rules and declarations and keeps only what is
+// safe: a declaration is checked after its escapes are decoded, and it goes whole when it holds a function that fetches
+// or an address that is not "#id" or a small image in the text itself. Only @media, @supports, @keyframes, and
+// @container rules stay; every other at-rule (@import, @font-face, @namespace, @property, @page, ...) goes.
+function decodeCss(text) {
+    return text.replace(/\\\\([0-9a-fA-F]{1,6})[ \\t\\n\\r\\f]?|\\\\([^\\n])/g, function (all, hex, character) {
+        if (hex) { var code = parseInt(hex, 16); return code > 0 && code < 0x110000 ? String.fromCodePoint(code) : "\\ufffd"; }
+        return character;
+    });
 }
+function badCss(text) {
+    var decoded = decodeCss(text);
+    if (/image-set|image\\s*\\(|cross-fade|element\\s*\\(|(^|[^\\w-])src\\s*\\(|paint\\s*\\(|expression\\s*\\(|behavior\\s*:|-moz-binding|@import|javascript:|vbscript:/i.test(decoded)) { return true; }
+    var addresses = decoded.match(/url\\s*\\(/gi);
+    if (addresses) {
+        var allowed = decoded.match(/url\\(\\s*(["']?)(#[\\w:.-]+|data:image\\/(png|gif|jpeg|webp)[;,][^)"']*)\\1\\s*\\)/gi);
+        if (!allowed || allowed.length !== addresses.length) { return true; }
+    }
+    return false;
+}
+function skipQuoted(text, at) {
+    var quote = text.charAt(at);
+    at++;
+    while (at < text.length && text.charAt(at) !== quote) { at += text.charAt(at) === "\\\\" ? 2 : 1; }
+    return at;
+}
+// A block's items, each up to a ";" or a "{" (outside strings and parentheses). \`inRule\` says that a bare item is a
+// declaration (inside a style rule, or a keyframe); at the top a bare item is an at-rule statement, and goes.
+function cleanBlock(text, inRule, depth) {
+    var out = "";
+    var i = 0;
+    var n = text.length;
+    if (depth > 8) { return ""; }
+    while (i < n) {
+        var start = i;
+        var paren = 0;
+        while (i < n) {
+            var c = text.charAt(i);
+            if (c === '"' || c === "'") { i = skipQuoted(text, i); }
+            else if (c === "\\\\") { i++; }
+            else if (c === "(") { paren++; }
+            else if (c === ")") { if (paren > 0) { paren--; } }
+            else if (paren === 0 && (c === ";" || c === "{" || c === "}")) { break; }
+            i++;
+        }
+        var head = text.slice(start, i).trim();
+        var end = text.charAt(i);
+        if (end === "{") {
+            var level = 1;
+            var j = i + 1;
+            while (j < n && level > 0) {
+                var d = text.charAt(j);
+                if (d === '"' || d === "'") { j = skipQuoted(text, j); }
+                else if (d === "\\\\") { j++; }
+                else if (d === "{") { level++; }
+                else if (d === "}") { level--; }
+                j++;
+            }
+            var inner = text.slice(i + 1, level === 0 ? j - 1 : j);
+            i = j;
+            if (!head || badCss(head)) { continue; }
+            if (head.charAt(0) === "@") {
+                var name = (/^@([\\w-]+)/.exec(decodeCss(head)) || [])[1];
+                name = name ? name.toLowerCase() : "";
+                if (/^(-webkit-)?keyframes$/.test(name) || name === "media" || name === "supports" || name === "container") {
+                    out += head + "{" + cleanBlock(inner, false, depth + 1) + "}";
+                }
+            } else {
+                out += head + "{" + cleanBlock(inner, true, depth + 1) + "}";
+            }
+        } else {
+            if (end) { i++; }
+            if (inRule && head && head.indexOf(":") !== -1 && !badCss(head)) { out += head + ";"; }
+        }
+    }
+    return out;
+}
+function cleanCss(text) { return cleanBlock(String(text).replace(/\\/\\*[\\s\\S]*?(\\*\\/|$)/g, ""), false, 0); }
+function cleanDeclarations(text) { return cleanBlock(String(text).replace(/\\/\\*[\\s\\S]*?(\\*\\/|$)/g, ""), true, 0); }
 
 // Whether an attribute (already on its element's list) may keep its value.
 function okValue(name, value, tag) {
@@ -87,7 +160,7 @@ function copyAttributes(from, to, svg, tag) {
         var listed = OK_GLOBAL[name] || (svg ? OK_SVG_ATTR[name] : OK_HTML_ATTR[name]) || /^(aria|data)-[a-z0-9._-]+$/.test(name);
         if (!listed) { return; }
         var value = attribute.value;
-        if (name === "style") { value = cleanCss(value); }
+        if (name === "style") { value = cleanDeclarations(value); }
         else if (!okValue(name, value, tag)) { return; }
         try { to.setAttributeNS(attribute.namespaceURI, attribute.name, value); } catch (error) { /* a name that cannot be set is left out */ }
     });
