@@ -537,7 +537,10 @@ export class PocketApp {
             commandsChanged: () => this.#websChanged("all"),
             presentationsChanged: () => {
                 for (const pending of this.#rooms.values()) {
-                    void pending.then((room) => room.reproject());
+                    void pending.then(
+                        (room) => room.reproject(),
+                        () => {},
+                    );
                 }
             },
             log: (line) => this.#log(line),

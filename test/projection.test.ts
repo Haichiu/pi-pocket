@@ -116,6 +116,8 @@ test("a registered kind projects as a user row and clips until a full read", () 
     assert.ok(live.text.length < text.length);
     assert.equal(full.text, text);
     assert.equal(full.presentation?.clipped, undefined);
+    // Stored as the module's own kind: not a message that can go to Pi again.
+    assert.equal(live.presentation?.prefixed, undefined);
     assert.deepEqual(peekLines([live], { busy: false }), [
         { kind: "presented", label: "Note", summary: "saved" },
     ]);
@@ -151,6 +153,8 @@ test("a prefix matches only a user message nobody wrote, and leaves the prefix i
     }
 
     assert.equal(open.presentation?.label, "Note");
+    // A `pi.user` message: it can be sent again.
+    assert.equal(open.presentation?.prefixed, true);
     assert.equal(open.text, "NOTE hello");
     assert.equal(written.presentation, undefined);
     assert.equal(written.text, "NOTE hello");

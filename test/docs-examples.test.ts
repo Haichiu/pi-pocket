@@ -1,6 +1,8 @@
 // The documentation's example extensions work as drop-ins.
 import {
     cleanUp,
+    context,
+    fakeTab,
     lastText,
     modelTexts,
     newSession,
@@ -17,6 +19,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
+import { AuthorsDoc } from "../src/server/docs.ts";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 
 const DOCS = fileURLToPath(new URL("../docs/", import.meta.url));
@@ -182,4 +185,87 @@ test("the example extensions load as drop-ins, off until the owner turns them on
     assert.ok(shown.text.length < whole.length);
     assert.equal(shown.presentation?.clipped, whole.length);
     assert.equal(shown.text.includes(NOTE_MARKER), false);
+
+    // `pocket.messages` reads the people's messages: a note stored as the module's kind is not one.
+    const room = await app.room(id);
+
+    try {
+        const page = room.userMessages(undefined, 200);
+
+        assert.ok(page !== null);
+        assert.ok(
+            page.messages.some(
+                (each) => each.kind === "user" && each.text === "leave a quiet note",
+            ),
+        );
+        assert.equal(
+            page.messages.some((each) => each.id === shown.id),
+            false,
+            "the note stays out",
+        );
+    } finally {
+        app.releaseRoom(room);
+    }
+
+    // It cannot be sent again: it is not a message a person sent to Pi.
+    await assert.rejects(
+        app.commands.resend(id, owner(app), { entryId: shown.id }),
+        /No such message to Pi/,
+    );
+
+    // A tab that is open as the module goes off, and comes back on, gets the row each time it shows differently.
+    const tab = fakeTab(id, owner(app), 5);
+    const newest = (entryId: number) =>
+        tab.events
+            .filter((each) => each.event === "view")
+            .flatMap((each) => each.data.entries as { id: number; kind: string; partial?: true }[])
+            .findLast((each) => each.id === entryId && each.partial !== true);
+
+    await app.attach(tab.client);
+
+    try {
+        await until(
+            async () => newest(shown.id)?.kind === "user",
+            "the tab has the presented note",
+        );
+        await app.setExtensionEnabled(owner(app), "quiet-note.ts", false);
+        await until(
+            async () => newest(shown.id)?.kind === "other",
+            "the tab hears it is not presented",
+        );
+        await app.setExtensionEnabled(owner(app), "quiet-note.ts", true);
+        await until(
+            async () => newest(shown.id)?.kind === "user",
+            "the tab hears it is presented again",
+        );
+
+        // A message nobody wrote that starts with the prefix is presented. Once its author is known, it is theirs, and
+        // the open tab gets it as their message.
+        const conversation = (await app.harness.conversation(id, context))!;
+        const submission = await conversation.submit(
+            { type: "input", content: "NOTE from nobody yet", requestId: crypto.randomUUID() },
+            context,
+        );
+
+        await submission.wait(context);
+        const sentEntry = (await app.transcripts.history(id, Number.MAX_SAFE_INTEGER)).find(
+            (each) => each.kind === "user" && each.text === "NOTE from nobody yet",
+        );
+
+        assert.ok(sentEntry !== undefined, "the message is in the session");
+        const sentId = sentEntry.id;
+        const presentedFor = (entryId: number) =>
+            (newest(entryId) as { presentation?: { prefixed?: true } } | undefined)?.presentation;
+
+        await until(async () => presentedFor(sentId)?.prefixed === true, "the tab presents it");
+        await app.harness.commit(async (tx) => {
+            (await tx.doc(AuthorsDoc, id)).entries[String(sentId)] = owner(app).id;
+        }, context);
+        await until(
+            async () => newest(sentId) !== undefined && presentedFor(sentId) === undefined,
+            "the tab hears it is the owner's message",
+        );
+    } finally {
+        app.detach(tab.client);
+    }
 });

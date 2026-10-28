@@ -485,8 +485,9 @@ function userPieces(message: Record<string, unknown> | undefined): {
 }
 
 /**
- * A user row. With `spec`, the live view clips the text and the row carries `presentation`. `keepPrefix` leaves a
- * registered prefix in the text; otherwise a `[from: …]` prefix becomes `from`, as a person's message does.
+ * A user row. With `spec`, the live view clips the text and the row carries `presentation`. `prefixed` is a `pi.user`
+ * row a registered prefix matched: it keeps that prefix in its text, and can be sent again. Without `spec`, a
+ * `[from: …]` prefix becomes `from`, as a person's message does.
  */
 function projectUserMessage(
     id: number,
@@ -495,10 +496,10 @@ function projectUserMessage(
     data: unknown,
     full: boolean,
     spec: RegisteredPresentation | undefined,
-    keepPrefix: boolean,
+    prefixed: boolean,
 ): ClientEntry {
-    const prefixed = keepPrefix ? null : FROM_PREFIX.exec(pieces.raw);
-    const text = prefixed === null ? pieces.raw : pieces.raw.slice(prefixed[0].length);
+    const from = spec === undefined ? FROM_PREFIX.exec(pieces.raw) : null;
+    const text = from === null ? pieces.raw : pieces.raw.slice(from[0].length);
     const shown = spec === undefined || full ? { text } : clip(text, OUTPUT_LIMIT);
     const summary = spec === undefined ? undefined : presentationSummary(data);
     const named = pieces.files === undefined ? {} : { files: pieces.files };
@@ -508,7 +509,7 @@ function projectUserMessage(
         kind: "user",
         text: shown.text,
         images: pieces.images,
-        ...(prefixed === null ? {} : { from: prefixed[1]! }),
+        ...(from === null ? {} : { from: from[1]! }),
         ...named,
         ...madeAt(message),
         ...(spec === undefined
@@ -519,6 +520,7 @@ function projectUserMessage(
                       label: spec.label,
                       ...(summary === undefined ? {} : { summary }),
                       ...(shown.clipped === undefined ? {} : { clipped: shown.clipped }),
+                      ...(prefixed ? { prefixed: true as const } : {}),
                   },
               }),
     };
@@ -673,7 +675,7 @@ export function projectEntry(
                     entry.data,
                     full,
                     spec,
-                    true,
+                    false,
                 );
             }
 

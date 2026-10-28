@@ -162,7 +162,7 @@ Since 0.22.0, these are experimental too: `web.publicPage` and `web.links`; `hos
 
 Since 0.26.0, `pocket.pip` (`ask`) is experimental, with `PipApi` and `PipAskResult`.
 
-Since 0.27.0, `web.presentEntry` and `pocket.entryPresentation` are experimental, with `PresentEntry`. A module names how an input it sends shows. The model still reads that message in full.
+Since 0.27.0, `web.presentEntry` and `pocket.entryPresentation` are experimental, with `PresentEntry`. A module names how an input it sends shows. The model still reads that message in full. Since then too, `pocket.messages` leaves out an input stored as a module's own kind: before, such an input was not a message in the transcript at all.
 
 Since 0.20.0, the session list's extension points are experimental: `pocket.sessionChips`, `sessionAction`, `sessionFilter`, and `sessionSearch`, `WebRequest.sessions`, and their types. So is `pocket.composerKey`, with `ComposerKeySpec` and `ComposerBox`, and so are `pocket.onConversation`, `messages`, and `reveal`, with `MessagesOptions`, `MessagePage`, and `MessageInfo`. So are `host.registerModelProvider`, and `host.fetchPublic` with `PublicFetchInit`.
 

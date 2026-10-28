@@ -12,6 +12,9 @@ export const LABEL_LIMIT = 80;
 /** An optional prefix that matches an author-less user message. */
 export const PREFIX_LIMIT = 200;
 
+/** Characters other than spaces a prefix needs, so that it cannot match most messages. */
+export const PREFIX_MINIMUM = 3;
+
 /** `entry.data.summary`, after whitespace is collapsed. */
 export const SUMMARY_LIMIT = 200;
 
@@ -29,6 +32,11 @@ export type EntryPresentationView = {
     summary?: string;
     /** The full text's length, when the live view clipped it. */
     clipped?: number;
+    /**
+     * The row is a user message (`pi.user`) that a `userPrefix` matched, so it can be sent again. Left out, it is
+     * stored as the module's own kind.
+     */
+    prefixed?: true;
 };
 
 /** The last part of `x.<module>.<name>`. */
@@ -68,7 +76,7 @@ export function checkPresentation(
         throw new Error("web.presentEntry: label is one short line");
     }
 
-    if (label.length > LABEL_LIMIT || /[\r\n]/.test(label)) {
+    if (label.length > LABEL_LIMIT || /[\p{Cc}\u2028\u2029]/u.test(label)) {
         throw new Error(`web.presentEntry: label is one line of ${LABEL_LIMIT} characters at most`);
     }
 
@@ -84,15 +92,27 @@ export function checkPresentation(
 
     if (
         typeof userPrefix !== "string" ||
-        userPrefix.length === 0 ||
-        userPrefix.length > PREFIX_LIMIT
+        userPrefix.length > PREFIX_LIMIT ||
+        userPrefix.replace(/\s/g, "").length < PREFIX_MINIMUM
     ) {
         throw new Error(
-            `web.presentEntry: userPrefix is a string of 1 to ${PREFIX_LIMIT} characters`,
+            `web.presentEntry: userPrefix is up to ${PREFIX_LIMIT} characters, ${PREFIX_MINIMUM} of them not spaces`,
+        );
+    }
+
+    // The app's own inputs nobody typed (reports, linked sessions, schedules, background tasks) start with "[".
+    if (/^\s*\[/.test(userPrefix)) {
+        throw new Error(
+            'web.presentEntry: a userPrefix cannot start with "[": the app\'s own inputs do',
         );
     }
 
     return { kind, label, userPrefix };
+}
+
+/** Whether one prefix could match a message the other matches: one starts the other. */
+export function prefixesOverlap(left: string, right: string): boolean {
+    return left.startsWith(right) || right.startsWith(left);
 }
 
 /** The registrations of every module that is on. Prefixes are longest first. */

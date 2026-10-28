@@ -106,10 +106,11 @@ Says how an input this module sends shows in the transcript, while the module is
 
 - `kind` is `x.<module>.<name>`: this module's name, then a name of letters, digits, `_` and `-`.
 - `label` is one short line ([limits](limits.md#presentations)).
-- `userPrefix`, when set, matches a user message that starts with it only when nobody wrote that message. A message a person sent stays theirs.
-- A module registers a limited number of presentations ([limits](limits.md#presentations)). Two modules cannot share a kind or a `userPrefix`.
-- Turning the module off, or a load that fails, drops the registration.
-- A browser module sets this browser's choice for its own kinds with [`pocket.entryPresentation`](pocket.md#entrypresentation): `open`, `folded`, or `hidden`.
+- `userPrefix`, when set, matches a user message that starts with it only when nobody wrote that message. A message a person sent stays theirs. It is a few characters at least, and cannot start with `[`: the app's own inputs nobody typed (subagent reports, linked sessions, schedules) do ([limits](limits.md#presentations)).
+- A module registers a limited number of presentations ([limits](limits.md#presentations)). Two modules cannot share a kind, and no prefix can start another one.
+- Turning the module off, or a load that fails, drops the registration. Open transcripts show the change at once, as do rows whose author becomes known.
+- An input stored as the module's own kind cannot be sent again from its message sheet, and [`pocket.messages`](pocket.md#messages) leaves it out: it is not a person's message to Pi. A user message that `userPrefix` matched stays one.
+- Each browser chooses how these inputs show: a person picks Show, Fold, or Hide in a row's message sheet, and a browser module can read or set that choice for its own kinds with [`pocket.entryPresentation`](pocket.md#entrypresentation).
 
 The module puts a short `summary` string on the entry's data when it submits. The transcript shows `label`, or `label · summary` when that string is there. See [`PresentEntry`](#presententry).
 

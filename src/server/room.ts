@@ -470,8 +470,25 @@ export class Room {
         }
 
         if (kind === AuthorsDoc.definition.kind) {
+            const before = this.authors;
+
             this.authors = { ...((value?.entries as Record<string, string>) ?? {}) };
-            this.#projected.clear();
+
+            // Who wrote an entry decides only whether a `userPrefix` matches it: with none registered, nothing shows
+            // differently. Otherwise only the entries whose author changed project again.
+            if (this.#app.webs.presentations().prefixes.length > 0) {
+                const changed = new Set<number>();
+
+                for (const id of new Set([...Object.keys(before), ...Object.keys(this.authors)])) {
+                    if (before[id] !== this.authors[id]) {
+                        changed.add(Number(id));
+                    }
+                }
+
+                if (changed.size > 0) {
+                    this.#reprojectEntries(changed);
+                }
+            }
         } else if (kind === ArtifactsDoc.definition.kind) {
             this.artifacts = { ...((value?.items as Record<string, ArtifactMeta>) ?? {}) };
         } else if (kind === SubagentsDoc.definition.kind) {
@@ -513,9 +530,58 @@ export class Room {
         }, 90);
     }
 
-    /** Presentations changed: the next update projects entries again. */
+    /** Presentations changed: every entry projects again, and open tabs get the ones that now show differently. */
     reproject(): void {
-        this.#projected.clear();
+        this.#reprojectEntries(undefined);
+    }
+
+    /**
+     * Project these entries again (every one without `only`). A tab was sent each entry once (`sentEntries`), so one
+     * that now shows differently is marked unsent in every tab, and the next update brings it: the browser replaces it
+     * by id.
+     */
+    #reprojectEntries(only: ReadonlySet<number> | undefined): void {
+        const view = this.#view?.value;
+
+        if (view === undefined) {
+            this.#projected.clear();
+
+            return;
+        }
+
+        const changed: number[] = [];
+
+        for (const record of view.entries) {
+            const id = record.id as unknown as number;
+
+            if (only !== undefined && !only.has(id)) {
+                continue;
+            }
+
+            const before = this.#projected.get(id);
+
+            this.#projected.delete(id);
+
+            // Never projected, so never sent: its first projection is already the new one.
+            if (before === undefined) {
+                continue;
+            }
+
+            if (JSON.stringify(before) !== JSON.stringify(this.#entry(record))) {
+                changed.push(id);
+            }
+        }
+
+        if (changed.length === 0) {
+            return;
+        }
+
+        for (const client of this.clients) {
+            for (const id of changed) {
+                client.sentEntries.delete(id);
+            }
+        }
+
         this.schedule();
     }
 
@@ -779,8 +845,12 @@ export class Room {
         limit: number,
     ): { messages: ClientEntry[]; before: number | null } | null {
         const view = this.#view?.value;
+        // An input stored as a module's own kind is not a person's message: it stays out, as it did before modules
+        // could present one. A `pi.user` message a module's prefix matched stays in, and says so (`presentation`).
         const all = (view === undefined ? [] : this.#projectedEntries(view.entries)).filter(
-            (entry) => entry.kind === "user",
+            (entry) =>
+                entry.kind === "user" &&
+                (entry.presentation === undefined || entry.presentation.prefixed === true),
         );
         const end =
             before === undefined ? all.length : all.findIndex((entry) => entry.id === before);

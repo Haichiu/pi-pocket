@@ -34,6 +34,7 @@ import {
     compilePresentations,
     EMPTY_PRESENTATIONS,
     type EntryPresentations,
+    prefixesOverlap,
     type RegisteredPresentation,
     samePresentations,
 } from "./entry-presentation.ts";
@@ -275,6 +276,8 @@ interface Options {
 export class ExtensionWebs {
     /** The web part of every module that has one, by module name. */
     readonly #parts = new Map<string, WebPart>();
+    /** The installed parts' presentations, compiled once for each change of them (`#notePresentations`). */
+    #presentations: EntryPresentations | undefined;
     readonly #options: Options;
     #watching = false;
     #closed = false;
@@ -381,11 +384,19 @@ export class ExtensionWebs {
                     throw new Error(`web.presentEntry: ${registered.kind} is registered twice`);
                 }
 
+                const prefix = registered.userPrefix;
+
                 if (
-                    registered.userPrefix !== undefined &&
-                    part.presentations.some((each) => each.userPrefix === registered.userPrefix)
+                    prefix !== undefined &&
+                    part.presentations.some(
+                        (each) =>
+                            each.userPrefix !== undefined &&
+                            prefixesOverlap(each.userPrefix, prefix),
+                    )
                 ) {
-                    throw new Error("web.presentEntry: that userPrefix is registered twice");
+                    throw new Error(
+                        "web.presentEntry: that userPrefix starts, or starts with, one already registered",
+                    );
                 }
 
                 this.#presentationClash(part, registered);
@@ -712,9 +723,13 @@ export class ExtensionWebs {
                     );
                 }
 
-                if (spec.userPrefix !== undefined && each.userPrefix === spec.userPrefix) {
+                if (
+                    spec.userPrefix !== undefined &&
+                    each.userPrefix !== undefined &&
+                    prefixesOverlap(each.userPrefix, spec.userPrefix)
+                ) {
                     throw new Error(
-                        `web.presentEntry: ${other.file} already matches that userPrefix`,
+                        `web.presentEntry: ${other.file} already matches messages that userPrefix would`,
                     );
                 }
             }
@@ -743,9 +758,13 @@ export class ExtensionWebs {
 
     /** How every module that is on shows its own inputs. Empty when none do. */
     presentations(): EntryPresentations {
-        const compiled = compilePresentations(this.#parts.values());
+        if (this.#presentations === undefined) {
+            const compiled = compilePresentations(this.#parts.values());
 
-        return compiled.byKind.size === 0 ? EMPTY_PRESENTATIONS : compiled;
+            this.#presentations = compiled.byKind.size === 0 ? EMPTY_PRESENTATIONS : compiled;
+        }
+
+        return this.#presentations;
     }
 
     /** One command by its id: the very version a browser chose, never another module's or a newer version's. */
@@ -788,6 +807,7 @@ export class ExtensionWebs {
 
         // Kept even when it added nothing to the app: cleanups it adds later run when it goes.
         this.#parts.set(part.module, part);
+        this.#presentations = undefined;
         this.#rewatch(part);
 
         if (previous !== undefined) {
@@ -871,6 +891,7 @@ export class ExtensionWebs {
         }
 
         this.#parts.delete(part.module);
+        this.#presentations = undefined;
         void this.#dispose(part);
 
         if (part.client !== undefined) {
@@ -1083,6 +1104,7 @@ export class ExtensionWebs {
         );
 
         this.#parts.clear();
+        this.#presentations = undefined;
         this.#staged.clear();
 
         return this.#settled(running);
