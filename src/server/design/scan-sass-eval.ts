@@ -9,10 +9,20 @@
  * another sees its variables, in the order the files depend on each other.
  */
 import { Unsupported, evaluate, interpolate, parseExpression, type Env } from "./scan-sass-expr.ts";
+import {
+    type Flat,
+    type Fn,
+    Module,
+    defaultNamespace,
+    parseModuleRule,
+    resolveModule,
+} from "./scan-sass-modules.ts";
 import { LIMITS, dependenciesOf, splitTop, statementsOf, type Stmt } from "./scan-sass-stmt.ts";
 import {
     NULL,
+    builtinConstant,
     declText,
+    hasBuiltin,
     itemsOf,
     list,
     num,
@@ -22,22 +32,101 @@ import {
     type Value,
 } from "./scan-sass-values.ts";
 
+/** The Sass modules that come with it: a namespace of one of them is a call to a built-in function. */
+const BUILTIN_MODULES = new Set(["color", "math", "map", "list", "string", "meta", "selector"]);
+
 // --- The environment ------------------------------------------------------------------------------------------------------
 
-interface Fn {
-    params: { name: string; fallback: string | undefined; rest: boolean }[];
-    body: Stmt[];
-    /** A mixin that makes a layout of rules (a media query, `@at-root`): it is left to the scan, which reads those itself. */
-    layout: boolean;
-}
-
-/** The variables, functions, and mixins of a project. */
-export class Project {
+/**
+ * The stylesheets of a project: the modules they make, and the flat environment of the variables, functions, and mixins
+ * that every one declared (the fallback for a name that no module explains).
+ */
+export class Project implements Flat {
     /** When the work for the whole project must stop: a project of many stylesheets must not hold the scan. */
     deadline = Date.now() + 4000;
     vars = new Map<string, Value>();
     functions = new Map<string, Fn>();
     mixins = new Map<string, Fn>();
+    /** The text of each stylesheet, by path: what `@use` and `@import` can load. */
+    files = new Map<string, string>();
+    /** The modules that were run, by path and configuration; a configured module is a copy. */
+    modules = new Map<string, Module>();
+    failed = new Set<Module>();
+    private parsed = new Map<string, Stmt[]>();
+    private depth = 0;
+    private compilation: Map<string, Module> | undefined;
+
+    /** Runs a stylesheet as a module (once for each configuration) and returns it; undefined when the project has no such file. */
+    load(rel: string, config?: Map<string, Value>): Module | undefined {
+        const key =
+            config === undefined || config.size === 0
+                ? rel
+                : `${rel}\0${[...config].map(([name, value]) => `${name}=${declText(value)}`).join("\0")}`;
+        // A module is loaded once in a compilation: a plain `@use` of one that an earlier `@use … with` configured gets that copy.
+        const root = this.compilation === undefined;
+        const loaded = this.compilation?.get(rel);
+
+        if (loaded !== undefined && key === rel) {
+            return loaded;
+        }
+
+        const have = this.modules.get(key);
+
+        if (have !== undefined) {
+            this.compilation?.set(rel, have);
+
+            return have;
+        }
+
+        const text = this.files.get(rel);
+
+        if (text === undefined) {
+            return undefined;
+        }
+
+        if (this.depth > 24) {
+            throw new Unsupported("modules nest too deep");
+        }
+
+        const module = new Module(
+            rel,
+            this,
+            config === undefined || config.size === 0 ? undefined : config,
+        );
+
+        this.modules.set(key, module);
+        this.compilation ??= new Map();
+        this.compilation.set(rel, module);
+        this.depth += 1;
+
+        try {
+            let stmts = this.parsed.get(rel);
+
+            if (stmts === undefined) {
+                stmts = statementsOf(text, 1);
+                this.parsed.set(rel, stmts);
+            }
+
+            const run = new Run(this, module);
+
+            run.block(stmts, true);
+            module.text = run.out.join("");
+        } catch (error) {
+            if (!(error instanceof Unsupported) && !(error instanceof RangeError)) {
+                throw error;
+            }
+
+            this.failed.add(module);
+        } finally {
+            this.depth -= 1;
+
+            if (root) {
+                this.compilation = undefined;
+            }
+        }
+
+        return module;
+    }
 }
 
 class Scope {
@@ -51,7 +140,7 @@ class Scope {
         this.flow = flow;
     }
 
-    get(name: string, project: Project): Value | undefined {
+    get(name: string, module: Module, flat = true): Value | undefined {
         for (let scope: Scope | undefined = this; scope !== undefined; scope = scope.parent) {
             const found = scope.vars.get(name);
 
@@ -60,13 +149,13 @@ class Scope {
             }
         }
 
-        return project.vars.get(name);
+        return module.lookup<Value>("vars", name, flat);
     }
 
-    /** Sets a variable and says whether it is the project's own (a global one). */
-    set(name: string, value: Value, project: Project, forceGlobal: boolean): boolean {
+    /** Sets a variable and says whether it is the module's own (a global one). */
+    set(name: string, value: Value, module: Module, forceGlobal: boolean): boolean {
         if (forceGlobal || this.parent === undefined) {
-            project.vars.set(name, value);
+            module.setVar(name, value);
 
             return true;
         }
@@ -89,8 +178,8 @@ class Scope {
         }
 
         // Control flow at the top level assigns the project's variable when there is one; else the variable is its own.
-        if (scope.parent === undefined && project.vars.has(name)) {
-            project.vars.set(name, value);
+        if (scope.parent === undefined && (module.vars.has(name) || module.flat.vars.has(name))) {
+            module.setVar(name, value);
 
             return true;
         }
@@ -104,6 +193,8 @@ class Scope {
 /** What a run of one stylesheet makes. */
 class Run implements Env {
     project: Project;
+    /** The module whose code runs: a function from another module runs in its own. */
+    module: Module;
     scope: Scope;
     ticks = 0;
     iterations = 0;
@@ -119,9 +210,11 @@ class Run implements Env {
     returnFlag = false;
     content: Stmt[] | undefined;
     contentScope: Scope | undefined;
+    contentModule: Module | undefined;
 
-    constructor(project: Project) {
+    constructor(project: Project, module: Module) {
         this.project = project;
+        this.module = module;
         this.scope = new Scope(undefined, false);
     }
 
@@ -135,12 +228,64 @@ class Run implements Env {
         }
     }
 
-    get(name: string): Value | undefined {
-        return this.scope.get(name, this.project);
+    get(name: string, namespace?: string): Value | undefined {
+        if (namespace !== undefined) {
+            const target = this.module.namespace(namespace);
+
+            if (target instanceof Module) {
+                return target.member<Value>("vars", name);
+            }
+
+            if (typeof target === "string") {
+                return builtinConstant(target, name);
+            }
+        }
+
+        return this.scope.get(name, this.module);
+    }
+
+    /** The built-in name of a call: `c.adjust` for `@use "sass:color" as c`, `div` for `@use "sass:math" as *`. */
+    builtin(name: string): string {
+        const dot = name.indexOf(".");
+
+        if (dot > 0) {
+            const target = this.module.namespace(name.slice(0, dot));
+
+            return typeof target === "string" ? `${target}.${name.slice(dot + 1)}` : name;
+        }
+
+        for (const library of this.module.openBuiltins) {
+            if (hasBuiltin(`${library}.${name}`)) {
+                return `${library}.${name}`;
+            }
+        }
+
+        return name;
+    }
+
+    /** A function or a mixin: by its bare name, or through a namespace (`p.fn`); a name through a built-in namespace is none. */
+    find(kind: "functions" | "mixins", name: string): Fn | undefined {
+        const dot = name.indexOf(".");
+
+        if (dot <= 0) {
+            return this.module.lookup<Fn>(kind, name);
+        }
+
+        const target = this.module.namespace(name.slice(0, dot));
+        const bare = name.slice(dot + 1);
+
+        if (target instanceof Module) {
+            return target.member<Fn>(kind, bare);
+        }
+
+        // A namespace that no module explains is the old reading: the name without it (but not a built-in module's).
+        return typeof target === "string" || BUILTIN_MODULES.has(name.slice(0, dot))
+            ? undefined
+            : this.module.lookup<Fn>(kind, bare);
     }
 
     call(name: string, positional: Value[], named: Map<string, Value>): Value | undefined {
-        const fn = this.project.functions.get(name.replace(/^[\w-]+\./, ""));
+        const fn = this.find("functions", name);
 
         if (fn === undefined) {
             return undefined;
@@ -150,10 +295,20 @@ class Run implements Env {
             throw new Unsupported("functions nest too deep");
         }
 
-        const saved = [this.scope, this.returned, this.returnFlag] as const;
+        const saved = [this.scope, this.returned, this.returnFlag, this.module] as const;
+        const away = fn.module !== undefined && fn.module !== this.module;
+
+        // The body sees the members of the module that declared it.
+        if (away) {
+            this.module = fn.module!;
+        }
 
         this.scope = new Scope(
-            this.scope.parent === undefined ? this.scope : this.rootScope(),
+            away
+                ? new Scope(undefined, false)
+                : this.scope.parent === undefined
+                  ? this.scope
+                  : this.rootScope(),
             false,
         );
         this.bind(fn, positional, named);
@@ -167,7 +322,7 @@ class Run implements Env {
             return this.returned;
         } finally {
             this.depth -= 1;
-            [this.scope, this.returned, this.returnFlag] = saved;
+            [this.scope, this.returned, this.returnFlag, this.module] = saved;
         }
     }
 
@@ -307,7 +462,7 @@ class Run implements Env {
 
         if (assign !== null) {
             this.scope.vars.delete(assign[1]!);
-            this.project.vars.delete(assign[1]!);
+            this.module.deleteVar(assign[1]!);
         }
 
         if (
@@ -359,18 +514,28 @@ class Run implements Env {
         const isGlobal = /!global\b/.test(rawValue);
         const source = rawValue.replace(flags, "").trim();
 
-        if (
+        // A `!default` variable of a module that `@use … with (…)` configured takes the configured value.
+        const configured =
+            isDefault && this.scope.parent === undefined && !this.module.applied.has(name)
+                ? this.module.config?.get(name)
+                : undefined;
+
+        if (configured !== undefined) {
+            this.module.applied.add(name);
+        } else if (
             isDefault &&
-            this.scope.get(name, this.project) !== undefined &&
-            this.scope.get(name, this.project)!.t !== "null"
+            this.scope.get(name, this.module, false) !== undefined &&
+            this.scope.get(name, this.module, false)!.t !== "null"
         ) {
+            // `!default`: a variable that this stylesheet or what it opens already has stays. The project's flat environment
+            // does not count: other stylesheets are compiled apart.
             return;
         }
 
         let value: Value;
 
         try {
-            value = evaluate(parseExpression(source), this);
+            value = configured ?? evaluate(parseExpression(source), this);
         } catch (error) {
             if (!(error instanceof Unsupported)) {
                 throw error;
@@ -382,12 +547,12 @@ class Run implements Env {
             }
 
             this.scope.vars.delete(name);
-            this.project.vars.delete(name);
+            this.module.deleteVar(name);
 
             return;
         }
 
-        const global = this.scope.set(name, value, this.project, isGlobal);
+        const global = this.scope.set(name, value, this.module, isGlobal);
 
         // A variable that a loop or a function keeps for itself is not the stylesheet's: only globals and a rule's own are written.
         if (emit && value.t !== "null" && (global || !this.scope.flow)) {
@@ -475,8 +640,20 @@ class Run implements Env {
 
         switch (name) {
             case "use":
+                this.useRule(rest);
+
+                return;
+
             case "forward":
+                this.forwardRule(rest);
+
+                return;
+
             case "import":
+                this.importRule(rest);
+
+                return;
+
             case "charset":
             case "debug":
             case "warn":
@@ -504,14 +681,15 @@ class Run implements Env {
 
             case "content":
                 if (this.content !== undefined && this.contentScope !== undefined) {
-                    const saved = this.scope;
+                    const saved = [this.scope, this.module] as const;
 
                     this.scope = this.contentScope;
+                    this.module = this.contentModule ?? this.module;
 
                     try {
                         this.block(this.content, emit);
                     } finally {
-                        this.scope = saved;
+                        [this.scope, this.module] = saved;
                     }
                 }
 
@@ -563,6 +741,109 @@ class Run implements Env {
         }
     }
 
+    /** The values of `with ($a: 1, $b: red !default)`, evaluated here; a `!default` entry may be overridden by an outer configuration. */
+    configOf(entries: string[], outer?: Map<string, Value>): Map<string, Value> | undefined {
+        const config = new Map<string, Value>(outer ?? []);
+
+        for (const entry of entries.slice(0, 60)) {
+            const match = /^\$([\w-]+)\s*:\s*([\s\S]+?)\s*(!default)?$/.exec(entry);
+
+            if (match === null) {
+                continue;
+            }
+
+            try {
+                if (match[3] === undefined || !config.has(match[1]!)) {
+                    config.set(match[1]!, evaluate(parseExpression(match[2]!), this));
+                }
+            } catch (error) {
+                if (!(error instanceof Unsupported)) {
+                    throw error;
+                }
+            }
+        }
+
+        return config.size === 0 ? undefined : config;
+    }
+
+    /** `@use "path" as ns with (…)`: the module under its namespace. A path that is no file of the project is read as it was. */
+    useRule(rest: string): void {
+        const rule = parseModuleRule(rest);
+
+        if (rule === undefined) {
+            return;
+        }
+
+        if (rule.path.startsWith("sass:")) {
+            const library = rule.path.slice(5);
+
+            if (rule.namespace === "*") {
+                this.module.openBuiltins.push(library);
+            } else {
+                this.module.uses.set(rule.namespace ?? library, library);
+            }
+
+            return;
+        }
+
+        const rel = resolveModule(this.module.rel, rule.path, this.project.files.keys());
+        const loaded =
+            rel === undefined ? undefined : this.project.load(rel, this.configOf(rule.config));
+
+        if (loaded === undefined) {
+            return;
+        }
+
+        if (rule.namespace === "*") {
+            this.module.opened.push(loaded);
+        } else {
+            this.module.uses.set(rule.namespace ?? defaultNamespace(rule.path), loaded);
+        }
+    }
+
+    /** `@forward "path" as list-* show a, $b`: the module's members, handed on to whoever `@use`s this one. */
+    forwardRule(rest: string): void {
+        const rule = parseModuleRule(rest);
+
+        if (rule === undefined || rule.path.startsWith("sass:")) {
+            return;
+        }
+
+        const rel = resolveModule(this.module.rel, rule.path, this.project.files.keys());
+        const loaded =
+            rel === undefined
+                ? undefined
+                : this.project.load(rel, this.configOf(rule.config, this.module.config));
+
+        if (loaded === undefined) {
+            return;
+        }
+
+        this.module.forwards.push({
+            module: loaded,
+            prefix: rule.prefix,
+            show: rule.show === undefined ? undefined : new Set(rule.show),
+            hide: rule.hide === undefined ? undefined : new Set(rule.hide),
+        });
+    }
+
+    /** `@import "a", "b"`: the files' members are the importer's own. */
+    importRule(rest: string): void {
+        for (const match of rest.matchAll(/["']([^"'\n]{1,300})["']/g)) {
+            const rel = resolveModule(this.module.rel, match[1]!, this.project.files.keys());
+            const loaded =
+                rel === undefined || rel === this.module.rel ? undefined : this.project.load(rel);
+
+            if (
+                loaded !== undefined &&
+                loaded !== this.module &&
+                !this.module.opened.includes(loaded)
+            ) {
+                this.module.opened.push(loaded);
+            }
+        }
+    }
+
     define(kind: "function" | "mixin", rest: string, stmt: Stmt): void {
         const open = rest.indexOf("(");
         const name = (open === -1 ? rest : rest.slice(0, open)).trim();
@@ -584,17 +865,21 @@ class Run implements Env {
             }
         }
 
-        (kind === "function" ? this.project.functions : this.project.mixins).set(name, {
+        const fn: Fn = {
             params,
             body: stmt.body ?? [],
             layout: /@(?:media|at-root|supports|container)\b/.test(stmt.raw),
-        });
+            module: this.module,
+        };
+        const own = kind === "function" ? this.module.functions : this.module.mixins;
+
+        own.set(name, fn);
+        (kind === "function" ? this.project.functions : this.project.mixins).set(name, fn);
     }
 
     include(rest: string, stmt: Stmt, emit: boolean): void {
         const match = /^([\w.-]+)\s*(?:\(([\s\S]*)\))?\s*(?:using\s*\([^)]*\))?$/.exec(rest);
-        const name = match?.[1]?.replace(/^[\w-]+\./, "");
-        const mixin = name === undefined ? undefined : this.project.mixins.get(name);
+        const mixin = match?.[1] === undefined ? undefined : this.find("mixins", match[1]);
 
         if (match === null || mixin === undefined || mixin.layout) {
             // A mixin that is not here: its content block is kept, and the call is written as it was.
@@ -630,11 +915,25 @@ class Run implements Env {
             throw new Unsupported("mixins nest too deep");
         }
 
-        const saved = [this.scope, this.content, this.contentScope] as const;
+        const saved = [
+            this.scope,
+            this.content,
+            this.contentScope,
+            this.contentModule,
+            this.module,
+        ] as const;
+        const away = mixin.module !== undefined && mixin.module !== this.module;
 
         this.content = stmt.body;
         this.contentScope = this.scope;
-        this.scope = new Scope(this.rootScope(), false);
+        this.contentModule = this.module;
+
+        // The body sees the members of the module that declared the mixin.
+        if (away) {
+            this.module = mixin.module!;
+        }
+
+        this.scope = new Scope(away ? new Scope(undefined, false) : this.rootScope(), false);
         this.bind(mixin, positional, named);
         this.depth += 1;
 
@@ -642,7 +941,7 @@ class Run implements Env {
             this.block(mixin.body, emit);
         } finally {
             this.depth -= 1;
-            [this.scope, this.content, this.contentScope] = saved;
+            [this.scope, this.content, this.contentScope, this.contentModule, this.module] = saved;
         }
     }
 
@@ -792,11 +1091,12 @@ class Run implements Env {
 }
 
 /**
- * Whether a stylesheet has Sass that the scan cannot read as it is: a loop, a map built in code, a module's function, or a
- * function that works out a color. Mixins and conditions are left to the scan, which has its own reading of them.
+ * Whether a stylesheet has Sass that the scan cannot read as it is: a loop, a map built in code, a module's function, a
+ * member of another module (`p.$blue-500`), a configuration (`@use … with`), or a function that works out a color. Mixins and
+ * conditions are left to the scan, which has its own reading of them.
  */
 export const NEEDS_EVAL =
-    /@(?:each|for|while)\b|\bmap[.-](?:merge|get|set|keys|values)\b|\b(?:color|math|map|list|string)\.[a-z-]+\(|\b(?:scale-color|adjust-color|change-color)\(|@function[\s\S]{0,400}?\b(?:mix|lighten|darken|saturate|desaturate|rgba|adjust-hue|color\.)/;
+    /@(?:each|for|while)\b|\bmap[.-](?:merge|get|set|keys|values)\b|\b(?:color|math|map|list|string)\.[a-z-]+\(|\b(?:scale-color|adjust-color|change-color)\(|@function[\s\S]{0,400}?\b(?:mix|lighten|darken|saturate|desaturate|rgba|adjust-hue|color\.)|\b[a-z][\w-]*\.\$[\w-]+|@use\b[^;]*\bwith\b|@forward\b[^;]*\b(?:as|show|hide|with)\b/;
 
 /** The result of running one stylesheet. */
 export interface Evaluated {
@@ -810,7 +1110,7 @@ export interface Evaluated {
  * (with its `#{}` filled in where they can be); a run that fails as a whole gives undefined.
  */
 export function evaluateSass(source: string, project: Project): Evaluated | undefined {
-    const run = new Run(project);
+    const run = new Run(project, new Module("", project));
 
     try {
         run.block(statementsOf(source, 1), true);
@@ -836,8 +1136,10 @@ const keyOfName = (name: string) =>
 
 /**
  * Runs the Sass files of a project in the order they depend on each other (a file after the files it `@use`s or
- * `@import`s), in one environment, and returns the text of each file that has Sass the scan cannot read as it is: its
- * loops and functions run, its variables as they end. The other files are run too, for their variables.
+ * `@import`s), and returns the text of each file that has Sass the scan cannot read as it is: its loops and functions
+ * run, its variables as they end. Each file is a module with its own variables, functions, and mixins; the modules it
+ * loads are found by their paths, with their namespaces, `@forward`s, and configurations (`@use "x" with ($a: 1)`). The
+ * other files are run too, for their variables. A file that was configured gives the text of its configured copy.
  */
 export function expandSassFiles(files: { rel: string; text: string }[]): Map<string, string> {
     const project = new Project();
@@ -847,6 +1149,7 @@ export function expandSassFiles(files: { rel: string; text: string }[]): Map<str
         const key = keyOfName(file.rel);
 
         byKey.set(key, [...(byKey.get(key) ?? []), file]);
+        project.files.set(file.rel, file.text);
     }
 
     const ordered: { rel: string; text: string }[] = [];
@@ -860,8 +1163,12 @@ export function expandSassFiles(files: { rel: string; text: string }[]): Map<str
         state.set(file.rel, 1);
 
         for (const name of dependenciesOf(file.text)) {
-            // The file with that name that is nearest: in the same folder first.
-            const found = byKey.get(keyOfName(name));
+            // The file that module resolution finds, else the one with that name that is nearest: in the same folder first.
+            const rel = resolveModule(file.rel, name, project.files.keys());
+            const found =
+                rel === undefined
+                    ? byKey.get(keyOfName(name))
+                    : [{ rel, text: project.files.get(rel)! }];
             const near = found?.find(
                 (each) =>
                     each.rel.slice(0, each.rel.lastIndexOf("/")) ===
@@ -887,18 +1194,32 @@ export function expandSassFiles(files: { rel: string; text: string }[]): Map<str
         visit(file, 0);
     }
 
-    const out = new Map<string, string>();
-
     for (const file of ordered) {
         // A project of many stylesheets gets a fixed time: what is not run in it is read as written.
         if (Date.now() > project.deadline) {
             break;
         }
 
-        const result = evaluateSass(file.text, project);
+        project.load(file.rel);
+    }
 
-        if (result !== undefined && NEEDS_EVAL.test(file.text)) {
-            out.set(file.rel, result.text);
+    const out = new Map<string, string>();
+
+    for (const file of ordered) {
+        const copies = [...project.modules.values()].filter(
+            (module) => module.rel === file.rel && !project.failed.has(module),
+        );
+        const configured = copies.filter((module) => module.config !== undefined).at(-1);
+        const chosen =
+            configured ?? copies.find((module) => module.config === undefined) ?? copies[0];
+
+        // A configured copy is written even when the file has nothing to run: its `!default` variables are other values.
+        if (
+            chosen !== undefined &&
+            (NEEDS_EVAL.test(file.text) ||
+                (configured !== undefined && /!default\b/.test(file.text)))
+        ) {
+            out.set(file.rel, chosen.text);
         }
     }
 

@@ -80,8 +80,44 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
     };
 
     const scaleVars = new Set<Classified>();
+    // The colors of each family by step. A family that holds the same colors as another (`brand-ramp`, which a loop turns into
+    // `--brand-50` … `--brand-900`) is the same scale twice: the one with the shorter name is kept.
+    const stepsOf = (list: Classified[]) =>
+        new Map(
+            list.map((entry) => [
+                /(\d{1,3})$/.exec(entry.variable.name)![1]!,
+                hexOf(entry.lightColor ?? entry.darkColor),
+            ]),
+        );
+    const twin = (family: string, list: Classified[]) => {
+        const mine = stepsOf(list);
+
+        return (
+            mine.size >= 3 &&
+            [...scales].some(([other, otherList]) => {
+                if (
+                    other === family ||
+                    other.length > family.length ||
+                    (other.length === family.length && other > family)
+                ) {
+                    return false;
+                }
+
+                const theirs = stepsOf(otherList);
+
+                return (
+                    theirs.size === mine.size &&
+                    [...mine].every(([step, hex]) => hex !== undefined && theirs.get(step) === hex)
+                );
+            })
+        );
+    };
 
     for (const [family, list] of scales) {
+        if (twin(family, list)) {
+            continue;
+        }
+
         if (
             list.length < 2 &&
             !w(
