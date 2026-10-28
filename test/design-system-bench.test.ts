@@ -1379,6 +1379,8 @@ test(
             const never = await chromium.page(served.url);
 
             await never.open(served.url, { width: 800, height: 900 });
+            // The page sets the attribute after 300 ms: let it, then take it away.
+            await new Promise((resolve) => setTimeout(resolve, 700));
             await never.evaluate(`document.documentElement.removeAttribute('data-docs-ready')`);
             assert.equal(await waitForDocsReady(never, 300), false);
             await never.close();
