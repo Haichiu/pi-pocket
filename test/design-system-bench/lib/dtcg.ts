@@ -21,7 +21,9 @@ export interface FlatToken {
     /** `$extensions["com.pi-pocket"].tier`, when it is set. */
     tier?: string;
     /** `$extensions["com.pi-pocket"].contrast`: this text color must reach `min` over the token `on`, in every mode. */
-    contrast?: { on: string; min: number };
+    contrast?: { on: string; min: number; exempt?: string };
+    /** Every pair the token declares (`contrast` may be one pair or a list), in order. `contrast` is the first. */
+    contrasts?: { on: string; min: number; exempt?: string }[];
 }
 
 export interface FlatSystem {
@@ -246,10 +248,29 @@ export function flatten(tokens: unknown, modes: Record<string, unknown> = {}): F
             token.tier = own.tier;
         }
 
-        const pair = own?.contrast as { on?: unknown; min?: unknown } | undefined;
+        // One pair, or a list of them. `exempt` says why a pair is left out of the check ("disabled", "decorative").
+        const declared = Array.isArray(own?.contrast)
+            ? own.contrast
+            : own?.contrast === undefined
+              ? []
+              : [own.contrast];
+        const pairs = declared.flatMap((item) => {
+            const pair = item as { on?: unknown; min?: unknown; exempt?: unknown };
 
-        if (typeof pair?.on === "string" && typeof pair.min === "number") {
-            token.contrast = { on: pair.on, min: pair.min };
+            return typeof pair?.on === "string" && typeof pair.min === "number"
+                ? [
+                      {
+                          on: pair.on,
+                          min: pair.min,
+                          ...(typeof pair.exempt === "string" ? { exempt: pair.exempt } : {}),
+                      },
+                  ]
+                : [];
+        });
+
+        if (pairs.length > 0) {
+            token.contrast = pairs[0];
+            token.contrasts = pairs;
         }
 
         for (const mode of modeNames) {

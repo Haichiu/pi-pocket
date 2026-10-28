@@ -24,6 +24,14 @@ export interface ContrastPhase {
         min: number;
         ratios: Record<string, number | undefined>;
     }[];
+    /** Pairs that declare `exempt` ("disabled", "decorative"): WCAG 1.4.3 leaves them out. Shown with their ratios, never a failure, and not in `declared`. */
+    exempt: {
+        token: string;
+        on: string;
+        min: number;
+        exempt: string;
+        ratios: Record<string, number | undefined>;
+    }[];
     /** Text over fill pairs that the names imply, declared or not. */
     implied: { pairs: number; passing: number; passRate: number };
     score: number;
@@ -42,12 +50,22 @@ export function contrastPhase(
             passing: 0,
             passRate: 0,
             failing: [],
+            exempt: [],
             implied: { pairs: 0, passing: 0, passRate: 0 },
             score: 0,
         };
     }
 
-    const pairs = contrastPairs(system.tokens, system.modes);
+    const all = contrastPairs(system.tokens, system.modes);
+    // An exempt pair is reported apart, with its ratio. It is not a failure and not in the pass rate.
+    const pairs = all.filter((pair) => pair.exempt === undefined);
+    const round = (ratios: Record<string, number | undefined>) =>
+        Object.fromEntries(
+            Object.entries(ratios).map(([mode, ratio]) => [
+                mode,
+                ratio === undefined ? undefined : Math.round(ratio * 100) / 100,
+            ]),
+        );
     const implied = impliedPairs(system.tokens, system.modes);
     const passing = pairs.filter((pair) => pair.passesEverywhere).length;
     const impliedPassing = implied.filter((pair) => pair.failing.length === 0).length;
@@ -65,12 +83,16 @@ export function contrastPhase(
                 token: pair.token,
                 on: pair.on,
                 min: pair.min,
-                ratios: Object.fromEntries(
-                    Object.entries(pair.ratios).map(([mode, ratio]) => [
-                        mode,
-                        ratio === undefined ? undefined : Math.round(ratio * 100) / 100,
-                    ]),
-                ),
+                ratios: round(pair.ratios),
+            })),
+        exempt: all
+            .filter((pair) => pair.exempt !== undefined)
+            .map((pair) => ({
+                token: pair.token,
+                on: pair.on,
+                min: pair.min,
+                exempt: pair.exempt!,
+                ratios: round(pair.ratios),
             })),
         implied: {
             pairs: implied.length,
