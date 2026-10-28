@@ -110,6 +110,22 @@ Also checked: the docs page of the flagship (about 3,000 elements, light and dar
 
 `mode` (a name from `system.modes`) is an option of `checkDesign`, and an argument of `design_preview`, `design_export`, and the export route. A named mode: sets `data-theme="<mode>"` on the root before the walk (it replaces a `data-theme` that the page has), draws the page in the mode's scheme (`system.schemes[mode]`; the given `colorScheme` is only the fallback), and compares with that mode's tokens. The name is validated (`The design system has no mode "x". Modes: light, dark, high-contrast.`), and a mode with no system is an error. `modeFor` now returns `{ mode, scheme, theme?, named }`. `CheckReport.mode` is new (optional, `system-types.ts`: for the integrator): the mode compared with, absent without a system; the report's `colorScheme` is the scheme that was drawn. Without a name nothing changes (a dark scheme takes the `dark` mode). Exports now draw in the light scheme unless a mode says otherwise: before, they followed the server's own preference (a dark machine gave a dark PNG). Tested with the flagship's `high-contrast` (drawn dark): the check, the preview (report line and screenshot, also with the checks off), the export tool and route.
 
+## Round 4: the contract for one-tap fixes (written first, for stream U)
+
+```ts
+// src/server/design/fix.ts
+export function applyExactFixes(
+    content: string,
+    findings: CheckFinding[],
+    system: DesignSystem,
+): { content: string; applied: number; skipped: { id: string; reason: string }[] };
+```
+
+- `content` is the page's HTML. `findings` are the report's (a finding is **fixable** when it has `fix`, new in `system-types.ts`: `CheckFix { kind, properties, literal, token, cssVar, mode }`; an off-system finding whose literal equals a token exactly has it; U shows a Fix button for these and a Fix all button that passes every fixable finding). `system` is checked again: the token must exist and still equal the literal in `fix.mode`.
+- It rewrites only a literal (a color, a `px` length, a whole `font-family` list) that equals the token, only in `<style>` elements and `style` attributes, only in a declaration of a property named by `fix.properties`, and only when the place is certain: an inline style is certain when exactly one element has the finding's `data-pid`; a rule is certain when it is the only one that sets that property to that literal, or its selector is the finding's selector. It never touches scripts, comments, strings, `url()`, `content`, a `var()` fallback, custom property definitions, `@font-face`, `@keyframes`, text, or an attribute that is not `style`.
+- The answer is the new HTML, how many replacements were made, and one `{ id, reason }` for each finding that was skipped (`id` is the finding's id). It is a pure function: no browser, no files. A second call with the same findings changes nothing (the literals are gone).
+- The value is the same in the mode that was checked and follows the token in the others: say so in the button's text.
+
 ## Duplicates with stream T's `color.ts` (done)
 
 `lint-color.ts` now imports from `color.ts` and the duplicates are deleted: `luminance` and `contrastRatio` (a small wrapper `contrastOf` takes 0 to 255 channels and calls T's `contrastRatio`), `colorCss` (now `colorObjectCss`; the hex fallback for an unknown space stays), and `formatColor` (uses `toHex` for opaque colors; a translucent one is `rgb(r g b / a)`). Kept in `lint-color.ts` because `color.ts` has no equal: `toOklab` and `colorDistance` (OKLab distance with alpha), `dimensionCss`, `familyList`, `isGenericFamily`, `lengthKind`, `tokenSet`, and the token types. The tuple type is now `RgbaTuple` (T's `Rgba` is an object, 0 to 1).
