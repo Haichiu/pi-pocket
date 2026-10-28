@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { inflateSync } from "node:zlib";
 import { APP_ICON, renderIcon } from "../src/server/icon-render.ts";
+
+// The owner's stored colors live in the data folder: a folder of this test's own, not the real one.
+process.env.PI_POCKET_DIR = mkdtempSync(join(tmpdir(), "icon-store-"));
 
 /** An 8-bit RGB PNG with no interlacing, as pixels. */
 function decode(png: Buffer): { size: number; pixels: Buffer } {
@@ -175,4 +180,30 @@ test("the manifest takes the icons and colors of the cookie, and is left alone w
         ],
     );
     assert.match(made.icons[2].src, /pi=b9b9b9.*maskable=1/);
+});
+
+test("the owner's colors serve a request with no cookie, and the cookie still wins", async () => {
+    const { storeIconColors, storedIconColors } = await import("../src/server/icon-store.ts");
+    const { iconAddress, manifestFor } = await import("../src/server/http/icon-route.ts");
+    const request = (cookie?: string) =>
+        ({ headers: cookie === undefined ? {} : { cookie } }) as never;
+
+    assert.equal(storedIconColors(), null, "nothing stored yet");
+    assert.equal(iconAddress(request()), null);
+
+    storeIconColors("070707.000.b0b0b0.b6b6b6.b9b9b9");
+
+    assert.deepEqual(storedIconColors(), ["070707", "000", "b0b0b0", "b6b6b6", "b9b9b9"]);
+    assert.match(
+        iconAddress(request())!,
+        /frame=070707.*pi=b9b9b9/,
+        "no cookie: the owner's colors",
+    );
+    assert.match(
+        iconAddress(request("pocket_icon=111.222.333.444.555"))!,
+        /frame=111/,
+        "a cookie wins",
+    );
+    assert.ok(manifestFor(request(), "{}"), "the manifest too");
+    assert.throws(() => storeIconColors("nope"), TypeError, "only colors are stored");
 });

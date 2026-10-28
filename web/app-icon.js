@@ -77,6 +77,28 @@ function setLink(rel, href, type) {
     link.href = href;
 }
 
+/**
+ * A phone fetches the page and the icon in a session of its own, with no cookie: the owner's browser tells the server the
+ * colors too (a guest's is refused, and keeps its cookie). Not awaited; a failure only leaves the cookie's colors.
+ */
+async function reportToServer(colors) {
+    try {
+        const response = await fetch("/api/app-icon", {
+            method: "PUT",
+            headers: { "X-Pocket": "1", "content-type": "application/json" },
+            body: JSON.stringify({ colors }),
+        });
+
+        if (!response.ok && response.status !== 401 && response.status !== 403) {
+            console.warn(
+                `Pi Pocket: the icon colors were not kept by the server (${response.status}).`,
+            );
+        }
+    } catch (error) {
+        console.warn("Pi Pocket: the icon colors could not be sent to the server.", error);
+    }
+}
+
 let applied = "";
 
 /** Put the icons for `vars` on the page: the tab's icon and the home-screen icon. The same colors again do nothing. */
@@ -91,4 +113,5 @@ export function applyIcons(vars) {
     setLink("icon", svgUrl(iconSvg(vars)), "image/svg+xml");
     setLink("apple-touch-icon", homeIconUrl(vars));
     document.cookie = `${COOKIE}=${cookieValue(vars)}; path=/; max-age=31536000; samesite=lax`;
+    reportToServer(cookieValue(vars));
 }
