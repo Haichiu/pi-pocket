@@ -161,6 +161,11 @@ export type CheckRule =
 
 /** One finding of `checkDesign`. */
 export interface CheckFinding {
+    /**
+     * Stable across runs: the rule and a hash of the element (its `data-pid`, else its selector) and the value, so a pin
+     * can follow a finding. A second finding with the same hash gets `-2`, `-3`.
+     */
+    id?: string;
     rule: CheckRule;
     level: "error" | "warning";
     /** The element, as the inspector names it. Empty for a page-level finding. */

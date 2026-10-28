@@ -7,6 +7,7 @@
  * many elements are one finding with a count in its message. The page is untrusted: everything that comes back from
  * it is shape-checked and bounded before it is used.
  */
+import { createHash } from "node:crypto";
 import type { PocketHost } from "../host.ts";
 import type { DesignBundle } from "./bundle.ts";
 import {
@@ -165,54 +166,95 @@ function resolveTokens(set: TokenSet, raw: RawPage): void {
 
 type Nearest = { token: TokenSet["colors"][number]; distance: number };
 
-/** Names that say what a color token is for, by how the page uses a color. */
-const ROLE_NAMES: Record<string, RegExp> = {
-    text: /text|fg|foreground|content|ink/i,
-    background: /bg|background|surface|fill|canvas/i,
-    border: /border|line|divider|stroke|outline|ring/i,
-    outline: /focus|ring|outline|border/i,
+/** What a color token is for, by the words of its path: a border, text on a ground, or a ground. None for a palette step. */
+type ColorRole = "text" | "background" | "border";
+
+const ROLE_WORDS: [ColorRole, RegExp][] = [
+    ["border", /^(border|borders|line|lines|divider|dividers|stroke|outline|ring|rule|separator)$/],
+    ["text", /^(text|fg|foreground|content|ink|on|label|copy)$/],
+    ["background", /^(bg|background|surface|fill|canvas|base|ground|wash|soft|scrim|overlay)$/],
+];
+
+/** The role a token's name gives it (the first of border, text, background whose words it holds), if any. */
+export function colorRoleOf(name: string): ColorRole | undefined {
+    const words = name
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .toLowerCase()
+        .split(/[^a-z0-9]+/);
+
+    return ROLE_WORDS.find(([, pattern]) => words.some((word) => pattern.test(word)))?.[0];
+}
+
+/** How a page uses a color (`useColor` in the page script) as a token role. */
+const USE_ROLE: Record<string, ColorRole> = {
+    text: "text",
+    background: "background",
+    border: "border",
+    outline: "border",
 };
 
 /**
- * The nearest color token to `color`: the closest, a role before a palette value when two are as near. With a `role`
- * (how the page uses the color), tokens named for another role are left out (a border is not a background), and one
- * named for this role counts as a little nearer.
+ * The nearest color token to `color`: the closest, a role before a palette value when two are as near. With a `use`
+ * (text, background, border, outline), the tokens of that role come first (a color used as a background gets a
+ * background token, not a text token); a palette or accent token with no role can stand in; a token of another role is
+ * the last resort.
  */
-function nearestColor(set: TokenSet, color: RgbaTuple, role?: string): Nearest | undefined {
-    const own = role === undefined ? undefined : ROLE_NAMES[role];
-    const others = Object.entries(ROLE_NAMES)
-        .filter(([name]) => name !== role)
-        .map(([, pattern]) => pattern);
-    const pool =
-        own === undefined
-            ? set.colors
-            : set.colors.filter(
-                  (token) =>
-                      own.test(token.name) || !others.some((pattern) => pattern.test(token.name)),
-              );
+function nearestColor(set: TokenSet, color: RgbaTuple, use?: string): Nearest | undefined {
+    const role = use === undefined ? undefined : USE_ROLE[use];
 
-    let best: Nearest | undefined;
+    const nearest = (tokens: TokenSet["colors"], bonus: ColorRole | undefined) => {
+        let best: Nearest | undefined;
 
-    for (const token of pool) {
-        if (token.rgba === undefined) {
-            continue;
+        for (const token of tokens) {
+            if (token.rgba === undefined) {
+                continue;
+            }
+
+            const distance =
+                colorDistance(color, token.rgba) -
+                (bonus !== undefined && colorRoleOf(token.name) === bonus ? 3 : 0);
+
+            if (
+                best === undefined ||
+                distance < best.distance - 0.5 ||
+                (distance < best.distance + 0.5 &&
+                    TIER_RANK[token.tier] < TIER_RANK[best.token.tier] &&
+                    distance < SAME_COLOR)
+            ) {
+                best = { token, distance };
+            }
         }
 
-        const distance =
-            colorDistance(color, token.rgba) - (own !== undefined && own.test(token.name) ? 3 : 0);
+        return best;
+    };
 
-        if (
-            best === undefined ||
-            distance < best.distance - 0.5 ||
-            (distance < best.distance + 0.5 &&
-                TIER_RANK[token.tier] < TIER_RANK[best.token.tier] &&
-                distance < SAME_COLOR)
-        ) {
-            best = { token, distance };
-        }
+    if (role === undefined) {
+        return nearest(set.colors, undefined);
     }
 
-    return best;
+    const matching = nearest(
+        set.colors.filter((token) => colorRoleOf(token.name) === role),
+        undefined,
+    );
+    const usable = nearest(
+        set.colors.filter((token) => {
+            const own = colorRoleOf(token.name);
+
+            return own === undefined || own === role;
+        }),
+        role,
+    );
+    const best =
+        matching !== undefined && matching.distance <= (usable?.distance ?? Infinity) + 6
+            ? matching
+            : usable;
+
+    if (best !== undefined && best.distance <= FAR_COLOR) {
+        return best;
+    }
+
+    // No token of the role is close: any token that is close at all (the message says that its role differs).
+    return nearest(set.colors, undefined);
 }
 
 /** The length tokens of a kind, with a pixel value. */
@@ -307,6 +349,12 @@ export function analyze(
             const better = nearestColor(tokens, rgba, main?.[0]);
             const near = better !== undefined && better.distance <= FAR_COLOR ? better : undefined;
             const value = formatColor(rgba);
+            const wanted = USE_ROLE[main?.[0] ?? ""];
+            const given = near === undefined ? undefined : colorRoleOf(near.token.name);
+            const roleNote =
+                wanted !== undefined && given !== undefined && given !== wanted
+                    ? ` It is a ${given} token, and the system has no ${wanted} token this close.`
+                    : "";
 
             add(
                 {
@@ -319,11 +367,11 @@ export function analyze(
                         ? `${value} is written as a literal (${roles}), so it does not follow the system.` +
                           (near === undefined
                               ? ""
-                              : ` Use ${tokenRef(near.token)} (${formatColor(near.token.rgba!)}).`)
+                              : ` Use ${tokenRef(near.token)} (${formatColor(near.token.rgba!)}).${roleNote}`)
                         : `${value} is not a system color (${roles}).` +
                           (near === undefined
                               ? " No token is close: pick a role from the system."
-                              : ` Use ${tokenRef(near.token)} (${formatColor(near.token.rgba!)}).`),
+                              : ` Use ${tokenRef(near.token)} (${formatColor(near.token.rgba!)}).${roleNote}`),
                 },
                 num(group.count),
             );
@@ -604,6 +652,8 @@ export function analyze(
         });
     }
 
+    const seen = new Map<string, number>();
+
     return out
         .sort(
             (a, b) =>
@@ -611,7 +661,34 @@ export function analyze(
                 RULE_ORDER.indexOf(a.rule) - RULE_ORDER.indexOf(b.rule) ||
                 b.weight - a.weight,
         )
-        .map(({ weight: _weight, ...finding }) => finding);
+        .map(({ weight: _weight, ...finding }) => {
+            const id = findingId(finding);
+            const again = (seen.get(id) ?? 0) + 1;
+
+            seen.set(id, again);
+
+            return { id: again === 1 ? id : `${id}-${again}`, ...finding };
+        });
+}
+
+/**
+ * A finding's id: the rule, and a hash of where it is (the `data-pid`, else the selector) and what it is about (the
+ * value). The same problem on the same element has the same id in every run, so a pin can follow it; fixing the value
+ * ends it, and a new value is a new id. The color scheme, the viewport, and the wording do not change it.
+ */
+export function findingId(
+    finding: Pick<CheckFinding, "rule" | "pid" | "selector" | "value">,
+): string {
+    const scope =
+        finding.pid !== undefined && finding.pid !== ""
+            ? `pid:${finding.pid}`
+            : `sel:${finding.selector}`;
+    const hash = createHash("sha256")
+        .update(`${finding.rule}\0${scope}\0${finding.value ?? ""}`)
+        .digest("hex")
+        .slice(0, 10);
+
+    return `${finding.rule}-${hash}`;
 }
 
 /** A report for findings. */
