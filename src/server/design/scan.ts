@@ -118,7 +118,10 @@ export function readFacts(root: string): Facts {
         let text: string;
 
         try {
-            text = readHead(join(root, ...rel.split("/")));
+            text = readHead(
+                join(root, ...rel.split("/")),
+                rel.endsWith(".json") ? LIMITS.jsonBytes : LIMITS.fileBytes,
+            );
         } catch {
             continue;
         }

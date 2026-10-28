@@ -541,3 +541,29 @@ test("a gradient in a stylesheet variable is a gradient token, and its stops are
     assert.equal(token(system, "gradient.hero")?.type, "gradient");
     assert.equal(token(system, "gradient.fade")?.type, "gradient");
 });
+
+test("a stylesheet that is read before theme.json still has its WordPress names read", () => {
+    const scan = scanTokens(
+        project({
+            "style.css":
+                "body { background: var(--wp--preset--color--paper); color: var(--wp--preset--color--ink) } a { color: var(--wp--preset--color--signal) }",
+            "wp-content/themes/deep/inc/config/theme.json": {
+                $schema: SCHEMA,
+                version: 3,
+                settings: {
+                    color: {
+                        palette: slugs([
+                            ["paper", "#faf9f6"],
+                            ["ink", "#18181b"],
+                            ["signal", "#e11d48"],
+                        ]),
+                    },
+                },
+            },
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.background?.value, "#faf9f6");
+    assert.equal(scan.inferred.roles.text?.value, "#18181b");
+    assert.equal(scan.inferred.roles.accent?.value, "#e11d48");
+});

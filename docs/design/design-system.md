@@ -106,7 +106,7 @@ Today: hex only, 60 variables in walk order, one flat list, first value of a var
 
 - All color syntaxes (hex 3/4/6/8, rgb/rgba, hsl/hsla, oklch/oklab, lab/lch, named only when used as a value). Normalize for counting.
 - Variables grouped by the selector or file that sets them; `.dark`, `[data-theme=…]`, and `@media (prefers-color-scheme: dark)` values become a **dark mode**.
-- Tailwind v4 `@theme`, Tailwind v3 `theme.extend` (static parse, no execution), SCSS/Less variables, `tokens.json` (DTCG), CSS-in-JS objects in `.ts/.js` theme files (static).
+- Tailwind v4 `@theme`, Tailwind v3 `theme.extend` (static parse, no execution), SCSS/Less variables, token files (DTCG, Style Dictionary, and Tokens Studio: every token set, the modes from `$themes`, references across sets, math such as `{spacing.base} * 2`, color modifiers; one file or a folder with `$themes.json` and `$metadata.json`), WordPress `theme.json` (palette, gradients, fluid font sizes, font families, spacing sizes and `spacingScale`, shadows, `settings.custom`, and `styles/*.json` variations: a dark one is the dark mode), CSS-in-JS objects in `.ts/.js` theme files (static).
 - Ranking by use (references count), not by walk order. Values kept to 200 characters.
 - Inference of roles (background, surface, text, muted, border, accent, danger, warning, success) from names and use, of the type scale, the spacing scale (a base unit and steps), radii, shadows, durations and easings.
 - Output: a **DTCG draft** (`tokens.json` and `tokens.dark.json` contents) plus the human report. Untrusted data stays fenced as today.

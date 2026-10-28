@@ -3,7 +3,7 @@
  * are to hold the design (a stylesheet called `theme.css` before a deep component file), and reads each one bounded.
  * The walk never follows a symlink, so a project cannot lead it out of the folder.
  */
-import { closeSync, constants, openSync, readdirSync, readSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readdirSync, readSync } from "node:fs";
 import { extname, join, relative, sep } from "node:path";
 
 /** Folders that hold other people's code or build output, not the project's own styles. */
@@ -46,7 +46,7 @@ const DOT_STYLE_FOLDERS = new Set([".storybook", ".vitepress", ".vuepress", ".do
 const STYLE =
     /\.(?:css|scss|sass|less|styl|stylus|pcss|postcss|html?|vue|svelte|astro|mdx|tsx|jsx|ts|js|mjs|cjs|mts|cts)$/i;
 const TOKEN_JSON =
-    /(?:^|\/)(?:[^/]*tokens?[^/]*|theme[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
+    /(?:^|\/)(?:[^/]*tokens?[^/]*|theme[^/]*|[^/]*(?:figma|studio|design-?system)[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
 
 export const LIMITS = {
     /** Files read. */
@@ -58,6 +58,8 @@ export const LIMITS = {
     depth: 8,
     /** Bytes read from one file. */
     fileBytes: 200_000,
+    /** Bytes read from one token file: a Tokens Studio file of a large system is more than a stylesheet. */
+    jsonBytes: 1_500_000,
     /** Bytes read in all. */
     totalBytes: 8_000_000,
     /** Characters kept of a value in the report. */
@@ -241,12 +243,13 @@ export function collectFiles(root: string): { files: string[]; partial: boolean 
     return { files: ranked.slice(0, LIMITS.files), partial };
 }
 
-/** The first `LIMITS.fileBytes` bytes of a file as text; it reads no more than that and never follows a link. */
-export function readHead(path: string): string {
+/** The first `limit` bytes of a file as text (a stylesheet's size by default); it reads no more and never follows a link. */
+export function readHead(path: string, limit: number = LIMITS.fileBytes): string {
     const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
 
     try {
-        const buffer = Buffer.alloc(LIMITS.fileBytes);
+        // No more than the file has (a regular file), so that a small file does not cost a large buffer.
+        const buffer = Buffer.alloc(Math.min(limit, Math.max(0, fstatSync(fd).size)));
         let size = 0;
 
         while (size < buffer.length) {

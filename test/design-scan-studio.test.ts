@@ -652,3 +652,62 @@ test("a round trip: the Tokens Studio file that Pi Pocket exports reads back as 
     assert.deepEqual(wrong.slice(0, 5), [], `${wrong.length} tokens differ`);
     assert.ok(readFileSync(join(dir, "tokens.json"), "utf8").includes("$themes"));
 });
+
+test("a large file is read whole: a system with thousands of tokens is more than 200 KB", () => {
+    const palette: Record<string, unknown> = {};
+
+    for (let at = 0; at < 3000; at++) {
+        palette[`c${at}`] = old(
+            `#${(at * 5303 + 0x101010).toString(16).padStart(6, "0").slice(-6)}`,
+            "color",
+            {
+                description: "A palette color that a large system has among thousands.",
+            },
+        );
+    }
+
+    const text = JSON.stringify({
+        core: {
+            color: palette,
+            space: { base: old("4", "spacing"), two: old("{space.base} * 2", "spacing") },
+        },
+        $themes: [],
+        $metadata: { tokenSetOrder: ["core"] },
+    });
+
+    assert.ok(text.length > 300_000, String(text.length));
+
+    const scan = scanTokens(project({ "tokens.json": text }));
+
+    assert.ok(scan.inferred.imported > 2900, `${scan.inferred.imported} tokens`);
+});
+
+test("a reference to a set that no mode turns on does not resolve, and the rest of the file does", () => {
+    const system = load(
+        scanTokens(
+            project({
+                "tokens.json": {
+                    core: GLOBAL,
+                    extra: { color: { stray: old("#abcdef", "color") } },
+                    light: { color: { ...LIGHT.color, uses: old("{color.stray}", "color") } },
+                    $themes: [
+                        {
+                            id: "1",
+                            name: "Light",
+                            selectedTokenSets: {
+                                core: "enabled",
+                                light: "enabled",
+                                extra: "disabled",
+                            },
+                        },
+                    ],
+                    $metadata: { tokenSetOrder: ["core", "extra", "light"] },
+                },
+            }),
+        ),
+    );
+
+    assert.equal(token(system, "color.uses"), undefined, "its target is in a set that is off");
+    assert.equal(token(system, "color.stray"), undefined);
+    assert.equal(hex(system, "color.bg.page"), "#f8fafc");
+});
