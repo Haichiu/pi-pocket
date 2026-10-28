@@ -194,7 +194,7 @@
 
 .dsy-group {
     margin: 0 0 12px;
-    overflow: hidden;
+    overflow: clip;
     border: 1px solid var(--dsn-hair);
     border-radius: 12px;
     background: color-mix(in srgb, var(--text) 3%, var(--bg));
@@ -1000,10 +1000,33 @@
 }
 
 .dsy-ramp-editor-head {
+    position: sticky;
+    top: 0;
+    z-index: 3;
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 6px 6px 6px 12px;
+    border-radius: 10px 10px 0 0;
+    background: var(--bg);
+    box-shadow: 0 1px 0 var(--dsn-hair);
+}
+
+.dsy-mode-chip {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--dsn-fill-2);
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+/* An editor under a row keeps its token's row (the name, and the way to close it) at the top while the editor scrolls. */
+.dsy-row.open > .dsy-row-main {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg));
 }
 
 .dsy-tiles {
@@ -2161,4 +2184,20 @@
 .dsy-tabbar:has(.dsy-tabs[data-less="left"])::before {
     content: "\2039";
     left: 0;
+}
+
+/* A bar of sections that scrolls: it settles on a whole tab at the left, and at rest it shows no tab that is not whole. */
+.dsn[data-size="narrow"] .dsy-tabs {
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 26px;
+}
+
+.dsn[data-size="narrow"] .dsy-tabs .dsn-tab {
+    scroll-snap-align: start;
+    transition: opacity 0.14s;
+}
+
+.dsy-tabs[data-rest] .dsn-tab[data-cut] {
+    opacity: 0;
+    pointer-events: none;
 }

@@ -110,7 +110,34 @@ export function createSystemActions(env, systemData) {
         },
 
         toggleToken(name) {
+            const opening = store.get().sysOpen !== name;
+
             store.set((s) => ({ sysOpen: s.sysOpen === name ? null : name }));
+
+            // An editor that opens under a long grid may be out of sight: its head, and the first of what is in it (the value, the
+            // contrast), are brought into view, and nothing moves when they already are.
+            if (opening) {
+                requestAnimationFrame(() =>
+                    requestAnimationFrame(() => {
+                        const scroll = document.querySelector(".dsy-scroll");
+                        const editor = scroll?.querySelector(
+                            `.dsy-ramp-editor[data-token="${CSS.escape(name)}"], .dsy-row.open[data-token="${CSS.escape(name)}"]`,
+                        );
+
+                        if (!scroll || !editor) {
+                            return;
+                        }
+
+                        const room = scroll.getBoundingClientRect();
+                        const box = editor.getBoundingClientRect();
+                        const need = Math.min(box.height, 280);
+
+                        if (box.top < room.top || box.top + need > room.bottom) {
+                            scroll.scrollBy({ top: box.top - room.top - 8, behavior: "smooth" });
+                        }
+                    }),
+                );
+            }
         },
 
         /** Fold a group (`fold` true) or open it. A group that starts folded is opened by saying so, not by taking the choice back. */

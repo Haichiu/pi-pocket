@@ -588,6 +588,14 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                     color: "#1a1b26",
                     font: "700 12px/1 system-ui, sans-serif",
                     "box-shadow": "0 1px 4px rgba(0,0,0,.45)",
+                    "pointer-events": "auto",
+                    cursor: "pointer",
+                });
+
+                // A tap on a pin is told to the app (it opens the finding): the page's own handlers get nothing from it.
+                node.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    send({ type: "pocket-pin", label: text, tap: true });
                 });
 
                 node.textContent = text;
@@ -607,6 +615,15 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
                     if (el && typeof el.scrollIntoView === "function") {
                         el.scrollIntoView({ block: "center", inline: "nearest" });
+
+                        // Where it is now, in the frame: the app, whose canvas may be bigger than its room, brings it into view too.
+                        const at = el.getBoundingClientRect();
+
+                        send({
+                            type: "pocket-pin",
+                            label: text,
+                            rect: { x: at.left, y: at.top, width: at.width, height: at.height },
+                        });
                     }
                 }
             });

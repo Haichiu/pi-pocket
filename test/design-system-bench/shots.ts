@@ -12,15 +12,7 @@
  * kind) is a failure in the report, with the reason. One failed shot is logged and the run goes on.
  */
 import { type ChildProcess, spawn } from "node:child_process";
-import {
-    cpSync,
-    existsSync,
-    mkdirSync,
-    mkdtempSync,
-    readdirSync,
-    rmSync,
-    writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -94,11 +86,22 @@ interface Copy {
     pid: number;
 }
 
-async function startCopy(tree: string, host: string, port: number): Promise<Copy> {
-    const child = spawn("node", ["test/serve-design-system.ts", String(port), host], {
-        cwd: tree,
-        stdio: ["ignore", "pipe", "pipe"],
-    });
+async function startCopy(
+    tree: string,
+    host: string,
+    port: number,
+    flagship = false,
+): Promise<Copy> {
+    // The flagship is put in when the copy starts, so that the design it publishes (Ferry booking) is made with its own
+    // CSS: a page that was made with Harbor's variables, shown against the flagship's, has text that it cannot color.
+    const child = spawn(
+        "node",
+        ["test/serve-design-system.ts", String(port), host, ...(flagship ? ["--flagship"] : [])],
+        {
+            cwd: tree,
+            stdio: ["ignore", "pipe", "pipe"],
+        },
+    );
     let out = "";
 
     child.stdout!.setEncoding("utf8");
@@ -153,14 +156,6 @@ async function stopCopy(copy: Copy) {
 
 /** The system's source folder inside the copy's session folder. */
 const designDir = (copy: Copy) => join(copy.root, "work", ".pi", "design");
-
-/** The flagship, in the place where `serve-design-system.ts` wrote Harbor. */
-function swapInFlagship(tree: string, copy: Copy) {
-    rmSync(designDir(copy), { recursive: true, force: true });
-    cpSync(join(tree, "docs/examples/design-system/pocket/.pi/design"), designDir(copy), {
-        recursive: true,
-    });
-}
 
 /** How many tokens of each kind the system has, from its own files and the bench's own reader. */
 function expectedCounts(copy: Copy): Record<string, number> {
@@ -660,7 +655,8 @@ async function run(
                         "the open design beside the view",
                         `return JSON.stringify(Boolean(document.querySelector(".dsy-preview .dsn-frame, .dsy-preview iframe")))`,
                     );
-                    await sleep(1500);
+                    // The open design takes the system's values a moment after it loads and after the pane is fitted.
+                    await sleep(3500);
                 });
                 await focusMode(page, false).catch(() => {});
             }
@@ -677,16 +673,42 @@ async function run(
                 );
                 await press(page, '.dsn-tabs button[title="Check"]');
                 await waitFor(page, "the check dock", has('.dsn-dock[data-dock="check"]'));
-                // "Run the check", or "Check again" when the dock already holds a report.
-                await waitFor(page, "the check button", has(".dsy-check-foot button"));
-                await press(page, ".dsy-check-foot button:last-child");
-                await waitFor(page, "the report", has(".dsy-check-summary"), 60_000);
+                // "Run the check", or "Check again" when the dock already holds a report. On a phone the dock starts as a bar
+                // (`.dsy-check-bar`) with its own "Run the check".
+                await waitFor(
+                    page,
+                    "the check button",
+                    has(".dsy-check-foot button, .dsy-check-bar button"),
+                );
+                await page.ev(`
+                    const bar = document.querySelector(".dsy-check-bar");
+                    const button = bar
+                        ? [...bar.querySelectorAll("button")].find((each) => /Run the check/.test(each.textContent))
+                        : document.querySelector(".dsy-check-foot button:last-child");
+                    button?.click();
+                    return "null";
+                `);
+                await waitFor(
+                    page,
+                    "the report",
+                    has(".dsy-check-summary, .dsy-check-bar strong"),
+                    60_000,
+                );
                 await waitFor(
                     page,
                     "the findings",
-                    `return JSON.stringify(document.querySelectorAll(".dsy-finding").length > 0 || Boolean(document.querySelector(".dsy-check-summary")))`,
+                    `return JSON.stringify(document.querySelectorAll(".dsy-finding").length > 0 || /\\d+ finding|Nothing to fix/.test(document.querySelector(".dsy-check-bar strong")?.textContent ?? "") || Boolean(document.querySelector(".dsy-check-summary")))`,
                 );
             });
+
+            // The phone's findings start as a bar, and the page keeps the room: the sheet is the next picture.
+            if (size.mobile) {
+                await shoot(size, "check-sheet", async () => {
+                    await press(page, ".dsy-check-bar-main");
+                    await waitFor(page, "the sheet", has(".dsy-check-summary"));
+                    await sleep(600);
+                });
+            }
         }
     } finally {
         await page.close();
@@ -776,11 +798,7 @@ export async function runShots(options: ShotsOptions): Promise<ShotsReport> {
             log(`=== ${variant}`);
 
             try {
-                current = await startCopy(tree, host, port);
-
-                if (variant === "flagship") {
-                    swapInFlagship(tree, current);
-                }
+                current = await startCopy(tree, host, port, variant === "flagship");
 
                 await run(
                     chromium,

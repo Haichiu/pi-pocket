@@ -181,7 +181,7 @@ export function createCheck(env, DockHead) {
         </li>`;
     }
 
-    function CheckDock({ s, design, shown, canEdit }) {
+    function CheckDock({ s, design, shown, canEdit, shut = false }) {
         const options = checkOptions(s, env.canvasDark(s));
         const key = checkKey(design.id, shown, options.mode, options.size);
         const entry = s.checks[key];
@@ -277,6 +277,71 @@ export function createCheck(env, DockHead) {
                 }),
             );
         };
+
+        // The finding that a tap on its pin opens comes into view in the list.
+        useEffect(() => {
+            if (!shut && s.checkFocus !== null) {
+                requestAnimationFrame(() =>
+                    document
+                        .querySelector(".dsn-dock .dsy-finding.on")
+                        ?.scrollIntoView({ block: "nearest" }),
+                );
+            }
+        }, [s.checkFocus?.at, shut]);
+
+        // On a phone the findings start as a bar at the foot, so that the page keeps the room: the count of findings (by level),
+        // and the one tap that can fix some. A tap on the bar opens the sheet.
+        if (shut) {
+            const errors = report?.summary.errors ?? 0;
+            const warnings = report?.summary.warnings ?? 0;
+            const words = running
+                ? "Checking…"
+                : entry?.status === "failed"
+                  ? "The check failed"
+                  : report
+                    ? findings.length === 0
+                        ? "Nothing to fix"
+                        : `${findings.length} finding${findings.length === 1 ? "" : "s"}`
+                    : "Not checked yet";
+
+            return html`<div class="dsy-check-bar">
+                <button
+                    type="button"
+                    class="dsy-check-bar-main"
+                    aria-label=${`${words}. Open the findings.`}
+                    onClick=${() => store.set({ checkSheet: 1 })}
+                >
+                    <${Ico} name="shield" size=${16} />
+                    <strong>${words}</strong>
+                    ${errors > 0 && html`<span class="dsy-tag bad">${errors} error${errors === 1 ? "" : "s"}</span>`}
+                    ${warnings > 0 && html`<span class="dsy-tag warn">${warnings} warning${warnings === 1 ? "" : "s"}</span>`}
+                    <span class="grow"></span>
+                    <span class="dsy-check-bar-up"><${Ico} name="down" size=${16} /></span>
+                </button>
+                ${
+                    canEdit &&
+                    report &&
+                    exact > 0 &&
+                    html`<button
+                        type="button"
+                        class="button small"
+                        disabled=${fixing || running}
+                        title=${`Fix ${exact} exact match${exact === 1 ? "" : "es"}: a value that is exactly a token's becomes the token`}
+                        onClick=${fix}
+                    >
+                        ${fixing ? "Fixing…" : `Fix ${exact}`}
+                    </button>`
+                }
+                ${
+                    canEdit &&
+                    !report &&
+                    entry?.status !== "running" &&
+                    html`<button type="button" class="button small" onClick=${() => run()}>
+                        Run the check
+                    </button>`
+                }
+            </div>`;
+        }
 
         return html`<${DockHead}
                 title="Check"
