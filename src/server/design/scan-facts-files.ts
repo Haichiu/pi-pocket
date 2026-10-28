@@ -80,7 +80,8 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
     facts.file = rel;
 
     // WordPress names its variables `--wp--preset--color--primary`; the scan reads them as `--color-primary`.
-    if (facts.wordpress) {
+    // A stylesheet that is read before theme.json is renamed too: the files come in the order of their rank.
+    if (facts.wordpress || /--wp--(?:preset|custom)--/.test(raw)) {
         raw = wordpressNames(raw);
     }
 

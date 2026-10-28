@@ -82,6 +82,7 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
                       hex,
                       uses: uses(entry.variable),
                       ...(kinds === undefined ? {} : { kinds }),
+                      ...(facts.wordpress ? { platform: "wordpress" as const } : {}),
                   },
               ];
     });
@@ -91,7 +92,14 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
 
             return hex === undefined
                 ? []
-                : [{ name: entry.variable.name, hex, uses: uses(entry.variable) }];
+                : [
+                      {
+                          name: entry.variable.name,
+                          hex,
+                          uses: uses(entry.variable),
+                          ...(facts.wordpress ? { platform: "wordpress" as const } : {}),
+                      },
+                  ];
         }),
         ...prep.others.flatMap(({ role, entry }) => {
             const hex = hexOf(entry.lightColor);

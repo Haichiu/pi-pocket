@@ -5,7 +5,7 @@ import { stackOf } from "./scan-facts-use.ts";
 import { bezier, shadowValue } from "./scan-scales.ts";
 import { type Obj, slug } from "./scan-util.ts";
 import { type Variable } from "./scan-variables.ts";
-import { LENGTH } from "./scan-categorize.ts";
+import { GRADIENT, LENGTH } from "./scan-categorize.ts";
 
 const GROUPS: Record<Category, string> = {
     color: "color",
@@ -23,6 +23,7 @@ const GROUPS: Record<Category, string> = {
     z: "z",
     opacity: "opacity",
     size: "size",
+    gradient: "gradient",
 };
 
 const PREFIX: Record<Category, RegExp> = {
@@ -41,6 +42,7 @@ const PREFIX: Record<Category, RegExp> = {
     z: /^(?:z-index|z|layer)-?/,
     opacity: /^opacity-?/,
     size: /^(?:size|container|blur)-?/,
+    gradient: /^(?:gradient|bg-gradient)-?/,
 };
 
 const FALLBACK_NAME: Record<Category, string> = {
@@ -59,6 +61,7 @@ const FALLBACK_NAME: Record<Category, string> = {
     z: "base",
     opacity: "base",
     size: "base",
+    gradient: "base",
 };
 
 /** Words that name a role, or its colors (`hover`-ed or `dark`-ened): such a color is nested, not a role of its own. */
@@ -130,6 +133,9 @@ export function nodeFor(category: Category, text: string, colorText?: string): O
 
             return { $value: value, $type: "shadow" };
         }
+
+        case "gradient":
+            return GRADIENT.test(text) ? { $value: text, $type: "gradient" } : undefined;
 
         case "z":
         case "opacity":
