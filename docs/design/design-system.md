@@ -26,8 +26,12 @@ Make Pi Pocket the best place to **build, keep, and use a design system** with a
   guidelines.md          Prose: voice, layout rules, do and don't. Bounded (16 KB).
   dist/                  Generated. Never edit by hand.
     tokens.css           :root (default) + [data-theme="<mode>"] + @media (prefers-color-scheme: dark) when a dark mode exists.
-    tailwind.css         Tailwind v4 @theme block mapping to the same variables.
-    tokens.resolved.json Every token resolved, every mode.
+    tailwind.css         Tailwind v4 @theme block: one variable for each token, in Tailwind's namespace (--spacing-4, --text-sm)
+                         when one fits, else under its own name. A dark: variant for [data-theme] and the system's dark setting.
+    tokens.resolved.json Every token resolved, every mode, compact: one line for each token.
+    tokens.<mode>.resolved.json
+                         DTCG, one file for each mode, with one $value for each token and every reference followed
+                         (Style Dictionary and Tokens Studio read it).
     components.css       The CSS of every component specimen, scoped by class.
 .pi/design-system.md     The 0.26 format. Still read when .pi/design/ is absent.
 ```
@@ -38,7 +42,10 @@ Make Pi Pocket the best place to **build, keep, and use a design system** with a
 - Types: color, dimension, fontFamily, fontWeight, duration, cubicBezier, number, shadow, typography, border, transition, gradient, strokeStyle.
 - **Tiers**, by top-level group or `$extensions["com.pi-pocket"].tier`: `primitive` (raw palette and scales), `semantic` (roles: `color.bg.surface`, `color.text.primary`, `color.accent.default`, `space.4`, `font.body`…), `component` (`button.primary.bg`). Semantic tokens should reference primitives.
 - **Modes**: the default mode is `tokens.json`; `tokens.<mode>.json` holds overrides. Mode names: lowercase slug.
-- **Contrast pairs** (optional): `$extensions["com.pi-pocket"].contrast: { on: "{color.bg.surface}", min: 4.5 }` on a text color: the validator checks it in every mode.
+- **Contrast pairs** (optional): `$extensions["com.pi-pocket"].contrast: { on: "{color.bg.surface}", min: 4.5 }` on a text color: the validator checks it in every mode. A list of pairs is allowed. `exempt: "disabled" | "decorative"` leaves a pair out of the warnings (WCAG exempts both): a failing exempt pair is a note (`notes` of the system), not a warning.
+- **Names**: a token named for its own value (`space.16` = 16px, `duration.140` = 140ms) gets a warning, with a fix: name it for a role (`space.card`) or a step of a scale (`space.4`).
+- **Tailwind reset** (optional): `$extensions["com.pi-pocket"].tailwindReset: ["color"]` on the root of `tokens.json` puts `--color-*: initial;` in `tailwind.css`, so Tailwind's default palette does not leak into utilities. `true` is `["color"]`; the other names are `font`, `text`, `font-weight`, `spacing`, `radius`, `shadow`, `ease`, `breakpoint`, and `all`.
+- A primitive, or a step of a scale (`space.4`), that refers to another primitive (`{dim.16}`) is written in `tokens.css` as the value (`--space-4: 16px`), so that DevTools shows `16px`. A role or component token keeps `var()`.
 - CSS variable name: the path joined by `-`, with `--` in front (`color.bg.surface` → `--color-bg-surface`). A reference compiles to `var(--…)`, so a mode override of a primitive flows through.
 
 ### Component specimen format

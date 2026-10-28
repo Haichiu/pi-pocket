@@ -579,22 +579,6 @@ function tailwindCss(system: CompileInput): string {
 
 // --- Resolved JSON and component CSS ------------------------------------------------------------------------------------
 
-/** Puts `entries` on an object that takes any key (a token named `__proto__` is just a key here). */
-function record(entries: [string, unknown][]): Record<string, unknown> {
-    const out: Record<string, unknown> = {};
-
-    for (const [key, value] of entries) {
-        Object.defineProperty(out, key, {
-            value,
-            enumerable: true,
-            writable: true,
-            configurable: true,
-        });
-    }
-
-    return out;
-}
-
 /** The value of `get` for each mode: one value when every mode has the same, else a map by mode. */
 function perMode<T>(
     modes: readonly string[],
@@ -652,18 +636,20 @@ function resolvedJson(system: CompileInput): string {
         return [token.name, entry];
     });
 
-    return `${JSON.stringify(
-        {
-            name: system.name,
-            ...(system.description === undefined ? {} : { description: system.description }),
-            modes: system.modes,
-            defaultMode: system.modes[0],
-            schemes: system.schemes,
-            tokens: record(tokens),
-        },
-        null,
-        1,
-    )}\n`;
+    // One line for each token, so that the file is short and still diffs well.
+    const head = {
+        name: system.name,
+        ...(system.description === undefined ? {} : { description: system.description }),
+        modes: system.modes,
+        defaultMode: system.modes[0],
+        schemes: system.schemes,
+    };
+
+    return `{\n${Object.entries(head)
+        .map(([key, value]) => ` ${JSON.stringify(key)}: ${JSON.stringify(value)},`)
+        .join(
+            "\n",
+        )}\n "tokens": {\n${tokens.map(([name, entry]) => `  ${JSON.stringify(name)}: ${JSON.stringify(entry)}`).join(",\n")}\n }\n}\n`;
 }
 
 /**
