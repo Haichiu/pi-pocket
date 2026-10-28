@@ -857,6 +857,15 @@ test("the app's own messages are checked before they go", real, async () => {
         ).error,
     );
     assert.ok((await check({ type: "pocket-run", html: "<p>" })).error);
+    // A pin may ask to be brought into view (a finding tapped in a list); only a boolean says so.
+    assert.ok(
+        (await check({ type: "pocket-highlight", targets: [{ selector: "p", reveal: true }] }))
+            .message,
+    );
+    assert.ok(
+        (await check({ type: "pocket-highlight", targets: [{ selector: "p", reveal: "yes" }] }))
+            .error,
+    );
 });
 
 test(

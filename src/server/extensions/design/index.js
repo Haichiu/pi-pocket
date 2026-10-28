@@ -104,6 +104,7 @@ export default function setup(pocket) {
                 ...modeless(),
                 draft: null,
                 present: false,
+                checkFocus: null,
                 ...(same ? {} : { slide: 0 }),
             });
         },
@@ -132,7 +133,11 @@ export default function setup(pocket) {
             });
         },
         setDock(dock) {
-            store.set(dock === null ? { dock: null, mode: "view", draft: null } : { dock });
+            store.set(
+                dock === null
+                    ? { dock: null, mode: "view", draft: null, checkFocus: null }
+                    : { dock },
+            );
         },
         setTab(tab) {
             const s = store.get();
