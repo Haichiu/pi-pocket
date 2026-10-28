@@ -1,7 +1,7 @@
 // The design picker: a card (a bottom sheet on a phone) that lists the session's designs, variations together, with the
 // design system pinned above them.
 import { latestOf } from "./data.js";
-import { unsavedCount } from "./system.js";
+import { unsavedOf } from "./unsaved.js";
 
 export function createPicker(env) {
     const { pocket, parts } = env;
@@ -83,7 +83,7 @@ export function createPicker(env) {
                             <span class="dsn-list-main">
                                 <strong>Design system</strong>
                                 <span class="muted small"
-                                    >${systemNote(s.system, unsavedCount(s.system.data, s.history))}</span
+                                    >${systemNote(s.system, unsavedOf(s.system.data, s.history))}</span
                                 >
                             </span>
                             ${inSystem && html`<${Ico} name="check" size=${15} />`}

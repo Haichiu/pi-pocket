@@ -107,6 +107,29 @@ The test fixture (Harbor) has a text color with two pairs (`color.text.link`), o
 
 Weak: a shadow's color that is a literal is shown as a hex field, and its alpha is in the hex (eight digits); there is no alpha slider. A shadow has no preview of its own in the editor (the tile above it moves). A part's list of links has every token of the kind (spacing, radii, font sizes), by name search. The inherited mark of a card is for one mode in view; side by side shows the values as before.
 
+## Round 4: a cheap start
+
+The app loads Design's browser module for everyone at every start, on phones too, also when nobody opens Design. It had grown to 24 files. Now the app loads three small files at start, the workspace when the panel first opens, and the rest when a person first needs it.
+
+| Measured in Chromium, page loaded, nothing clicked | files                                      | bytes (source) | bytes on the wire |
+| -------------------------------------------------- | ------------------------------------------ | -------------- | ----------------- |
+| Before (`fd2178e`)                                 | 25 (24 JavaScript, `style.css`)            | 462,953        | 125,084           |
+| After                                              | **3** (`index.js`, `paths.js`, `state.js`) | **17,506**     | **7,214**         |
+| After, the panel opened (a design shown)           | 18                                         | 176,575        |                   |
+| After, the System view opened as well              | 29                                         | 457,569        |                   |
+
+The files, by when they load:
+
+- **At the app's start:** `index.js` (the store, the rail button, the launcher actions, the command and event handlers, and a loading state), `paths.js` (the one icon), and `state.js`. The designs are not listed and no stylesheet loads until the panel opens (the designs list used to be read on every session change).
+- **When the panel first opens** (`app.js`, with a loading state in the panel): the data, the actions, the picker, the toolbar, the canvas with the Check helpers, `style.css` (the workspace's sheet, 33 KB; the panel waits for its rules to apply, so nothing flashes bare).
+- **When first needed:** `docks.js` (the tabs beside the canvas), `views.js` (compare, the variations grid, the slide strip, presentation), and the System view as one part, `system-ui.js` with `system.js`, `color.js`, `specimen.js`, `system-view.js`, `system-sections.js`, `system-widgets.js`, `system-actions.js`, `system-preview.js`, and its own sheet `system.css` (the rules of `style.css` that only the System view uses: 38 KB). A short loading state shows while a part loads.
+
+What moved to make that so: `state.js` no longer imports `system.js` (it has its own empty history); the unsaved count and the change a save sends go through `unsaved.js`, which the System view fills in when it loads (with no edits the answer is 0 and nothing is loaded); `openSystem` and `focusFinding`, which the workspace needs, moved from `system-actions.js` to `app.js`; the preview watcher starts when the System view first loads (edits are only made there). `style.css` was split by what each rule styles (a `dsy-` class that the workspace's own parts use, such as the Check dock and the picker's pinned row, stays in `style.css`).
+
+`test/design-system-ui.test.ts` holds the budget: on a page that starts with the panel shut, only those three files load and they are under 40,000 bytes; when the panel opens, none of the System view's files, nor `docks.js` or `views.js`, has loaded; the System view's files load when it opens. It prints the numbers.
+
+Left alone: `docs/map.md` (the description of the `design/` folder there says that `index.js` sets up everything: it should name `app.js`, `system-ui.js`, `unsaved.js`, `paths.js` and `system.css`, and say which load when); the 33 KB of `style.css` is the panel's first cost (a split of the workspace's own sheet, such as the docks, would save more); `docks.js` still imports the Check dock, which `canvas.js` shares in part (`check.js`).
+
 ## The engines (round 2: the real ones)
 
 `system-api.ts` re-exports `loadDesignSystem` and `writeDesignSystem` (T), `checkDesign` (V), and `renderSystemDoc` (G). The stand-ins are gone. With the real engines six tests of this stream failed. The causes, and what was done:

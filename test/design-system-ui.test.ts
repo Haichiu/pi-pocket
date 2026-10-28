@@ -2259,3 +2259,99 @@ test(
         await pressed('.dsy-modes button[aria-label="Light"]');
     },
 );
+
+/** The files of Design's browser module that the page has fetched so far (JavaScript and stylesheets), with their sizes. */
+const loadedFiles = () =>
+    inPage<{ name: string; bytes: number }[]>(`
+        return JSON.stringify(
+            performance.getEntriesByType("resource")
+                .filter((each) => /\\/x\\/design\\/[^/]+\\/[^/?]+\\.(js|css)$/.test(new URL(each.name).pathname))
+                .map((each) => ({ name: new URL(each.name).pathname.split("/").pop(), bytes: each.decodedBodySize })),
+        );
+    `);
+
+const sum = (files: { bytes: number }[]) => files.reduce((total, each) => total + each.bytes, 0);
+
+/** What the System view is made of, and the parts that load on use: none of them is in what the app loads at its start. */
+const SYSTEM_FILES = [
+    "system.js",
+    "system-ui.js",
+    "system-view.js",
+    "system-sections.js",
+    "system-widgets.js",
+    "system-actions.js",
+    "system-preview.js",
+    "system.css",
+    "color.js",
+    "specimen.js",
+];
+const ON_USE_FILES = ["docks.js", "views.js"];
+
+test(
+    "the app loads little of Design when it starts, the workspace when the panel opens, and the System view when it opens",
+    real,
+    async (t) => {
+        // A page that starts with the panel shut: only the module's own file, the store, and the icon of the rail button.
+        await inPage(
+            `const { closeExtPanel } = await import("/extension-ui.js"); closeExtPanel(); return "null";`,
+        );
+        await waitFor("the panel closed", `return JSON.stringify(!document.querySelector(".dsn"))`);
+        await go(session);
+        await waitFor(
+            "the module",
+            `return JSON.stringify(performance.getEntriesByType("resource").some((each) => /\\/x\\/design\\/[^/]+\\/index\\.js$/.test(new URL(each.name).pathname)))`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 600));
+
+        const start = await loadedFiles();
+        const names = (files: { name: string }[]) => files.map((each) => each.name);
+
+        t.diagnostic(
+            `at the app's start: ${start.length} files, ${sum(start)} bytes (${names(start).join(", ")})`,
+        );
+        assert.equal(await count(".dsn"), 0, "no panel yet");
+        assert.deepEqual(names(start).sort(), ["index.js", "paths.js", "state.js"]);
+        assert.ok(sum(start) < 40_000, `${sum(start)} bytes at the start`);
+
+        // The panel opens: the workspace and its stylesheet load, and none of the System view, nor what a dock or a variation
+        // view is made of.
+        await openDesign();
+        await waitFor(
+            "the workspace",
+            `return JSON.stringify(Boolean(document.querySelector(".dsn-bar")) && Boolean(document.querySelector(".dsn-canvas, .dsn-empty")))`,
+        );
+
+        const opened = await loadedFiles();
+
+        t.diagnostic(`when the panel opens: ${opened.length} files, ${sum(opened)} bytes`);
+        assert.ok(names(opened).includes("app.js") && names(opened).includes("style.css"));
+
+        for (const file of [...SYSTEM_FILES, ...ON_USE_FILES]) {
+            assert.equal(names(opened).includes(file), false, `${file} loads when it is needed`);
+        }
+
+        // A dock is a part of its own: it loads when the first one opens.
+        await pressed('.dsn-tab[title="Versions"], .dsn-tab[title="Tweaks"]');
+        await waitFor(
+            "the dock",
+            `return JSON.stringify(Boolean(document.querySelector(".dsn-dock")) && performance.getEntriesByType("resource").some((each) => new URL(each.name).pathname.endsWith("/docks.js")))`,
+        );
+        await waitFor(
+            "the dock's body",
+            `return JSON.stringify(Boolean(document.querySelector(".dsn-dock-head")))`,
+        );
+
+        // The System view loads when it first opens, its stylesheet with it.
+        await openSystem();
+
+        const system = await loadedFiles();
+
+        t.diagnostic(`when the System view opens: ${system.length} files, ${sum(system)} bytes`);
+
+        for (const file of SYSTEM_FILES) {
+            assert.ok(names(system).includes(file), `${file} loads with the System view`);
+        }
+
+        await pressed(".dsy-tabs [role=tab]", "Colors");
+    },
+);

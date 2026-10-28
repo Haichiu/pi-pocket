@@ -1,8 +1,10 @@
 // Small pieces the workspace is made of: icons, a pop-up card, a segmented choice, a measure of an element's size.
 
+import { DESIGN_PATH } from "./paths.js";
+
 /** Icons of our own (24 × 24, stroked), for what the app's set lacks. */
 export const PATHS = {
-    design: "M4 3h16a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z M4 13h4a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z M14 13h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z",
+    design: DESIGN_PATH,
     comment: "M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z",
     text: "M4 20h4L19 9l-4-4L4 16v4z M13.5 6.5l4 4",
     sliders: "M4 6h9 M17 6h3 M4 12h3 M11 12h9 M4 18h11 M19 18h1 M13 4v4 M7 10v4 M15 16v4",

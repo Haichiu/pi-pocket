@@ -1,5 +1,6 @@
-// What a person does in the System view, as functions of the store: open it, edit a token, undo and redo, fold a group,
-// jump to a token, and ask Pi for what the view does not edit. They are added to the workspace's `env`.
+// What a person does in the System view, as functions of the store: edit a token, undo and redo, fold a group, jump to a
+// token, and ask Pi for what the view does not edit. They are added to the workspace's `env` when the System view loads (the
+// ones that the rest of the workspace needs, `openSystem` and `focusFinding`, are in `app.js`).
 import { systemRequest, tokenRequest } from "./messages.js";
 import {
     editsOf,
@@ -21,20 +22,6 @@ export function createSystemActions(env, systemData) {
     const fresh = (s) => (s.save.status === "saving" ? s.save : IDLE);
 
     return {
-        /** Show the System view in place of the design. */
-        openSystem() {
-            store.set({
-                view: "system",
-                mode: "view",
-                dock: null,
-                draft: null,
-                present: false,
-                compare: null,
-                sysPane: "system",
-            });
-            void systemData.load({ quiet: store.get().system.status === "ready" });
-        },
-
         /** Change one token in one mode to `raw`: `{ alias: "color.blue.500" }` or `{ value }`. */
         editToken(name, mode, raw) {
             store.set((s) => ({
@@ -111,14 +98,6 @@ export function createSystemActions(env, systemData) {
 
         setSection(sysSection) {
             store.set({ sysSection, sysOpen: null, sysPick: null });
-        },
-
-        /**
-         * Show a finding of the page check on the page: its pin, scrolled into view in the frame. A canvas that is zoomed in
-         * goes back to fit first, so that the frame's own scroll is the only one left and the pin is on the screen.
-         */
-        focusFinding(number) {
-            store.set({ checkFocus: { number, at: Date.now() }, zoom: "fit" });
         },
 
         /** Open the list of tokens that `token` may link to, in `mode`. */

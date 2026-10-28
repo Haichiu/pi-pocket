@@ -3,17 +3,12 @@ import { openOf } from "./comments.js";
 import { createCanvas, frameUrl } from "./canvas.js";
 import { designsOf, latestOf, siblingsOf } from "./data.js";
 import { clampSize, DEVICES, exportViewport, sizeOf } from "./devices.js";
-import { createDocks } from "./docks.js";
 import { createPicker } from "./picker.js";
 import { checkOptions } from "./check.js";
 import { checkKey } from "./system-data.js";
-import { createSystemSections } from "./system-sections.js";
-import { createSystemView } from "./system-view.js";
-import { createSystemWidgets } from "./system-widgets.js";
 import { changed } from "./tweaks.js";
-import { createViews } from "./views.js";
 import { resolveDevice, useStore } from "./state.js";
-import { unsavedCount } from "./system.js";
+import { unsavedOf } from "./unsaved.js";
 
 /** The sheet's own width classes: below 560 px it stacks; from 900 px the side panel sits beside the canvas. */
 const NARROW = 560;
@@ -25,11 +20,42 @@ export function createWorkspace(env) {
     const { html, useEffect, useMemo, useRef, useState } = pocket;
     const { Ico, Popover, Segmented, useSize } = parts;
     const canvas = createCanvas(env);
-    const docks = createDocks(env);
-    const views = createViews(env, canvas);
     const { Picker } = createPicker(env);
-    const widgets = createSystemWidgets(env);
-    const system = createSystemView(env, canvas, createSystemSections(env, widgets), widgets);
+
+    // The parts that a person may never use load when they are first needed, and stay: the docks (the tabs beside the
+    // canvas), the compare and variation views with the slide strip and the presentation, and the System view.
+    const LAZY = {
+        docks: () => import("./docks.js").then((module) => module.createDocks(env)),
+        views: () => import("./views.js").then((module) => module.createViews(env, canvas)),
+        system: () => import("./system-ui.js").then((module) => module.createSystemUi(env, canvas)),
+    };
+    const loaded = {};
+    const loading = {};
+
+    /** A lazy part, or null while it loads (this draws again when it is in). It starts loading when `wanted` first is true. */
+    function useLazy(name, wanted) {
+        const [, draw] = useState(0);
+
+        useEffect(() => {
+            if (wanted && loaded[name] === undefined && loading[name] === undefined) {
+                loading[name] = LAZY[name]().then(
+                    (part) => {
+                        loaded[name] = part;
+                        draw((count) => count + 1);
+                    },
+                    (error) => {
+                        loading[name] = undefined;
+                        pocket.notify(
+                            "error",
+                            `Design: a part did not load (${error?.message ?? error}).`,
+                        );
+                    },
+                );
+            }
+        }, [wanted]);
+
+        return loaded[name] ?? null;
+    }
 
     /** Parts of the app's own state this reads: the session's artifacts, who the person is. Redraws only when they change. */
     function useApp() {
@@ -491,6 +517,16 @@ export function createWorkspace(env) {
         const { w: width } = useSize(root);
         const designs = useDesigns(appState, s);
         const design = designs.find((each) => each.id === s.artifact) ?? null;
+        const docks = useLazy("docks", s.dock !== null);
+        const views = useLazy(
+            "views",
+            s.view === "compare" ||
+                s.view === "grid" ||
+                s.present ||
+                s.deck !== null ||
+                design?.kind === "deck",
+        );
+        const system = useLazy("system", s.view === "system");
         const me = appState.me;
         const canEdit = me?.role !== undefined && me.role !== "viewer";
         const canShare = canEdit && me?.sessions === undefined;
@@ -611,7 +647,7 @@ export function createWorkspace(env) {
                 : latest
             : 1;
         const group = design ? siblingsOf(designs, design) : [];
-        const unsaved = unsavedCount(s.system.data, s.history);
+        const unsaved = unsavedOf(s.system.data, s.history);
 
         // Pi makes a new version while the person is in the middle of something (a mode, a draft, text edits): the page they
         // work on stays, with the way to the new one, instead of loading under them.
@@ -644,6 +680,17 @@ export function createWorkspace(env) {
         }
 
         // The System view: its own bar and body, with the open design (if there is one) beside it or behind a tap.
+        if (s.view === "system" && system === null) {
+            return html`<div
+                class="dsn dsy"
+                ref=${root}
+                data-size=${env.sizeClass(s)}
+                data-view="system"
+            >
+                <${pocket.Loader} label="Opening the design system" />
+            </div>`;
+        }
+
         if (s.view === "system") {
             return html`<div
                 class="dsn dsy"
@@ -679,24 +726,29 @@ export function createWorkspace(env) {
             </div>`;
         }
 
+        const wantsViews =
+            (s.view === "compare" && design.versions.length > 1) ||
+            (s.view === "grid" && group.length > 1);
         const view =
-            s.view === "compare" && design.versions.length > 1
-                ? html`<${views.CompareView} s=${s} design=${design} size=${size} />`
-                : s.view === "grid" && group.length > 1
-                  ? html`<${views.GridView}
-                        s=${s}
-                        design=${design}
-                        designs=${designs}
-                        size=${size}
-                        canEdit=${canEdit}
-                    />`
-                  : html`<${canvas.CanvasView}
-                        s=${s}
-                        design=${design}
-                        version=${shown}
-                        size=${size}
-                        readOnly=${!canEdit}
-                    />`;
+            wantsViews && views === null
+                ? html`<${pocket.Loader} label="Opening the versions" />`
+                : s.view === "compare" && design.versions.length > 1
+                  ? html`<${views.CompareView} s=${s} design=${design} size=${size} />`
+                  : s.view === "grid" && group.length > 1
+                    ? html`<${views.GridView}
+                          s=${s}
+                          design=${design}
+                          designs=${designs}
+                          size=${size}
+                          canEdit=${canEdit}
+                      />`
+                    : html`<${canvas.CanvasView}
+                          s=${s}
+                          design=${design}
+                          version=${shown}
+                          size=${size}
+                          readOnly=${!canEdit}
+                      />`;
 
         return html`<div
             class="dsn"
@@ -741,11 +793,24 @@ export function createWorkspace(env) {
             <div class="dsn-main">
                 <div class="dsn-center">
                     ${s.present ? null : view}
-                    ${s.view === "canvas" && !s.present && deck && html`<${views.DeckStrip} s=${s} />`}
+                    ${s.view === "canvas" && !s.present && deck && views && html`<${views.DeckStrip} s=${s} />`}
                 </div>
-                <${docks.Dock} s=${s} design=${design} shown=${shown} canEdit=${canEdit} me=${me} />
+                ${
+                    docks
+                        ? html`<${docks.Dock}
+                              s=${s}
+                              design=${design}
+                              shown=${shown}
+                              canEdit=${canEdit}
+                              me=${me}
+                          />`
+                        : s.dock !== null &&
+                          html`<aside class="dsn-dock" data-dock=${s.dock}>
+                              <${pocket.Loader} label="Opening" />
+                          </aside>`
+                }
             </div>
-            ${s.present && html`<${views.Present} s=${s} design=${design} version=${shown} />`}
+            ${s.present && views && html`<${views.Present} s=${s} design=${design} version=${shown} />`}
         </div>`;
     }
 
