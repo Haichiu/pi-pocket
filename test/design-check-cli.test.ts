@@ -1,7 +1,7 @@
 // The CI entry point `src/server/design/check-cli.ts`: arguments, exit codes, the bundle next to the page, and a system.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -33,6 +33,40 @@ async function exec(args: string[]) {
         return { code: failed.code, stdout: failed.stdout, stderr: failed.stderr };
     }
 }
+
+test("--help says what it needs; without a browser the exit code is 2; npm run design:check is the same file", async () => {
+    const help = await exec(["--help"]);
+
+    assert.equal(help.code, 0);
+    assert.match(help.stdout, /^Usage: node src\/server\/design\/check-cli\.ts/);
+    assert.match(
+        help.stdout,
+        /It needs Chromium, Chrome, Brave, or Edge on this machine \(set PI_POCKET_BROWSER to name one\)\./,
+    );
+    assert.match(help.stdout, /Exit code: 0 .* 1 .* 2 /);
+    writeFileSync(join(folder, "any.html"), "<!doctype html><title>x</title>");
+
+    try {
+        await run("node", [cli, join(folder, "any.html")], {
+            env: { ...process.env, PI_POCKET_BROWSER: join(folder, "no-such-browser") },
+        });
+        assert.fail("it should exit with 2");
+    } catch (error) {
+        const failed = error as { code: number; stderr: string };
+
+        assert.equal(failed.code, 2);
+        assert.match(
+            failed.stderr,
+            /none was found\. Install Chromium, Chrome, Brave, or Edge, or set PI_POCKET_BROWSER/,
+        );
+    }
+
+    const scripts = JSON.parse(
+        readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8"),
+    ).scripts;
+
+    assert.equal(scripts["design:check"], "node src/server/design/check-cli.ts");
+});
 
 test("the arguments are checked: exit 2 and a usage line", async () => {
     for (const args of [

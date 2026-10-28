@@ -12,6 +12,7 @@ import type { PocketHost } from "../host.ts";
 import type { DesignBundle } from "./bundle.ts";
 import {
     colorDistance,
+    toOklab,
     contrastOf,
     familyList,
     formatColor,
@@ -75,6 +76,11 @@ const RULE_ORDER: CheckRule[] = [
     "missing-viewport",
     "focus-visible",
     "reduced-motion",
+    "form-label",
+    "accessible-name",
+    "missing-lang",
+    "input-zoom",
+    "missing-main",
     "heading-order",
     "missing-pid",
 ];
@@ -310,29 +316,54 @@ function nearestColor(set: TokenSet, color: RgbaTuple, use?: string): Nearest | 
         return nearest(set.colors, undefined);
     }
 
-    const matching = nearest(
+    // The role's own tokens first, then a semantic token with no role (an accent), then the palette: a role token wins
+    // unless another is much nearer (more than 12 on the distance scale).
+    const ofRole = nearest(
         set.colors.filter((token) => colorRoleOf(token.name) === role),
         undefined,
     );
-    const usable = nearest(
-        set.colors.filter((token) => {
-            const own = colorRoleOf(token.name);
-
-            return own === undefined || own === role;
-        }),
-        role,
+    const semantic = nearest(
+        set.colors.filter(
+            (token) => colorRoleOf(token.name) === undefined && token.tier !== "primitive",
+        ),
+        undefined,
     );
+    const palette = nearest(
+        set.colors.filter(
+            (token) => colorRoleOf(token.name) === undefined && token.tier === "primitive",
+        ),
+        undefined,
+    );
+    const close = (found: Nearest | undefined) =>
+        found !== undefined && found.distance <= FAR_COLOR ? found : undefined;
     const best =
-        matching !== undefined && matching.distance <= (usable?.distance ?? Infinity) + 6
-            ? matching
-            : usable;
+        close(ofRole) !== undefined &&
+        (close(semantic) === undefined || ofRole!.distance <= semantic!.distance + 12)
+            ? ofRole
+            : (close(semantic) ?? close(palette));
 
-    if (best !== undefined && best.distance <= FAR_COLOR) {
+    if (best !== undefined) {
         return best;
     }
 
     // No token of the role is close: any token that is close at all (the message says that its role differs).
     return nearest(set.colors, undefined);
+}
+
+/**
+ * How a token differs from the color that it replaces, in words: `slightly darker`, `lighter`, `much more different in
+ * hue`. Said when a suggestion changes the value, so that the edit is not a surprise.
+ */
+function difference(color: RgbaTuple, token: RgbaTuple): string {
+    const [l1] = toOklab(color[0], color[1], color[2]);
+    const [l2] = toOklab(token[0], token[1], token[2]);
+    const distance = colorDistance(color, token);
+    const degree = distance < 3 ? "slightly " : distance < 8 ? "" : "much ";
+    const lightness = l2 - l1;
+
+    return Math.abs(lightness) > 0.01
+        ? `${degree}${lightness < 0 ? "darker" : "lighter"}`
+        : `${degree}different in hue, at the same lightness`;
 }
 
 /** The length tokens of a kind, with a pixel value. */
@@ -392,7 +423,7 @@ function suggestFont(set: TokenSet, list: string) {
 export function analyze(
     raw: RawPage,
     tokens: TokenSet | undefined,
-    context: { deck?: boolean } = {},
+    context: { deck?: boolean; phone?: boolean } = {},
 ): CheckFinding[] {
     const out: (CheckFinding & { weight: number })[] = [];
     const add = (finding: CheckFinding, weight = 1) => out.push({ ...finding, weight });
@@ -434,6 +465,10 @@ export function analyze(
                 near === undefined
                     ? ""
                     : ` Set \`${property}: ${tokenRef(near.token)}\` (${formatColor(near.token.rgba!)}) instead of ${value}.`;
+            const change =
+                near === undefined || onSystem
+                    ? ""
+                    : ` The closest token is ${formatColor(near.token.rgba!)}, which is ${difference(rgba, near.token.rgba!)}.`;
             const roleNote =
                 wanted !== undefined && given !== undefined && given !== wanted
                     ? ` It is a ${given} token, and the system has no ${wanted} token this close.`
@@ -469,7 +504,7 @@ export function analyze(
                         : `${value} is not a system color (${roles}).` +
                           (near === undefined
                               ? " No token is close: pick a role from the system."
-                              : `${edit}${roleNote}`),
+                              : `${edit}${change}${roleNote}`),
                 },
                 num(group.count),
             );
@@ -795,6 +830,81 @@ export function analyze(
         );
     }
 
+    // Page semantics.
+    const semantics = raw.semantics;
+
+    if (semantics !== undefined && semantics.lang === false) {
+        add({
+            rule: "missing-lang",
+            level: "error",
+            ...elementOf(semantics.html),
+            message:
+                'The page has no lang attribute on <html>, so a screen reader has to guess its language (WCAG 3.1.1). Set `<html lang="en">`, with the page\'s own language.',
+        });
+    }
+
+    if (semantics !== undefined && semantics.main === false && context.deck !== true) {
+        add({
+            rule: "missing-main",
+            level: "warning",
+            ...elementOf(semantics.body),
+            message:
+                "The page has no main landmark, so a screen reader cannot jump to its content. Wrap the page's content in `<main>`.",
+        });
+    }
+
+    for (const group of raw.labels ?? []) {
+        add(
+            {
+                rule: "form-label",
+                level: "error",
+                ...elementOf(group.el),
+                value: clip(group.kind, 40),
+                message: `A <${clip(group.kind, 40)}> has no label (no label, aria-label, aria-labelledby, title, or placeholder)${more(num(group.count))}. Point a \`<label for="id">\` at it, wrap it in a \`<label>\`, or add \`aria-label="what it is"\`.`,
+            },
+            num(group.count),
+        );
+    }
+
+    for (const group of raw.names ?? []) {
+        add(
+            {
+                rule: "accessible-name",
+                level: "error",
+                ...elementOf(group.el),
+                value: clip(group.kind, 40),
+                message: `A <${clip(group.kind, 40)}> has no accessible name (no text, aria-label, aria-labelledby, title, image alt, or SVG title)${more(num(group.count))}. Add \`aria-label="what it does"\`.`,
+            },
+            num(group.count),
+        );
+    }
+
+    if (context.phone === true) {
+        const sizes =
+            tokens === undefined
+                ? []
+                : lengthsOf(tokens, "font-size").filter((token) => token.px >= 16);
+        const step = sizes.sort((a, b) => a.px - b.px)[0];
+
+        for (const group of raw.zoom ?? []) {
+            add(
+                {
+                    rule: "input-zoom",
+                    level: "warning",
+                    ...elementOf(group.el),
+                    value: `${num(group.px)}px`,
+                    ...(step === undefined ? {} : { suggestion: tokenRef(step) }),
+                    message: `A <${clip(group.kind, 40)}> has font-size ${num(group.px)}px: iOS Safari zooms the page in when a field under 16px gets the focus${more(num(group.count))}. ${
+                        step === undefined
+                            ? "Set `font-size: 16px`."
+                            : `Set \`font-size: ${tokenRef(step)}\` (${step.px}px).`
+                    }`,
+                },
+                num(group.count),
+            );
+        }
+    }
+
     // Motion with no way to ask for less: one finding for the page.
     const motion = raw.motion;
 
@@ -885,7 +995,11 @@ function sizeEdit(
     const list = names.length > 0 ? names : [kind === "font-size" ? "font-size" : kind];
     const set = list.map((prop) => `\`${prop}\``).join(" or ");
 
-    return `Set ${set} to ${tokenRef(step)}, ${step.px}px, instead of ${px}px.`;
+    const by = Math.round(Math.abs(step.px - px) * 100) / 100;
+    const change =
+        by < 0.01 ? "" : ` The closest step is ${by}px ${step.px < px ? "smaller" : "larger"}.`;
+
+    return `Set ${set} to ${tokenRef(step)}, ${step.px}px, instead of ${px}px.${change}`;
 }
 
 /** A report for findings. */
@@ -945,7 +1059,7 @@ export async function checkPage(
     }
 
     return reportOf(
-        analyze(raw, tokens, { deck }),
+        analyze(raw, tokens, { deck, phone: view.viewport.width < 600 }),
         { viewport: view.viewport, colorScheme, mode: picked?.mode },
         num(raw.elements),
         system === undefined,
