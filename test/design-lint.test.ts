@@ -12,7 +12,7 @@ import {
     formatColor,
     lengthKind,
     tokenSet,
-} from "../src/server/design/color.ts";
+} from "../src/server/design/lint-color.ts";
 import { analyze, mergeFindings, modeFor, reportOf } from "../src/server/design/lint.ts";
 import type { RawPage } from "../src/server/design/lint-page.ts";
 import {

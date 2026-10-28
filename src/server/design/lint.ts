@@ -19,7 +19,7 @@ import {
     type Rgba,
     tokenSet,
     type TokenSet,
-} from "./color.ts";
+} from "./lint-color.ts";
 import { PAGE_SCRIPT, type PageInput, type RawElement, type RawPage } from "./lint-page.ts";
 import {
     type DesignAction,
