@@ -46,8 +46,11 @@ export interface CheckOptions {
     /** Default: light. */
     colorScheme?: "light" | "dark";
     /**
-     * The system mode to compare with. Default: `dark` for a dark color scheme when the system has that mode, else the
-     * system's default mode. A mode that is not the default also sets `data-theme` on the page's root, if it sets none.
+     * A mode of the system (`system.modes`: `high-contrast`, a brand). The page gets `data-theme="<mode>"` on its root
+     * element, is drawn in the mode's color scheme (`system.schemes`; `colorScheme` is the fallback), and is compared
+     * with that mode's tokens. The name is checked against the system, and a system is needed. Left out: `dark` for a
+     * dark color scheme when the system has that mode (the root gets `data-theme` only if the page sets none), else
+     * the system's default mode.
      */
     mode?: string;
     tweaks?: TweakValues;
@@ -129,12 +132,25 @@ const TIER_RANK: Record<ResolvedToken["tier"], number> = {
     primitive: 2,
 };
 
-/** The mode of `system` that a check at `colorScheme` compares with. */
+/** The view of a system's mode: which mode, which color scheme to draw, and the `data-theme` to set. */
+export interface ModeView {
+    mode: string;
+    scheme: "light" | "dark";
+    /** The value of `data-theme` on the root, when the check sets one. */
+    theme?: string;
+    /** True when the mode was asked for by name: the attribute then replaces the page's own. */
+    named: boolean;
+}
+
+/**
+ * The mode of `system` that a check at `colorScheme` compares with. A named mode is validated and draws in its own
+ * scheme (`system.schemes`); without a name, a dark scheme takes the `dark` mode when the system has one.
+ */
 export function modeFor(
     system: DesignSystem,
     colorScheme: "light" | "dark",
     mode?: string,
-): { mode: string; theme?: string } {
+): ModeView {
     if (mode !== undefined) {
         if (!system.modes.includes(mode)) {
             throw new Error(
@@ -142,14 +158,14 @@ export function modeFor(
             );
         }
 
-        return mode === system.modes[0] ? { mode } : { mode, theme: mode };
+        return { mode, scheme: system.schemes?.[mode] ?? colorScheme, theme: mode, named: true };
     }
 
     if (colorScheme === "dark" && system.modes.includes("dark") && system.modes[0] !== "dark") {
-        return { mode: "dark", theme: "dark" };
+        return { mode: "dark", scheme: "dark", theme: "dark", named: false };
     }
 
-    return { mode: system.modes[0] ?? "light" };
+    return { mode: system.modes[0] ?? "light", scheme: colorScheme, named: false };
 }
 
 /** What the page script resolved for the system's tokens, put back into the token set. */
@@ -723,7 +739,7 @@ function sizeEdit(
 /** A report for findings. */
 export function reportOf(
     findings: CheckFinding[],
-    view: { viewport: DesignViewport; colorScheme: "light" | "dark" },
+    view: { viewport: DesignViewport; colorScheme: "light" | "dark"; mode?: string },
     elements: number,
     withoutSystem: boolean,
 ): CheckReport {
@@ -736,6 +752,7 @@ export function reportOf(
     return {
         viewport: view.viewport,
         colorScheme: view.colorScheme,
+        ...(view.mode === undefined ? {} : { mode: view.mode }),
         findings,
         summary: {
             errors: findings.filter((finding) => finding.level === "error").length,
@@ -756,11 +773,11 @@ export async function checkPage(
     system: DesignSystem | undefined,
     view: { viewport: DesignViewport; colorScheme?: "light" | "dark"; mode?: string },
 ): Promise<CheckReport> {
-    const colorScheme = view.colorScheme ?? "light";
+    const picked =
+        system === undefined ? undefined : modeFor(system, view.colorScheme ?? "light", view.mode);
+    const colorScheme = picked?.scheme ?? view.colorScheme ?? "light";
     const tokens =
-        system === undefined
-            ? undefined
-            : tokenSet(system, modeFor(system, colorScheme, view.mode).mode);
+        system === undefined || picked === undefined ? undefined : tokenSet(system, picked.mode);
     const deck = await page.isDeck();
     const input: PageInput = {
         tokenColors: tokens?.colors.map((token) => token.css) ?? [],
@@ -777,7 +794,7 @@ export async function checkPage(
 
     return reportOf(
         analyze(raw, tokens, { deck }),
-        { viewport: view.viewport, colorScheme },
+        { viewport: view.viewport, colorScheme, mode: picked?.mode },
         num(raw.elements),
         system === undefined,
     );
@@ -816,12 +833,25 @@ export async function checkDesign(
     signal?: AbortSignal,
 ): Promise<CheckReport> {
     const viewport = viewportOf(options.viewport ?? "desktop");
-    const colorScheme = options.colorScheme ?? "light";
-    const picked = system === undefined ? undefined : modeFor(system, colorScheme, options.mode);
+
+    if (options.mode !== undefined && system === undefined) {
+        throw new Error("A mode needs a design system: this project has none.");
+    }
+
+    const picked =
+        system === undefined
+            ? undefined
+            : modeFor(system, options.colorScheme ?? "light", options.mode);
+    const colorScheme = picked?.scheme ?? options.colorScheme ?? "light";
 
     return withRender(bundle, host, signal, async (page) => {
         await page.load(viewport, { page: options.page });
-        await page.applyView({ colorScheme, theme: picked?.theme, tweaks: options.tweaks });
+        await page.applyView({
+            colorScheme,
+            theme: picked?.theme,
+            forceTheme: picked?.named,
+            tweaks: options.tweaks,
+        });
         await page.act(options.actions ?? []);
         const view = { viewport, colorScheme, mode: picked?.mode };
 
@@ -845,7 +875,7 @@ export async function checkDesign(
 
         return reportOf(
             findings,
-            { viewport, colorScheme },
+            { viewport, colorScheme, mode: picked?.mode },
             reports.reduce((total, report) => total + report.summary.elements, 0),
             system === undefined,
         );

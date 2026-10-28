@@ -27,6 +27,8 @@ import {
     token,
 } from "./design-lint-fixtures.ts";
 import { checkDesign } from "../src/server/design/lint.ts";
+import { loadDesignSystem } from "../src/server/design/tokens.ts";
+import { join } from "node:path";
 
 const browser = { skip: findBrowser() === undefined, timeout: 120_000 };
 
@@ -117,9 +119,19 @@ test("a token set holds one mode of the system, and modes pick by color scheme",
             "radius:radius.md",
         ],
     );
-    assert.deepEqual(modeFor(system, "light"), { mode: "light" });
-    assert.deepEqual(modeFor(system, "dark"), { mode: "dark", theme: "dark" });
-    assert.deepEqual(modeFor(system, "dark", "light"), { mode: "light" });
+    assert.deepEqual(modeFor(system, "light"), { mode: "light", scheme: "light", named: false });
+    assert.deepEqual(modeFor(system, "dark"), {
+        mode: "dark",
+        scheme: "dark",
+        theme: "dark",
+        named: false,
+    });
+    assert.deepEqual(modeFor(system, "dark", "light"), {
+        mode: "light",
+        scheme: "light",
+        theme: "light",
+        named: true,
+    });
     assert.throws(() => modeFor(system, "light", "sepia"), /no mode "sepia"/);
     // A reference keeps its resolved value; a component token is not on a scale.
     const aliased = token("color.alias", "color", { colorSpace: "srgb", components: [1, 0, 0] });
@@ -1008,3 +1020,73 @@ test("the page script's answer is untrusted: strings are cut and malformed group
     assert.ok(found.every((item) => item.message.length < 400));
     assert.equal(found.find((item) => item.rule === "tap-target")!.value, "0×5px");
 });
+
+test(
+    "a mode of the system: data-theme, the mode's scheme, and the mode's tokens",
+    browser,
+    async () => {
+        // The flagship has light, dark, and high-contrast, and says that high-contrast is drawn dark.
+        const flagship = loadDesignSystem(
+            join(import.meta.dirname, "fixtures", "design-system", "flagship"),
+        )!;
+        const assets = [
+            { name: "ds/tokens.css", type: "text/css", bytes: Buffer.from(flagship.compiled.css) },
+        ];
+        // High-contrast muted text (#b4bee6) on the page's ground: it reads on the high-contrast ground, not on the light one.
+        const content = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="ds/tokens.css"><style>body{margin:0;background:var(--color-bg-base)}</style></head><body><p data-pid="quiet" style="margin:0;padding:var(--space-4);color:#b4bee6">Quiet words</p></body></html>`;
+        const run = (options: object, system = flagship) =>
+            checkDesign(
+                bundleOf(content, assets),
+                system,
+                { viewport: "mobile", ...options },
+                host,
+            );
+        const quiet = (report: Awaited<ReturnType<typeof run>>) =>
+            report.findings.find((item) => item.rule === "contrast" && item.pid === "quiet");
+
+        assert.equal(flagship.schemes["high-contrast"], "dark");
+        const light = await run({});
+        const contrast = await run({ mode: "high-contrast" });
+
+        assert.equal(light.mode, "light", "the report names the mode that it compared with");
+        assert.equal(light.colorScheme, "light");
+        assert.ok(quiet(light), "pale text on the light ground");
+        assert.equal(contrast.mode, "high-contrast");
+        assert.equal(contrast.colorScheme, "dark", "the mode's own scheme, not the one asked for");
+        assert.equal(quiet(contrast), undefined, "the ground is the high-contrast ground");
+        // It wins over the scheme that is asked for, and over a data-theme that the page has.
+        assert.equal(
+            (await run({ mode: "high-contrast", colorScheme: "light" })).colorScheme,
+            "dark",
+        );
+        const set = content.replace("<html lang", '<html data-theme="light" lang');
+        const forced = await checkDesign(
+            bundleOf(set, assets),
+            flagship,
+            { viewport: "mobile", mode: "high-contrast" },
+            host,
+        );
+
+        assert.equal(quiet(forced), undefined, "the named mode replaces the page's own data-theme");
+        // A name is checked, and a mode needs a system.
+        await assert.rejects(
+            run({ mode: "sepia" }),
+            /no mode "sepia"\. Modes: light, dark, high-contrast\./,
+        );
+        await assert.rejects(
+            checkDesign(
+                bundleOf(content, assets),
+                undefined,
+                { viewport: "mobile", mode: "high-contrast" },
+                host,
+            ),
+            /needs a design system/,
+        );
+        assert.equal(light.withoutSystem, false);
+        assert.equal(
+            (await checkDesign(bundleOf(content, assets), undefined, { viewport: "mobile" }, host))
+                .mode,
+            undefined,
+        );
+    },
+);

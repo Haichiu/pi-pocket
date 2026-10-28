@@ -45,6 +45,13 @@ const tweakSchema = Type.Record(
 );
 const slideSchema = Type.Union([Type.Integer({ minimum: 1, maximum: 100 }), Type.Literal("all")]);
 
+const modeSchema = Type.String({
+    minLength: 1,
+    maxLength: 64,
+    description:
+        "A mode of the design system (high-contrast, a brand): the page gets data-theme=<mode>, is drawn in the mode's color scheme, and is checked against that mode's tokens.",
+});
+
 const MAX_FINDINGS = 30;
 
 type Output = (
@@ -156,7 +163,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
         defineTool({
             name: "design_preview",
             description:
-                "Check an HTML design in private headless Chromium pages, never the shared browser. Returns screenshots, console errors, failed requests, and (checks, on by default) a compact list of problems: values that are not design-system tokens (with the nearest token), contrast, tap targets, overflow, alt text, headings, fonts, and focus. Fix every error, then preview again. Optional: tweaks (values to apply), colorScheme, page (another HTML page of the bundle), actions (hover, click, or focus a selector before the screenshot). Slide numbers start at 1.",
+                "Check an HTML design in private headless Chromium pages, never the shared browser. Returns screenshots, console errors, failed requests, and (checks, on by default) a compact list of problems: values that are not design-system tokens (with the nearest token), contrast, tap targets, overflow, alt text, headings, fonts, and focus. Fix every error, then preview again. Optional: tweaks (values to apply), colorScheme, mode (a mode of the design system, such as high-contrast), page (another HTML page of the bundle), actions (hover, click, or focus a selector before the screenshot). Slide numbers start at 1.",
             parameters: Type.Object({
                 id: Type.String(),
                 version,
@@ -172,6 +179,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                 colorScheme: Type.Optional(
                     Type.Union([Type.Literal("light"), Type.Literal("dark")]),
                 ),
+                mode: Type.Optional(modeSchema),
                 page: Type.Optional(
                     Type.String({
                         maxLength: 200,
@@ -225,7 +233,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                     }
                 }
 
-                if (checks) {
+                if (checks || args.mode !== undefined) {
                     const cwd = (await api.agent(context)).cwd;
 
                     try {
@@ -236,8 +244,16 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                         );
                     }
 
-                    picked = system === undefined ? undefined : modeFor(system, colorScheme);
+                    if (args.mode !== undefined && system === undefined) {
+                        throw new Error("A mode needs a design system: this project has none.");
+                    }
+
+                    picked =
+                        system === undefined ? undefined : modeFor(system, colorScheme, args.mode);
                 }
+
+                // A named mode draws in its own scheme.
+                const scheme = picked?.scheme ?? colorScheme;
 
                 return withRender(bundle, host, context.abortSignal, async (page) => {
                     const output: Output = [];
@@ -247,7 +263,12 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                         const size = VIEWPORTS[view];
 
                         await page.load(size, { page: args.page });
-                        await page.applyView({ colorScheme, theme: picked?.theme, tweaks });
+                        await page.applyView({
+                            colorScheme: scheme,
+                            theme: picked?.theme,
+                            forceTheme: picked?.named,
+                            tweaks,
+                        });
 
                         const slide = args.slide ?? ((await page.isDeck()) ? 1 : undefined);
 
@@ -263,7 +284,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                             try {
                                 return await checkPage(page, system, {
                                     viewport: size,
-                                    colorScheme,
+                                    colorScheme: scheme,
                                     mode: picked?.mode,
                                 });
                             } catch (error) {
@@ -296,7 +317,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                                 view,
                                 report: reportOf(
                                     mergeFindings(found),
-                                    { viewport: size, colorScheme },
+                                    { viewport: size, colorScheme: scheme, mode: picked?.mode },
                                     found[0]!.summary.elements,
                                     system === undefined,
                                 ),
@@ -351,7 +372,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
     const exportTool = defineTool({
         name: "design_export",
         description:
-            "Export an HTML design as PNG, PDF, PPTX (image slides with text notes), or an HTML bundle zip. Writes inside the session folder, by default exports/<id>-v<version>.<ext>. Existing output files are replaced. PPTX requires a deck. A page's PNG and PDF use the viewport's width (a preset, or { width, height }). tweaks applies tweak values first. For a deck's PNG, slide picks a slide (from 1; default 1), or \"all\" writes a zip with every slide.",
+            "Export an HTML design as PNG, PDF, PPTX (image slides with text notes), or an HTML bundle zip. Writes inside the session folder, by default exports/<id>-v<version>.<ext>. Existing output files are replaced. PPTX requires a deck. A page's PNG and PDF use the viewport's width (a preset, or { width, height }). tweaks applies tweak values first. mode draws it in a mode of the design system (data-theme and the mode's color scheme). For a deck's PNG, slide picks a slide (from 1; default 1), or \"all\" writes a zip with every slide.",
         parameters: Type.Object({
             id: Type.String(),
             version,
@@ -368,6 +389,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
             path: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
             tweaks: Type.Optional(tweakSchema),
             slide: Type.Optional(slideSchema),
+            mode: Type.Optional(modeSchema),
         }),
         execute: async (args, api, context) => {
             const bundle = await readBundle(
@@ -394,6 +416,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                     path: args.path,
                     tweaks: tweakValues(args.tweaks),
                     slide: args.slide,
+                    ...exportMode(loadSystem, cwd, args.mode),
                     signal: context.abortSignal,
                 },
                 host,
@@ -420,6 +443,31 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
     return [preview, exportTool, designSystemTool()];
 }
 
+/** What an export needs of a mode: the color scheme to draw in and the `data-theme`. Nothing when no mode is named. */
+function exportMode(
+    loadSystem: (cwd: string) => DesignSystem | undefined,
+    cwd: string,
+    mode: unknown,
+): { colorScheme?: "light" | "dark"; theme?: string } {
+    if (mode === undefined || mode === null) {
+        return {};
+    }
+
+    if (typeof mode !== "string" || mode.length === 0 || mode.length > 64) {
+        throw new Error("The mode is the name of a mode of the design system.");
+    }
+
+    const system = loadSystem(cwd);
+
+    if (system === undefined) {
+        throw new Error("A mode needs a design system: this project has none.");
+    }
+
+    const picked = modeFor(system, "light", mode);
+
+    return { colorScheme: picked.scheme, theme: picked.theme };
+}
+
 /** The `slide` of an export request: a slide number from 1, or `all`. */
 function slideOf(value: unknown): number | "all" | undefined {
     if (value === undefined || value === null) {
@@ -440,7 +488,9 @@ function slideOf(value: unknown): number | "all" | undefined {
  * `POST c/:conversation/export` for the workspace: the same export as `design_export`, written in the session folder at its default
  * path. It answers `{ path, name, size }`; the browser downloads the file through the core file route.
  */
-export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
+export function designRoutes(web: ExtensionWeb, host: PocketHost, deps: DesignToolDeps = {}): void {
+    const loadSystem = deps.loadSystem ?? loadDesignSystem;
+
     web.conversationRoute(
         "POST",
         "c/:conversation/export",
@@ -490,6 +540,7 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost): void {
                         viewport,
                         tweaks,
                         slide,
+                        ...exportMode(loadSystem, cwd, body.mode),
                         signal: request.signal,
                     },
                     host,
