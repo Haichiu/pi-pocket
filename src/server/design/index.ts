@@ -15,7 +15,7 @@ import {
 } from "./render.ts";
 import { designSystemTool } from "./system.ts";
 import type { CheckFinding, CheckReport, DesignSystem } from "./system-types.ts";
-import { loadDesignSystem } from "./tokens-stub.ts";
+import { loadDesignSystem } from "./tokens.ts";
 
 export { designGuide } from "./guide.ts";
 
