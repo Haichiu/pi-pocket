@@ -298,21 +298,19 @@ export function loadStubSystem(cwd: string): DesignSystem | undefined {
     };
 }
 
+// A variable, so that the type check does not need the file before stream T has written it.
+const REAL = "../src/server/design/tokens.ts";
+
 /** The real loader when stream T's `tokens.ts` exists, else the stand-in above. */
 export async function loadSystem(cwd: string): Promise<DesignSystem | undefined> {
-    const real = (await import("../src/server/design/tokens.ts").catch(
-        (error: NodeJS.ErrnoException) => {
-            // Only "the file is not there yet" falls back; a loader that fails to load is a failure to see.
-            if (
-                error.code === "ERR_MODULE_NOT_FOUND" &&
-                String(error.message).includes("tokens.ts")
-            ) {
-                return undefined;
-            }
+    const real = (await import(REAL).catch((error: NodeJS.ErrnoException) => {
+        // Only "the file is not there yet" falls back; a loader that fails to load is a failure to see.
+        if (error.code === "ERR_MODULE_NOT_FOUND" && String(error.message).includes("tokens.ts")) {
+            return undefined;
+        }
 
-            throw error;
-        },
-    )) as { loadDesignSystem?: (cwd: string) => DesignSystem | undefined } | undefined;
+        throw error;
+    })) as { loadDesignSystem?: (cwd: string) => DesignSystem | undefined } | undefined;
 
     return real?.loadDesignSystem === undefined ? loadStubSystem(cwd) : real.loadDesignSystem(cwd);
 }
