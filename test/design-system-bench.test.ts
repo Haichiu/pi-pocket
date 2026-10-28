@@ -33,7 +33,12 @@ import {
 } from "./design-system-bench/lib/modules.ts";
 import { loadLintCases, LINT_SYSTEM, lintSystemFor } from "./design-system-bench/lib/phase-lint.ts";
 import { BENCH, loadFixtures } from "./design-system-bench/lib/phase-scan.ts";
-import { draftFromExpected, referenceModules } from "./design-system-bench/lib/reference.ts";
+import {
+    draftFromExpected,
+    referenceLoad,
+    referenceModules,
+    referenceWrite,
+} from "./design-system-bench/lib/reference.ts";
 import {
     extract,
     maxMatching,
@@ -54,6 +59,7 @@ import {
     systemFromFlat,
 } from "./design-system-bench/lib/system.ts";
 import { makeGolden } from "./design-system-bench/lint/system/make-golden.ts";
+import { contrastPhase } from "./design-system-bench/lib/phase-docs.ts";
 import { decodePng, distinctColors } from "./design-system-bench/lib/png.ts";
 import { runBench } from "./design-system-bench/run.ts";
 import { judgeTab, runShots, type Census } from "./design-system-bench/shots.ts";
@@ -1383,3 +1389,137 @@ test(
         assert.ok(report.tabs.find((tab) => tab.tab === "Colors")!.tokens > 0);
     },
 );
+
+test("an exempt contrast pair (disabled text) is reported apart, with its ratio, and is not a failure", () => {
+    const tree = {
+        color: {
+            $type: "color",
+            bg: { $value: "#ffffff" },
+            text: {
+                primary: {
+                    $value: "#111111",
+                    $extensions: { "com.pi-pocket": { contrast: { on: "{color.bg}", min: 4.5 } } },
+                },
+                // WCAG 1.4.3 leaves out disabled controls: below 4.5:1 on purpose.
+                disabled: {
+                    $value: "#9aa0a6",
+                    $extensions: {
+                        "com.pi-pocket": {
+                            contrast: { on: "{color.bg}", min: 4.5, exempt: "disabled" },
+                        },
+                    },
+                },
+                // A token may declare a list: one pair passes, one is exempt, one really fails.
+                many: {
+                    $value: "#8a8a8a",
+                    $extensions: {
+                        "com.pi-pocket": {
+                            contrast: [
+                                { on: "{color.bg}", min: 3 },
+                                { on: "{color.bg}", min: 4.5, exempt: "decorative" },
+                                { on: "{color.bg}", min: 7 },
+                            ],
+                        },
+                    },
+                },
+            },
+        },
+    };
+    const flat = flatten(tree);
+    const system = systemFromFlat(flat, "t");
+    const pairs = contrastPairs(system.tokens, system.modes);
+
+    assert.equal(
+        flat.tokens.find((token) => token.name === "color.text.disabled")!.contrast!.exempt,
+        "disabled",
+    );
+    assert.equal(pairs.length, 5);
+    assert.deepEqual(
+        pairs
+            .filter((pair) => pair.exempt !== undefined)
+            .map((pair) => [pair.token, pair.exempt, pair.passesEverywhere]),
+        [
+            ["color.text.disabled", "disabled", false],
+            ["color.text.many", "decorative", false],
+        ],
+    );
+
+    const phase = contrastPhase(system, "flagship");
+
+    assert.equal(phase.declared, 3, "the exempt pairs are not declared pairs");
+    assert.equal(phase.passing, 2);
+    assert.deepEqual(
+        phase.failing.map((pair) => [pair.token, pair.min]),
+        [["color.text.many", 7]],
+    );
+    assert.deepEqual(
+        phase.exempt.map((pair) => [pair.token, pair.exempt, pair.ratios.light]),
+        [
+            ["color.text.disabled", "disabled", 2.64],
+            ["color.text.many", "decorative", 3.45],
+        ],
+    );
+
+    // Only exempt pairs fail: the pass rate is 1.
+    const only = contrastPhase(
+        systemFromFlat(
+            flatten({
+                color: {
+                    $type: "color",
+                    bg: { $value: "#fff" },
+                    off: {
+                        $value: "#aaa",
+                        $extensions: {
+                            "com.pi-pocket": {
+                                contrast: { on: "{color.bg}", min: 4.5, exempt: "disabled" },
+                            },
+                        },
+                    },
+                    on: {
+                        $value: "#000",
+                        $extensions: {
+                            "com.pi-pocket": { contrast: { on: "{color.bg}", min: 4.5 } },
+                        },
+                    },
+                },
+            }),
+            "t",
+        ),
+        "flagship",
+    );
+
+    assert.deepEqual([only.declared, only.passRate, only.exempt.length, only.score], [1, 1, 1, 1]);
+});
+
+test("the reference engine applies the same rule: it reads `exempt` from the files", () => {
+    const folder = mkdtempSync(join(tmpdir(), "bench-exempt-"));
+
+    try {
+        const tokens = {
+            color: {
+                $type: "color",
+                bg: { $value: "#ffffff" },
+                dim: {
+                    $value: "#b0b0b0",
+                    $extensions: {
+                        "com.pi-pocket": {
+                            contrast: { on: "{color.bg}", min: 4.5, exempt: "disabled" },
+                        },
+                    },
+                },
+            },
+        };
+
+        referenceWrite(folder, { tokens });
+        const system = referenceLoad(folder)!;
+        const phase = contrastPhase(system, "flagship");
+
+        assert.equal(
+            system.tokens.find((token) => token.name === "color.dim")!.contrast!.exempt,
+            "disabled",
+        );
+        assert.deepEqual([phase.declared, phase.failing.length, phase.exempt.length], [0, 0, 1]);
+    } finally {
+        rmSync(folder, { recursive: true, force: true });
+    }
+});

@@ -157,7 +157,12 @@ export function systemFromFlat(flat: FlatSystem, name: string): DesignSystem {
             modes,
             ...(token.description === undefined ? {} : { description: token.description }),
             ...(token.deprecated === undefined ? {} : { deprecated: token.deprecated }),
-            ...(token.contrast === undefined ? {} : { contrast: token.contrast }),
+            ...(token.contrast === undefined
+                ? {}
+                : {
+                      contrast: token.contrast as ResolvedToken["contrast"],
+                      contrasts: token.contrasts as ResolvedToken["contrasts"],
+                  }),
         };
     });
 
@@ -199,36 +204,46 @@ export interface PairResult {
     min: number;
     ratios: Record<string, number | undefined>;
     passesEverywhere: boolean;
+    /** Why the pair is left out of the check ("disabled", "decorative"): WCAG 1.4.3 exempts such text. It is not a failure. */
+    exempt?: string;
 }
 
-/** The contrast pairs of a system's tokens (`contrast: { on, min }`), checked in every mode with the bench's own math. */
+/**
+ * The contrast pairs of a system's tokens (`contrast`: one pair or a list of `{ on, min, exempt? }`), checked in every mode
+ * with the bench's own WCAG math. A pair that declares `exempt` is returned with its ratios and the reason, so the caller can
+ * report it apart: it is not a failure.
+ */
 export function contrastPairs(tokens: ResolvedToken[], modes: string[]): PairResult[] {
     const byName = new Map(tokens.map((token) => [token.name, token]));
     const out: PairResult[] = [];
 
     for (const token of tokens) {
-        if (token.contrast === undefined) {
-            continue;
+        for (const pair of token.contrasts ??
+            (token.contrast === undefined ? [] : [token.contrast])) {
+            const on = byName.get(pair.on.replace(/^\{|\}$/g, ""));
+            const ratios: Record<string, number | undefined> = {};
+
+            for (const mode of modes) {
+                const [fg, bg] = [
+                    colorOf(token.modes[mode]?.value),
+                    colorOf(on?.modes[mode]?.value),
+                ];
+
+                ratios[mode] =
+                    fg === undefined || bg === undefined ? undefined : contrastRatio(fg, bg);
+            }
+
+            out.push({
+                token: token.name,
+                on: pair.on,
+                min: pair.min,
+                ratios,
+                passesEverywhere: modes.every(
+                    (mode) => ratios[mode] !== undefined && ratios[mode]! >= pair.min,
+                ),
+                ...(pair.exempt === undefined ? {} : { exempt: pair.exempt }),
+            });
         }
-
-        const on = byName.get(token.contrast.on.replace(/^\{|\}$/g, ""));
-        const ratios: Record<string, number | undefined> = {};
-
-        for (const mode of modes) {
-            const [fg, bg] = [colorOf(token.modes[mode]?.value), colorOf(on?.modes[mode]?.value)];
-
-            ratios[mode] = fg === undefined || bg === undefined ? undefined : contrastRatio(fg, bg);
-        }
-
-        out.push({
-            token: token.name,
-            on: token.contrast.on,
-            min: token.contrast.min,
-            ratios,
-            passesEverywhere: modes.every(
-                (mode) => ratios[mode] !== undefined && ratios[mode]! >= token.contrast!.min,
-            ),
-        });
     }
 
     return out;
