@@ -387,7 +387,10 @@ a { color: var(--accent) }`,
     assert.equal(scan.inferred.roles.background?.value, "#f4f4f5");
     assert.equal(scan.inferred.roles.text?.value, "#13232a");
     assert.equal(scan.inferred.roles.accent?.value, "#e76f51");
-    assert.ok(near(hex(system, "color.teal.500"), "#74a1b4"), hex(system, "color.teal.500"));
+    assert.ok(
+        near(hex(system, "color.teal.500"), "#74a1b4"),
+        String(hex(system, "color.teal.500")),
+    );
     assert.ok(
         near(hex(system, "color.gray.40"), "#777d85") ||
             system.tokens.some((each) => /^color\.gray/.test(each.name)),
@@ -419,10 +422,13 @@ a { color: t.$color-primary } .muted { color: t.$color-muted }`,
     assert.equal(scan.inferred.roles.background?.value, "#ffffff");
     assert.equal(scan.inferred.roles.surface?.value, "#ffffff");
     assert.equal(scan.inferred.roles.accent?.value, "#5b2a86");
-    assert.ok(near(scan.inferred.roles.text?.value, "#262d43"), scan.inferred.roles.text?.value);
+    assert.ok(
+        near(scan.inferred.roles.text?.value, "#262d43"),
+        String(scan.inferred.roles.text?.value),
+    );
     assert.ok(
         near(scan.inferred.roles.border?.value, "#e4e5e7"),
-        scan.inferred.roles.border?.value,
+        String(scan.inferred.roles.border?.value),
     );
 
     const themes = scanTokens(
