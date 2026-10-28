@@ -112,6 +112,19 @@ Judge B: 9 on every line, "nothing broken in the first 5 minutes". Judge A (the 
 
 Round 5 progress: V's checks reach **1.0** on the third held-out set (precision 0.055 → 1.0, recall 0.588 → 1.0) after the author-set rule (each longhand indexed separately, linked sheets read), page semantics (`missing-lang`, `form-label`, `accessible-name`, `missing-main`), and author-set `input-zoom`. Final rule names: `form-label` and `accessible-name` (after crossed messages). T's Style Dictionary, Material 3, and Sass evaluator: set 3 scan 0.421 → **0.686**; four classes remain (Style Dictionary mode configs, Panda/Chakra conditions, Sass module namespaces, Ant Design ThemeConfig, the last one held back until now). B makes a fourth set for the final judging.
 
+### Round 5 evaluation (f4ba521)
+
+`npm run check`, `lint`, `format:check` clean; `npm test` **1449 of 1449** (after the flake pass: 7 tests now wait for real conditions, and a deck repaints when its frame gets a size). Bench **1.0** (scan 0.998; 52 of 52 System view shots, the dirty state included).
+
+| Held-out                                                                          | Overall | Scan      | Lint |
+| --------------------------------------------------------------------------------- | ------- | --------- | ---- |
+| 1 (used)                                                                          | 0.998   | 0.994     | 1.0  |
+| 2 (used)                                                                          | 0.986   | 0.939     | 1.0  |
+| 3 (used in round 5)                                                               | 0.982   | 0.918     | 1.0  |
+| 4 (fresh: Mantine, MUI 6, Bootstrap 5.3 Sass, Tailwind 3 config, Figma Variables) | 0.923   | **0.617** | 1.0  |
+
+Lint generalizes to every set. The scan is strong on every format family it knows and weak on families it has never met (Figma Variables 0.11 on set 4): T's round 6 builds a rendered fallback and a shape-based theme-object reader instead of more formats one at a time.
+
 Round 5 assignments: U (phone Check bar and canvas, tab strip, pinned editor header, readable shadow values, focus-mode canvas, the fixture's broken image), G (flagship ramps, spacing groups, a radius scale; docs code blocks, the Tokens Studio snippet, the All tokens table, section anchors; split `docsite-assets.ts`), T (ramp-order warning, a names table, clearer utility names, scan report of skipped and low-confidence sources, a transcript test, split `scan-colors.ts`), V (author-set values only, role tokens first, page semantics checks, input zoom, `npm run design:check`, split `lint-page.ts`), B (a third fresh held-out set, a dirty-state shot), integrator (docs).
 
 Round 4 assignments: T (Tailwind namespaces and role utilities, one JSON convention plus a Tokens Studio export, committed flagship `dist/` with a diff test, DTCG 2025.10 forms, an example per tool action, component entry points in the summary, split `scan-infer.ts` and `scan-facts.ts`); U (roles count, shadow values on tiles, phone mode control and tab cue and Check sheet height, compact spacing rows, a fixed save bar, one-tap fixes through V's engine, Harbor tabs); V (`applyExactFixes`, reduced motion, non-text contrast, a small check CLI); G (docs component frames for certain, hero by role, shadow and radius layout, page under 600 KB, split `docsite.ts`); B (second held-out set, painted frames check, the shots script in the bench with per-tab assertions).
