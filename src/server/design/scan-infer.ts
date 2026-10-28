@@ -124,6 +124,7 @@ function variables(facts: Facts, alt: "dark" | "light"): Variable[] {
 
     pairModeTwins(map, alt);
     pairSassNames(map, alt);
+    pairModeSuffixes(map, alt);
 
     return [...map.values()].filter(
         (variable) => variable.light !== undefined || variable.dark !== undefined,
@@ -193,6 +194,63 @@ function pairModeTwins(map: Map<string, Variable>, alt: "dark" | "light"): void 
     for (const { twin, base } of pairs) {
         base.dark ??= { ...twin.light!, scope: alt };
         twin.twin = true;
+    }
+}
+
+/**
+ * `bodyLight`/`bodyDark`, `text-light`/`text-dark`: two variables, one for each mode, with no plain variable between
+ * them, are one variable with two values. Two such pairs make a scheme.
+ */
+function pairModeSuffixes(map: Map<string, Variable>, alt: "dark" | "light"): void {
+    const ends = alt === "dark" ? (["light", "dark"] as const) : (["dark", "light"] as const);
+    const stems = new Map<string, { first?: Variable; second?: Variable }>();
+
+    for (const variable of map.values()) {
+        const words = kebab(variable.name).split("-");
+        const last = words.at(-1);
+
+        if (
+            (last !== ends[0] && last !== ends[1]) ||
+            words.length < 2 ||
+            variable.light === undefined ||
+            variable.twin === true
+        ) {
+            continue;
+        }
+
+        const stem = `${variable.kind}:${variable.hint ?? ""}:${words.slice(0, -1).join("-")}`;
+        const pair = stems.get(stem) ?? {};
+
+        pair[last === ends[0] ? "first" : "second"] = variable;
+        stems.set(stem, pair);
+    }
+
+    const complete = [...stems].filter(
+        ([, pair]) => pair.first !== undefined && pair.second !== undefined,
+    );
+
+    if (complete.length < 2) {
+        return;
+    }
+
+    for (const [key, { first, second }] of complete) {
+        const name = key.split(":").slice(2).join(":");
+
+        if (map.has(`${first!.kind}:${first!.hint ?? ""}:${name}`)) {
+            continue;
+        }
+
+        const merged: Variable = {
+            name,
+            kind: first!.kind,
+            light: first!.light,
+            dark: { ...second!.light!, scope: alt },
+            ...(first!.hint === undefined ? {} : { hint: first!.hint }),
+        };
+
+        first!.twin = true;
+        second!.twin = true;
+        map.set(vkey(merged), merged);
     }
 }
 

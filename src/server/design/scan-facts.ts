@@ -724,6 +724,11 @@ const THEME_KEYS: Record<string, Category> = {
     zIndex: "z",
     // A typography block: `h1: { fontSize: "2.5rem" }` (read by `typographyVars`, not as a scale).
     typography: "text",
+    // Mantine: `headings: { fontFamily, sizes: { h1: { fontSize } } }` and a monospace family.
+    headings: "text",
+    fontFamilyMonospace: "font",
+    // Mantine's `other: { bodyLight: "#fff", bodyDark: "#1a1b1e" }`: only the values that are colors are read.
+    other: "color",
 };
 
 /** A leaf of a theme object: the path of keys, and its text. */
@@ -744,8 +749,15 @@ function leaves(
     } else if (Array.isArray(literal)) {
         const strings = literal.filter((item): item is string => typeof item === "string");
 
-        // A list of shadows (Material's elevations) is one token each; `none` is no shadow.
-        if (category === "shadow") {
+        // A palette as a list of shades (Mantine, Chakra): `brand: ["#eff5ff", …, "#2c4478"]` is `brand-0` to `brand-9`.
+        if (
+            category === "color" &&
+            strings.length >= 5 &&
+            strings.every((value) => /^\s*(?:#[0-9a-f]{3,8}|(?:rgb|hsl|oklch)a?\()/i.test(value))
+        ) {
+            strings.forEach((value, at) => out.push({ path: [...path, String(at)], value }));
+        } else if (category === "shadow") {
+            // A list of shadows (Material's elevations) is one token each; `none` is no shadow.
             strings.forEach((value, at) => {
                 if (value.trim() !== "none") {
                     out.push({ path: [...path, String(at)], value });
@@ -797,7 +809,16 @@ function typographyVars(facts: Facts, file: string, scope: Scope, block: Literal
         }
     };
 
-    for (const [key, child] of Object.entries(block as Record<string, Literal>)) {
+    const variants = { ...(block as Record<string, Literal>) };
+    const sizes = variants.sizes;
+
+    // Mantine: `headings: { sizes: { h1: { fontSize: "2.25rem" } } }`.
+    if (typeof sizes === "object" && sizes !== null && !Array.isArray(sizes)) {
+        delete variants.sizes;
+        Object.assign(variants, sizes);
+    }
+
+    for (const [key, child] of Object.entries(variants)) {
         if (key === "fontFamily") {
             add("base", "font", child);
         } else if (key === "fontSize") {
@@ -872,7 +893,7 @@ function modeOf(name: string): Scope | undefined {
 function themeVars(facts: Facts, file: string, text: string): void {
     const keys = Object.keys(THEME_KEYS).join("|");
     const heads = new RegExp(
-        String.raw`(?<![\w$.])(${keys})\s*:\s*(?=[{[])|(?<![\w$.])(?:const|let|var)\s+(${keys})\s*(?::[^=\n]{1,80})?=\s*(?=[{[])`,
+        String.raw`(?<![\w$.])(${keys})\s*:\s*(?=[{[])|(?<![\w$.])(?:const|let|var)\s+(${keys})\s*(?::[^=\n]{1,80})?=\s*(?=[{[])|(?<![\w$.])(fontFamily|fontFamilyMonospace|fontSize|borderRadius)\s*:\s*(?=["'])`,
         "g",
     );
     // The objects the file declares by name (`const brand = { 50: "#e3f0ff" }`), for `colors: { brand }`.
@@ -952,9 +973,24 @@ function themeVars(facts: Facts, file: string, text: string): void {
             break;
         }
 
-        const key = match[1] ?? match[2]!;
+        const key = match[1] ?? match[2] ?? match[3]!;
         const category = THEME_KEYS[key]!;
-        const literal = readLiteral(text, match.index + match[0].length, env);
+        // A scalar (`fontFamily: "Inter, sans-serif"`, `fontSize: "15px"`) or an object or list.
+        const scalar =
+            match[3] === undefined
+                ? undefined
+                : /^(["'])((?:\\.|(?!\1)[^\\\n]){1,300})\1/.exec(
+                      text.slice(
+                          match.index + match[0].length,
+                          match.index + match[0].length + 320,
+                      ),
+                  );
+        const literal =
+            match[3] === undefined
+                ? readLiteral(text, match.index + match[0].length, env)
+                : scalar === null || scalar === undefined
+                  ? undefined
+                  : scalar[2]!;
 
         if (literal === undefined || literal === UNKNOWN) {
             continue;
@@ -962,7 +998,7 @@ function themeVars(facts: Facts, file: string, text: string): void {
 
         const scope = scopeAt(match.index);
 
-        if (key === "typography") {
+        if (key === "typography" || key === "headings") {
             typographyVars(facts, file, scope, literal);
 
             continue;
@@ -1027,7 +1063,12 @@ function themeVars(facts: Facts, file: string, text: string): void {
             };
 
             for (const leaf of found) {
-                if (leaf.path.length === 0 && category !== "font") {
+                // A scalar under the theme key itself (`fontSize: "15px"`) is the base value, when it is a length.
+                if (
+                    leaf.path.length === 0 &&
+                    category !== "font" &&
+                    !/^\s*\d*\.?\d+(?:px|rem|em)\s*$/.test(leaf.value)
+                ) {
                     continue;
                 }
 
