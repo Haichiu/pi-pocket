@@ -71,9 +71,11 @@ test("the page has a section and a link for each part of the system, and a frame
         "overview",
         "color",
         "typography",
-        "layout",
+        "spacing",
+        "radii",
         "shadows",
         "motion",
+        "other",
         "components",
         "guidelines",
         "tokens",
@@ -549,3 +551,58 @@ test(
         });
     },
 );
+
+test("section counts follow one rule: each token once, in one section, so the counts add up", () => {
+    const system = flagship();
+    const { html } = renderSystemDoc(system);
+    const count = (id: string) =>
+        Number(
+            new RegExp(`<a href="#${id}">[^<]*<span class="count">(\\d+)</span>`).exec(html)?.[1],
+        );
+    const sections = ["color", "typography", "spacing", "radii", "shadows", "motion", "other"];
+    const sum = sections.reduce((total, id) => total + (count(id) || 0), 0);
+
+    assert.equal(sum, system.tokens.length, "the token sections add up to the token total");
+    assert.equal(count("tokens"), system.tokens.length, "the table lists every token");
+    assert.equal(count("components"), system.components.length, "Components counts components");
+
+    // A token that no specimen draws is still on the page, in its section's table.
+    for (const token of system.tokens) {
+        assert.ok(html.includes(`data-copy="${token.name}"`), `${token.name} is on the page`);
+    }
+
+    // The same rule as the System view's: the type decides, and for sizes the words of the path.
+    const byType = system.tokens.filter((token) => token.type === "color").length;
+
+    assert.equal(count("color"), byType, "Color counts every color token, a component's too");
+});
+
+test("a ratio is written with one decimal, cut and never rounded up; cards copy a token three ways; the footer says what it is", () => {
+    const { html } = renderSystemDoc(flagship());
+    const ratios = [...html.matchAll(/<span class="ratio">([^<]+)<\/span>/g)].map(
+        (match) => match[1]!,
+    );
+
+    assert.ok(ratios.length > 50);
+    assert.ok(
+        ratios.every((text) => /^\d+\.\d:1$/.test(text)),
+        String(ratios.find((text) => !/^\d+\.\d:1$/.test(text))),
+    );
+    assert.match(html, /data-copy="var\(--color-bg-surface\)"[^>]*>CSS var</);
+    assert.ok(html.includes('data-copy="bg-bg-surface"'), "a Tailwind class");
+    assert.ok(html.includes('data-copy="text-text-primary"'));
+    assert.match(html, /data-copy="color\.bg\.surface\.\$value"[^>]*>JSON</);
+    assert.match(
+        html,
+        /<footer class="foot"><strong>Pi Pocket<\/strong> · \d+ tokens · 3 modes · 10 components · generated \d{4}-\d{2}-\d{2} by Pi Pocket<\/footer>/,
+    );
+    // Small groups share a grid, so that no row is half empty; the hero's swatches carry their names.
+    assert.match(html, /<h4[^>]*>Brand · Spark/);
+    assert.match(
+        html,
+        /<button type="button" class="sw" data-copy="color\.[a-z.-]+" title="color\.[a-z.-]+"><i /,
+    );
+    // A phone gets a menu for the modes and keeps the system's name in the header.
+    assert.match(html, /<select class="modesel"/);
+    assert.match(html, /<span class="brand-name">Pi Pocket<\/span>/);
+});

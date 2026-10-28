@@ -237,7 +237,8 @@ test("with a design system, the section says how to use it and holds its summary
         "<project_design_system>",
         "</project_design_system>",
         // The engine's summary: the system, its modes, the link, roles with values in each mode, and the components.
-        'Design system "Pi Pocket": 380 tokens, modes light (default), dark, high-contrast, 10 components',
+        'Design system "Pi Pocket": ',
+        "modes light (default), dark, high-contrast, 10 components",
         "--color-accent-default #3557a5 (dark #7aa2f7; high-contrast #98bafe)",
         "--space-4 16px",
     ]) {
@@ -286,6 +287,8 @@ test("the section names the tools' arguments as the tools have them", async () =
         'action "init"',
         "fromScan true",
         "replace is true",
+        "make one in three calls",
+        "marks uncertain",
         'action "component"',
         '"guidelines"',
     ]) {

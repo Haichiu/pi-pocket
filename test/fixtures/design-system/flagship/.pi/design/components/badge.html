@@ -31,15 +31,15 @@
             "badge.warning.border",
             "badge.warning.fg",
             "border.width.hairline",
-            "dim.2",
-            "dim.6",
             "font.family.sans",
             "font.leading.snug",
             "font.size.xs",
             "font.weight.medium",
             "radius.pill",
+            "size.dot",
             "space.1",
-            "space.2"
+            "space.2",
+            "space.hair"
         ]
     }
 </script>
@@ -48,7 +48,7 @@
         display: inline-flex;
         align-items: center;
         gap: var(--space-1);
-        padding: var(--dim-2) var(--space-2);
+        padding: var(--space-hair) var(--space-2);
         border: var(--border-width-hairline) solid transparent;
         border-radius: var(--badge-radius);
         font-family: var(--font-family-sans);
@@ -59,8 +59,8 @@
     }
 
     .pk-badge__dot {
-        width: var(--dim-6);
-        height: var(--dim-6);
+        width: var(--size-dot);
+        height: var(--size-dot);
         border-radius: var(--radius-pill);
         background: currentcolor;
     }
