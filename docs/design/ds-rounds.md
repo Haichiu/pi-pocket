@@ -58,6 +58,8 @@ Round 3 merged so far: G (flagship names, docs page phone layout and copy, guide
 
 `npm run check`, `npm run lint`, `npm test` green: **1258 of 1258**. Bench: **1.0** in every phase. Held-out: overall **0.974** (scan 0.869, format 0.999, lint 1.0, contrast 1.0, docs 1.0). Shots: 46 of 50 (Harbor's Radii and Shadows timed out). Flaky `mobile-ui` reconnect test: a timing bug in the test, exposed because the Design browser module grew from 129 KB to 366 KB and loads late (fixed in ddf81c9; U makes the module load lazily in round 4).
 
+Scan after T's rounds 3b and 3c (`ds/tokens` 995c1d8, not merged yet): held-out scan **0.994** (0.869 → 0.978 → 0.994). Bench 0.998; T's own 37 blind projects 0.975. The held-out set has now guided several fixes (described as general classes, with a synthetic example for the last two), so it is no longer fully independent: a fresh held-out set is needed before the final judging.
+
 Round 3 assignments: U (people experience), G (docs page, flagship naming, guide), V (role-aware suggestions, 15+ real pages, stable ids), T (scan, then handoff outputs), integrator (docs).
 
 Round 2 started at once on the bench's weakest phases: V on lint, T on scan, B on a held-out set outside the repo (`/mnt/games/Development/ds-holdout/`, never shown to T or V).
