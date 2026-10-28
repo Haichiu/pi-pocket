@@ -28,6 +28,7 @@ import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
 import { boundedText } from "./tokens-base.ts";
 import { checkTokensBlock, scanReport, scanRoot, scanTokens } from "./scan.ts";
+import { DtcgTree, valueOrToken } from "./system-schema.ts";
 import type { DesignSystem, SystemChange } from "./system-types.ts";
 import { readDesignFile } from "./tokens-io.ts";
 import {
@@ -234,6 +235,13 @@ const PARAMETER_ACTIONS: Record<string, readonly string[]> = {
     content: ["write", "guidelines", "component", "init"],
 };
 
+/** A parameter's description with the actions that use it, from the same table that refuses the others. */
+const used = (name: string, text: string) => {
+    const actions = (PARAMETER_ACTIONS[name] ?? []).filter((each) => each !== "write");
+
+    return `${text} Used by ${actions.length === 2 ? actions.join(" and ") : actions.join(", ")}.`;
+};
+
 /** Refuses a parameter that does not fit the action, and says which action it fits and what this action takes. */
 function checkParameters(action: string, args: Record<string, unknown>): void {
     if (action !== "write" && !(ACTIONS as readonly string[]).includes(action)) {
@@ -309,45 +317,60 @@ export function designSystemTool(): ToolRegistration {
             ),
             file: Type.Optional(
                 Type.String({
-                    description:
-                        "read: one file to show as text: tokens.json, tokens.dark.json, guidelines.md, components/button.html, or dist/tokens.css. Leave out for the summary.",
+                    description: used(
+                        "file",
+                        "One file to show as text: tokens.json, tokens.dark.json, guidelines.md, components/button.html, or dist/tokens.css. Leave out for the summary.",
+                    ),
                 }),
             ),
             path: Type.Optional(
                 Type.String({
-                    description:
-                        "scan, init with fromScan: a folder inside the session's folder to scan (default: the whole folder).",
+                    description: used(
+                        "path",
+                        "A folder inside the session's folder to scan (default: the whole folder). For init, only with fromScan.",
+                    ),
                 }),
             ),
             fromScan: Type.Optional(
                 Type.Boolean({
-                    description:
-                        "init: save the scan's draft (tokens.json and tokens.dark.json) as it is. Combine with set to correct roles in the same call.",
+                    description: used(
+                        "fromScan",
+                        "Save the scan's draft (tokens.json and tokens.dark.json) as it is. Combine with changes to correct roles in the same call.",
+                    ),
                 }),
             ),
             tokens: Type.Optional(
-                Type.Unknown({
-                    description:
-                        "init: the whole tokens.json, one DTCG object (groups and tokens with $value).",
+                Type.Record(Type.String(), Type.Unknown(), {
+                    description: used(
+                        "tokens",
+                        'The whole tokens.json as one object: groups that nest, and tokens { "$value": …, "$type": … }.',
+                    ),
                 }),
             ),
             modes: Type.Optional(
-                Type.Record(Type.String(), Type.Unknown(), {
-                    description: `init: mode files by name, each a DTCG object with only the tokens that change: { "dark": { … } }.`,
+                Type.Record(Type.String(), DtcgTree, {
+                    description: used(
+                        "modes",
+                        'Mode files by name, each an object with only the tokens that change: { "dark": { … } }.',
+                    ),
                 }),
             ),
             name: Type.Optional(
                 Type.String({
-                    description: "init: the system's name (default: the folder's name).",
+                    description: used("name", "The system's name (default: the folder's name)."),
                 }),
             ),
             description: Type.Optional(
-                Type.String({ description: "init: one sentence about what the system is for." }),
+                Type.String({
+                    description: used("description", "One sentence about what the system is for."),
+                }),
             ),
             replace: Type.Optional(
                 Type.Boolean({
-                    description:
-                        "init: replace a design system that exists. Without it, init refuses, so a system is never lost by mistake.",
+                    description: used(
+                        "replace",
+                        "Replace a design system that exists. Without it, init refuses, so a system is never lost by mistake.",
+                    ),
                 }),
             ),
             changes: Type.Optional(
@@ -356,10 +379,9 @@ export function designSystemTool(): ToolRegistration {
                         token: Type.String({
                             description: 'The token\'s dotted path: "color.bg.surface".',
                         }),
-                        value: Type.Unknown({
-                            description:
-                                'The $value: "#7aa2f7", "{color.blue.500}", "16px", a DTCG object; or a whole token { "$value": …, "$type": … }.',
-                        }),
+                        value: valueOrToken(
+                            'The $value: a string ("#7aa2f7", "16px", "{color.blue.500}"), a number (a weight, a ratio), or a DTCG object (a color { colorSpace, components }, { value, unit }, a shadow, a type style); or a whole token { "$value": …, "$type": … }.',
+                        ),
                         mode: Type.Optional(
                             Type.String({
                                 description:
@@ -378,8 +400,10 @@ export function designSystemTool(): ToolRegistration {
                     }),
                     {
                         maxItems: 200,
-                        description:
-                            "set, init: tokens to add or change, in order. Later entries win.",
+                        description: used(
+                            "changes",
+                            "Tokens to add or change, in order. Later entries win.",
+                        ),
                     },
                 ),
             ),
@@ -394,22 +418,28 @@ export function designSystemTool(): ToolRegistration {
                             }),
                         ),
                     }),
-                    { maxItems: 200, description: "set: tokens to delete." },
+                    { maxItems: 200, description: used("remove", "Tokens to delete.") },
                 ),
             ),
             slug: Type.Optional(
                 Type.String({
-                    description:
-                        'component: the component\'s file name, lowercase with hyphens: "button", "text-field".',
+                    description: used(
+                        "slug",
+                        'The component\'s file name, lowercase with hyphens: "button", "text-field".',
+                    ),
                 }),
             ),
             drop: Type.Optional(
-                Type.Boolean({ description: "component: delete the component named by slug." }),
+                Type.Boolean({
+                    description: used("drop", "Delete the component named by slug."),
+                }),
             ),
             content: Type.Optional(
                 Type.String({
-                    description:
-                        'guidelines: the Markdown text (init: the same, saved as guidelines.md). component: the specimen\'s HTML: <script type="application/json" id="pocket-component">{"name","description","states":["default","hover"],"usage":{"do":[],"dont":[]},"tokens":["color.accent.default"]}</script>, one <style> that uses only var(--…) tokens and scopes each rule by a class, and a <template data-state="default">…markup…</template> for each state.',
+                    description: used(
+                        "content",
+                        'The text to save. guidelines: the Markdown (init: the same, saved as guidelines.md). component: the specimen\'s HTML: <script type="application/json" id="pocket-component">{"name","description","states":["default","hover"],"usage":{"do":[],"dont":[]},"tokens":["color.accent.default"]}</script>, one <style> that uses only var(--…) tokens and scopes each rule by a class, and a <template data-state="default">…markup…</template> for each state.',
+                    ),
                 }),
             ),
         }),
