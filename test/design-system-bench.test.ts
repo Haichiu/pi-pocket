@@ -884,8 +884,6 @@ test("with nothing in the tree every phase scores 0, says why, and nothing throw
         browser: false,
         flagship: join(BENCH, "no-such-flagship"),
         out: join(BENCH, "..", "..", "node_modules", ".cache", "ds-bench-test"),
-        // The tree has a flagship now: point at a folder with none, so the floor stays the floor.
-        flagship: join(BENCH, "no-flagship-here"),
     });
     const text = JSON.stringify(report);
 
