@@ -796,10 +796,12 @@ export function buildSystem(raw: RawSystem): DesignSystem {
             tier = TIER_GROUPS[first]!;
         } else if (componentSlugs.has(first)) {
             tier = "component";
-        } else if (
-            wholeRef(def.base.value) !== undefined ||
-            def.path.some((each) => ROLE_WORDS.has(each.toLowerCase()))
-        ) {
+        } else if (wholeRef(def.base.value) !== undefined) {
+            tier = "semantic";
+        } else if (/^\d+$/.test(def.path.at(-1)!)) {
+            // A step of a scale (`color.blue.500`, `space.4`) is a raw value.
+            tier = "primitive";
+        } else if (def.path.some((each) => ROLE_WORDS.has(each.toLowerCase()))) {
             tier = "semantic";
         } else {
             tier = "primitive";
