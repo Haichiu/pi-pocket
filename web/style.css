@@ -1681,6 +1681,59 @@ kbd {
     text-wrap: pretty;
 }
 
+/* A module's input: one line, which opens to the text. Hidden keeps the turn and takes no room. */
+.user-row.presented {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: calc(8px * var(--space-y));
+    min-width: 0;
+}
+
+.user-row > .presented-chip {
+    max-width: 100%;
+    min-height: 40px;
+    height: auto;
+    padding: 8px 14px;
+    border-radius: var(--r-pill);
+    color: var(--muted);
+    cursor: pointer;
+    text-align: left;
+}
+
+.user-row.presented > .user-text {
+    width: 100%;
+    padding: calc(12px * var(--space-y)) calc(16px * var(--space-x));
+    border: 1px solid var(--hair);
+    border-radius: var(--r-window);
+    background: var(--card);
+}
+
+.transcript > .presented-hidden,
+.history > .presented-hidden {
+    height: 0;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+}
+
+.transcript > .presented-hidden:not(:first-child) {
+    margin-top: calc(-16px * var(--space-y));
+}
+
+.history > .presented-hidden:not(:first-child) {
+    margin-top: -16px;
+}
+
+.transcript > .presented-hidden:first-child:not(:has(+ .presented-hidden)) {
+    margin-bottom: calc(-16px * var(--space-y));
+}
+
+.history > .presented-hidden:first-child:not(:has(+ .presented-hidden)) {
+    margin-bottom: -16px;
+}
+
 /* What a PR watch or a webhook fenced for Pi (a check's log, a post): a block of its own, scrolling past a few lines. */
 .fenced-data {
     margin: 0.4rem 0;

@@ -116,10 +116,13 @@ test("a registered kind projects as a user row and clips until a full read", () 
     assert.ok(live.text.length < text.length);
     assert.equal(full.text, text);
     assert.equal(full.presentation?.clipped, undefined);
-    assert.deepEqual(
-        peekLines([live], { busy: false }).map((line) => line.text),
-        ["Note · saved"],
-    );
+    const [line] = peekLines([live], { busy: false });
+
+    assert.equal(line?.kind, "event");
+
+    if (line?.kind === "event") {
+        assert.equal(line.text, "Note · saved");
+    }
 });
 
 test("an unregistered kind stays other", () => {

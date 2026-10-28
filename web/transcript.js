@@ -3,6 +3,15 @@
 import { Component } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { activityOpen } from "./activity-fold.js";
+import {
+    noteRevealed,
+    onPresentationMode,
+    onRevealed,
+    presentationDraw,
+    presentationLine,
+    presentationMode,
+    wasRevealed,
+} from "./entry-presentation.js";
 import { initials, personColor } from "./avatar.js";
 import { routeSliding } from "./back.js";
 import { browserAvailable, setBrowserOpen } from "./browser.js";
@@ -324,9 +333,101 @@ const clock = (at) => clockTime(new Date(fromServer(at)));
 
 /**
  * A person's message: a filled row with a prompt mark, the accent's for your own and the author's color for someone
- * else's, then who sent it and when, and what they wrote.
+ * else's, then who sent it and when, and what they wrote. An input a module presents is one line, or an anchor when
+ * this browser hides it, until it is opened.
  */
 function UserEntry({ entry, view, users }) {
+    if (entry.presentation !== undefined) {
+        return html`<${PresentedUser} entry=${entry} view=${view} users=${users} />`;
+    }
+
+    return html`<${UserMessage} entry=${entry} view=${view} users=${users} />`;
+}
+
+/** One presented input: the message, a chip, the text under the chip, or an anchor Find can still reach. */
+function PresentedUser({ entry, view, users }) {
+    const kind = entry.presentation.entryKind;
+    const [mode, setMode] = useState(() => presentationMode(kind));
+    const [opened, setOpened] = useState(() => wasRevealed(entry.id));
+    const [text, setText] = useState(entry.text);
+    const wantsText = mode === "open" || opened;
+
+    useEffect(
+        () =>
+            onPresentationMode((changed, next) => {
+                if (changed !== kind) {
+                    return;
+                }
+
+                setMode(next);
+                setOpened(wasRevealed(entry.id));
+            }),
+        [kind, entry.id],
+    );
+    useEffect(
+        () =>
+            onRevealed((id) => {
+                if (id === entry.id) {
+                    setOpened(true);
+                }
+            }),
+        [entry.id],
+    );
+    useEffect(() => {
+        if (!wantsText || entry.presentation.clipped === undefined) {
+            return;
+        }
+
+        let gone = false;
+
+        attempt(async () => {
+            const full = await actions.fullEntry(entry.id);
+
+            if (!gone && full?.kind === "user") {
+                setText(full.text);
+            }
+        });
+
+        return () => {
+            gone = true;
+        };
+    }, [wantsText, entry.id, entry.presentation.clipped]);
+
+    const draw = presentationDraw(mode, opened);
+    const line = presentationLine(entry.presentation.label, entry.presentation.summary);
+
+    if (draw === "message") {
+        return html`<${UserMessage} entry=${{ ...entry, text }} view=${view} users=${users} />`;
+    }
+
+    if (draw === "anchor") {
+        return html`<span
+            class="entry-anchor presented-hidden"
+            id=${`entry-${entry.id}`}
+            aria-hidden="true"
+        ></span>`;
+    }
+
+    const openedText = draw === "text";
+
+    return html`<div class="user-row presented" data-part="prompt-row" id=${`entry-${entry.id}`}>
+        <button
+            class="chip presented-chip"
+            type="button"
+            aria-expanded=${openedText ? "true" : "false"}
+            onClick=${() => setOpened(!openedText)}
+        >
+            ${line}
+        </button>
+        ${
+            openedText &&
+            html`<div class="user-text" data-part="prompt-text"><${MentionedText} text=${text} /></div>`
+        }
+    </div>`;
+}
+
+/** A person's message, including one a module presents when this browser shows it open. */
+function UserMessage({ entry, view, users }) {
     const [fresh] = useState(() => settledFor !== null && settledFor === view.conversation?.id);
 
     // A report has nobody's name on it: a person's message that looks like one is theirs.
@@ -1193,6 +1294,7 @@ let revealing = { entryId: null, at: 0 };
 
 document.addEventListener("pocket:reveal", (event) => {
     revealing = { entryId: event.detail, at: Date.now() };
+    noteRevealed(event.detail);
 });
 /** When this page first saw a group that began before any of its entries was stored: the start of its clock. */
 const groupSeen = new Map();

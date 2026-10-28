@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { transcriptMarkdown } from "../src/server/export.ts";
 import type { ClientEntry } from "../src/server/projection.ts";
+// @ts-expect-error: a browser module, without types.
 import { userSearchText } from "../web/user-search.js";
 
 test("export writes the label and the full text", () => {

@@ -323,6 +323,24 @@ pocket.sheet({
 });
 ```
 
+### `entryPresentation`
+
+```ts
+entryPresentation(kind: string, mode: "open" | "folded" | "hidden"): void;
+```
+
+Since 0.27.0 · Experimental
+
+How this browser shows one of this module's inputs (`web.presentEntry` on the server). `kind` is `x.<module>.<name>`. `open` shows the message. `folded` shows one line, which opens to the text: that is also the choice when this browser has none. `hidden` keeps the turn and shows nothing until Find jumps to it. The same mode again changes nothing. The choice stays in this browser. The model still reads the message in full.
+
+A kind that is not this module's throws, and so does a mode that is not one of those three. This browser remembers a limited number of kinds ([limits](limits.md#presentations)). On an older app, check for it first.
+
+```js
+if (typeof pocket.entryPresentation === "function") {
+    pocket.entryPresentation("x.notes.note", "hidden");
+}
+```
+
 ## Routes and events
 
 ### `api`

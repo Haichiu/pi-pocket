@@ -105,10 +105,11 @@ Since 0.27.0 · Experimental
 Says how an input this module sends shows in the transcript, while the module is on. The model still reads the message in full. Nothing registered here is stored.
 
 - `kind` is `x.<module>.<name>`: this module's name, then a name of letters, digits, `_` and `-`.
-- `label` is one short line, 80 characters at most.
+- `label` is one short line ([limits](limits.md#presentations)).
 - `userPrefix`, when set, matches a user message that starts with it only when nobody wrote that message. A message a person sent stays theirs.
-- A module registers 32 presentations at most. Two modules cannot share a kind or a `userPrefix`.
+- A module registers a limited number of presentations ([limits](limits.md#presentations)). Two modules cannot share a kind or a `userPrefix`.
 - Turning the module off, or a load that fails, drops the registration.
+- A browser module sets this browser's choice for its own kinds with [`pocket.entryPresentation`](pocket.md#entrypresentation): `open`, `folded`, or `hidden`.
 
 The module puts a short `summary` string on the entry's data when it submits. The transcript shows `label`, or `label · summary` when that string is there. See [`PresentEntry`](#presententry).
 

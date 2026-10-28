@@ -9,6 +9,7 @@ import {
     root,
     say,
     scriptedModel,
+    until,
 } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { copyFileSync, mkdirSync, readdirSync } from "node:fs";
@@ -20,6 +21,9 @@ import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi
 
 const DOCS = fileURLToPath(new URL("../docs/", import.meta.url));
 const EXAMPLES = join(DOCS, "examples");
+/** Sits in the middle of a note the live view clips. The model must still read it. */
+const NOTE_MARKER = "model-reads-the-middle";
+const NOTE_BODY = `${"a".repeat(4500)}${NOTE_MARKER}${"b".repeat(4500)}`;
 
 /** The system prompt of the newest request, and its sections by name. */
 let prompt = "";
@@ -64,6 +68,10 @@ const route: FauxResponseStep = (context) => {
         return call("bash", { command: "echo git push origin main" });
     }
 
+    if (text.includes("leave a quiet note")) {
+        return call("quiet_note", { text: NOTE_BODY, summary: "saved a long note" });
+    }
+
     return fauxAssistantMessage([fauxText(`echo: ${text}`)]);
 };
 
@@ -103,6 +111,7 @@ test("the example extensions load as drop-ins, off until the owner turns them on
             ["clock.ts", false],
             ["my-words.ts", false],
             ["no-force-push.ts", false],
+            ["quiet-note.ts", false],
             ["read-page.ts", false],
             ["server-status.ts", false],
         ],
@@ -112,6 +121,7 @@ test("the example extensions load as drop-ins, off until the owner turns them on
         "clock.ts",
         "my-words.ts",
         "no-force-push.ts",
+        "quiet-note.ts",
         "read-page.ts",
         "server-status.ts",
     ]) {
@@ -148,4 +158,28 @@ test("the example extensions load as drop-ins, off until the owner turns them on
     const client = app.webs.clients(owner(app)).find((each) => each.module === "server-status");
 
     assert.ok(client !== undefined, "its browser module is there");
+
+    // The live row clips a long note. The model still reads every character, including past that clip.
+    await say(app, id, "leave a quiet note");
+    const whole = `NOTE ${NOTE_BODY}`;
+
+    await until(
+        async () => (await modelTexts(app, id)).some((text) => text.includes(whole)),
+        "the model reads the whole note",
+    );
+    const shown = (await app.transcripts.history(id, Number.MAX_SAFE_INTEGER)).find(
+        (entry) => entry.kind === "user" && entry.presentation?.entryKind === "x.quiet-note.note",
+    );
+
+    assert.equal(shown?.kind, "user");
+
+    if (shown?.kind !== "user") {
+        return;
+    }
+
+    assert.equal(shown.presentation?.label, "Note");
+    assert.equal(shown.presentation?.summary, "saved a long note");
+    assert.ok(shown.text.length < whole.length);
+    assert.equal(shown.presentation?.clipped, whole.length);
+    assert.equal(shown.text.includes(NOTE_MARKER), false);
 });
