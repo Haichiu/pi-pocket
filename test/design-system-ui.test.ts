@@ -255,10 +255,15 @@ const section = async (name: string, target = page) => {
 const openToken = async (name: string, target = page) => {
     const open = await evaluate<boolean>(
         target,
-        `return JSON.stringify(Boolean(document.querySelector('[data-token="${name}"] .dsy-editor, [data-token="${name}"].on ~ .dsy-ramp-editor .dsy-editor, .dsy-ramp-editor .dsy-editor')))`,
+        `return JSON.stringify(Boolean(document.querySelector('[data-token="${name}"] .dsy-editor')))`,
     );
 
     if (!open) {
+        // A token in a folded group (the palette, a type scale) is opened by its group's head first.
+        await evaluate(
+            target,
+            `if (!document.querySelector('button[data-token="${name}"], [data-token="${name}"] .dsy-row-main')) { for (const head of document.querySelectorAll('.dsy-group-head[aria-expanded="false"]')) { head.click(); await new Promise((resolve) => setTimeout(resolve, 60)); if (document.querySelector('button[data-token="${name}"], [data-token="${name}"] .dsy-row-main')) { break; } } } return "null";`,
+        );
         await pressed(
             `[data-token="${name}"] .dsy-row-main, button[data-token="${name}"]`,
             undefined,
@@ -268,7 +273,7 @@ const openToken = async (name: string, target = page) => {
 
     await waitFor(
         `the editor of ${name}`,
-        `return JSON.stringify(Boolean(document.querySelector(".dsy-editor")))`,
+        `return JSON.stringify(Boolean(document.querySelector('[data-token="${name}"] .dsy-editor')))`,
         target,
     );
 };
@@ -347,7 +352,7 @@ test("the picker pins the design system, and it opens as sections of tokens", re
     await pressed(".dsy-pinned");
     await waitFor(
         "the view",
-        `return JSON.stringify(Boolean(document.querySelector(".dsy-rows")))`,
+        `return JSON.stringify(Boolean(document.querySelector(".dsy-main [data-token]")))`,
     );
 
     assert.equal(await text(".dsn-picker-title"), "Design system");
@@ -369,16 +374,21 @@ test("the picker pins the design system, and it opens as sections of tokens", re
     );
 
     // Colors: the roles first, then the palette; a role has its swatch, its alias, its value.
-    assert.match(
-        await text('[data-token="color.bg.surface"]'),
-        /color\.bg\.surface.*→ color\.white.*#ffffff/,
-    );
+    assert.match(await text('[data-token="color.bg.surface"]'), /surface.*#ffffff/);
+    // The card is short; its tap opens the editor, which has the whole name and what it links to.
+    await openToken("color.bg.surface");
+    assert.match(await text('[data-token="color.bg.surface"] .dsy-chain'), /color\.white/);
     assert.equal(await count(".dsy-overview .dsy-look"), 1);
     const titles = await inPage<string[]>(
         `return JSON.stringify([...document.querySelectorAll(".dsy-group-title")].map((each) => each.textContent))`,
     );
 
-    assert.ok(titles.indexOf("Bg") < titles.indexOf("Gray"), titles.join());
+    assert.ok(titles.indexOf("Bg") >= 0 && titles.includes("Palette"), titles.join());
+    assert.ok(
+        titles.indexOf("Bg") < titles.indexOf("Palette"),
+        "the roles come before the palette",
+    );
+    assert.equal(await count(".dsy-step-tile"), 0, "and the palette starts folded");
 
     // Contrast: a pair shows its level, and the quieter pair of disabled text its 3:1.
     assert.match(await text('[data-token="color.text.primary"] .dsy-badge'), /16\.6:1.*AAA/);
@@ -427,7 +437,7 @@ test("/design-open system and the launcher open the panel on the design system",
     assert.equal(done.status, "done");
     await waitFor(
         "the system",
-        `return JSON.stringify(document.querySelector(".dsn-picker-title")?.textContent === "Design system" && Boolean(document.querySelector(".dsy-rows")))`,
+        `return JSON.stringify(document.querySelector(".dsn-picker-title")?.textContent === "Design system" && Boolean(document.querySelector(".dsy-main [data-token]")))`,
     );
 
     // The launcher (Ctrl+K) has an action for it, from a design too.
@@ -453,7 +463,7 @@ test("/design-open system and the launcher open the panel on the design system",
     await pressed(".launcher-item", "Open the design system");
     await waitFor(
         "the system again",
-        `return JSON.stringify(Boolean(document.querySelector(".dsy-main")) && Boolean(document.querySelector(".dsy-rows")))`,
+        `return JSON.stringify(Boolean(document.querySelector(".dsy-main")) && Boolean(document.querySelector(".dsy-main [data-token]")))`,
     );
 });
 
@@ -465,13 +475,14 @@ test("a token's name copies with one tap", real, async () => {
         Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { window.__copied.push(text); } } });
         return "null";
     `);
-    await pressed('[data-token="color.bg.surface"] .dsy-name');
+    await openToken("color.bg.surface");
+    await pressed('[data-token="color.bg.surface"] .dsy-ramp-editor-head .dsy-name');
     await waitFor("the copy", `return JSON.stringify(window.__copied?.[0] || false)`);
     assert.deepEqual(await inPage<string[]>(`return JSON.stringify(window.__copied)`), [
         "color.bg.surface",
     ]);
-    // The tap on the name does not open the editor.
-    assert.equal(await count('[data-token="color.bg.surface"] .dsy-editor'), 0);
+    // The tap on the name does not close the editor.
+    assert.equal(await count('[data-token="color.bg.surface"] .dsy-editor'), 1);
 });
 
 test(
@@ -537,7 +548,10 @@ test(
             "the discard",
             `return JSON.stringify(!document.querySelector(".dsy-savebar"))`,
         );
-        assert.equal(await count(".dsy-row.edited"), 0);
+        assert.equal(
+            await count(".dsy-row.edited, .dsy-card-tile.edited, .dsy-step-tile.edited"),
+            0,
+        );
 
         // Save writes the file and the generated CSS, with no run of Pi, and shows the result.
         const entries = (await app.transcripts.allEntries(session, false)).length;
@@ -563,7 +577,10 @@ test(
             "Pi was not asked",
         );
         // What the server has now is what the view shows, and nothing is left unsaved.
-        assert.equal(await count(".dsy-row.edited"), 0);
+        assert.equal(
+            await count(".dsy-row.edited, .dsy-card-tile.edited, .dsy-step-tile.edited"),
+            0,
+        );
         assert.match(await text('[data-token="color.accent.default"]'), /#e8590c/);
     },
 );
@@ -830,6 +847,7 @@ test(
             "two changes",
             `return JSON.stringify(document.querySelector(".dsy-count-note")?.textContent === "2 unsaved changes")`,
         );
+        assert.equal(await count(".dsy-card-tile.edited"), 2, "an edited card is marked");
         // The first tap asks, and does nothing else.
         await pressed(".dsy-savebar button", "Discard");
         await waitFor(
@@ -842,7 +860,10 @@ test(
             "the discard",
             `return JSON.stringify(!document.querySelector(".dsy-count-note"))`,
         );
-        assert.equal(await count(".dsy-row.edited"), 0);
+        assert.equal(
+            await count(".dsy-row.edited, .dsy-card-tile.edited, .dsy-step-tile.edited"),
+            0,
+        );
 
         // Save says how much it wrote.
         await filled('input[aria-label="color.status.warning in light: color"]', "#556677");
@@ -897,7 +918,7 @@ test("search narrows a section to the tokens that match", real, async () => {
     await filled(".dsy-search input", "surface");
     await waitFor(
         "the matches",
-        `return JSON.stringify(document.querySelectorAll(".dsy-row").length > 0 && document.querySelectorAll(".dsy-row").length < 6)`,
+        `const found = document.querySelectorAll(".dsy-main [data-token]:not(.dsy-ramp-editor)").length; return JSON.stringify(found > 0 && found < 6)`,
     );
     assert.equal(await count('[data-token="color.bg.surface"]'), 1);
     assert.equal(await count('[data-token="color.accent.default"]'), 0);
@@ -915,7 +936,7 @@ test("search narrows a section to the tokens that match", real, async () => {
     await pressed('button[aria-label="Find a token"]');
     await waitFor(
         "all again",
-        `return JSON.stringify(document.querySelectorAll(".dsy-row").length > 10)`,
+        `return JSON.stringify(document.querySelectorAll(".dsy-card-tile").length > 10)`,
     );
 });
 
@@ -1092,11 +1113,164 @@ test("a save that the system refuses shows why, and keeps the edits", real, asyn
     await press(".dsy-savebar button", "Discard");
 });
 
+/** A phone's screen for the test, and the desktop's again after it, on a page that starts over. */
+async function phone(t: { after: (fn: () => Promise<void>) => void }, width: number, height = 844) {
+    await inPage(`localStorage.removeItem("x.design.prefs"); return "null";`);
+    await page.setViewport({ width, height, scale: 1, mobile: true });
+    t.after(async () => {
+        await page.setViewport({ width: 1440, height: 900, scale: 1, mobile: false });
+        await inPage(`localStorage.removeItem("x.design.prefs"); return "null";`);
+        await go(session);
+    });
+    await go(session);
+}
+
+/** Where the focus is, by name and by where it sits in the view, with the ring it shows. */
+const stopNow = () =>
+    inPage<{ name: string; region: string; ring: number }>(`
+        const at = document.activeElement;
+        const regions = [".dsy-tabs", ".dsy-bars", ".dsy-scroll", ".dsy-savebar", ".dsy-preview", ".dsn-dock-head", ".dsy-sheet-handle", ".dsy-check-options", ".dsy-check-summary", ".dsy-findings", ".dsn-dock-foot", ".dsn-dock"];
+        const style = getComputedStyle(at);
+        return JSON.stringify({
+            name: at.getAttribute("aria-label") || at.textContent.trim().replace(/\\s+/g, " ").slice(0, 40),
+            region: regions.find((each) => at.closest(each)) ?? "none",
+            ring: style.outlineStyle === "none" ? 0 : parseFloat(style.outlineWidth),
+        });
+    `);
+
+test(
+    "the keyboard goes through the view in reading order, the sections are one stop, and each stop has a ring",
+    real,
+    async () => {
+        await openSystem();
+        await section("Colors");
+        await inPage(`document.querySelector(".dsy-bars .dsn-picker").focus(); return "null";`);
+
+        const stops = [await stopNow()];
+
+        for (let at = 0; at < 14; at += 1) {
+            await page.press("Tab");
+            stops.push(await stopNow());
+        }
+
+        const regions = stops.map((each) => each.region);
+        const order = [".dsy-bars", ".dsy-tabs", ".dsy-scroll"];
+        const ranks = regions.map((each) => order.indexOf(each));
+
+        assert.ok(
+            ranks.every((each) => each >= 0),
+            regions.join(),
+        );
+        assert.deepEqual(
+            [...ranks].sort((a, b) => a - b),
+            ranks,
+            `bars, then sections, then the tokens: ${regions.join()}`,
+        );
+        assert.equal(stops[0]!.name.startsWith("Design system"), true, "it starts at the picker");
+        // The nine sections are one stop (the arrow keys move among them), and the search comes next.
+        const names = stops.map((each) => each.name);
+        const tabStops = names.filter((each) =>
+            /^(Colors|Type|Spacing|Radii|Shadows|Motion|Other|Components|Guidelines)\d*$/.test(
+                each,
+            ),
+        );
+
+        assert.equal(tabStops.length, 1, names.join(" | "));
+        assert.match(tabStops[0]!, /^Colors/);
+
+        const tabAt = names.indexOf(tabStops[0]!);
+
+        // (the button for the open design, when the panel is too narrow to show it beside the view, comes before the search)
+        assert.ok(names.slice(tabAt + 1, tabAt + 3).includes("Find a token"), names.join(" | "));
+        // After the search, the first token group, then the cards in it: each named by its token.
+        assert.ok(
+            stops.some((each) => /^color\.bg\.canvas/.test(each.name)),
+            names.join(" | "),
+        );
+        // Every stop shows a ring of at least two pixels.
+        assert.ok(
+            stops.every((each) => each.ring >= 2),
+            JSON.stringify(stops.filter((each) => each.ring < 2)),
+        );
+
+        // The arrow keys move among the sections, and the focus goes with them.
+        await inPage(
+            `document.querySelector('.dsy-tabs [role=tab][aria-selected=true]').focus(); return "null";`,
+        );
+        await page.press("ArrowRight");
+        await waitFor(
+            "the next section",
+            `return JSON.stringify(document.activeElement.textContent.startsWith("Type") && document.activeElement.getAttribute("aria-selected") === "true")`,
+        );
+        assert.equal(await count('#dsy-panel[aria-labelledby="dsy-tab-type"]'), 1);
+        await page.press("End");
+        await waitFor(
+            "the last section",
+            `return JSON.stringify(document.activeElement.textContent.startsWith("Guidelines"))`,
+        );
+        await page.press("Home");
+        await waitFor(
+            "the first section",
+            `return JSON.stringify(document.activeElement.textContent.startsWith("Colors"))`,
+        );
+    },
+);
+
+test("a save is told to a screen reader, in a place that is always there", real, async () => {
+    // A page that reads the system anew: the tests before it changed the files under the view.
+    await go(session);
+    await openSystem();
+    await section("Colors");
+    await openToken("color.border.focus");
+    assert.equal(await count('.dsy-sr[role="status"][aria-live="polite"]'), 1);
+    await filled('input[aria-label="color.border.focus in light: color"]', "#12aa34");
+    await waitFor(
+        "the edit",
+        `return JSON.stringify(Boolean(document.querySelector(".dsy-count-note")))`,
+    );
+    await pressed(".dsy-savebar button.primary");
+    await waitFor(
+        "the words",
+        `return JSON.stringify(document.querySelector(".dsy-sr")?.textContent.length > 0)`,
+    );
+    assert.equal(await text(".dsy-sr"), await text(".dsy-saved"));
+});
+
+test("the picker's name shows whole on a small phone", real, async (t) => {
+    await phone(t, 360, 740);
+    await openDesign();
+    await openSystem();
+    await waitFor(
+        "the narrow workspace",
+        `return JSON.stringify(document.querySelector(".dsn")?.dataset.size === "narrow")`,
+    );
+    assert.equal(await text(".dsn-picker-title"), "Design system");
+    assert.ok(
+        await inPage<boolean>(`
+            const title = document.querySelector(".dsn-picker-title");
+            return JSON.stringify(title.scrollWidth <= title.clientWidth);
+        `),
+        "its words are not cut",
+    );
+});
+
 test(
     "the page check lists findings with pins, and Send to Pi puts one message in the box",
     bridged,
     async () => {
         await openSystem();
+        await focus(true);
+        // The design that the view follows: the page of the tests.
+        await inPage(`
+            const select = document.querySelector(".dsy-preview-select");
+            select.value = "ferry";
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            return "null";
+        `);
+        await waitFor(
+            "the page",
+            `return JSON.stringify(Boolean(document.querySelector('.dsy-preview-head button[aria-label="Check this design"]')))`,
+        );
         await pressed('.dsy-preview-head button[aria-label="Check this design"]');
         await waitFor(
             "the dock",
@@ -1139,6 +1313,55 @@ test(
         assert.equal(await text(".dsy-finding .dsn-pin"), "1");
         // The tab says how many.
         assert.match(await text(".dsn-tab.on"), /Check\s*[1-9]/);
+        // What was found is told to a screen reader in a place that is always there.
+        assert.match(
+            await text(".dsn-dock .dsy-sr"),
+            /^Checked version 1: \d+ errors and \d+ warnings\.$/,
+        );
+
+        // The keyboard goes down the dock in reading order: close, the options, the filter, the findings, the buttons.
+        await inPage(`document.querySelector(".dsn-dock-head button").focus(); return "null";`);
+
+        const seen = [await stopNow()];
+
+        for (let at = 0; at < 40 && seen.at(-1)!.region !== ".dsn-dock-foot"; at += 1) {
+            await page.press("Tab");
+            seen.push(await stopNow());
+        }
+
+        const dockOrder = [
+            ".dsn-dock-head",
+            ".dsy-check-options",
+            ".dsy-check-summary",
+            ".dsy-findings",
+            ".dsn-dock-foot",
+        ];
+        const dockRanks = seen.map((each) => dockOrder.indexOf(each.region));
+
+        assert.ok(
+            dockRanks.every((each) => each >= 0),
+            seen.map((each) => each.region).join(),
+        );
+        assert.deepEqual(
+            [...dockRanks].sort((a, b) => a - b),
+            dockRanks,
+        );
+        assert.equal(seen.at(-1)!.region, ".dsn-dock-foot");
+        assert.ok(
+            seen.every((each) => each.ring >= 2),
+            JSON.stringify(seen.filter((each) => each.ring < 2)),
+        );
+        assert.ok(
+            seen.some((each) => /^Show finding 1 on the page/.test(each.name)),
+            "the pins are buttons",
+        );
+
+        // A tap on a finding marks it, and asks the page to show its pin.
+        await pressed(".dsy-finding .dsy-pin-button");
+        await waitFor(
+            "the finding marked",
+            `return JSON.stringify(document.querySelector(".dsy-finding.on .dsy-pin-button")?.getAttribute("aria-pressed") === "true")`,
+        );
 
         await setBox("");
         await pressed(".dsn-dock-foot button.primary");
@@ -1158,6 +1381,66 @@ test(
         if ((await count(".dsy-check-filter button")) > 0) {
             await pressed(".dsy-check-filter button", "Warnings");
         }
+    },
+);
+
+test(
+    "on a phone the check is a sheet that the page shows above, and it takes three heights",
+    bridged,
+    async (t) => {
+        await phone(t, 390);
+        await openDesign();
+        await openSystem();
+        await pressed(".dsn-picker");
+        await pressed(".dsn-list-item", "Ferry booking");
+        await waitFor(
+            "the design",
+            `return JSON.stringify(document.querySelector(".dsn-picker-title")?.textContent === "Ferry booking")`,
+        );
+        await pressed('.dsn-tab[title="Check"]');
+        await waitFor(
+            "the sheet",
+            `return JSON.stringify(Boolean(document.querySelector('.dsn-dock[data-sheet="true"]')))`,
+        );
+
+        const share = () =>
+            inPage<{ dock: number; canvas: number; above: boolean }>(`
+                const dock = document.querySelector(".dsn-dock").getBoundingClientRect();
+                const room = document.querySelector(".dsn-dock").parentElement.getBoundingClientRect();
+                const canvas = document.querySelector(".dsn-canvas").getBoundingClientRect();
+                return JSON.stringify({ dock: dock.height / room.height, canvas: canvas.height, above: canvas.bottom <= dock.top + 1 });
+            `);
+        const middle = await share();
+
+        // Near 60 percent, and the page still shows above it.
+        assert.ok(middle.dock > 0.55 && middle.dock < 0.68, JSON.stringify(middle));
+        assert.ok(middle.canvas >= 120 && middle.above, JSON.stringify(middle));
+
+        // The handle is a control with a name, a value, and the arrow keys.
+        assert.equal(await count('.dsy-sheet-handle[role="separator"][aria-valuenow="1"]'), 1);
+        await inPage(`document.querySelector(".dsy-sheet-handle").focus(); return "null";`);
+        await page.press("ArrowUp");
+        await waitFor(
+            "the high sheet",
+            `return JSON.stringify(document.querySelector(".dsy-sheet-handle")?.getAttribute("aria-valuetext") === "high")`,
+        );
+        assert.ok((await share()).dock > 0.85);
+        await page.press("ArrowDown");
+        await page.press("ArrowDown");
+        await waitFor(
+            "the low sheet",
+            `return JSON.stringify(document.querySelector(".dsy-sheet-handle")?.getAttribute("aria-valuetext") === "low")`,
+        );
+
+        const low = await share();
+
+        assert.ok(low.dock < 0.4 && low.canvas > middle.canvas, JSON.stringify(low));
+        await page.press("Enter");
+        await waitFor(
+            "the next height",
+            `return JSON.stringify(document.querySelector(".dsy-sheet-handle")?.getAttribute("aria-valuetext") === "middle")`,
+        );
+        await pressed('.dsn-dock button[aria-label="Close"]');
     },
 );
 
@@ -1202,6 +1485,7 @@ test(
 
 test("a mode is added and removed from the menu", real, async () => {
     await openSystem();
+    await focus(true);
     await pressed('.dsy-bars button[aria-label="More"]');
     await pressed(".dsn-menu-item", "Modes");
     await waitFor(
@@ -1255,7 +1539,7 @@ test("a viewer sees the whole system and can change none of it", real, async () 
         );
 
         // Every row opens, and its fields are there to read, and no more.
-        await pressed('[data-token="color.accent.default"] .dsy-row-main', undefined, viewer);
+        await openToken("color.accent.default", viewer);
         await waitFor(
             "the editor",
             `return JSON.stringify(Boolean(document.querySelector(".dsy-editor")))`,
@@ -1504,7 +1788,7 @@ test(
         assert.equal(await text(".dsn-picker-title"), "Design system");
         assert.ok(
             await inPage<boolean>(
-                `return JSON.stringify([...document.querySelectorAll(".dsy-bars .dsn-bar *, .dsy-row-main *")].filter((each) => each.getBoundingClientRect().right > 391).map((each) => each.className).length === 0)`,
+                `return JSON.stringify([...document.querySelectorAll(".dsy-bars .dsn-bar *, .dsy-card-tile *, .dsy-row-main *")].filter((each) => each.getBoundingClientRect().right > 391).map((each) => each.className).length === 0)`,
             ),
         );
         assert.ok(
@@ -1512,10 +1796,10 @@ test(
                 `return JSON.stringify(document.documentElement.scrollWidth <= 391)`,
             ),
         );
-        // A row's tap targets are at least 44 px: the row itself, the swatch, the copy of its name.
+        // A card's tap target is at least 44 px, and so is a swatch of a strip, and a tab 34.
         assert.ok(
             await inPage<boolean>(`
-                const row = document.querySelector(".dsy-row-main").getBoundingClientRect();
+                const row = document.querySelector(".dsy-card-tile").getBoundingClientRect();
                 const tab = document.querySelector(".dsy-tabs [role=tab]").getBoundingClientRect();
                 return JSON.stringify(row.height >= 44 && tab.height >= 34);
             `),
@@ -1556,7 +1840,7 @@ test(
         assert.ok(
             await inPage<boolean>(`
                 const box = document.querySelector(".dsy-problems").getBoundingClientRect();
-                const row = document.querySelector(".dsy-row-main, .dsy-look").getBoundingClientRect();
+                const row = document.querySelector(".dsy-card-tile, .dsy-look").getBoundingClientRect();
                 return JSON.stringify(box.height < 52 && row.top < 400);
             `),
         );
@@ -1571,8 +1855,8 @@ test(
         );
         assert.ok(
             await inPage<boolean>(`
-                const name = document.querySelector('[data-token="color.text.primary"] .dsy-name').getBoundingClientRect();
-                return JSON.stringify(name.width > 120);
+                const name = document.querySelector('[data-token="color.text.primary"] .dsy-card-name').getBoundingClientRect();
+                return JSON.stringify(name.width > 100);
             `),
         );
         await pressed('.dsy-modes button[aria-label="Light"]');

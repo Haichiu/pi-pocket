@@ -306,6 +306,86 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         }
     };
 
+    // A pin's badge sits where it covers no text of the page: it tries outside the element (above, left, right, below), and
+    // then inside at its right edge. A place is free when no text and no picture of the page lies under the badge.
+    const REPLACED = /^(IMG|SVG|VIDEO|CANVAS|INPUT|SELECT|TEXTAREA|BUTTON|IFRAME|PICTURE)$/i;
+
+    const covered = (x, y, w, h) => {
+        const points = [[x + 2, y + 2], [x + w - 2, y + 2], [x + 2, y + h - 2], [x + w - 2, y + h - 2], [x + w / 2, y + h / 2]];
+
+        for (const [px, py] of points) {
+            if (px < 0 || py < 0 || px >= win.innerWidth || py >= win.innerHeight) {
+                continue;
+            }
+
+            for (const el of doc.elementsFromPoint(px, py)) {
+                if (el === doc.documentElement || (overlay && el === overlay.host)) {
+                    continue;
+                }
+
+                if (REPLACED.test(el.tagName)) {
+                    return true;
+                }
+
+                for (const node of el.childNodes) {
+                    if (node.nodeType === 3 && node.textContent.trim() !== "") {
+                        const range = doc.createRange();
+
+                        range.selectNodeContents(node);
+
+                        for (const box of range.getClientRects()) {
+                            if (box.right > x && box.left < x + w && box.bottom > y && box.top < y + h) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
+    };
+
+    const placePin = (pin, rect) => {
+        const w = Math.max(22, pin.node.offsetWidth || 22);
+        const h = 22;
+        const gap = 3;
+        const places = [
+            [rect.left, rect.top - h - gap],
+            [rect.left - w - gap, rect.top],
+            [rect.right + gap, rect.top],
+            [rect.right - w, rect.top - h - gap],
+            [rect.left, rect.bottom + gap],
+            [rect.right - w - 2, rect.top + 2],
+        ];
+        const inside = ([x, y]) => x >= 0 && y >= 0 && x + w <= win.innerWidth && y + h <= win.innerHeight;
+        const kept = pin.place;
+
+        // The place it had stays while it is still free (a scroll moves everything together).
+        if (kept !== undefined && inside(places[kept]) && !covered(places[kept][0], places[kept][1], w, h)) {
+            return places[kept];
+        }
+
+        let first = -1;
+
+        for (let at = 0; at < places.length; at += 1) {
+            if (inside(places[at])) {
+                first = first === -1 ? at : first;
+
+                if (!covered(places[at][0], places[at][1], w, h)) {
+                    pin.place = at;
+
+                    return places[at];
+                }
+            }
+        }
+
+        // None is free: the first that is on the screen, else the corner of the element, kept on the screen.
+        pin.place = first === -1 ? 0 : first;
+
+        return places[pin.place];
+    };
+
     const update = () => {
         if (!hoverEl && !pickedEl && pins.length === 0) {
             if (overlay) {
@@ -329,10 +409,12 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
             const rect = pin.el ? pin.el.getBoundingClientRect() : null;
             const visible = rect !== null && (rect.width > 0 || rect.height > 0);
 
+            const at = visible ? placePin(pin, rect) : null;
+
             css(pin.node, {
                 display: visible ? "flex" : "none",
-                left: visible ? Math.min(Math.max(rect.left - 9, 2), win.innerWidth - 24) + "px" : "0",
-                top: visible ? Math.min(Math.max(rect.top - 9, 2), win.innerHeight - 24) + "px" : "0",
+                left: at ? Math.min(Math.max(at[0], 2), win.innerWidth - 26) + "px" : "0",
+                top: at ? Math.min(Math.max(at[1], 2), win.innerHeight - 24) + "px" : "0",
             });
 
             if (pin.outline) {
@@ -418,7 +500,22 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
                 node.textContent = text;
                 shown.layer.append(outline, node);
-                pins.push({ target: { selector: clip(target.selector, 500), pid: typeof target.pid === "string" ? clip(target.pid, 200) : "" }, el: null, node, outline });
+
+                const pin = { selector: clip(target.selector, 500), pid: typeof target.pid === "string" ? clip(target.pid, 200) : "" };
+
+                pins.push({ target: pin, el: null, node, outline });
+
+                // One that is asked for comes into view (the app asks for the one that a person tapped in a list).
+                if (target.reveal === true) {
+                    const el = findPinTarget(pin);
+
+                    css(outline, { border: "2px solid " + ACCENT, opacity: "1" });
+                    css(node, { "box-shadow": "0 0 0 2px #fff, 0 1px 6px rgba(0,0,0,.6)", "z-index": "1" });
+
+                    if (el && typeof el.scrollIntoView === "function") {
+                        el.scrollIntoView({ block: "center", inline: "nearest" });
+                    }
+                }
             });
         }
 

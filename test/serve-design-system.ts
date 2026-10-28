@@ -4,7 +4,7 @@
  *
  *   node test/serve-design-system.ts [port] [host] [--no-system | --flagship]     (defaults: 8913 and 127.0.0.13)
  *
- * `--flagship` puts Pi Pocket's own design system (`test/fixtures/design-system/flagship`) in the folder instead of "Harbor".
+ * `--flagship` puts Pi Pocket's own design system (`docs/examples/design-system/pocket`) in the folder instead of "Harbor".
  *
  * Ctrl+C, or the kill it prints, stops it and deletes its data.
  */
@@ -35,9 +35,13 @@ await new Promise<void>((resolve) => server.listen(port, host, resolve));
 const session = await newSession(app);
 
 if (process.argv.includes("--flagship")) {
-    cpSync(new URL("./fixtures/design-system/flagship/.pi", import.meta.url), join(work, ".pi"), {
-        recursive: true,
-    });
+    cpSync(
+        new URL("../docs/examples/design-system/pocket/.pi", import.meta.url),
+        join(work, ".pi"),
+        {
+            recursive: true,
+        },
+    );
 } else if (!process.argv.includes("--no-system")) {
     writeSystemFixture(work);
 }

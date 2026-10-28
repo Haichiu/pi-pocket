@@ -38,7 +38,7 @@ export const RULES = {
 };
 
 /** The pins of a report: a finding that names an element (a `data-pid` or a selector), numbered by its place in the list. */
-export function pinsOfReport(report) {
+export function pinsOfReport(report, focus = null) {
     return (report?.findings ?? []).flatMap((finding, index) =>
         finding.pid || finding.selector
             ? [
@@ -46,6 +46,8 @@ export function pinsOfReport(report) {
                       ...(finding.pid ? { pid: finding.pid } : {}),
                       selector: finding.selector || `[data-pid="${finding.pid}"]`,
                       label: index + 1,
+                      // The one that a person tapped in the list comes into view in the page.
+                      ...(focus !== null && focus.number === index + 1 ? { reveal: true } : {}),
                   },
               ]
             : [],
@@ -57,15 +59,36 @@ export function createCheck(env, DockHead) {
     const { html, useEffect, useState } = pocket;
     const { Ico, Segmented } = env.parts;
 
-    function Finding({ finding, number }) {
+    function Finding({ finding, number, focused }) {
         const [copied, setCopied] = useState(false);
+        const placed = Boolean(finding.pid || finding.selector);
 
-        return html`<li class=${`dsy-finding ${finding.level}`}>
-            <span
-                class=${`dsn-pin ${finding.pid || finding.selector ? "" : "off"}`}
-                aria-hidden="true"
-                >${finding.pid || finding.selector ? number : "·"}</span
-            >
+        const show = () => {
+            if (placed) {
+                env.focusFinding(number);
+            }
+        };
+
+        return html`<li
+            class=${`dsy-finding ${finding.level} ${focused ? "on" : ""} ${placed ? "placed" : ""}`}
+            onClick=${show}
+        >
+            ${
+                placed
+                    ? html`<button
+                          type="button"
+                          class="dsn-pin dsy-pin-button"
+                          aria-label=${`Show finding ${number} on the page`}
+                          aria-pressed=${focused}
+                          onClick=${(event) => {
+                              event.stopPropagation();
+                              show();
+                          }}
+                      >
+                          ${number}
+                      </button>`
+                    : html`<span class="dsn-pin off" aria-hidden="true">·</span>`
+            }
             <div class="dsy-finding-body">
                 <div class="dsy-finding-head">
                     <strong>${RULES[finding.rule] ?? finding.rule}</strong>
@@ -85,7 +108,9 @@ export function createCheck(env, DockHead) {
                                 type="button"
                                 class="dsy-chip"
                                 title="Copy"
-                                onClick=${async () => {
+                                onClick=${async (event) => {
+                                    event.stopPropagation();
+
                                     try {
                                         await navigator.clipboard.writeText(finding.suggestion);
                                         setCopied(true);
@@ -159,6 +184,17 @@ export function createCheck(env, DockHead) {
                 count=${report ? report.summary.errors + report.summary.warnings : 0}
             />
             <div class="dsn-dock-body">
+                <div class="dsy-sr" role="status" aria-live="polite" aria-atomic="true">
+                    ${
+                        running
+                            ? `Checking version ${shown}`
+                            : report
+                              ? `Checked version ${shown}: ${report.summary.errors} errors and ${report.summary.warnings} warnings.`
+                              : entry?.status === "failed"
+                                ? entry.error
+                                : ""
+                    }
+                </div>
                 <div class="dsy-check-options">
                     <${Segmented}
                         label="Color scheme"
@@ -208,17 +244,35 @@ export function createCheck(env, DockHead) {
                 ${
                     report &&
                     html`<div class="dsy-check-summary">
-                            <span class=${`dsy-stat ${report.summary.errors > 0 ? "bad" : "ok"}`}>
-                                <strong>${report.summary.errors}</strong
-                                >${` error${report.summary.errors === 1 ? "" : "s"}`}
-                            </span>
-                            <span
-                                class=${`dsy-stat ${report.summary.warnings > 0 ? "warn" : "ok"}`}
+                            ${
+                                findings.length > 0
+                                    ? html`<div
+                                          class="dsy-check-filter"
+                                          role="group"
+                                          aria-label="Show"
+                                      >
+                                          ${["all", "error", "warning"].map(
+                                              (each) =>
+                                                  html`<button
+                                                      type="button"
+                                                      key=${each}
+                                                      class=${`${filter === each ? "on" : ""} ${each}`}
+                                                      aria-pressed=${filter === each}
+                                                      onClick=${() => setFilter(each)}
+                                                  >
+                                                      ${each === "all" ? "All" : each === "error" ? "Errors" : "Warnings"}
+                                                      <span
+                                                          >${each === "all" ? findings.length : findings.filter(({ finding }) => finding.level === each).length}</span
+                                                      >
+                                                  </button>`,
+                                          )}
+                                      </div>`
+                                    : html`<span class="dsy-stat ok">0 errors, 0 warnings</span>`
+                            }
+                            <span class="grow"></span>
+                            <span class="muted small"
+                                >${`${report.summary.elements} elements`}</span
                             >
-                                <strong>${report.summary.warnings}</strong
-                                >${` warning${report.summary.warnings === 1 ? "" : "s"}`}
-                            </span>
-                            <span class="muted small">${report.summary.elements} elements</span>
                         </div>
                         ${
                             report.withoutSystem &&
@@ -228,33 +282,21 @@ export function createCheck(env, DockHead) {
                             </p>`
                         }
                         ${
-                            findings.length > 0 &&
-                            html`<div class="dsy-check-filter" role="group" aria-label="Show">
-                                ${["all", "error", "warning"].map(
-                                    (each) =>
-                                        html`<button
-                                            type="button"
-                                            key=${each}
-                                            class=${filter === each ? "on" : ""}
-                                            aria-pressed=${filter === each}
-                                            onClick=${() => setFilter(each)}
-                                        >
-                                            ${each === "all" ? "All" : each === "error" ? "Errors" : "Warnings"}
-                                            <span
-                                                >${each === "all" ? findings.length : findings.filter(({ finding }) => finding.level === each).length}</span
-                                            >
-                                        </button>`,
-                                )}
-                            </div>`
-                        }
-                        ${
                             findings.length === 0 &&
                             html`<div class="dsy-clean">
                                 <${Ico} name="check" size=${18} /> Nothing to fix in this version.
                             </div>`
                         }
                         <ul class="dsy-findings">
-                            ${shownFindings.map(({ finding, number }) => html`<${Finding} key=${number} finding=${finding} number=${number} />`)}
+                            ${shownFindings.map(
+                                ({ finding, number }) =>
+                                    html`<${Finding}
+                                        key=${number}
+                                        finding=${finding}
+                                        number=${number}
+                                        focused=${s.checkFocus?.number === number}
+                                    />`,
+                            )}
                         </ul>`
                 }
             </div>

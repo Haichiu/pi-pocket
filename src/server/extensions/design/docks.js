@@ -625,6 +625,94 @@ export function createDocks(env) {
         check: "Check",
     };
 
+    /** How high a sheet stands on a phone, as a share of the room under the bars: low, middle, high. */
+    const SHEET_SNAPS = [34, 62, 90];
+
+    /**
+     * The handle of a bottom sheet: drag it to the height you want (it settles on the nearest of three), tap it to go to
+     * the next, or use the arrow keys.
+     */
+    function SheetHandle({ s }) {
+        const handle = useRef(null);
+        const drag = useRef(null);
+        const index = Math.min(SHEET_SNAPS.length - 1, Math.max(0, s.checkSheet));
+
+        const settle = (to) => {
+            const next = Math.min(SHEET_SNAPS.length - 1, Math.max(0, to));
+            const dock = handle.current?.closest(".dsn-dock");
+
+            dock?.style.setProperty("--sheet", `${SHEET_SNAPS[next]}%`);
+            store.set({ checkSheet: next });
+        };
+
+        return html`<div
+            ref=${handle}
+            class="dsy-sheet-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Height of the findings. Drag, or press the arrow keys."
+            aria-valuemin="0"
+            aria-valuemax=${SHEET_SNAPS.length - 1}
+            aria-valuenow=${index}
+            aria-valuetext=${["low", "middle", "high"][index]}
+            tabindex="0"
+            onPointerDown=${(event) => {
+                const dock = handle.current.closest(".dsn-dock");
+
+                try {
+                    handle.current.setPointerCapture(event.pointerId);
+                } catch {
+                    // A pointer that is gone (or made up): the drag still follows the moves that reach the handle.
+                }
+
+                drag.current = {
+                    dock,
+                    room: dock.parentElement.getBoundingClientRect(),
+                    share: null,
+                };
+            }}
+            onPointerMove=${(event) => {
+                const now = drag.current;
+
+                if (now) {
+                    now.share = Math.min(
+                        0.94,
+                        Math.max(0.2, (now.room.bottom - event.clientY) / now.room.height),
+                    );
+                    now.dock.style.setProperty("--sheet", `${now.share * 100}%`);
+                }
+            }}
+            onPointerUp=${() => {
+                const now = drag.current;
+
+                drag.current = null;
+
+                if (now === null) {
+                    return;
+                }
+
+                if (now.share === null) {
+                    settle((index + 1) % SHEET_SNAPS.length);
+                } else {
+                    const near = SHEET_SNAPS.map((snap) => Math.abs(snap / 100 - now.share));
+
+                    settle(near.indexOf(Math.min(...near)));
+                }
+            }}
+            onKeyDown=${(event) => {
+                if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                    event.preventDefault();
+                    settle(index + (event.key === "ArrowUp" ? 1 : -1));
+                } else if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    settle((index + 1) % SHEET_SNAPS.length);
+                }
+            }}
+        >
+            <span></span>
+        </div>`;
+    }
+
     /** The dock for `s.dock`, or nothing. */
     function Dock({ s, design, shown, canEdit, me }) {
         const props = { s, design, shown, canEdit, me };
@@ -641,10 +729,19 @@ export function createDocks(env) {
                         ? html`<${CheckDock} ...${props} />`
                         : null;
 
+        // The findings of a check on a phone are a sheet: tall enough to read, the page still showing above it.
+        const sheet = s.dock === "check" && env.sizeClass(s) === "narrow";
+
         return (
             body &&
-            html`<aside class="dsn-dock" data-dock=${s.dock} aria-label=${DOCKS[s.dock]}>
-                ${body}
+            html`<aside
+                class="dsn-dock"
+                data-dock=${s.dock}
+                data-sheet=${sheet}
+                aria-label=${DOCKS[s.dock]}
+                style=${sheet ? `--sheet:${SHEET_SNAPS[Math.min(2, Math.max(0, s.checkSheet))]}%` : undefined}
+            >
+                ${sheet && html`<${SheetHandle} s=${s} />`} ${body}
             </aside>`
         );
     }

@@ -26,6 +26,10 @@ export async function copyText(text) {
     }
 }
 
+/** The word for a contrast: its level when it passes, else how far it gets. */
+export const verdictOf = (info) =>
+    info.pass ? info.level : info.level === "AA large" ? "Large only" : "Fail";
+
 /** The title-cased name of a mode (`high-contrast` → `High contrast`). */
 export const modeTitle = (mode) =>
     mode === "" ? "" : mode[0].toUpperCase() + mode.slice(1).replace(/[-_]+/g, " ");
@@ -94,7 +98,7 @@ export function createSystemWidgets(env) {
             return null;
         }
 
-        const verdict = info.pass ? info.level : info.level === "AA large" ? "Large only" : "Fail";
+        const verdict = verdictOf(info);
 
         return html`<span
             class=${`dsy-badge ${info.pass ? (info.level === "AAA" ? "aaa" : "aa") : "fail"} ${info.auto ? "auto" : ""}`}

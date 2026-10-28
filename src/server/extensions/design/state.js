@@ -197,5 +197,9 @@ export function systemState() {
         checks: {},
         /** The options of the next check: null follows the canvas (its color scheme, and the size it shows the page at). */
         checkWith: { scheme: null, size: null },
+        /** The finding the person tapped (its number in the list): the canvas shows its pin, scrolled into view. */
+        checkFocus: null,
+        /** How high the findings sheet stands on a phone: the index of `SHEET_SNAPS` in `docks.js`. */
+        checkSheet: 1,
     };
 }
