@@ -152,24 +152,15 @@ async function go(id: ConversationId, target = page, composer = true) {
 }
 
 async function openDesign(target = page) {
-    if (
-        !(await evaluate<boolean>(
-            target,
-            `return JSON.stringify(Boolean(document.querySelector(".dsn")))`,
-        ))
-    ) {
-        // The rail on a screen with room; on a phone, the app's own way to open a panel.
-        await target.evaluate(`
-            (async () => {
-                const rail = document.querySelector('nav[aria-label="Sessions and tools"] button[aria-label="Design"]');
-                if (rail) { rail.click(); return; }
-                const { openExtPanel } = await import("/extension-ui.js");
-                openExtPanel("design", "design");
-            })();
-            return "null";
-        `);
-    }
-
+    // The app's own way to open a panel: it only sets which panel is open (a rail button toggles, and the tab may have
+    // restored the panel already), and the panel shows once the module has loaded.
+    await target.evaluate(`
+        (async () => {
+            const { openExtPanel } = await import("/extension-ui.js");
+            openExtPanel("design", "design");
+        })();
+        return "null";
+    `);
     await waitFor(
         "the workspace",
         `return JSON.stringify(Boolean(document.querySelector(".dsn-bar, .dsy-empty-system")))`,
@@ -790,6 +781,49 @@ test(
             `return JSON.stringify(Boolean(document.querySelector(".dsy-saved")))`,
         );
         assert.equal(tokenFile().color.border.focus.$value, "#11aa33");
+    },
+);
+
+test(
+    "Discard asks again when there is more than one change, and says what Save wrote",
+    real,
+    async () => {
+        await openSystem();
+        await section("Colors");
+        await openToken("color.status.danger");
+        await filled('input[aria-label="color.status.danger in light: color"]', "#334455");
+        await openToken("color.status.warning");
+        await filled('input[aria-label="color.status.warning in light: color"]', "#556677");
+        await waitFor(
+            "two changes",
+            `return JSON.stringify(document.querySelector(".dsy-count-note")?.textContent === "2 unsaved changes")`,
+        );
+        // The first tap asks, and does nothing else.
+        await pressed(".dsy-savebar button", "Discard");
+        await waitFor(
+            "the question",
+            `return JSON.stringify(document.querySelector(".dsy-savebar button.danger")?.textContent.trim() === "Discard 2?")`,
+        );
+        assert.equal(await text(".dsy-count-note"), "2 unsaved changes");
+        await pressed(".dsy-savebar button.danger");
+        await waitFor(
+            "the discard",
+            `return JSON.stringify(!document.querySelector(".dsy-count-note"))`,
+        );
+        assert.equal(await count(".dsy-row.edited"), 0);
+
+        // Save says how much it wrote.
+        await filled('input[aria-label="color.status.warning in light: color"]', "#556677");
+        await waitFor(
+            "the edit",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-savebar button.primary")))`,
+        );
+        await pressed(".dsy-savebar button.primary");
+        await waitFor(
+            "the save",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-saved")))`,
+        );
+        assert.match(await text(".dsy-saved"), /^Saved 1 change · tokens\.css \d+\.\d KB$/);
     },
 );
 

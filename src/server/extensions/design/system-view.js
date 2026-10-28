@@ -521,6 +521,21 @@ export function createSystemView(env, canvas, sections, widgets) {
 
     /** Unsaved edits and the save: how many, undo, give up, and Save. */
     function SaveBar({ s, count, data, canEdit }) {
+        // "Discard" with more than one change asks again, for a few seconds: nothing brings the changes back. The question is
+        // about the changes there are when it is asked: if their number moves, it is no longer the question.
+        const [askedFor, setAskedFor] = useState(null);
+        const asking = askedFor === count && count > 1;
+
+        useEffect(() => {
+            if (askedFor === null) {
+                return undefined;
+            }
+
+            const timer = setTimeout(() => setAskedFor(null), 4000);
+
+            return () => clearTimeout(timer);
+        }, [askedFor]);
+
         if (!canEdit || !data) {
             return null;
         }
@@ -572,11 +587,17 @@ export function createSystemView(env, canvas, sections, widgets) {
                     count > 0 &&
                     html`<button
                             type="button"
-                            class="button small"
+                            class=${`button small ${asking ? "danger" : ""}`}
                             disabled=${status === "saving"}
-                            onClick=${env.discard}
+                            onClick=${() => {
+                                if (count > 1 && !asking) {
+                                    setAskedFor(count);
+                                } else {
+                                    env.discard();
+                                }
+                            }}
                         >
-                            Discard
+                            ${asking ? `Discard ${count}?` : "Discard"}
                         </button>
                         <button
                             type="button"

@@ -135,7 +135,12 @@ export function createSystemData(pocket, store, data) {
                 }
 
                 took(result, { history: emptyHistory(), sysWriting: false });
-                note(`Saved ${count} change${count === 1 ? "" : "s"}`);
+
+                const css = result.system?.dist?.["tokens.css"];
+
+                note(
+                    `Saved ${count} change${count === 1 ? "" : "s"}${css > 0 ? ` · tokens.css ${(css / 1024).toFixed(1)} KB` : ""}`,
+                );
 
                 return true;
             } catch (error) {
