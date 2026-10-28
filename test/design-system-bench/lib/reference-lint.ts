@@ -22,7 +22,14 @@ import { colorOf, contrastRatio, deltaE, toHex, type Rgba } from "./color.ts";
 import { pixels } from "./dtcg.ts";
 
 interface Facts {
-    declarations: { pid: string; selector: string; prop: string; value: string }[];
+    declarations: {
+        pid: string;
+        selector: string;
+        prop: string;
+        value: string;
+        tag: string;
+        type: string;
+    }[];
     texts: {
         pid: string;
         selector: string;
@@ -38,7 +45,9 @@ interface Facts {
     meta: { viewport: boolean; scrollWidth: number; innerWidth: number };
     unlabelled: { selector: string }[];
     lang: boolean;
-    nameless: { pid: string; selector: string; tag: string }[];
+    nameless: { pid: string; selector: string; tag: string; form: boolean }[];
+    zoom: { pid: string; selector: string; px: number }[];
+    main: boolean;
     focus: { pid: string; selector: string; indicator: boolean }[];
     rings: { pid: string; selector: string; fg: number[]; bg: number[] }[];
     families: { pid: string; selector: string; family: string; installed: boolean }[];
@@ -51,8 +60,8 @@ const SCRIPT = String.raw`(() => {
             : pid ? el.tagName.toLowerCase() + ' in [data-pid="' + pid + '"]' : el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : '');
     };
     const own = (el) => el.getAttribute('data-pid') ?? '';
-    const facts = { declarations: [], texts: [], targets: [], images: [], headings: [], meta: {}, unlabelled: [], lang: !!(document.documentElement.getAttribute('lang') || '').trim(), nameless: [], focus: [], rings: [], families: [] };
-    const wanted = /^(color|background(-color)?|border[a-z-]*|outline[a-z-]*|font-size|font-family|padding[a-z-]*|margin[a-z-]*|(row-|column-)?gap)$/;
+    const facts = { declarations: [], texts: [], targets: [], images: [], headings: [], meta: {}, unlabelled: [], lang: !!(document.documentElement.getAttribute('lang') || '').trim(), nameless: [], zoom: [], main: !!document.querySelector('main,[role=main]'), focus: [], rings: [], families: [] };
+    const wanted = /^(color|background(-color)?|border[a-z-]*|outline[a-z-]*|font-size|font|font-family|padding[a-z-]*|margin[a-z-]*|(row-|column-)?gap)$/;
     const declarations = (text) => {
         const out = []; let depth = 0, start = 0;
         for (let i = 0; i <= text.length; i++) {
@@ -68,7 +77,7 @@ const SCRIPT = String.raw`(() => {
     };
     const take = (el, prop, value) => {
         if (!wanted.test(prop) || !value) return;
-        facts.declarations.push({ pid: own(el) || el.closest('[data-pid]')?.getAttribute('data-pid') || '', selector: short(el), prop, value: value.trim() });
+        facts.declarations.push({ pid: own(el) || el.closest('[data-pid]')?.getAttribute('data-pid') || '', selector: short(el), prop, value: value.trim(), tag: el.localName, type: el.getAttribute('type') || '', px: parseFloat(getComputedStyle(el).fontSize) });
     };
     const walkRules = (rules) => {
         for (const rule of rules) {
@@ -147,15 +156,28 @@ const SCRIPT = String.raw`(() => {
         const tag = el.tagName.toLowerCase();
         if (tag === 'input' && ['submit', 'reset', 'button'].includes(el.type)) return (el.value || (el.type === 'button' ? '' : 'x')).trim();
         if (tag === 'input' && el.type === 'image') return (el.getAttribute('alt') || '').trim();
-        if (['button', 'a'].includes(tag) || el.hasAttribute('role')) {
+        if (['button', 'a', 'summary'].includes(tag) || el.hasAttribute('role')) {
             const text = textOf(el); if (text) return text;
             const img = Array.from(el.querySelectorAll('img[alt],svg title')).map((n) => n.getAttribute('alt') || n.textContent || '').join(' ').trim(); if (img) return img;
         }
         return (el.getAttribute('title') || '').trim();
     };
-    for (const el of document.body.querySelectorAll('input:not([type=hidden]), select, textarea, button, a[href], [role=button], [role=link], [role=switch], [role=checkbox], [role=radio], [role=tab], [role=menuitem], [role=combobox], [role=textbox]')) {
-        if (hiddenNode(el)) continue;
-        if (!nameOf(el)) facts.nameless.push({ pid: own(el), selector: short(el), tag: el.tagName.toLowerCase() });
+    // A form control (or a form role), a button, a link, a tab, a menu item, or a switch needs an accessible name: a
+    // missing-label finding. A placeholder is not a name.
+    const FORM = 'input:not([type=hidden]):not([type=submit]):not([type=reset]):not([type=button]):not([type=image]), select, textarea, [role=textbox], [role=searchbox], [role=combobox], [role=listbox], [role=spinbutton], [role=slider], [role=checkbox], [role=radio]';
+    const NAMED = 'button, a[href], summary, [role=button], [role=link], [role=tab], [role=menuitem], [role=switch]';
+    for (const [selector, form] of [[FORM, true], [NAMED, false]]) {
+        for (const el of document.body.querySelectorAll(selector)) {
+            if (hiddenNode(el) || (!form && el.matches(FORM))) continue;
+            if (!nameOf(el)) facts.nameless.push({ pid: own(el), selector: short(el), tag: el.tagName.toLowerCase(), form });
+        }
+    }
+    // A text field with an author-set font size under 16 px makes a phone zoom in when it gets the focus.
+    if (innerWidth < 500) {
+        for (const d of facts.declarations) {
+            if (!['input', 'textarea', 'select'].includes(d.tag) || !/^(font-size|font)$/.test(d.prop) || (d.tag === 'input' && !/^(text|email|password|search|tel|url|number|)$/.test(d.type))) continue;
+            if (d.px < 16 && !facts.zoom.some((z) => z.selector === d.selector)) facts.zoom.push({ pid: d.pid, selector: d.selector, px: d.px });
+        }
     }
     for (const el of document.body.querySelectorAll('a,button,input,select,textarea,h1,h2,h3,h4,h5,h6,img,section,main,header,footer,nav,article,form,table')) if (!el.hasAttribute('data-pid')) facts.unlabelled.push({ selector: short(el) });
 
@@ -400,8 +422,7 @@ export async function referenceCheck(
 
     if (!facts.lang) {
         add({
-            // Not in CheckRule yet: the bench defines them (README), so a linter can add them under these names.
-            rule: "missing-lang" as CheckFinding["rule"],
+            rule: "missing-lang",
             level: "error",
             selector: "",
         });
@@ -409,11 +430,25 @@ export async function referenceCheck(
 
     for (const item of facts.nameless) {
         add({
-            rule: "missing-label" as CheckFinding["rule"],
+            rule: "missing-label",
             level: "error",
             selector: item.selector,
             pid: item.pid,
             value: `<${item.tag}>`,
+        });
+    }
+
+    if (!facts.main) {
+        add({ rule: "missing-main", level: "warning", selector: "" });
+    }
+
+    for (const item of facts.zoom) {
+        add({
+            rule: "input-zoom",
+            level: "warning",
+            selector: item.selector,
+            pid: item.pid,
+            value: `${item.px}px`,
         });
     }
 
