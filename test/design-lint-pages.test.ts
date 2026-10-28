@@ -93,11 +93,20 @@ test(
             assert.equal(rules.has("focus-visible"), false, colorScheme);
             assert.equal(rules.has("overflow"), false, colorScheme);
             assert.equal(rules.has("image-alt"), false, colorScheme);
-            // The page itself has real ones: the code block's inner `<pre>` falls back to the browser's monospace.
-            assert.ok(
+            // The two real findings that this page once had are fixed in the flagship: the code block's inner `<pre>`
+            // took the browser's monospace, and the hint of a hovered menu row (in dark) was 4.48:1.
+            // (The page's own headings have no font of their own; that is the test page's, not the flagship's.)
+            assert.equal(
                 report.findings.some(
                     (item) => item.rule === "off-system-font" && item.value === "monospace",
                 ),
+                false,
+                colorScheme,
+            );
+            assert.deepEqual(
+                report.findings.filter((item) => item.rule === "contrast"),
+                [],
+                colorScheme,
             );
         }
     },
