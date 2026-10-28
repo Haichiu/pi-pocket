@@ -70,3 +70,19 @@ Rewritten as the plan says. The first part (about 4.8 KB) is the same for every 
 - Not checked on a real iPhone; the drawer and the frames were checked in an emulated phone only.
 - The components were checked by eye in three modes at desktop width; the hover and focus states are drawn by classes (`.is-hover`, `.is-focus`) and also work as real `:hover` and `:focus-visible`, but a coarse pointer was not tested.
 - The shared Chromium showed `scroll-behavior: smooth` mid-scroll in screenshots; the page keeps it (it turns off under reduced motion).
+
+## Round 2 (after merging `feat/design-system`)
+
+Four tests failed with the real engine. Causes and fixes:
+
+1. **docsite "asks for nothing"** (test expected the stub's behavior). The real `compiled.tailwind` has a comment that says `@import "tailwindcss"`; the page prints it as escaped text in a code listing. The code is right. The test now looks for `@import` only inside `<style>` elements of the page and of the frames. Not a weaker check: a style with `@import` still fails.
+2. **guide "holds its summary"** (test expected the stub's summary text). The real summary has other words, and `defang` turns the `<link …>` tag in it into `‹link`, which would mislead Pi. **Code fix:** `USE` now states the `<link rel="stylesheet" href="ds/tokens.css">` tag itself, outside the fence. The test now checks the engine's phrases.
+3. **guide "hostile system"** (test expected guidelines in the summary; the real summary does not include them, Pi reads them with `design_system read file "guidelines.md"`). The test now puts the hostile text in a token note, which the summary does carry. Same checks: one closing tag, text kept inside the fence.
+4. **guide "broken .pi/design"** (the stub threw; the real loader returns a system with `problems`). A broken system is now an `N errors` line in the summary, and the guide tells Pi to run `design_system validate` and say so. `.pi/design/` wins over the old file even when broken. The symlink check stays: nothing from the link's target reaches the prompt.
+
+Other changes:
+
+- `guide.ts` names the real arguments: `design_preview` (`colorScheme`, `tweaks`, `actions`, `page`, `slide`, `fullPage`; `checks` is on by default), `design_export` (`tweaks`, `viewport`, `slide` as a number or `"all"`), and `design_system` (`scan`, `init` with `fromScan`, `changes`, `replace`, `modes`; `set`, `component`, `guidelines`, `validate`, `read` with `file`). A test checks that each argument the guide names is in the schema in `index.ts`. `ds/tokens.css`, `ds/tailwind.css`, and `ds/components.css` are named as the files the app attaches.
+- `SUMMARY_BYTES` is 12,000 (was 8,000): at 8,000 the real summary showed only colors, then cut. T's summary lists primitives (`dim`, `font`, `easing`, `z`) before roles (`space`, `radius`, `type`) and the component list after the component tokens; **T: list roles and components first.** The guide then needs no larger budget.
+- **Flagship:** the engine gave 2 warnings (`--notice-*` and `--step-ink`, custom properties local to a component). I rewrote `notice.html` and `tool-step.html` to use tokens only, regenerated their `tokens` lists, and copied the files to `test/fixtures/design-system/flagship/`. `loadDesignSystem` now returns **0 problems** (0 errors, 0 warnings), and `design-flagship.test.ts` asserts `problems` is empty.
+- `npm run format`, `npm run check`, and `npm run lint` pass. The full `npm test` had 1,105 of 1,106 passing; the one failure (`design-bridge-ui`: a deck shows one slide at a time) timed out under load and passes alone (18 of 18).

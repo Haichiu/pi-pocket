@@ -6,17 +6,17 @@
  * this section renders it, so sessions with design mode off miss nothing.
  *
  * A project has a system in one of two forms: `.pi/design/` (tokens, modes, components, guidelines; the summary of
- * `tokens.ts` goes into the prompt) or the 0.26 file `.pi/design-system.md` (its text goes in whole).
+ * `tokens.ts` goes into the prompt, and says how to link it) or the 0.26 file `.pi/design-system.md` (its text goes in
+ * whole; it is read only when `.pi/design/` is absent).
  */
 import { section, type PromptSection } from "@earendil-works/pi-durable";
 import type { PocketHost } from "../host.ts";
 import { defang } from "../fence.ts";
 import { MAX_BYTES, SYSTEM_FILE, readDesignSystemText } from "./system.ts";
-// The stand-in for stream T's `tokens.ts`: the integrator changes this one import when that file lands.
 import { loadDesignSystem, systemSummary } from "./tokens.ts";
 
 /** The most bytes of a system's summary in the prompt: tokens by role and the start of the guidelines. */
-export const SUMMARY_BYTES = 8_000;
+export const SUMMARY_BYTES = 12_000;
 
 /** The skeleton of every design: one place to see which parts a design keeps. */
 const SKELETON = `<!doctype html>
@@ -61,27 +61,29 @@ Craft, so that a design looks made and not generated:
 - Motion is 150 to 400 ms, one property at a time, and off under prefers-reduced-motion. Give every image alt text, and keep headings in order.
 
 Check before you reply:
-- Run design_preview at mobile and desktop. Fix every console error, failed request, and error finding it reports (contrast, tap target, overflow, a value that is not a token), then run it again until none is left. Then reply with a line or two on what you made and what to try, not a list of every element.
-- The preview loads only the design's own bundle, so an external font, image, or script fails there as it will for the person. It shows the page as it loads: to see a hover, a focus, a color scheme, a tweak value, or a second page, ask for it in the call. It cannot show pinch, scroll feel, or the keyboard. A render stops after 90 seconds.
+- Run design_preview at mobile and desktop (the default). It returns screenshots, console errors, failed requests, and a list of problems (contrast, tap target, overflow, alt text, heading order, fonts, focus, and any value that is not a token). Fix every error, then run it again until none is left. Then reply with a line or two on what you made and what to try, not a list of every element.
+- The preview loads only the design's own bundle, so an external font, image, or script fails there as it will for the person. It shows the page as it loads. To see more, pass it: colorScheme "dark", tweaks { "--accent": "#d6513b" }, actions [{ type: "hover" | "click" | "focus", selector }] before the screenshot, page "about.html" for a second page, slide N for a deck, fullPage true. It cannot show pinch, scroll feel, or the keyboard. A render stops after 90 seconds.
 
 Work with feedback and hand off:
 - Comments, text edits, and kept tweaks from the canvas reach you as a message, each with its target as JSON (pid, selector, text, html). Make the next version with the artifact tool's edits, and change only what the message names.
-- Hand off a design to code: design_export with format html into the project, then start a linked session with the team tool and give it the export path.`;
+- Hand off a design to code: design_export with format html into the project, then start a linked session with the team tool and give it the export path. design_export also writes png, pdf, and pptx (a deck); it takes tweaks to apply first, viewport (a preset or { width, height }) for a page, and slide (a number, or "all" for a zip of every slide) for a deck.`;
 
 /** What to do in a project with no design system: the end of the section when nothing was found. */
 const WITHOUT = `${GUIDE}
 
-The project has no design system yet. When the person points at a codebase or brand files, call design_system with action "scan" for a structured draft (palette, roles, scales, modes), correct the roles it guessed, and save it with action "write". Until there is one, choose one accent, one neutral ramp, and the scales above, and keep them as custom properties on :root.`;
+The project has no design system yet. When the person points at a codebase, call design_system with action "scan" for a structured draft, then action "init" with fromScan true and changes [{ token, value }] that correct the roles it guessed (it refuses to replace a system unless replace is true). With only brand files or a description, call "init" with tokens (a DTCG object) and, for dark, modes. Add components with action "component" and rules with "guidelines" only when the person asks. Until there is a system, choose one accent, one neutral ramp, and the scales above, and keep them as custom properties on :root.`;
 
 /** How to use a system: said once, before the system's own text. */
 const USE = `The project has a design system, so a design is on-system or it is wrong:
-- In <head> link <link rel="stylesheet" href="ds/tokens.css"> (and ds/components.css for components). The app adds both to every design's bundle. Do not copy token values into the page.
-- Every color, font, size, space, radius, shadow, and duration is var(--token) from the summary below, never a literal. design_preview reports a value that is not a token with the nearest token to use. When the system lacks a value, use the nearest token and say so in your reply; add a token (design_system) only when the person asks.
+- In <head> link <link rel="stylesheet" href="ds/tokens.css"> and, when the design uses components, <link rel="stylesheet" href="ds/components.css"> (ds/tailwind.css is for Tailwind). The app attaches whichever of ds/tokens.css, ds/tailwind.css, and ds/components.css a page links; never copy token values into the page.
+- Every color, font, size, space, radius, shadow, and duration is var(--token) from the summary, never a literal. design_preview reports a value that is not a token with the nearest token to use. When the system lacks a value, use the nearest token and say so in your reply.
+- Change the system only when the person asks: design_system set (changes, remove; mode "dark" for a mode), component (slug, content; drop), guidelines (content). Then run validate and fix every error it lists. The tokens.css that designs link is rewritten by every change.
 - Use roles (--color-bg-surface), not primitives.
-- Reuse components: copy the markup and classes of a component from its file in .pi/design/components/, and show each state the design needs.
-- Modes: data-theme="<mode>" on the root selects one. Check each mode the system has (design_preview colorScheme).
+- Reuse components: read a component's markup with design_system read and file "components/<slug>.html", copy its markup and classes, and show each state the design needs.
+- Modes: data-theme="<mode>" on the root selects one. Check each mode with design_preview colorScheme.
 - Bind tweak knobs to tokens (--color-accent-fill, --radius-card) so that the person tunes the system's own values.
-- Follow the guidelines in the summary.`;
+- design_system read with file "guidelines.md" gives the rules to follow; read it before a large design.
+- If the summary reports errors, run design_system validate and tell the person before you build on the system.`;
 
 /**
  * The design section: the instructions, and the project's design system when there is one, as bounded text that says
