@@ -131,3 +131,48 @@ test("the page carries the icon address of the colors in the cookie, and no othe
         "nothing but the colors reaches the page",
     );
 });
+
+test("a maskable icon fills the square with the frame's color and keeps the art in the safe zone", () => {
+    const { size, pixels } = decode(renderIcon(APP_ICON, 512, true)!);
+    const at = (x: number, y: number) => [
+        ...pixels.subarray((y * size + x) * 3, (y * size + x) * 3 + 3),
+    ];
+
+    assert.deepEqual(at(5, 5), [0x13, 0x14, 0x1c], "the corner is the frame's");
+    assert.deepEqual(
+        at(90, 256),
+        [0x13, 0x14, 0x1c],
+        "outside the 80-pixel margin there is no card",
+    );
+    // Where the plain icon has its ring (x = 40), the maskable one has the card's own edge at 80 + 40 × 0.6875.
+    assert.notDeepEqual(at(110, 256), at(5, 5), "the ring of the art starts inside the margin");
+});
+
+test("the manifest takes the icons and colors of the cookie, and is left alone without one", async () => {
+    const { manifestFor } = await import("../src/server/http/icon-route.ts");
+    const file = JSON.stringify({
+        name: "Pi Pocket",
+        icons: [{ src: "/icon.svg" }],
+        theme_color: "#13141c",
+    });
+    const request = (cookie?: string) =>
+        ({ headers: cookie === undefined ? {} : { cookie } }) as never;
+
+    assert.equal(manifestFor(request(), file), null, "the static file is served");
+
+    const made = JSON.parse(
+        manifestFor(request("pocket_icon=070707.000.b0b0b0.b6b6b6.b9b9b9"), file)!,
+    );
+
+    assert.equal(made.name, "Pi Pocket", "the rest stays");
+    assert.equal(made.theme_color, "#070707");
+    assert.deepEqual(
+        made.icons.map((icon: { sizes: string; purpose?: string }) => [icon.sizes, icon.purpose]),
+        [
+            ["192x192", undefined],
+            ["512x512", undefined],
+            ["512x512", "maskable"],
+        ],
+    );
+    assert.match(made.icons[2].src, /pi=b9b9b9.*maskable=1/);
+});
