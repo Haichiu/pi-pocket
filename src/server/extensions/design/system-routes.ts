@@ -266,6 +266,9 @@ export function viewOf(system: DesignSystem) {
         components: system.components,
         guidelines: system.guidelines,
         problems: system.problems,
+        // Notes that need no action (an exempt contrast pair), and the tokens each mode's file sets itself.
+        ...(system.notes === undefined ? {} : { notes: system.notes }),
+        ...(system.overrides === undefined ? {} : { overrides: system.overrides }),
         componentsCss: system.compiled.components,
         dist: {
             "tokens.css": Buffer.byteLength(system.compiled.css),
@@ -754,6 +757,9 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 ["tokens.css", system.compiled.css],
                 ["tailwind.css", system.compiled.tailwind],
                 ["tokens.resolved.json", system.compiled.json],
+                ...Object.entries(system.compiled.modes ?? {}).map(
+                    ([mode, text]): [string, string] => [`tokens.${mode}.resolved.json`, text],
+                ),
                 ["components.css", system.compiled.components],
             ];
 

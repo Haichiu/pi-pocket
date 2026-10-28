@@ -21,6 +21,10 @@ export interface RoleInfo {
     dark?: string;
     basis: "name" | "use";
     source: string;
+    /** How sure the scan is: a name that says the role is high; a guess from how colors are used is low. */
+    confidence: "high" | "medium" | "low";
+    /** Where the choice comes from, as `file:line`, when the scan knows. */
+    at?: string;
 }
 
 /** The scan's conclusions, for the report and for the tests. */

@@ -7,6 +7,8 @@
  *   error. Files that did not change keep their bytes.
  * - `compileDesignSystem(system)` and `systemSummary(system, maxBytes)` are the pure outputs.
  */
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { defang } from "../fence.ts";
 import type { DesignSystem, SystemChange, SystemProblem } from "./system-types.ts";
 import { SLUG } from "./components.ts";
@@ -45,7 +47,7 @@ export function problemLine(problem: SystemProblem): string {
 
     // The message can quote project text: no closing tag survives in it.
     return defang(
-        `${problem.level === "error" ? "error" : "warning"}: ${where === "" ? "" : `${where}: `}${problem.message}`,
+        `${problem.level}: ${where === "" ? "" : `${where}: `}${problem.message}${problem.fix === undefined ? "" : ` Fix: ${problem.fix}`}`,
     );
 }
 
@@ -429,6 +431,20 @@ function applyChange(
     return { raw, dirty, removed };
 }
 
+/** `dist/tokens.<mode>.resolved.json` files of modes that the system no longer has. */
+function staleResolved(cwd: string, modes: string[]): string[] {
+    try {
+        return readdirSync(join(cwd, DESIGN_DIR, "dist"))
+            .map((name) => /^tokens\.([a-z0-9]+(?:-[a-z0-9]+)*)\.resolved\.json$/.exec(name))
+            .filter(
+                (found): found is RegExpExecArray => found !== null && !modes.includes(found[1]!),
+            )
+            .map((found) => `dist/${found[0]}`);
+    } catch {
+        return [];
+    }
+}
+
 /** The problems as one key each, to tell which an edit adds. */
 const keyOf = (problem: SystemProblem) =>
     `${problem.file ?? ""}|${problem.token ?? ""}|${problem.message}`;
@@ -493,6 +509,16 @@ export function writeDesignSystem(cwd: string, change: SystemChange): DesignSyst
     files.set("dist/tailwind.css", system.compiled.tailwind);
     files.set("dist/tokens.resolved.json", system.compiled.json);
     files.set("dist/components.css", system.compiled.components);
+
+    // A DTCG file for each mode; one for a mode that is gone goes too.
+    for (const [mode, text] of Object.entries(system.compiled.modes ?? {})) {
+        files.set(`dist/tokens.${mode}.resolved.json`, text);
+    }
+
+    for (const name of staleResolved(cwd, Object.keys(system.compiled.modes ?? {}))) {
+        files.set(name, null);
+    }
+
     writeFiles(cwd, files);
 
     return system;

@@ -25,6 +25,8 @@ export interface Decl {
     theme: boolean;
     /** True for a `style="…"` attribute or a JSX style object. */
     inline: boolean;
+    /** The line of the file where the declaration starts (1 is the first), when known. */
+    line?: number;
 }
 
 export const MAX_VALUE = 400;
@@ -118,15 +120,43 @@ const MAX_DECLS = 30_000;
 const MAX_DEPTH = 24;
 
 /** Strips comments, keeping line breaks. */
-export const stripComments = (text: string) => text.replace(COMMENTS, "\n");
+// A comment keeps its line breaks, so that a line counted after it is the file's line; one line of it is a space.
+export const stripComments = (text: string) =>
+    text.replace(COMMENTS, (comment) => comment.replace(/[^\n]+/g, "").replace(/^$/, " "));
 
 /**
  * Reads CSS, SCSS, or Less into declarations. It tracks blocks, strings, parentheses (a `;` inside `url(data:…;base64)`
  * does not end a declaration), and SCSS `#{…}`. Variables (`$x: 1`, `@x: 1`) come back as declarations with that prop.
  * Statements that are not declarations (`@import "x";`) are skipped.
  */
-export function parseStyles(source: string): Decl[] {
+export function parseStyles(source: string, firstLine: number | undefined = 1): Decl[] {
     const text = stripComments(source);
+    // The line of an index: the number of line breaks before it.
+    const breaks: number[] = [];
+
+    for (let at = text.indexOf("\n"); at !== -1; at = text.indexOf("\n", at + 1)) {
+        breaks.push(at);
+    }
+
+    let cursor = 0;
+
+    const lineOf = (index: number) => {
+        let low = 0;
+        let high = breaks.length;
+
+        while (low < high) {
+            const middle = (low + high) >> 1;
+
+            if (breaks[middle]! < index) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+
+        return (firstLine ?? 1) + low;
+    };
+
     // `@custom-media --dark (prefers-color-scheme: dark);` names a query: `@media (--dark)` is the dark mode's.
     const darkQueries = [
         ...text.matchAll(/@custom-media\s+(--[\w-]+)\s+[^;{}]*prefers-color-scheme\s*:\s*dark/gi),
@@ -187,6 +217,10 @@ export function parseStyles(source: string): Decl[] {
             at,
             theme,
             inline: false,
+            // The statement starts as many line breaks before the cursor as it holds after its first character.
+            ...(firstLine === undefined
+                ? {}
+                : { line: lineOf(cursor) - (buffer.trimStart().match(/\n/g)?.length ?? 0) }),
             scope:
                 prop.startsWith("--") || prop.startsWith("$") || prop.startsWith("@")
                     ? theme
@@ -200,6 +234,8 @@ export function parseStyles(source: string): Decl[] {
 
     for (let at = 0; at < text.length; at++) {
         const char = text[at]!;
+
+        cursor = at;
 
         if (char === '"' || char === "'") {
             // A string: copy it whole, so its braces and semicolons mean nothing.

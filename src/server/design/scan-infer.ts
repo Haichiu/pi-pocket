@@ -1841,12 +1841,30 @@ export function infer(facts: Facts, folder: string): Inferred {
             pendingDark.push({ path, hex: dark.hex });
         }
 
+        const fact = source?.variable.light;
+        const at =
+            light.basis === "name"
+                ? fact === undefined
+                    ? undefined
+                    : `${fact.file}${fact.line === undefined ? "" : `:${fact.line}`}`
+                : lightColors.get(light.hex)?.fact?.at;
+
         result.roles[role] = {
             token: path.join("."),
             value: light.hex,
             ...(dark !== undefined && dark.hex !== light.hex ? { dark: dark.hex } : {}),
             basis: light.basis,
             source: light.source,
+            // A name that says the role is sure; the way a color is used is a guess, the less so the weaker the sign.
+            confidence:
+                light.basis === "name"
+                    ? light.score >= 85
+                        ? "high"
+                        : "medium"
+                    : light.score >= 40
+                      ? "medium"
+                      : "low",
+            ...(at === undefined ? {} : { at }),
         };
     }
 
