@@ -16,7 +16,7 @@ import {
 /** Two colors are the same when ΔE 2000 is at most this (a just-noticeable difference is about 2.3). */
 export const COLOR_TOLERANCE = 2;
 /** Two alphas are the same when they differ by at most this. */
-export const ALPHA_TOLERANCE = 0.03;
+export const ALPHA_TOLERANCE = 0.02;
 /** Two pixel sizes are the same when they differ by at most this (type sizes may be 0.5 px apart in `rem` rounding). */
 export const SIZE_TOLERANCE = 0.26;
 

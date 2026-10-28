@@ -151,8 +151,13 @@ export function systemFromFlat(flat: FlatSystem, name: string): DesignSystem {
             name: token.name,
             cssVar: cssVar(token.name),
             type: (PLAIN.has(token.type) ? token.type : "number") as TokenType,
-            tier: tierOf(token, token.aliases.default !== undefined),
+            tier:
+                (token.tier as TokenTier | undefined) ??
+                tierOf(token, token.aliases.default !== undefined),
             modes,
+            ...(token.description === undefined ? {} : { description: token.description }),
+            ...(token.deprecated === undefined ? {} : { deprecated: token.deprecated }),
+            ...(token.contrast === undefined ? {} : { contrast: token.contrast }),
         };
     });
 

@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 import type { DesignSystem } from "../../src/server/design/system-types.ts";
 import { BenchBrowser } from "./lib/chromium.ts";
 import { loadModules, ROOT, type Modules } from "./lib/modules.ts";
+import { referenceModules } from "./lib/reference.ts";
 import { contrastPhase, docsPhase, type ContrastPhase, type DocsPhase } from "./lib/phase-docs.ts";
 import { formatPhase, isFolder, type FormatPhase, type SystemSource } from "./lib/phase-format.ts";
 import { lintPhase, LINT_SYSTEM, lintSystem, type LintPhase } from "./lib/phase-lint.ts";
@@ -33,6 +34,8 @@ export interface BenchOptions {
     modules?: Modules;
     /** False skips everything that needs Chromium (CSS check, docs page). */
     browser?: boolean;
+    /** Run against the reference implementations (the ceiling check), not the streams' code. */
+    reference?: boolean;
     /** A flagship folder, instead of looking in FLAGSHIP_CANDIDATES. */
     flagship?: string;
     log?: (text: string) => void;
@@ -103,9 +106,8 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
     const log = options.log ?? (() => {});
     const out = resolve(options.out ?? "/tmp/ds-bench");
     const only = options.only ?? [...PHASES];
-    const modules = options.modules ?? (await loadModules());
-    const notes = [...modules.notes];
     const parent = mkdtempSync(join(tmpdir(), "pocket-bench-run-"));
+    const notes: string[] = [];
     const browser =
         options.browser === false
             ? undefined
@@ -116,6 +118,11 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
 
                   return undefined;
               });
+    const modules =
+        options.modules ??
+        (options.reference === true ? referenceModules(browser) : await loadModules());
+
+    notes.push(...modules.notes);
     const flagship = findFlagship(parent, options.flagship);
 
     mkdirSync(out, { recursive: true });
@@ -338,6 +345,8 @@ function parseArgs(argv: string[]): BenchOptions & { help: boolean } {
             options.flagship = argv[++index];
         } else if (arg === "--no-browser") {
             options.browser = false;
+        } else if (arg === "--reference") {
+            options.reference = true;
         } else if (arg === "--help" || arg === "-h") {
             options.help = true;
         } else {
@@ -364,7 +373,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
 
         if (options.help) {
             console.error(
-                "node test/design-system-bench/run.ts [--out dir] [--only scan,format,lint,contrast,docs] [--flagship dir] [--no-browser]",
+                "node test/design-system-bench/run.ts [--out dir] [--only scan,format,lint,contrast,docs] [--flagship dir] [--no-browser] [--reference]",
             );
         } else {
             const report = await runBench({

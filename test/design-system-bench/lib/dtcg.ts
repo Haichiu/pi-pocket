@@ -16,6 +16,12 @@ export interface FlatToken {
     values: Record<string, unknown>;
     /** The referenced token's name per mode, when the raw value there is a reference. */
     aliases: Record<string, string>;
+    description?: string;
+    deprecated?: boolean | string;
+    /** `$extensions["com.pi-pocket"].tier`, when it is set. */
+    tier?: string;
+    /** `$extensions["com.pi-pocket"].contrast`: this text color must reach `min` over the token `on`, in every mode. */
+    contrast?: { on: string; min: number };
 }
 
 export interface FlatSystem {
@@ -33,6 +39,8 @@ interface Raw {
     path: string[];
     type: string | undefined;
     value: unknown;
+    /** The token node itself, for its `$description`, `$deprecated` and `$extensions`. */
+    node?: Record<string, unknown>;
 }
 
 /** Collect the tokens of a tree, in order, with inherited `$type`. */
@@ -49,7 +57,7 @@ function collect(tree: unknown, problems: string[]): Map<string, Raw> {
 
         if (Object.hasOwn(object, "$value")) {
             if (found.size < MAX_TOKENS) {
-                found.set(path.join("."), { path, type, value: object.$value });
+                found.set(path.join("."), { path, type, value: object.$value, node: object });
             }
 
             return;
@@ -63,6 +71,7 @@ function collect(tree: unknown, problems: string[]): Map<string, Raw> {
                         path,
                         type: (child as { $type?: string }).$type ?? type,
                         value: (child as { $value: unknown }).$value,
+                        node: child as Record<string, unknown>,
                     });
                 }
 
@@ -219,6 +228,29 @@ export function flatten(tokens: unknown, modes: Record<string, unknown> = {}): F
             values: {},
             aliases: {},
         };
+
+        const node = entry.node ?? {};
+        const own = (node.$extensions as Record<string, Record<string, unknown>> | undefined)?.[
+            "com.pi-pocket"
+        ];
+
+        if (typeof node.$description === "string") {
+            token.description = node.$description;
+        }
+
+        if (node.$deprecated === true || typeof node.$deprecated === "string") {
+            token.deprecated = node.$deprecated;
+        }
+
+        if (typeof own?.tier === "string") {
+            token.tier = own.tier;
+        }
+
+        const pair = own?.contrast as { on?: unknown; min?: unknown } | undefined;
+
+        if (typeof pair?.on === "string" && typeof pair.min === "number") {
+            token.contrast = { on: pair.on, min: pair.min };
+        }
 
         for (const mode of modeNames) {
             const raw = maps.get(mode)!;

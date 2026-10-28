@@ -106,13 +106,14 @@ export class BenchPage {
     #event(method: string, params: Json): void {
         if (method === "Fetch.requestPaused") {
             const url = String(params.request.url);
+            const favicon = /\/favicon\.ico$/.test(url);
             const allowed =
                 url.startsWith(this.#origin) ||
                 url.startsWith("data:") ||
                 url.startsWith("blob:") ||
                 url.startsWith("about:");
 
-            if (!allowed) {
+            if (!allowed && !favicon) {
                 this.external.push(url.slice(0, 200));
             }
 

@@ -12,7 +12,7 @@ import {
     type LintScore,
     scoreLint,
 } from "./lint-score.ts";
-import type { Modules } from "./modules.ts";
+import { withTimeout, type Modules } from "./modules.ts";
 import { readFlat, systemFromFlat } from "./system.ts";
 
 export const LINT_DIR = join(BENCH, "lint");
@@ -195,12 +195,18 @@ export async function lintPhase(
                             scheme,
                         );
 
-                        report = await modules.check(
-                            bundle,
-                            system,
-                            options,
-                            host,
-                            AbortSignal.timeout(120_000),
+                        report = await withTimeout(
+                            Promise.resolve(
+                                modules.check(
+                                    bundle,
+                                    system,
+                                    options,
+                                    host,
+                                    AbortSignal.timeout(120_000),
+                                ),
+                            ),
+                            150_000,
+                            "checkDesign",
                         );
                         shape = attempt;
                     } catch (error) {

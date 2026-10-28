@@ -1,6 +1,15 @@
 /** Phase 1 — scan accuracy: run the scan on each fixture project and score the draft against `expected.json`. */
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import {
+    cpSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { flatten } from "./dtcg.ts";
 import { runScan, type Draft, type Modules } from "./modules.ts";
@@ -91,8 +100,17 @@ export async function scanPhase(
     };
     const scores: ScanScore[] = [];
 
+    // The scan sees a copy of the project without `expected.json`: the answers are not in the folder it reads.
+    const parent = mkdtempSync(join(tmpdir(), "pocket-bench-scan-"));
+
     for (const fixture of fixtures) {
-        const outcome = await runScan(modules, fixture.dir);
+        const copy = join(parent, fixture.name);
+
+        cpSync(fixture.dir, copy, {
+            recursive: true,
+            filter: (path) => basename(path) !== "expected.json",
+        });
+        const outcome = await runScan(modules, copy);
 
         result.source = outcome.source === "none" ? result.source : outcome.source;
 
@@ -134,6 +152,7 @@ export async function scanPhase(
         };
     }
 
+    rmSync(parent, { recursive: true, force: true });
     const aggregate = aggregateScans(scores);
 
     for (const category of Object.keys(SCAN_CATEGORIES) as ScanCategory[]) {

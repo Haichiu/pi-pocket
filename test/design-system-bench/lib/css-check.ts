@@ -80,12 +80,23 @@ function agrees(type: string, computed: string, want: unknown): boolean | undefi
     }
 
     if (type === "fontWeight") {
-        return Number(computed) === Number(want);
+        const named: Record<string, number> = { normal: 400, bold: 700 };
+
+        return (
+            Number(computed) ===
+            (typeof want === "string" && Object.hasOwn(named, want) ? named[want] : Number(want))
+        );
     }
 
     if (type === "duration") {
         const seconds = /^(-?[\d.]+)(m?s)$/.exec(computed.trim());
-        const wanted = /^(-?[\d.]+)(m?s)$/.exec(typeof want === "string" ? want.trim() : "");
+        const text =
+            typeof want === "object" && want !== null && "value" in want && "unit" in want
+                ? `${(want as { value: unknown }).value}${(want as { unit: unknown }).unit}`
+                : typeof want === "string"
+                  ? want.trim()
+                  : "";
+        const wanted = /^(-?[\d.]+)(m?s)$/.exec(text);
 
         if (seconds === null || wanted === null) {
             return false;

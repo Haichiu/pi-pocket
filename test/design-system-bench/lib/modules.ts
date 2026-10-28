@@ -51,6 +51,9 @@ export interface Modules {
 }
 
 /** The names under which a scan might be exported, most specific first. */
+/** The longest a scan may take on one fixture. */
+export const SCAN_LIMIT_MS = 60_000;
+
 export const SCAN_NAMES = [
     "scanDesignSystem",
     "scanProjectTokens",
@@ -321,13 +324,33 @@ export interface ScanOutcome {
     ms: number;
 }
 
+/** Reject after `ms`: a scan that never returns must not hold the bench. */
+export function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    const limit = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+            () => reject(new Error(`${what} did not finish in ${ms / 1000} s.`)),
+            ms,
+        );
+        timer.unref();
+    });
+
+    return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
+}
+
 /** Run the scan on a folder, with whichever scan exists. Never throws. */
 export async function runScan(modules: Modules, dir: string): Promise<ScanOutcome> {
     const start = Date.now();
 
     if (modules.scan !== undefined) {
         try {
-            const draft = coerceDraft(await modules.scan.run(dir));
+            const draft = coerceDraft(
+                await withTimeout(
+                    Promise.resolve(modules.scan.run(dir)),
+                    SCAN_LIMIT_MS,
+                    modules.scan.name,
+                ),
+            );
 
             return draft === undefined
                 ? {
@@ -347,7 +370,11 @@ export async function runScan(modules: Modules, dir: string): Promise<ScanOutcom
 
     if (modules.legacyScan !== undefined) {
         try {
-            const result = await modules.legacyScan(dir);
+            const result = await withTimeout(
+                Promise.resolve(modules.legacyScan(dir)),
+                SCAN_LIMIT_MS,
+                "scanTokens",
+            );
             const direct = coerceDraft(result);
 
             return {
