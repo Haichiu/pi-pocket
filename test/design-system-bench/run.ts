@@ -4,7 +4,7 @@
  * It needs no model. A part that is not in the tree yet scores 0 with a note; it never stops the run.
  * What each number means, and how it is matched: `README.md`.
  */
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -88,6 +88,20 @@ export function findFlagship(parent: string, explicit?: string): string | undefi
     return undefined;
 }
 
+/** The flagship's `tokens.css`: the committed `dist/` file, else what the engine compiled. */
+function flagshipCss(project: string | undefined, system: DesignSystem): string {
+    const file =
+        project === undefined ? undefined : join(project, ".pi", "design", "dist", "tokens.css");
+
+    try {
+        return file !== undefined && existsSync(file)
+            ? readFileSync(file, "utf8")
+            : system.compiled.css;
+    } catch {
+        return system.compiled.css;
+    }
+}
+
 /** The hand-written systems that the format phase checks beside the flagship and the scan drafts. */
 export function formatSources(): SystemSource[] {
     return [
@@ -125,7 +139,9 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
     notes.push(...modules.notes);
     // The ceiling run has no flagship of its own: the bench's system stands in, so every phase can reach 1.
     const flagship =
-        options.reference === true ? LINT_SYSTEM : findFlagship(parent, options.flagship);
+        options.reference === true && options.flagship === undefined
+            ? LINT_SYSTEM
+            : findFlagship(parent, options.flagship);
 
     mkdirSync(out, { recursive: true });
 
@@ -229,7 +245,7 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
         let primary: DesignSystem | undefined;
         let label = "bench";
 
-        if (only.includes("contrast") || only.includes("docs")) {
+        if (only.includes("contrast") || only.includes("docs") || only.includes("lint")) {
             const load = (project: string) => {
                 try {
                     return modules.load?.(project);
@@ -267,7 +283,16 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
         }
 
         if (only.includes("lint")) {
-            const lint = await guard("lint", () => lintPhase(modules, out));
+            const lint = await guard("lint", () =>
+                lintPhase(
+                    modules,
+                    out,
+                    undefined,
+                    label === "flagship" && primary !== undefined
+                        ? { system: primary, css: flagshipCss(flagship, primary) }
+                        : undefined,
+                ),
+            );
 
             if (lint !== undefined) {
                 report.lint = lint;
@@ -308,6 +333,11 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
         }
 
         const run = PHASES.filter((phase) => only.includes(phase));
+
+        // A phase that failed has no report and scores 0.
+        for (const phase of run) {
+            report.scores[phase] ??= 0;
+        }
 
         report.scores.overall = round(mean(run.map((phase) => report.scores[phase] ?? 0)));
         report.targets = {

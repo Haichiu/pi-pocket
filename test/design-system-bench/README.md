@@ -130,7 +130,7 @@ give none; they use keyword and zero values, a decorative empty `alt`, an `aria-
 is the same (colors ΔE ≤ 3; lengths within 0.5 px; ratios within 0.3; else the same text or first font family). Exact values
 are matched first, then a value that one side leaves out. **One value, one finding**: a second finding with the same rule,
 element and value is dropped before scoring. Anything reported that nothing expected is a false finding, on seeded and
-clean designs alike. Precision and recall are totals over all runs (and per rule). The report also gives how often the value,
+clean designs alike. Precision and recall are totals over all runs (and per rule). Beside the score, `cleanOnFlagship` says whether the clean designs also stay clean on the flagship's own `tokens.css`; it runs only when the flagship defines every variable that they use (the plan's names), because a missing variable would be the design's fault. The report also gives how often the value,
 the fix token (any of the equal tokens in the expectation), and the level were right; these do not change the score.
 
 **The bench's definition of each rule** (the reference linter in `lib/reference-lint.ts` follows it, and finds exactly the

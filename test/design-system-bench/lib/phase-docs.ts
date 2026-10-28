@@ -169,6 +169,13 @@ export async function docsPhase(
         return phase;
     }
 
+    if (typeof doc?.html !== "string") {
+        phase.error = "renderSystemDoc did not return { html, assets }.";
+
+        return phase;
+    }
+
+    doc.assets = Array.isArray(doc.assets) ? doc.assets : [];
     phase.htmlBytes = Buffer.byteLength(doc.html);
     phase.assets = doc.assets.length;
 
