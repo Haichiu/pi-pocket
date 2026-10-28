@@ -185,6 +185,14 @@ export function colorRoleOf(name: string): ColorRole | undefined {
     return ROLE_WORDS.find(([, pattern]) => words.some((word) => pattern.test(word)))?.[0];
 }
 
+/** The CSS property that a use of a color sets, for the edit that a message names. */
+const USE_PROPERTY: Record<string, string> = {
+    text: "color",
+    background: "background-color",
+    border: "border-color",
+    outline: "outline-color",
+};
+
 /** How a page uses a color (`useColor` in the page script) as a token role. */
 const USE_ROLE: Record<string, ColorRole> = {
     text: "text",
@@ -351,6 +359,11 @@ export function analyze(
             const value = formatColor(rgba);
             const wanted = USE_ROLE[main?.[0] ?? ""];
             const given = near === undefined ? undefined : colorRoleOf(near.token.name);
+            const property = USE_PROPERTY[main?.[0] ?? ""] ?? "color";
+            const edit =
+                near === undefined
+                    ? ""
+                    : ` Set \`${property}: ${tokenRef(near.token)}\` (${formatColor(near.token.rgba!)}) instead of ${value}.`;
             const roleNote =
                 wanted !== undefined && given !== undefined && given !== wanted
                     ? ` It is a ${given} token, and the system has no ${wanted} token this close.`
@@ -365,13 +378,11 @@ export function analyze(
                     ...(near === undefined ? {} : { suggestion: tokenRef(near.token) }),
                     message: onSystem
                         ? `${value} is written as a literal (${roles}), so it does not follow the system.` +
-                          (near === undefined
-                              ? ""
-                              : ` Use ${tokenRef(near.token)} (${formatColor(near.token.rgba!)}).${roleNote}`)
+                          (near === undefined ? "" : `${edit}${roleNote}`)
                         : `${value} is not a system color (${roles}).` +
                           (near === undefined
                               ? " No token is close: pick a role from the system."
-                              : ` Use ${tokenRef(near.token)} (${formatColor(near.token.rgba!)}).${roleNote}`),
+                              : `${edit}${roleNote}`),
                 },
                 num(group.count),
             );
@@ -405,7 +416,9 @@ export function analyze(
                         (onSystem
                             ? `Font ${list} is written as a literal (${plural(num(group.count), "element")}), so it does not follow the system.`
                             : `Font ${list} is not a system font (${plural(num(group.count), "element")}).`) +
-                        (token === undefined ? "" : ` Use ${tokenRef(token)}.`),
+                        (token === undefined
+                            ? ""
+                            : ` Set \`font-family: ${tokenRef(token)}\` instead of ${list}.`),
                 },
                 num(group.count),
             );
@@ -454,8 +467,8 @@ export function analyze(
                     suggestion: tokenRef(step),
                     message:
                         equal === undefined
-                            ? `${props === "" ? kind : props} ${px}px is not on ${names[kind]} (${plural(num(group.count), "use")}). Nearest: ${tokenRef(nearest)} (${nearest.px}px).`
-                            : `${props === "" ? kind : props} ${px}px is written as a literal (${plural(num(group.count), "use")}), so it does not follow the system. Use ${tokenRef(equal)}.`,
+                            ? `${props === "" ? kind : props} ${px}px is not on ${names[kind]} (${plural(num(group.count), "use")}). ${sizeEdit(group.props, kind, nearest, px)}`
+                            : `${props === "" ? kind : props} ${px}px is written as a literal (${plural(num(group.count), "use")}), so it does not follow the system. ${sizeEdit(group.props, kind, equal, px)}`,
                 },
                 num(group.count),
             );
@@ -528,9 +541,9 @@ export function analyze(
                     `Text ${swatch(fg)} on ${swatch(bg)} is ${shown}; ${group.large ? "large text" : "text"} needs ${needed}:1${more(num(group.count))}.` +
                     (pass === undefined
                         ? tokens === undefined
-                            ? " Darken the text or lighten the background."
-                            : " No system color passes on this background: change the background."
-                        : ` Use ${tokenRef(pass.token)} (${swatch(pass.token.rgba!)}, ${pass.ratio.toFixed(2)}:1).`),
+                            ? " Darken the `color` or lighten the `background-color`."
+                            : " No system color passes on this background: change its `background-color`."
+                        : ` Set \`color: ${tokenRef(pass.token)}\` (${swatch(pass.token.rgba!)}, ${pass.ratio.toFixed(2)}:1) instead of ${swatch(fg)}.`),
             },
             num(group.count),
         );
@@ -550,8 +563,8 @@ export function analyze(
                 value: `${width}×${height}px`,
                 message:
                     level === "error"
-                        ? `A <${clip(group.tag, 20)}> target is ${width}×${height} px, under the 24×24 px minimum of WCAG 2.2${more(num(group.count))}. Add padding or a larger size.`
-                        : `A <${clip(group.tag, 20)}> target is ${width}×${height} px; 44×44 px is easier to hit on a phone${more(num(group.count))}.`,
+                        ? `A <${clip(group.tag, 20)}> target is ${width}×${height} px, under the 24×24 px minimum of WCAG 2.2${more(num(group.count))}. Set \`min-width: 44px; min-height: 44px\` (or padding) on it.`
+                        : `A <${clip(group.tag, 20)}> target is ${width}×${height} px; 44×44 px is easier to hit on a phone${more(num(group.count))}. Set \`min-width: 44px; min-height: 44px\` (or padding) on it.`,
             },
             num(group.count),
         );
@@ -579,7 +592,7 @@ export function analyze(
                 rule: "image-alt",
                 level: "error",
                 ...elementOf(group.el),
-                message: `An image has ${clip(group.why, 60)}${more(num(group.count))}. Describe it in alt, or use alt="" if it is decoration.`,
+                message: `An image has ${clip(group.why, 60)}${more(num(group.count))}. Add \`alt="what it shows"\`, or \`alt=""\` if it is decoration.`,
             },
             num(group.count),
         );
@@ -591,7 +604,7 @@ export function analyze(
             level: "warning",
             ...elementOf(group.el),
             value: `h${num(group.level)} after h${num(group.previous)}`,
-            message: `A heading jumps from level ${num(group.previous)} to ${num(group.level)}. Use level ${num(group.previous) + 1}, and style it with CSS.`,
+            message: `A heading jumps from level ${num(group.previous)} to ${num(group.level)}. Change the tag to <h${num(group.previous) + 1}> and keep its look with CSS.`,
         });
     }
 
@@ -689,6 +702,22 @@ export function findingId(
         .slice(0, 10);
 
     return `${finding.rule}-${hash}`;
+}
+
+/** The edit for a length: the property (or properties), the token by name, its value, and what it replaces. */
+function sizeEdit(
+    props: unknown,
+    kind: string,
+    step: { cssVar: string; px: number },
+    px: number,
+): string {
+    const names = (Array.isArray(props) ? props : [])
+        .map((prop) => clip(prop, 30))
+        .filter((prop) => prop !== "");
+    const list = names.length > 0 ? names : [kind === "font-size" ? "font-size" : kind];
+    const set = list.map((prop) => `\`${prop}\``).join(" or ");
+
+    return `Set ${set} to ${tokenRef(step)}, ${step.px}px, instead of ${px}px.`;
 }
 
 /** A report for findings. */

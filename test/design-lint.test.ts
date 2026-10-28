@@ -182,7 +182,10 @@ test("analyze: a color near a token is off-system, with the right token to use",
     assert.equal(found[0]!.rule, "off-system-color");
     assert.equal(found[0]!.value, "#6b7180");
     assert.equal(found[0]!.suggestion, "var(--color-text-muted)");
-    assert.match(found[0]!.message, /Use var\(--color-text-muted\) \(#5a5f73\)/);
+    assert.match(
+        found[0]!.message,
+        /Set `color: var\(--color-text-muted\)` \(#5a5f73\) instead of #6b7180\./,
+    );
 });
 
 test("analyze: reports carry counts, and findings merge once", () => {
@@ -425,6 +428,66 @@ test("a suggestion takes a token of the role the color plays", browser, async ()
     );
 });
 
+test(
+    "every suggestion is an edit: the property, the token, its value, and what it replaces",
+    browser,
+    async () => {
+        const report = await check(
+            page(
+                "",
+                `<p data-pid="c" style="margin:0;color:#7ba3f8;background:var(--color-bg-surface)">c</p>` +
+                    `<div data-pid="bg" style="margin:0;background:#f5f6fa;padding:var(--space-4)"><span data-pid="in" style="color:var(--color-text-primary)">x</span></div>` +
+                    `<p data-pid="f" style="margin:0;font-family:Georgia,serif;font-size:15px;padding:14px;border-radius:12px;background:var(--color-bg-surface)">f</p>` +
+                    `<p data-pid="k" style="margin:0;padding:var(--space-2);color:#8a90a6;background:var(--color-bg-surface)">k</p>` +
+                    `<h1 data-pid="h1">One</h1><h3 data-pid="h3">Three</h3><img data-pid="im" width="4" height="4" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">` +
+                    `<a data-pid="tap" href="#" style="display:inline-block;width:20px;height:20px;background:var(--color-accent-default)"></a>`,
+            ),
+        );
+        const message = (rule: string, pid: string, value?: string) =>
+            report.findings.find(
+                (item) =>
+                    item.rule === rule &&
+                    item.pid === pid &&
+                    (value === undefined || item.value === value),
+            )!.message;
+
+        assert.match(
+            message("off-system-color", "c"),
+            /Set `color: var\(--color-accent-default\)` \(#3b6cf6\) instead of #7ba3f8\./,
+        );
+        assert.match(
+            message("off-system-color", "bg"),
+            /Set `background-color: var\(--color-bg-page\)` \(#f6f7fb\) instead of #f5f6fa\./,
+        );
+        assert.match(
+            message("off-system-font", "f"),
+            /Set `font-family: var\(--font-body\)` instead of Georgia, serif\./,
+        );
+        assert.match(
+            message("off-system-size", "f", "15px"),
+            /Set `font-size` to var\(--font-size-sm\), 14px, instead of 15px\./,
+        );
+        assert.match(
+            message("off-system-size", "f", "14px"),
+            /Set `padding` to var\(--space-3\), 12px, instead of 14px\./,
+        );
+        assert.match(
+            message("off-system-size", "f", "12px"),
+            /Set `border-radius` to var\(--radius-md\), 8px, instead of 12px\./,
+        );
+        assert.match(
+            message("contrast", "k"),
+            /Set `color: var\(--color-text-muted\)` \([^)]*\) instead of #8a90a6\./,
+        );
+        assert.match(message("heading-order", "h3"), /Change the tag to <h2>/);
+        assert.match(
+            message("image-alt", "im"),
+            /Add `alt="what it shows"`, or `alt=""` if it is decoration\./,
+        );
+        assert.match(message("tap-target", "tap"), /Set `min-width: 44px; min-height: 44px`/);
+    },
+);
+
 test("a token's role comes from the words of its name", () => {
     assert.equal(colorRoleOf("color.text.primary"), "text");
     assert.equal(colorRoleOf("color.accent.on-fill"), "text");
@@ -485,7 +548,10 @@ test("a contrast finding names the system color that passes", browser, async () 
     const finding = onPid(report, "contrast", "low")!;
 
     assert.equal(finding.suggestion, "var(--color-text-muted)");
-    assert.match(finding.message, /Use var\(--color-text-muted\) \(#5a5f73, 6\.3\d:1\)/);
+    assert.match(
+        finding.message,
+        /Set `color: var\(--color-text-muted\)` \(#5a5f73, 6\.3\d:1\) instead of #8a90a6\./,
+    );
 });
 
 test("a form field's edge needs 3:1 against what it sits on (a warning)", browser, async () => {
