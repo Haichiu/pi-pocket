@@ -347,11 +347,27 @@ function distance(path: string[], role: Role): [number, number, number] {
     ];
 }
 
-function modeOf(system: FlatSystem): string | undefined {
-    return (
-        system.modes.find((mode) => /dark|night/i.test(mode)) ??
-        (system.modes.length === 2 ? system.modes[1] : undefined)
-    );
+/**
+ * Which mode of a draft is the light theme and which is the dark one. The files do not say which is the project's
+ * default: a dark-first project may keep its dark values in `tokens.json` and put the light theme in `tokens.light.json`.
+ * A mode named for dark (`dark`, `night`) is the dark theme and the default is light; a mode named for light (`light`,
+ * `day`) is the light theme and the default is dark; with no names and two modes, the second is dark.
+ */
+export function themeModes(system: FlatSystem): { light: string; dark: string | undefined } {
+    const others = system.modes.slice(1);
+    const dark = others.find((mode) => /dark|night/i.test(mode));
+
+    if (dark !== undefined) {
+        return { light: "default", dark };
+    }
+
+    const light = others.find((mode) => /^(light|day)$/i.test(mode));
+
+    if (light !== undefined) {
+        return { light, dark: "default" };
+    }
+
+    return { light: "default", dark: others.length === 1 ? others[0] : undefined };
 }
 
 const colorEquals = (first: unknown, second: unknown) => {
@@ -396,7 +412,7 @@ const NOT_TYPE = [
 
 /** Read a draft (as `flatten` made it) into what the bench scores. */
 export function extract(system: FlatSystem): Extracted {
-    const dark = modeOf(system);
+    const { light: lightKey, dark } = themeModes(system);
     const colorTokens = system.tokens.filter((token) => token.type === "color");
     const colors: Rgba[] = [];
     const darkColors: Rgba[] = [];
@@ -408,14 +424,14 @@ export function extract(system: FlatSystem): Extracted {
     };
 
     for (const token of colorTokens) {
-        const light = colorOf(token.values.default);
+        const light = colorOf(token.values[lightKey]);
 
         addUnique(colors, light);
 
         if (
             dark !== undefined &&
             token.values[dark] !== undefined &&
-            !colorEquals(token.values.default, token.values[dark])
+            !colorEquals(token.values[lightKey], token.values[dark])
         ) {
             addUnique(darkColors, colorOf(token.values[dark]));
         }
@@ -427,7 +443,7 @@ export function extract(system: FlatSystem): Extracted {
         const candidates = colorTokens
             .map((token, order) => ({ token, order, role: roleOf(token.path) }))
             .filter(
-                (item) => item.role === role && colorOf(item.token.values.default) !== undefined,
+                (item) => item.role === role && colorOf(item.token.values[lightKey]) !== undefined,
             );
 
         candidates.sort((a, b) => {
@@ -441,12 +457,12 @@ export function extract(system: FlatSystem): Extracted {
         if (pick !== undefined) {
             roles[role] = {
                 token: pick.name,
-                light: colorOf(pick.values.default),
+                light: colorOf(pick.values[lightKey]),
                 dark: dark === undefined ? undefined : colorOf(pick.values[dark]),
                 darkChanged:
                     dark !== undefined &&
                     pick.values[dark] !== undefined &&
-                    !colorEquals(pick.values.default, pick.values[dark]),
+                    !colorEquals(pick.values[lightKey], pick.values[dark]),
             };
         }
     }
@@ -469,7 +485,7 @@ export function extract(system: FlatSystem): Extracted {
             continue;
         }
 
-        const size = pixels(token.values.default);
+        const size = pixels(token.values[lightKey]);
 
         if (size !== undefined) {
             typeSizes.push(size);
@@ -477,7 +493,9 @@ export function extract(system: FlatSystem): Extracted {
     }
 
     for (const token of system.tokens.filter((item) => item.type === "typography")) {
-        const size = pixels((token.values.default as { fontSize?: unknown } | undefined)?.fontSize);
+        const size = pixels(
+            (token.values[lightKey] as { fontSize?: unknown } | undefined)?.fontSize,
+        );
 
         if (size !== undefined) {
             typeSizes.push(size);
@@ -498,7 +516,7 @@ export function extract(system: FlatSystem): Extracted {
     let spacingBase: number | undefined;
 
     for (const token of spacingTokens) {
-        const size = pixels(token.values.default);
+        const size = pixels(token.values[lightKey]);
 
         if (size === undefined) {
             continue;
@@ -516,7 +534,7 @@ export function extract(system: FlatSystem): Extracted {
     }
 
     const radii = dimensions(system, ["radius", "radii", "rounded", "corner"], []).flatMap(
-        (token) => pixels(token.values.default) ?? [],
+        (token) => pixels(token.values[lightKey]) ?? [],
     );
     const shadows = system.tokens
         .filter(
@@ -525,7 +543,7 @@ export function extract(system: FlatSystem): Extracted {
                 (words(token.path).some((word) => ["shadow", "elevation"].includes(word)) &&
                     token.type !== "color"),
         )
-        .map((token) => shadowLayers(token.values.default))
+        .map((token) => shadowLayers(token.values[lightKey]))
         .filter((layers) => layers.length > 0);
     const fonts = [
         ...new Set(
@@ -535,13 +553,13 @@ export function extract(system: FlatSystem): Extracted {
                         token.type === "fontFamily" ||
                         (token.type === "string" && words(token.path).includes("family")),
                 )
-                .flatMap((token) => families(token.values.default).slice(0, 1))
+                .flatMap((token) => families(token.values[lightKey]).slice(0, 1))
                 .concat(
                     system.tokens
                         .filter((token) => token.type === "typography")
                         .flatMap((token) =>
                             families(
-                                (token.values.default as { fontFamily?: unknown } | undefined)
+                                (token.values[lightKey] as { fontFamily?: unknown } | undefined)
                                     ?.fontFamily,
                             ).slice(0, 1),
                         ),
