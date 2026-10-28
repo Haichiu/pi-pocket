@@ -511,6 +511,10 @@ export function writeDesignSystem(cwd: string, change: SystemChange): DesignSyst
     files.set("dist/components.css", system.compiled.components);
 
     // A DTCG file for each mode; one for a mode that is gone goes too.
+    if (system.compiled.names !== undefined) {
+        files.set("dist/names.md", system.compiled.names);
+    }
+
     if (system.compiled.studio !== undefined) {
         files.set("dist/tokens.studio.json", system.compiled.studio);
     }

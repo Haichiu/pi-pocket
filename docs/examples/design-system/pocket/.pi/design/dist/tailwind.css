@@ -288,7 +288,7 @@
 
     /* color.bg */
     --color-canvas: var(--color-neutral-100); /* The desk behind everything. */
-    --color-base: var(--color-neutral-50); /* The app's ground. */
+    --color-bg: var(--color-neutral-50); /* The app's ground. */
     --color-surface: var(--color-neutral-0); /* Cards and panels on the ground. */
     --color-raised: var(--color-neutral-0); /* Controls and anything lifted off a surface. */
     --color-selected: var(--color-neutral-100); /* A selected row or segment. */
@@ -298,15 +298,15 @@
     --color-scrim: var(--color-alpha-scrim-light); /* The dim layer behind a sheet. */
 
     /* color.text */
-    --color-primary: var(--color-neutral-850); /* Headings and the words that matter. */
-    --color-secondary: var(--color-neutral-700); /* Body text. */
+    --color-text: var(--color-neutral-850); /* Headings and the words that matter. */
+    --color-text-secondary: var(--color-neutral-700); /* Body text. */
     --color-muted: var(--color-neutral-600); /* Hints, timestamps, and secondary labels. Reads at 4.5:1 on every grou… */
     --color-inverse: var(--color-neutral-0); /* Text on a strong, neutral fill. */
     --color-disabled: var(--color-neutral-500); /* Disabled controls only. WCAG exempts disabled text from contrast, so … */
 
     /* color.border */
     --color-subtle: var(--color-alpha-dark-soft); /* A hairline between tiles and rows. */
-    --color-default: var(--color-alpha-dark-medium); /* A visible line: cards and dividers. */
+    --color-border: var(--color-alpha-dark-medium); /* A visible line: cards and dividers. */
     --color-strong: var(--color-neutral-550); /* The edge of a field or a switch track. Reaches 3:1 on every ground. */
     --color-focus: var(--color-blue-700); /* The keyboard focus ring. */
 
@@ -364,8 +364,8 @@
 
     /* shadow */
     --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow); /* A soft lift: the message box. */
-    --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-default); /* What floats over the page: pop-ups, sheets, the launcher. */
-    --shadow-hairline: 0px 0px 0px 1px var(--color-default); /* A 1 px outline drawn as a shadow, so layout does not move. */
+    --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-border); /* What floats over the page: pop-ups, sheets, the launcher. */
+    --shadow-hairline: 0px 0px 0px 1px var(--color-border); /* A 1 px outline drawn as a shadow, so layout does not move. */
     --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus); /* The keyboard focus ring: a soft halo around a solid line. Keep it vis… */
 
     /* type */
@@ -454,13 +454,13 @@
     /* button.secondary */
     --color-button-secondary-bg: var(--color-raised);
     --color-button-secondary-bg-hover: var(--color-selected);
-    --color-button-secondary-fg: var(--color-primary);
+    --color-button-secondary-fg: var(--color-text);
     --color-button-secondary-border: var(--color-strong);
 
     /* button.ghost */
     --color-button-ghost-bg-hover: var(--color-hover);
     --color-button-ghost-bg-active: var(--color-pressed);
-    --color-button-ghost-fg: var(--color-primary);
+    --color-button-ghost-fg: var(--color-text);
 
     /* button.danger */
     --color-button-danger-bg: var(--color-danger-fill);
@@ -473,7 +473,7 @@
 
     /* input */
     --color-input-bg: var(--color-raised);
-    --color-input-fg: var(--color-primary);
+    --color-input-fg: var(--color-text);
     --color-input-placeholder: var(--color-muted);
     --color-input-border: var(--color-strong);
     --color-input-border-hover: var(--color-muted);
@@ -493,15 +493,15 @@
     /* segmented */
     --color-segmented-track: var(--color-selected);
     --color-segmented-selected: var(--color-raised);
-    --color-segmented-fg: var(--color-secondary);
-    --color-segmented-fg-selected: var(--color-primary);
+    --color-segmented-fg: var(--color-text-secondary);
+    --color-segmented-fg-selected: var(--color-text);
     --segmented-radius: var(--radius-control);
     --segmented-radius-seg: var(--radius-seg);
 
     /* badge.neutral */
     --color-badge-neutral-bg: var(--color-selected);
-    --color-badge-neutral-fg: var(--color-secondary);
-    --color-badge-neutral-border: var(--color-default);
+    --color-badge-neutral-fg: var(--color-text-secondary);
+    --color-badge-neutral-border: var(--color-border);
 
     /* badge.accent */
     --color-badge-accent-bg: var(--color-accent-soft);
@@ -528,7 +528,7 @@
 
     /* card */
     --color-card-bg: var(--color-surface);
-    --color-card-border: var(--color-default);
+    --color-card-border: var(--color-border);
     --color-card-border-selected: var(--color-accent-line);
     --color-card-bg-selected: var(--color-accent-soft);
     --card-radius: var(--radius-card);
@@ -554,7 +554,7 @@
     --color-step-done: var(--color-success);
     --color-step-failed: var(--color-danger);
     --color-step-waiting: var(--color-warning);
-    --color-step-rule: var(--color-default);
+    --color-step-rule: var(--color-border);
 
     /* code-block */
     --color-code-block-bg: var(--color-code-bg);
@@ -571,7 +571,7 @@
 
     /* color.bg */
     --color-canvas: var(--color-neutral-950);
-    --color-base: var(--color-neutral-850);
+    --color-bg: var(--color-neutral-850);
     --color-surface: var(--color-neutral-800);
     --color-raised: var(--color-neutral-750);
     --color-selected: var(--color-neutral-700);
@@ -581,15 +581,15 @@
     --color-scrim: var(--color-alpha-scrim-dark);
 
     /* color.text */
-    --color-primary: var(--color-neutral-300);
-    --color-secondary: var(--color-neutral-400);
+    --color-text: var(--color-neutral-300);
+    --color-text-secondary: var(--color-neutral-400);
     --color-muted: var(--color-neutral-500);
     --color-inverse: var(--color-neutral-850);
     --color-disabled: var(--color-neutral-600);
 
     /* color.border */
     --color-subtle: var(--color-alpha-light-soft);
-    --color-default: var(--color-alpha-light-medium);
+    --color-border: var(--color-alpha-light-medium);
     --color-focus: var(--color-blue-300);
 
     /* color.accent */
@@ -646,8 +646,8 @@
 
     /* shadow */
     --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow);
-    --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-default);
-    --shadow-hairline: 0px 0px 0px 1px var(--color-default);
+    --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-border);
+    --shadow-hairline: 0px 0px 0px 1px var(--color-border);
     --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
 
     /* === Component tokens === */
@@ -661,12 +661,12 @@
     /* button.secondary */
     --color-button-secondary-bg: var(--color-raised);
     --color-button-secondary-bg-hover: var(--color-selected);
-    --color-button-secondary-fg: var(--color-primary);
+    --color-button-secondary-fg: var(--color-text);
 
     /* button.ghost */
     --color-button-ghost-bg-hover: var(--color-hover);
     --color-button-ghost-bg-active: var(--color-pressed);
-    --color-button-ghost-fg: var(--color-primary);
+    --color-button-ghost-fg: var(--color-text);
 
     /* button.danger */
     --color-button-danger-bg: var(--color-danger-fill);
@@ -679,7 +679,7 @@
 
     /* input */
     --color-input-bg: var(--color-raised);
-    --color-input-fg: var(--color-primary);
+    --color-input-fg: var(--color-text);
     --color-input-placeholder: var(--color-muted);
     --color-input-border-hover: var(--color-muted);
     --color-input-border-focus: var(--color-focus);
@@ -694,13 +694,13 @@
     /* segmented */
     --color-segmented-track: var(--color-selected);
     --color-segmented-selected: var(--color-raised);
-    --color-segmented-fg: var(--color-secondary);
-    --color-segmented-fg-selected: var(--color-primary);
+    --color-segmented-fg: var(--color-text-secondary);
+    --color-segmented-fg-selected: var(--color-text);
 
     /* badge.neutral */
     --color-badge-neutral-bg: var(--color-selected);
-    --color-badge-neutral-fg: var(--color-secondary);
-    --color-badge-neutral-border: var(--color-default);
+    --color-badge-neutral-fg: var(--color-text-secondary);
+    --color-badge-neutral-border: var(--color-border);
 
     /* badge.accent */
     --color-badge-accent-bg: var(--color-accent-soft);
@@ -724,7 +724,7 @@
 
     /* card */
     --color-card-bg: var(--color-surface);
-    --color-card-border: var(--color-default);
+    --color-card-border: var(--color-border);
     --color-card-border-selected: var(--color-accent-line);
     --color-card-bg-selected: var(--color-accent-soft);
     --shadow-card-shadow: var(--shadow-lift);
@@ -740,7 +740,7 @@
     --color-step-done: var(--color-success);
     --color-step-failed: var(--color-danger);
     --color-step-waiting: var(--color-warning);
-    --color-step-rule: var(--color-default);
+    --color-step-rule: var(--color-border);
 
     /* code-block */
     --color-code-block-bg: var(--color-code-bg);
@@ -756,7 +756,7 @@
 
     /* color.bg */
     --color-canvas: var(--color-neutral-950);
-    --color-base: var(--color-neutral-950);
+    --color-bg: var(--color-neutral-950);
     --color-surface: var(--color-neutral-900);
     --color-raised: var(--color-neutral-850);
     --color-selected: var(--color-neutral-800);
@@ -766,15 +766,15 @@
     --color-scrim: var(--color-alpha-scrim-dark);
 
     /* color.text */
-    --color-primary: var(--color-neutral-0);
-    --color-secondary: var(--color-neutral-300);
+    --color-text: var(--color-neutral-0);
+    --color-text-secondary: var(--color-neutral-300);
     --color-muted: var(--color-neutral-350);
     --color-inverse: var(--color-neutral-950);
     --color-disabled: var(--color-neutral-550);
 
     /* color.border */
     --color-subtle: var(--color-alpha-light-medium);
-    --color-default: var(--color-neutral-550);
+    --color-border: var(--color-neutral-550);
     --color-strong: var(--color-neutral-400);
     --color-focus: var(--color-blue-100);
 
@@ -832,8 +832,8 @@
 
     /* shadow */
     --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow);
-    --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-default);
-    --shadow-hairline: 0px 0px 0px 1px var(--color-default);
+    --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-border);
+    --shadow-hairline: 0px 0px 0px 1px var(--color-border);
     --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
 
     /* === Component tokens === */
@@ -847,13 +847,13 @@
     /* button.secondary */
     --color-button-secondary-bg: var(--color-raised);
     --color-button-secondary-bg-hover: var(--color-selected);
-    --color-button-secondary-fg: var(--color-primary);
+    --color-button-secondary-fg: var(--color-text);
     --color-button-secondary-border: var(--color-strong);
 
     /* button.ghost */
     --color-button-ghost-bg-hover: var(--color-hover);
     --color-button-ghost-bg-active: var(--color-pressed);
-    --color-button-ghost-fg: var(--color-primary);
+    --color-button-ghost-fg: var(--color-text);
 
     /* button.danger */
     --color-button-danger-bg: var(--color-danger-fill);
@@ -866,7 +866,7 @@
 
     /* input */
     --color-input-bg: var(--color-raised);
-    --color-input-fg: var(--color-primary);
+    --color-input-fg: var(--color-text);
     --color-input-placeholder: var(--color-muted);
     --color-input-border: var(--color-strong);
     --color-input-border-hover: var(--color-muted);
@@ -883,13 +883,13 @@
     /* segmented */
     --color-segmented-track: var(--color-selected);
     --color-segmented-selected: var(--color-raised);
-    --color-segmented-fg: var(--color-secondary);
-    --color-segmented-fg-selected: var(--color-primary);
+    --color-segmented-fg: var(--color-text-secondary);
+    --color-segmented-fg-selected: var(--color-text);
 
     /* badge.neutral */
     --color-badge-neutral-bg: var(--color-selected);
-    --color-badge-neutral-fg: var(--color-secondary);
-    --color-badge-neutral-border: var(--color-default);
+    --color-badge-neutral-fg: var(--color-text-secondary);
+    --color-badge-neutral-border: var(--color-border);
 
     /* badge.accent */
     --color-badge-accent-bg: var(--color-accent-soft);
@@ -913,7 +913,7 @@
 
     /* card */
     --color-card-bg: var(--color-surface);
-    --color-card-border: var(--color-default);
+    --color-card-border: var(--color-border);
     --color-card-border-selected: var(--color-accent-line);
     --color-card-bg-selected: var(--color-accent-soft);
     --shadow-card-shadow: var(--shadow-lift);
@@ -929,7 +929,7 @@
     --color-step-done: var(--color-success);
     --color-step-failed: var(--color-danger);
     --color-step-waiting: var(--color-warning);
-    --color-step-rule: var(--color-default);
+    --color-step-rule: var(--color-border);
 
     /* code-block */
     --color-code-block-bg: var(--color-code-bg);
@@ -945,7 +945,7 @@
 
         /* color.bg */
         --color-canvas: var(--color-neutral-950);
-        --color-base: var(--color-neutral-850);
+        --color-bg: var(--color-neutral-850);
         --color-surface: var(--color-neutral-800);
         --color-raised: var(--color-neutral-750);
         --color-selected: var(--color-neutral-700);
@@ -955,15 +955,15 @@
         --color-scrim: var(--color-alpha-scrim-dark);
 
         /* color.text */
-        --color-primary: var(--color-neutral-300);
-        --color-secondary: var(--color-neutral-400);
+        --color-text: var(--color-neutral-300);
+        --color-text-secondary: var(--color-neutral-400);
         --color-muted: var(--color-neutral-500);
         --color-inverse: var(--color-neutral-850);
         --color-disabled: var(--color-neutral-600);
 
         /* color.border */
         --color-subtle: var(--color-alpha-light-soft);
-        --color-default: var(--color-alpha-light-medium);
+        --color-border: var(--color-alpha-light-medium);
         --color-focus: var(--color-blue-300);
 
         /* color.accent */
@@ -1020,8 +1020,8 @@
 
         /* shadow */
         --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow);
-        --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-default);
-        --shadow-hairline: 0px 0px 0px 1px var(--color-default);
+        --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-border);
+        --shadow-hairline: 0px 0px 0px 1px var(--color-border);
         --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
 
         /* === Component tokens === */
@@ -1035,12 +1035,12 @@
         /* button.secondary */
         --color-button-secondary-bg: var(--color-raised);
         --color-button-secondary-bg-hover: var(--color-selected);
-        --color-button-secondary-fg: var(--color-primary);
+        --color-button-secondary-fg: var(--color-text);
 
         /* button.ghost */
         --color-button-ghost-bg-hover: var(--color-hover);
         --color-button-ghost-bg-active: var(--color-pressed);
-        --color-button-ghost-fg: var(--color-primary);
+        --color-button-ghost-fg: var(--color-text);
 
         /* button.danger */
         --color-button-danger-bg: var(--color-danger-fill);
@@ -1053,7 +1053,7 @@
 
         /* input */
         --color-input-bg: var(--color-raised);
-        --color-input-fg: var(--color-primary);
+        --color-input-fg: var(--color-text);
         --color-input-placeholder: var(--color-muted);
         --color-input-border-hover: var(--color-muted);
         --color-input-border-focus: var(--color-focus);
@@ -1068,13 +1068,13 @@
         /* segmented */
         --color-segmented-track: var(--color-selected);
         --color-segmented-selected: var(--color-raised);
-        --color-segmented-fg: var(--color-secondary);
-        --color-segmented-fg-selected: var(--color-primary);
+        --color-segmented-fg: var(--color-text-secondary);
+        --color-segmented-fg-selected: var(--color-text);
 
         /* badge.neutral */
         --color-badge-neutral-bg: var(--color-selected);
-        --color-badge-neutral-fg: var(--color-secondary);
-        --color-badge-neutral-border: var(--color-default);
+        --color-badge-neutral-fg: var(--color-text-secondary);
+        --color-badge-neutral-border: var(--color-border);
 
         /* badge.accent */
         --color-badge-accent-bg: var(--color-accent-soft);
@@ -1098,7 +1098,7 @@
 
         /* card */
         --color-card-bg: var(--color-surface);
-        --color-card-border: var(--color-default);
+        --color-card-border: var(--color-border);
         --color-card-border-selected: var(--color-accent-line);
         --color-card-bg-selected: var(--color-accent-soft);
         --shadow-card-shadow: var(--shadow-lift);
@@ -1114,7 +1114,7 @@
         --color-step-done: var(--color-success);
         --color-step-failed: var(--color-danger);
         --color-step-waiting: var(--color-warning);
-        --color-step-rule: var(--color-default);
+        --color-step-rule: var(--color-border);
 
         /* code-block */
         --color-code-block-bg: var(--color-code-bg);
