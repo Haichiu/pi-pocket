@@ -1219,7 +1219,7 @@ function componentArticle(ctx: Ctx, spec: ComponentSpec, index: number): string 
         )
         .join("");
 
-    return `<article class="comp" id="${id}" data-q="${esc(`${spec.name} ${spec.description} ${spec.slug}`.toLowerCase())}"><div class="comp-head"><h3>${esc(spec.name)}</h3><span class="pill">${states.length} state${states.length === 1 ? "" : "s"}</span></div><p class="intro" style="margin-top:6px">${esc(spec.description)}</p>${componentFrame(ctx, spec, index)}${
+    return `<article class="comp" id="${id}" data-pid="${id}" data-q="${esc(`${spec.name} ${spec.description} ${spec.slug}`.toLowerCase())}"><div class="comp-head"><h3>${esc(spec.name)}</h3><span class="pill">${states.length} state${states.length === 1 ? "" : "s"}</span></div><p class="intro" style="margin-top:6px">${esc(spec.description)}</p>${componentFrame(ctx, spec, index)}${
         usage === undefined || (usage.do.length === 0 && usage.dont.length === 0)
             ? ""
             : `<div class="dos">${usage.do.length > 0 ? list("Do", usage.do, "do") : ""}${usage.dont.length > 0 ? list("Don’t", usage.dont, "dont") : ""}</div>`
@@ -1624,11 +1624,11 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
         .join("");
     const stat = (value: string, label: string) =>
         `<div class="stat"><b>${esc(value)}</b><span>${esc(label)}</span></div>`;
-    const overview = `<section class="block" id="overview" aria-labelledby="overview-title"><div class="hero"><p class="eyebrow">Design system</p><h1 id="overview-title">${esc(name)}</h1>${system.description === undefined ? "" : `<p class="lead">${esc(clip(system.description, 400))}</p>`}${sampler(ctx)}<div class="stats">${stat(String(ctx.system.tokens.length), "tokens")}${stat(String(roleCount), "color roles")}${stat(String(ctx.modes.length), ctx.modes.length === 1 ? "mode" : "modes")}${stat(String(ctx.system.components.length), "components")}${pairs.total > 0 ? stat(`${pairs.passing}/${pairs.total}`, "contrast checks pass") : ""}</div></div><div class="tiles">${tiles}</div>${problemsHtml(ctx)}${system.tokens.length > MAX_TOKENS ? `<p class="sub" style="margin-top:14px">This page shows the first ${MAX_TOKENS} of ${system.tokens.length} tokens.</p>` : ""}</section>`;
+    const overview = `<section class="block" id="overview" data-pid="overview" aria-labelledby="overview-title"><div class="hero"><p class="eyebrow">Design system</p><h1 id="overview-title">${esc(name)}</h1>${system.description === undefined ? "" : `<p class="lead">${esc(clip(system.description, 400))}</p>`}${sampler(ctx)}<div class="stats">${stat(String(ctx.system.tokens.length), "tokens")}${stat(String(roleCount), "color roles")}${stat(String(ctx.modes.length), ctx.modes.length === 1 ? "mode" : "modes")}${stat(String(ctx.system.components.length), "components")}${pairs.total > 0 ? stat(`${pairs.passing}/${pairs.total}`, "contrast checks pass") : ""}</div></div><div class="tiles">${tiles}</div>${problemsHtml(ctx)}${system.tokens.length > MAX_TOKENS ? `<p class="sub" style="margin-top:14px">This page shows the first ${MAX_TOKENS} of ${system.tokens.length} tokens.</p>` : ""}</section>`;
     const body = sections
         .map(
             (section) =>
-                `<section class="block" id="${section.id}" aria-labelledby="${section.id}-title"${section.searchable ? " data-searchable" : ""}><p class="eyebrow">${esc(section.group)}</p><h2 id="${section.id}-title">${esc(section.title)}</h2>${section.html}</section>`,
+                `<section class="block" id="${section.id}" data-pid="${section.id}" aria-labelledby="${section.id}-title"${section.searchable ? " data-searchable" : ""}><p class="eyebrow">${esc(section.group)}</p><h2 id="${section.id}-title">${esc(section.title)}</h2>${section.html}</section>`,
         )
         .join("");
 
