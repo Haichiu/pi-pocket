@@ -100,7 +100,7 @@ export const CSS_SPECIMENS = `/* ── Specimens ──────────
 
 .radii {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 176px), 1fr));
     gap: 14px;
     margin-top: 14px;
 }

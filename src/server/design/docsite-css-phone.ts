@@ -199,10 +199,29 @@ export const CSS_PHONE = `/* ── Phone and small screens ──────�
     }
 
     .ref td[data-label="Type"],
-    .ref td[data-label="Value"] {
+    .ref td.num {
         display: inline-block;
         margin: 4px 14px 0 0;
         font-size: 13px;
+    }
+
+    /* A mode's value says which mode it is, in line. */
+    .ref td.num::before {
+        display: inline;
+        margin: 0 4px 0 0;
+        content: attr(data-label) ":";
+        color: var(--dd-faint);
+        font: 600 11px var(--dd-sans);
+        letter-spacing: 0;
+        text-transform: none;
+    }
+
+    .toolbar input {
+        flex-basis: 100%;
+    }
+
+    .rows-count {
+        margin-left: 0;
     }
 }
 

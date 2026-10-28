@@ -38,7 +38,7 @@
                 "$value": "{color.neutral.300}"
             },
             "muted": {
-                "$value": "{color.neutral.350}"
+                "$value": "{color.neutral.300}"
             },
             "disabled": {
                 "$value": "{color.neutral.550}"
@@ -58,21 +58,21 @@
                 "$value": "{color.neutral.400}"
             },
             "focus": {
-                "$value": "{color.blue.100}"
+                "$value": "{color.blue.300}"
             }
         },
         "accent": {
             "default": {
-                "$value": "{color.blue.100}"
+                "$value": "{color.blue.300}"
             },
             "fill": {
-                "$value": "{color.blue.100}"
+                "$value": "{color.blue.300}"
             },
             "fill-hover": {
-                "$value": "{color.blue.50}"
+                "$value": "{color.blue.200}"
             },
             "fill-active": {
-                "$value": "{color.blue.200}"
+                "$value": "{color.blue.400}"
             },
             "on-fill": {
                 "$value": "{color.neutral.950}"
@@ -86,7 +86,7 @@
         },
         "danger": {
             "default": {
-                "$value": "{color.red.100}"
+                "$value": "{color.red.300}"
             },
             "soft": {
                 "$value": "{color.red.950}"
@@ -95,10 +95,10 @@
                 "$value": "{color.red.300}"
             },
             "fill": {
-                "$value": "{color.red.100}"
+                "$value": "{color.red.300}"
             },
             "fill-hover": {
-                "$value": "{color.red.50}"
+                "$value": "{color.red.200}"
             },
             "on-fill": {
                 "$value": "{color.neutral.950}"
@@ -106,7 +106,7 @@
         },
         "warning": {
             "default": {
-                "$value": "{color.yellow.100}"
+                "$value": "{color.yellow.400}"
             },
             "soft": {
                 "$value": "{color.yellow.950}"
@@ -117,7 +117,7 @@
         },
         "success": {
             "default": {
-                "$value": "{color.green.100}"
+                "$value": "{color.green.400}"
             },
             "soft": {
                 "$value": "{color.green.950}"
@@ -128,7 +128,7 @@
         },
         "info": {
             "default": {
-                "$value": "{color.cyan.100}"
+                "$value": "{color.cyan.200}"
             },
             "soft": {
                 "$value": "{color.cyan.950}"
@@ -139,12 +139,12 @@
         },
         "brand": {
             "default": {
-                "$value": "{color.orange.100}"
+                "$value": "{color.orange.300}"
             }
         },
         "spark": {
             "default": {
-                "$value": "{color.magenta.100}"
+                "$value": "{color.magenta.300}"
             }
         },
         "code": {
@@ -155,25 +155,25 @@
                 "$value": "{color.neutral.0}"
             },
             "keyword": {
-                "$value": "{color.magenta.100}"
+                "$value": "{color.magenta.300}"
             },
             "string": {
-                "$value": "{color.green.100}"
+                "$value": "{color.green.400}"
             },
             "number": {
-                "$value": "{color.orange.100}"
+                "$value": "{color.orange.300}"
             },
             "function": {
-                "$value": "{color.blue.100}"
+                "$value": "{color.blue.300}"
             },
             "type": {
-                "$value": "{color.yellow.100}"
+                "$value": "{color.yellow.400}"
             },
             "operator": {
-                "$value": "{color.cyan.100}"
+                "$value": "{color.cyan.200}"
             },
             "tag": {
-                "$value": "{color.red.100}"
+                "$value": "{color.red.300}"
             }
         },
         "shadow": {

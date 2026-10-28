@@ -22,10 +22,6 @@
           "$type": "color",
           "$value": "#c0caf5"
         },
-        "350": {
-          "$type": "color",
-          "$value": "#b4bee6"
-        },
         "400": {
           "$type": "color",
           "$value": "#a9b1d6"
@@ -36,15 +32,12 @@
         },
         "550": {
           "$type": "color",
-          "$value": "#7882a8"
+          "$value": "#7882a8",
+          "$description": "A half step, kept on purpose: the one gray that reaches 3:1 on a light ground and on a dark one, so a field border and a switch track use it in every mode."
         },
         "600": {
           "$type": "color",
           "$value": "#565f89"
-        },
-        "650": {
-          "$type": "color",
-          "$value": "#3f4254"
         },
         "700": {
           "$type": "color",
@@ -52,7 +45,8 @@
         },
         "750": {
           "$type": "color",
-          "$value": "#252734"
+          "$value": "#252734",
+          "$description": "A half step, kept on purpose: the dark mode needs a ground between surface (800) and selected (700) for what is raised."
         },
         "800": {
           "$type": "color",
@@ -74,295 +68,323 @@
       "blue": {
         "50": {
           "$type": "color",
-          "$value": "#e0e8f9"
+          "$value": "#e9f0fe"
         },
         "100": {
           "$type": "color",
-          "$value": "#98bafe"
+          "$value": "#cdddfe"
         },
         "200": {
           "$type": "color",
-          "$value": "#b7ccf8"
+          "$value": "#afcaff"
         },
         "300": {
           "$type": "color",
-          "$value": "#7aa2f7"
+          "$value": "#93b6fe"
         },
         "400": {
           "$type": "color",
-          "$value": "#6b92e6"
+          "$value": "#7aa2f7"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#678ad5"
         },
         "600": {
           "$type": "color",
-          "$value": "#4a5f8f"
+          "$value": "#5573b5"
         },
         "700": {
           "$type": "color",
-          "$value": "#3557a5"
+          "$value": "#435d95"
         },
         "800": {
           "$type": "color",
-          "$value": "#284895"
+          "$value": "#324877"
         },
         "900": {
           "$type": "color",
-          "$value": "#1b3a85"
+          "$value": "#223359"
         },
         "950": {
           "$type": "color",
-          "$value": "#272e43"
+          "$value": "#13203e"
         }
       },
       "red": {
         "50": {
           "$type": "color",
-          "$value": "#f4e1e8"
+          "$value": "#feebed"
         },
         "100": {
           "$type": "color",
-          "$value": "#fe9aa9"
+          "$value": "#fecfd5"
         },
         "200": {
           "$type": "color",
-          "$value": "#f6b6c4"
+          "$value": "#ffb2bc"
         },
         "300": {
           "$type": "color",
-          "$value": "#f7768e"
+          "$value": "#ff93a4"
         },
         "400": {
           "$type": "color",
-          "$value": "#e5667f"
+          "$value": "#f7768e"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#d56379"
         },
         "600": {
           "$type": "color",
-          "$value": "#89495a"
+          "$value": "#b45164"
         },
         "700": {
           "$type": "color",
-          "$value": "#a72c4c"
+          "$value": "#943f50"
         },
         "800": {
           "$type": "color",
-          "$value": "#96193e"
+          "$value": "#762e3d"
         },
         "900": {
           "$type": "color",
-          "$value": "#840032"
+          "$value": "#581e2b"
         },
         "950": {
           "$type": "color",
-          "$value": "#392835"
+          "$value": "#3d0f19"
         }
       },
       "yellow": {
         "50": {
           "$type": "color",
-          "$value": "#f1eae2"
+          "$value": "#feedd7"
         },
         "100": {
           "$type": "color",
-          "$value": "#f4c787"
+          "$value": "#f9deb9"
         },
         "200": {
           "$type": "color",
-          "$value": "#ead2b1"
+          "$value": "#f1ce9e"
         },
         "300": {
           "$type": "color",
-          "$value": "#e0af68"
+          "$value": "#e9be83"
         },
         "400": {
           "$type": "color",
-          "$value": "#d09f58"
+          "$value": "#e0af68"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#c09455"
         },
         "600": {
           "$type": "color",
-          "$value": "#7d6547"
+          "$value": "#a07a43"
         },
         "700": {
           "$type": "color",
-          "$value": "#7c5200"
+          "$value": "#826232"
         },
         "800": {
           "$type": "color",
-          "$value": "#6a4600"
+          "$value": "#644a21"
         },
         "900": {
           "$type": "color",
-          "$value": "#593a00"
+          "$value": "#493311"
         },
         "950": {
           "$type": "color",
-          "$value": "#36302f"
+          "$value": "#2f1e04"
         }
       },
       "orange": {
         "50": {
           "$type": "color",
-          "$value": "#f3e5e5"
+          "$value": "#feebe6"
         },
         "100": {
           "$type": "color",
-          "$value": "#fdab96"
+          "$value": "#ffd4c8"
         },
         "200": {
           "$type": "color",
-          "$value": "#f0c4ba"
+          "$value": "#fdbcab"
         },
         "300": {
           "$type": "color",
-          "$value": "#eb927b"
+          "$value": "#f4a793"
         },
         "400": {
           "$type": "color",
-          "$value": "#da836c"
+          "$value": "#eb927b"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#ca7c67"
         },
         "600": {
           "$type": "color",
-          "$value": "#835751"
+          "$value": "#aa6654"
         },
         "700": {
           "$type": "color",
-          "$value": "#93422e"
+          "$value": "#8b5142"
         },
         "800": {
           "$type": "color",
-          "$value": "#833420"
+          "$value": "#6d3d30"
         },
         "900": {
           "$type": "color",
-          "$value": "#732511"
+          "$value": "#512a20"
         },
         "950": {
           "$type": "color",
-          "$value": "#372c32"
+          "$value": "#361810"
         }
       },
       "green": {
         "50": {
           "$type": "color",
-          "$value": "#e6efe2"
+          "$value": "#e5f7d5"
         },
         "100": {
           "$type": "color",
-          "$value": "#b7e38a"
+          "$value": "#d3eeb9"
         },
         "200": {
           "$type": "color",
-          "$value": "#c9e2b2"
+          "$value": "#c1e39f"
         },
         "300": {
           "$type": "color",
-          "$value": "#9ece6a"
+          "$value": "#afd985"
         },
         "400": {
           "$type": "color",
-          "$value": "#8fbe5a"
+          "$value": "#9ece6a"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#85af57"
         },
         "600": {
           "$type": "color",
-          "$value": "#5c7548"
+          "$value": "#6d9244"
         },
         "700": {
           "$type": "color",
-          "$value": "#406501"
+          "$value": "#567532"
         },
         "800": {
           "$type": "color",
-          "$value": "#355500"
+          "$value": "#405a21"
         },
         "900": {
           "$type": "color",
-          "$value": "#2b4700"
+          "$value": "#2b4011"
         },
         "950": {
           "$type": "color",
-          "$value": "#2c3430"
+          "$value": "#172703"
         }
       },
       "cyan": {
         "50": {
           "$type": "color",
-          "$value": "#d8e7ed"
+          "$value": "#daf6fb"
         },
         "100": {
           "$type": "color",
-          "$value": "#65b2be"
+          "$value": "#b4e0e8"
         },
         "200": {
           "$type": "color",
-          "$value": "#9cc9d2"
+          "$value": "#90c9d3"
         },
         "300": {
           "$type": "color",
-          "$value": "#449dab"
+          "$value": "#6cb3bf"
         },
         "400": {
           "$type": "color",
-          "$value": "#328e9b"
+          "$value": "#449dab"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#388894"
         },
         "600": {
           "$type": "color",
-          "$value": "#2f5c69"
+          "$value": "#2d737e"
         },
         "700": {
           "$type": "color",
-          "$value": "#056470"
+          "$value": "#225e68"
         },
         "800": {
           "$type": "color",
-          "$value": "#025560"
+          "$value": "#184b53"
         },
         "900": {
           "$type": "color",
-          "$value": "#004750"
+          "$value": "#0d383f"
         },
         "950": {
           "$type": "color",
-          "$value": "#202d39"
+          "$value": "#05272c"
         }
       },
       "magenta": {
         "50": {
           "$type": "color",
-          "$value": "#e9e5f6"
+          "$value": "#f2edfe"
         },
         "100": {
           "$type": "color",
-          "$value": "#c2a6f7"
+          "$value": "#e1d4fe"
         },
         "200": {
           "$type": "color",
-          "$value": "#d1c2f0"
+          "$value": "#d0bbfb"
         },
         "300": {
           "$type": "color",
-          "$value": "#ad8ee6"
+          "$value": "#bea5f1"
         },
         "400": {
           "$type": "color",
-          "$value": "#9e7fd5"
+          "$value": "#ad8ee6"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#9479c7"
         },
         "600": {
           "$type": "color",
-          "$value": "#645586"
+          "$value": "#7c64a8"
         },
         "700": {
           "$type": "color",
-          "$value": "#6a4b9c"
+          "$value": "#65518b"
         },
         "800": {
           "$type": "color",
-          "$value": "#5c3c8d"
+          "$value": "#4f3e6e"
         },
         "900": {
           "$type": "color",
-          "$value": "#4f2e7d"
+          "$value": "#3a2b53"
         },
         "950": {
           "$type": "color",
-          "$value": "#2f2b41"
+          "$value": "#261a39"
         }
       },
       "alpha": {
@@ -583,7 +605,7 @@
       "warning": {
         "default": {
           "$type": "color",
-          "$value": "{color.yellow.700}",
+          "$value": "{color.yellow.800}",
           "$description": "Warnings and cautions. Text and icons."
         },
         "soft": {
@@ -600,7 +622,7 @@
       "success": {
         "default": {
           "$type": "color",
-          "$value": "{color.green.700}",
+          "$value": "{color.green.800}",
           "$description": "Success and done. Text and icons."
         },
         "soft": {
@@ -663,7 +685,7 @@
         },
         "string": {
           "$type": "color",
-          "$value": "{color.green.700}",
+          "$value": "{color.green.800}",
           "$description": "Strings."
         },
         "number": {
@@ -678,7 +700,7 @@
         },
         "type": {
           "$type": "color",
-          "$value": "{color.yellow.700}",
+          "$value": "{color.yellow.800}",
           "$description": "Types."
         },
         "operator": {
@@ -977,74 +999,89 @@
       "16": {
         "$type": "dimension",
         "$value": "64px"
-      },
-      "gap": {
-        "in": {
-          "$type": "dimension",
-          "$value": "{space.1}",
-          "$description": "Between things inside one tile."
-        },
-        "out": {
-          "$type": "dimension",
-          "$value": "{space.2}",
-          "$description": "Between tiles."
-        }
-      },
-      "hair": {
-        "$type": "dimension",
-        "$value": "2px",
-        "$description": "A hairline of space: the padding of a badge, the offset of a focus ring."
       }
     },
     "radius": {
+      "scale": {
+        "xs": {
+          "$type": "dimension",
+          "$value": "2px",
+          "$description": "State squares and the smallest marks."
+        },
+        "sm": {
+          "$type": "dimension",
+          "$value": "4px",
+          "$description": "Inline code, keys, tags, and segments."
+        },
+        "md": {
+          "$type": "dimension",
+          "$value": "6px",
+          "$description": "Rows, buttons, and fields."
+        },
+        "lg": {
+          "$type": "dimension",
+          "$value": "8px",
+          "$description": "Cards and windows."
+        },
+        "xl": {
+          "$type": "dimension",
+          "$value": "12px",
+          "$description": "Sheets, the message box, and pop-ups."
+        },
+        "full": {
+          "$type": "dimension",
+          "$value": "999px",
+          "$description": "Pills and avatars: fully round."
+        }
+      },
       "mark": {
         "$type": "dimension",
-        "$value": "2px",
+        "$value": "{radius.scale.xs}",
         "$description": "State squares."
       },
       "tag": {
         "$type": "dimension",
-        "$value": "4px",
+        "$value": "{radius.scale.sm}",
         "$description": "Inline code, keys, small tags."
       },
       "seg": {
         "$type": "dimension",
-        "$value": "5px",
-        "$description": "A segment in its track."
+        "$value": "{radius.scale.sm}",
+        "$description": "A segment in its track. The app uses 5 px; here 4 px, on the scale."
       },
       "row": {
         "$type": "dimension",
-        "$value": "6px",
+        "$value": "{radius.scale.md}",
         "$description": "Small buttons and list rows."
       },
       "control": {
         "$type": "dimension",
-        "$value": "7px",
-        "$description": "Icon buttons, fields, segmented tracks."
+        "$value": "{radius.scale.md}",
+        "$description": "Icon buttons, fields, segmented tracks. The app uses 7 px; here 6 px, on the scale."
       },
       "card": {
         "$type": "dimension",
-        "$value": "8px",
+        "$value": "{radius.scale.lg}",
         "$description": "Cards and primary buttons."
       },
       "window": {
         "$type": "dimension",
-        "$value": "10px",
-        "$description": "Windows, approval cards, peek tiles."
+        "$value": "{radius.scale.lg}",
+        "$description": "Windows, approval cards, peek tiles. The app uses 10 px; here 8 px, the same as a card."
       },
       "sheet": {
         "$type": "dimension",
-        "$value": "12px",
+        "$value": "{radius.scale.xl}",
         "$description": "The message box, sheets, the launcher."
       },
       "float": {
         "$type": "dimension",
-        "$value": "12px",
-        "$description": "Pop-ups and menus. Equal to radius.sheet today; kept apart so that floating things can be rounded on their own."
+        "$value": "{radius.scale.xl}",
+        "$description": "Pop-ups and menus. The same step as a sheet; kept apart so that floating things can be rounded on their own."
       },
       "pill": {
         "$type": "dimension",
-        "$value": "999px",
+        "$value": "{radius.scale.full}",
         "$description": "Pills and avatars."
       }
     },
@@ -1085,30 +1122,6 @@
       "avatar": {
         "$type": "dimension",
         "$value": "28px"
-      },
-      "step-mark": {
-        "$type": "dimension",
-        "$value": "19px",
-        "$description": "The mark of a step in an activity timeline."
-      },
-      "switch": {
-        "width": {
-          "$type": "dimension",
-          "$value": "36px"
-        },
-        "height": {
-          "$type": "dimension",
-          "$value": "20px"
-        },
-        "thumb": {
-          "$type": "dimension",
-          "$value": "14px"
-        }
-      },
-      "dot": {
-        "$type": "dimension",
-        "$value": "6px",
-        "$description": "A status dot."
       }
     },
     "breakpoint": {
@@ -1199,14 +1212,14 @@
         "$type": "shadow",
         "$value": [
           {
-            "color": "#e0e8f9",
+            "color": "#e9f0fe",
             "offsetX": "0px",
             "offsetY": "0px",
             "blur": "0px",
             "spread": "3px"
           },
           {
-            "color": "#3557a5",
+            "color": "#435d95",
             "offsetX": "0px",
             "offsetY": "0px",
             "blur": "0px",
@@ -1607,6 +1620,11 @@
           "$type": "color",
           "$value": "{color.text.disabled}"
         }
+      },
+      "focus-offset": {
+        "$type": "dimension",
+        "$value": "2px",
+        "$description": "The gap between a button and its focus ring."
       }
     },
     "input": {
@@ -1665,12 +1683,23 @@
         "$value": "{color.accent.fill}"
       },
       "thumb": {
-        "$type": "color",
-        "$value": "{color.text.inverse}"
+        "$type": "dimension",
+        "$value": "14px",
+        "$description": "The size of the thumb."
       },
       "thumb-on": {
         "$type": "color",
         "$value": "{color.accent.on-fill}"
+      },
+      "width": {
+        "$type": "dimension",
+        "$value": "36px",
+        "$description": "The width of the track."
+      },
+      "height": {
+        "$type": "dimension",
+        "$value": "20px",
+        "$description": "The height of the track."
       }
     },
     "segmented": {
@@ -1697,6 +1726,11 @@
       "radius-seg": {
         "$type": "dimension",
         "$value": "{radius.seg}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{space.1}",
+        "$description": "The gap between segments, and around them."
       }
     },
     "badge": {
@@ -1773,6 +1807,16 @@
       "radius": {
         "$type": "dimension",
         "$value": "{radius.pill}"
+      },
+      "padding-y": {
+        "$type": "dimension",
+        "$value": "2px",
+        "$description": "The vertical padding of a badge."
+      },
+      "dot": {
+        "$type": "dimension",
+        "$value": "6px",
+        "$description": "The status dot in a badge."
       }
     },
     "card": {
@@ -1843,12 +1887,17 @@
       "row-selected": {
         "$type": "color",
         "$value": "{color.accent.soft}"
+      },
+      "padding": {
+        "$type": "dimension",
+        "$value": "{space.1}",
+        "$description": "The padding of a menu around its rows."
       }
     },
     "step": {
       "mark-size": {
         "$type": "dimension",
-        "$value": "{size.step-mark}"
+        "$value": "19px"
       },
       "running": {
         "$type": "color",
@@ -1888,6 +1937,20 @@
         "$type": "color",
         "$value": "{color.border.subtle}"
       }
+    },
+    "layout": {
+      "gap": {
+        "in": {
+          "$type": "dimension",
+          "$value": "{space.1}",
+          "$description": "Between things inside one tile."
+        },
+        "out": {
+          "$type": "dimension",
+          "$value": "{space.2}",
+          "$description": "Between tiles."
+        }
+      }
     }
   },
   "dark": {
@@ -1913,10 +1976,6 @@
           "$type": "color",
           "$value": "#c0caf5"
         },
-        "350": {
-          "$type": "color",
-          "$value": "#b4bee6"
-        },
         "400": {
           "$type": "color",
           "$value": "#a9b1d6"
@@ -1927,15 +1986,12 @@
         },
         "550": {
           "$type": "color",
-          "$value": "#7882a8"
+          "$value": "#7882a8",
+          "$description": "A half step, kept on purpose: the one gray that reaches 3:1 on a light ground and on a dark one, so a field border and a switch track use it in every mode."
         },
         "600": {
           "$type": "color",
           "$value": "#565f89"
-        },
-        "650": {
-          "$type": "color",
-          "$value": "#3f4254"
         },
         "700": {
           "$type": "color",
@@ -1943,7 +1999,8 @@
         },
         "750": {
           "$type": "color",
-          "$value": "#252734"
+          "$value": "#252734",
+          "$description": "A half step, kept on purpose: the dark mode needs a ground between surface (800) and selected (700) for what is raised."
         },
         "800": {
           "$type": "color",
@@ -1965,295 +2022,323 @@
       "blue": {
         "50": {
           "$type": "color",
-          "$value": "#e0e8f9"
+          "$value": "#e9f0fe"
         },
         "100": {
           "$type": "color",
-          "$value": "#98bafe"
+          "$value": "#cdddfe"
         },
         "200": {
           "$type": "color",
-          "$value": "#b7ccf8"
+          "$value": "#afcaff"
         },
         "300": {
           "$type": "color",
-          "$value": "#7aa2f7"
+          "$value": "#93b6fe"
         },
         "400": {
           "$type": "color",
-          "$value": "#6b92e6"
+          "$value": "#7aa2f7"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#678ad5"
         },
         "600": {
           "$type": "color",
-          "$value": "#4a5f8f"
+          "$value": "#5573b5"
         },
         "700": {
           "$type": "color",
-          "$value": "#3557a5"
+          "$value": "#435d95"
         },
         "800": {
           "$type": "color",
-          "$value": "#284895"
+          "$value": "#324877"
         },
         "900": {
           "$type": "color",
-          "$value": "#1b3a85"
+          "$value": "#223359"
         },
         "950": {
           "$type": "color",
-          "$value": "#272e43"
+          "$value": "#13203e"
         }
       },
       "red": {
         "50": {
           "$type": "color",
-          "$value": "#f4e1e8"
+          "$value": "#feebed"
         },
         "100": {
           "$type": "color",
-          "$value": "#fe9aa9"
+          "$value": "#fecfd5"
         },
         "200": {
           "$type": "color",
-          "$value": "#f6b6c4"
+          "$value": "#ffb2bc"
         },
         "300": {
           "$type": "color",
-          "$value": "#f7768e"
+          "$value": "#ff93a4"
         },
         "400": {
           "$type": "color",
-          "$value": "#e5667f"
+          "$value": "#f7768e"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#d56379"
         },
         "600": {
           "$type": "color",
-          "$value": "#89495a"
+          "$value": "#b45164"
         },
         "700": {
           "$type": "color",
-          "$value": "#a72c4c"
+          "$value": "#943f50"
         },
         "800": {
           "$type": "color",
-          "$value": "#96193e"
+          "$value": "#762e3d"
         },
         "900": {
           "$type": "color",
-          "$value": "#840032"
+          "$value": "#581e2b"
         },
         "950": {
           "$type": "color",
-          "$value": "#392835"
+          "$value": "#3d0f19"
         }
       },
       "yellow": {
         "50": {
           "$type": "color",
-          "$value": "#f1eae2"
+          "$value": "#feedd7"
         },
         "100": {
           "$type": "color",
-          "$value": "#f4c787"
+          "$value": "#f9deb9"
         },
         "200": {
           "$type": "color",
-          "$value": "#ead2b1"
+          "$value": "#f1ce9e"
         },
         "300": {
           "$type": "color",
-          "$value": "#e0af68"
+          "$value": "#e9be83"
         },
         "400": {
           "$type": "color",
-          "$value": "#d09f58"
+          "$value": "#e0af68"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#c09455"
         },
         "600": {
           "$type": "color",
-          "$value": "#7d6547"
+          "$value": "#a07a43"
         },
         "700": {
           "$type": "color",
-          "$value": "#7c5200"
+          "$value": "#826232"
         },
         "800": {
           "$type": "color",
-          "$value": "#6a4600"
+          "$value": "#644a21"
         },
         "900": {
           "$type": "color",
-          "$value": "#593a00"
+          "$value": "#493311"
         },
         "950": {
           "$type": "color",
-          "$value": "#36302f"
+          "$value": "#2f1e04"
         }
       },
       "orange": {
         "50": {
           "$type": "color",
-          "$value": "#f3e5e5"
+          "$value": "#feebe6"
         },
         "100": {
           "$type": "color",
-          "$value": "#fdab96"
+          "$value": "#ffd4c8"
         },
         "200": {
           "$type": "color",
-          "$value": "#f0c4ba"
+          "$value": "#fdbcab"
         },
         "300": {
           "$type": "color",
-          "$value": "#eb927b"
+          "$value": "#f4a793"
         },
         "400": {
           "$type": "color",
-          "$value": "#da836c"
+          "$value": "#eb927b"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#ca7c67"
         },
         "600": {
           "$type": "color",
-          "$value": "#835751"
+          "$value": "#aa6654"
         },
         "700": {
           "$type": "color",
-          "$value": "#93422e"
+          "$value": "#8b5142"
         },
         "800": {
           "$type": "color",
-          "$value": "#833420"
+          "$value": "#6d3d30"
         },
         "900": {
           "$type": "color",
-          "$value": "#732511"
+          "$value": "#512a20"
         },
         "950": {
           "$type": "color",
-          "$value": "#372c32"
+          "$value": "#361810"
         }
       },
       "green": {
         "50": {
           "$type": "color",
-          "$value": "#e6efe2"
+          "$value": "#e5f7d5"
         },
         "100": {
           "$type": "color",
-          "$value": "#b7e38a"
+          "$value": "#d3eeb9"
         },
         "200": {
           "$type": "color",
-          "$value": "#c9e2b2"
+          "$value": "#c1e39f"
         },
         "300": {
           "$type": "color",
-          "$value": "#9ece6a"
+          "$value": "#afd985"
         },
         "400": {
           "$type": "color",
-          "$value": "#8fbe5a"
+          "$value": "#9ece6a"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#85af57"
         },
         "600": {
           "$type": "color",
-          "$value": "#5c7548"
+          "$value": "#6d9244"
         },
         "700": {
           "$type": "color",
-          "$value": "#406501"
+          "$value": "#567532"
         },
         "800": {
           "$type": "color",
-          "$value": "#355500"
+          "$value": "#405a21"
         },
         "900": {
           "$type": "color",
-          "$value": "#2b4700"
+          "$value": "#2b4011"
         },
         "950": {
           "$type": "color",
-          "$value": "#2c3430"
+          "$value": "#172703"
         }
       },
       "cyan": {
         "50": {
           "$type": "color",
-          "$value": "#d8e7ed"
+          "$value": "#daf6fb"
         },
         "100": {
           "$type": "color",
-          "$value": "#65b2be"
+          "$value": "#b4e0e8"
         },
         "200": {
           "$type": "color",
-          "$value": "#9cc9d2"
+          "$value": "#90c9d3"
         },
         "300": {
           "$type": "color",
-          "$value": "#449dab"
+          "$value": "#6cb3bf"
         },
         "400": {
           "$type": "color",
-          "$value": "#328e9b"
+          "$value": "#449dab"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#388894"
         },
         "600": {
           "$type": "color",
-          "$value": "#2f5c69"
+          "$value": "#2d737e"
         },
         "700": {
           "$type": "color",
-          "$value": "#056470"
+          "$value": "#225e68"
         },
         "800": {
           "$type": "color",
-          "$value": "#025560"
+          "$value": "#184b53"
         },
         "900": {
           "$type": "color",
-          "$value": "#004750"
+          "$value": "#0d383f"
         },
         "950": {
           "$type": "color",
-          "$value": "#202d39"
+          "$value": "#05272c"
         }
       },
       "magenta": {
         "50": {
           "$type": "color",
-          "$value": "#e9e5f6"
+          "$value": "#f2edfe"
         },
         "100": {
           "$type": "color",
-          "$value": "#c2a6f7"
+          "$value": "#e1d4fe"
         },
         "200": {
           "$type": "color",
-          "$value": "#d1c2f0"
+          "$value": "#d0bbfb"
         },
         "300": {
           "$type": "color",
-          "$value": "#ad8ee6"
+          "$value": "#bea5f1"
         },
         "400": {
           "$type": "color",
-          "$value": "#9e7fd5"
+          "$value": "#ad8ee6"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#9479c7"
         },
         "600": {
           "$type": "color",
-          "$value": "#645586"
+          "$value": "#7c64a8"
         },
         "700": {
           "$type": "color",
-          "$value": "#6a4b9c"
+          "$value": "#65518b"
         },
         "800": {
           "$type": "color",
-          "$value": "#5c3c8d"
+          "$value": "#4f3e6e"
         },
         "900": {
           "$type": "color",
-          "$value": "#4f2e7d"
+          "$value": "#3a2b53"
         },
         "950": {
           "$type": "color",
-          "$value": "#2f2b41"
+          "$value": "#261a39"
         }
       },
       "alpha": {
@@ -2398,29 +2483,29 @@
         },
         "focus": {
           "$type": "color",
-          "$value": "{color.blue.300}",
+          "$value": "{color.blue.400}",
           "$description": "The keyboard focus ring."
         }
       },
       "accent": {
         "default": {
           "$type": "color",
-          "$value": "{color.blue.300}",
+          "$value": "{color.blue.400}",
           "$description": "Links, icons, and accents on a ground."
         },
         "fill": {
           "$type": "color",
-          "$value": "{color.blue.300}",
+          "$value": "{color.blue.400}",
           "$description": "The fill of a primary button."
         },
         "fill-hover": {
           "$type": "color",
-          "$value": "{color.blue.100}",
+          "$value": "{color.blue.300}",
           "$description": "The fill under the pointer."
         },
         "fill-active": {
           "$type": "color",
-          "$value": "{color.blue.400}",
+          "$value": "{color.blue.500}",
           "$description": "The fill while pressed."
         },
         "on-fill": {
@@ -2435,14 +2520,14 @@
         },
         "line": {
           "$type": "color",
-          "$value": "{color.blue.600}",
+          "$value": "{color.blue.700}",
           "$description": "The border of an accent wash."
         }
       },
       "danger": {
         "default": {
           "$type": "color",
-          "$value": "{color.red.300}",
+          "$value": "{color.red.400}",
           "$description": "Errors and destructive actions. Text and icons."
         },
         "soft": {
@@ -2452,17 +2537,17 @@
         },
         "line": {
           "$type": "color",
-          "$value": "{color.red.600}",
+          "$value": "{color.red.700}",
           "$description": "The border of a danger message."
         },
         "fill": {
           "$type": "color",
-          "$value": "{color.red.300}",
+          "$value": "{color.red.400}",
           "$description": "The fill of a destructive button."
         },
         "fill-hover": {
           "$type": "color",
-          "$value": "{color.red.100}",
+          "$value": "{color.red.300}",
           "$description": "The destructive fill under the pointer."
         },
         "on-fill": {
@@ -2474,7 +2559,7 @@
       "warning": {
         "default": {
           "$type": "color",
-          "$value": "{color.yellow.300}",
+          "$value": "{color.yellow.400}",
           "$description": "Warnings and cautions. Text and icons."
         },
         "soft": {
@@ -2484,14 +2569,14 @@
         },
         "line": {
           "$type": "color",
-          "$value": "{color.yellow.600}",
+          "$value": "{color.yellow.700}",
           "$description": "The border of a warning message."
         }
       },
       "success": {
         "default": {
           "$type": "color",
-          "$value": "{color.green.300}",
+          "$value": "{color.green.400}",
           "$description": "Success and done. Text and icons."
         },
         "soft": {
@@ -2501,14 +2586,14 @@
         },
         "line": {
           "$type": "color",
-          "$value": "{color.green.600}",
+          "$value": "{color.green.700}",
           "$description": "The border of a success message."
         }
       },
       "info": {
         "default": {
           "$type": "color",
-          "$value": "{color.cyan.100}",
+          "$value": "{color.cyan.300}",
           "$description": "Information and neutral notices. Text and icons."
         },
         "soft": {
@@ -2518,21 +2603,21 @@
         },
         "line": {
           "$type": "color",
-          "$value": "{color.cyan.600}",
+          "$value": "{color.cyan.700}",
           "$description": "The border of an info message."
         }
       },
       "brand": {
         "default": {
           "$type": "color",
-          "$value": "{color.orange.300}",
+          "$value": "{color.orange.400}",
           "$description": "Pi Pocket's mark."
         }
       },
       "spark": {
         "default": {
           "$type": "color",
-          "$value": "{color.magenta.300}",
+          "$value": "{color.magenta.400}",
           "$description": "Loaders and thoughts."
         }
       },
@@ -2549,27 +2634,27 @@
         },
         "keyword": {
           "$type": "color",
-          "$value": "{color.magenta.300}",
+          "$value": "{color.magenta.400}",
           "$description": "Keywords."
         },
         "string": {
           "$type": "color",
-          "$value": "{color.green.300}",
+          "$value": "{color.green.400}",
           "$description": "Strings."
         },
         "number": {
           "$type": "color",
-          "$value": "{color.orange.300}",
+          "$value": "{color.orange.400}",
           "$description": "Numbers."
         },
         "function": {
           "$type": "color",
-          "$value": "{color.blue.300}",
+          "$value": "{color.blue.400}",
           "$description": "Functions."
         },
         "type": {
           "$type": "color",
-          "$value": "{color.yellow.300}",
+          "$value": "{color.yellow.400}",
           "$description": "Types."
         },
         "operator": {
@@ -2579,7 +2664,7 @@
         },
         "tag": {
           "$type": "color",
-          "$value": "{color.red.300}",
+          "$value": "{color.red.400}",
           "$description": "Tags and selectors."
         }
       },
@@ -2868,74 +2953,89 @@
       "16": {
         "$type": "dimension",
         "$value": "64px"
-      },
-      "gap": {
-        "in": {
-          "$type": "dimension",
-          "$value": "{space.1}",
-          "$description": "Between things inside one tile."
-        },
-        "out": {
-          "$type": "dimension",
-          "$value": "{space.2}",
-          "$description": "Between tiles."
-        }
-      },
-      "hair": {
-        "$type": "dimension",
-        "$value": "2px",
-        "$description": "A hairline of space: the padding of a badge, the offset of a focus ring."
       }
     },
     "radius": {
+      "scale": {
+        "xs": {
+          "$type": "dimension",
+          "$value": "2px",
+          "$description": "State squares and the smallest marks."
+        },
+        "sm": {
+          "$type": "dimension",
+          "$value": "4px",
+          "$description": "Inline code, keys, tags, and segments."
+        },
+        "md": {
+          "$type": "dimension",
+          "$value": "6px",
+          "$description": "Rows, buttons, and fields."
+        },
+        "lg": {
+          "$type": "dimension",
+          "$value": "8px",
+          "$description": "Cards and windows."
+        },
+        "xl": {
+          "$type": "dimension",
+          "$value": "12px",
+          "$description": "Sheets, the message box, and pop-ups."
+        },
+        "full": {
+          "$type": "dimension",
+          "$value": "999px",
+          "$description": "Pills and avatars: fully round."
+        }
+      },
       "mark": {
         "$type": "dimension",
-        "$value": "2px",
+        "$value": "{radius.scale.xs}",
         "$description": "State squares."
       },
       "tag": {
         "$type": "dimension",
-        "$value": "4px",
+        "$value": "{radius.scale.sm}",
         "$description": "Inline code, keys, small tags."
       },
       "seg": {
         "$type": "dimension",
-        "$value": "5px",
-        "$description": "A segment in its track."
+        "$value": "{radius.scale.sm}",
+        "$description": "A segment in its track. The app uses 5 px; here 4 px, on the scale."
       },
       "row": {
         "$type": "dimension",
-        "$value": "6px",
+        "$value": "{radius.scale.md}",
         "$description": "Small buttons and list rows."
       },
       "control": {
         "$type": "dimension",
-        "$value": "7px",
-        "$description": "Icon buttons, fields, segmented tracks."
+        "$value": "{radius.scale.md}",
+        "$description": "Icon buttons, fields, segmented tracks. The app uses 7 px; here 6 px, on the scale."
       },
       "card": {
         "$type": "dimension",
-        "$value": "8px",
+        "$value": "{radius.scale.lg}",
         "$description": "Cards and primary buttons."
       },
       "window": {
         "$type": "dimension",
-        "$value": "10px",
-        "$description": "Windows, approval cards, peek tiles."
+        "$value": "{radius.scale.lg}",
+        "$description": "Windows, approval cards, peek tiles. The app uses 10 px; here 8 px, the same as a card."
       },
       "sheet": {
         "$type": "dimension",
-        "$value": "12px",
+        "$value": "{radius.scale.xl}",
         "$description": "The message box, sheets, the launcher."
       },
       "float": {
         "$type": "dimension",
-        "$value": "12px",
-        "$description": "Pop-ups and menus. Equal to radius.sheet today; kept apart so that floating things can be rounded on their own."
+        "$value": "{radius.scale.xl}",
+        "$description": "Pop-ups and menus. The same step as a sheet; kept apart so that floating things can be rounded on their own."
       },
       "pill": {
         "$type": "dimension",
-        "$value": "999px",
+        "$value": "{radius.scale.full}",
         "$description": "Pills and avatars."
       }
     },
@@ -2976,30 +3076,6 @@
       "avatar": {
         "$type": "dimension",
         "$value": "28px"
-      },
-      "step-mark": {
-        "$type": "dimension",
-        "$value": "19px",
-        "$description": "The mark of a step in an activity timeline."
-      },
-      "switch": {
-        "width": {
-          "$type": "dimension",
-          "$value": "36px"
-        },
-        "height": {
-          "$type": "dimension",
-          "$value": "20px"
-        },
-        "thumb": {
-          "$type": "dimension",
-          "$value": "14px"
-        }
-      },
-      "dot": {
-        "$type": "dimension",
-        "$value": "6px",
-        "$description": "A status dot."
       }
     },
     "breakpoint": {
@@ -3090,7 +3166,7 @@
         "$type": "shadow",
         "$value": [
           {
-            "color": "#272e43",
+            "color": "#13203e",
             "offsetX": "0px",
             "offsetY": "0px",
             "blur": "0px",
@@ -3498,6 +3574,11 @@
           "$type": "color",
           "$value": "{color.text.disabled}"
         }
+      },
+      "focus-offset": {
+        "$type": "dimension",
+        "$value": "2px",
+        "$description": "The gap between a button and its focus ring."
       }
     },
     "input": {
@@ -3556,12 +3637,23 @@
         "$value": "{color.accent.fill}"
       },
       "thumb": {
-        "$type": "color",
-        "$value": "{color.text.inverse}"
+        "$type": "dimension",
+        "$value": "14px",
+        "$description": "The size of the thumb."
       },
       "thumb-on": {
         "$type": "color",
         "$value": "{color.accent.on-fill}"
+      },
+      "width": {
+        "$type": "dimension",
+        "$value": "36px",
+        "$description": "The width of the track."
+      },
+      "height": {
+        "$type": "dimension",
+        "$value": "20px",
+        "$description": "The height of the track."
       }
     },
     "segmented": {
@@ -3588,6 +3680,11 @@
       "radius-seg": {
         "$type": "dimension",
         "$value": "{radius.seg}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{space.1}",
+        "$description": "The gap between segments, and around them."
       }
     },
     "badge": {
@@ -3664,6 +3761,16 @@
       "radius": {
         "$type": "dimension",
         "$value": "{radius.pill}"
+      },
+      "padding-y": {
+        "$type": "dimension",
+        "$value": "2px",
+        "$description": "The vertical padding of a badge."
+      },
+      "dot": {
+        "$type": "dimension",
+        "$value": "6px",
+        "$description": "The status dot in a badge."
       }
     },
     "card": {
@@ -3734,12 +3841,17 @@
       "row-selected": {
         "$type": "color",
         "$value": "{color.accent.soft}"
+      },
+      "padding": {
+        "$type": "dimension",
+        "$value": "{space.1}",
+        "$description": "The padding of a menu around its rows."
       }
     },
     "step": {
       "mark-size": {
         "$type": "dimension",
-        "$value": "{size.step-mark}"
+        "$value": "19px"
       },
       "running": {
         "$type": "color",
@@ -3779,6 +3891,20 @@
         "$type": "color",
         "$value": "{color.border.subtle}"
       }
+    },
+    "layout": {
+      "gap": {
+        "in": {
+          "$type": "dimension",
+          "$value": "{space.1}",
+          "$description": "Between things inside one tile."
+        },
+        "out": {
+          "$type": "dimension",
+          "$value": "{space.2}",
+          "$description": "Between tiles."
+        }
+      }
     }
   },
   "high-contrast": {
@@ -3804,10 +3930,6 @@
           "$type": "color",
           "$value": "#c0caf5"
         },
-        "350": {
-          "$type": "color",
-          "$value": "#b4bee6"
-        },
         "400": {
           "$type": "color",
           "$value": "#a9b1d6"
@@ -3818,15 +3940,12 @@
         },
         "550": {
           "$type": "color",
-          "$value": "#7882a8"
+          "$value": "#7882a8",
+          "$description": "A half step, kept on purpose: the one gray that reaches 3:1 on a light ground and on a dark one, so a field border and a switch track use it in every mode."
         },
         "600": {
           "$type": "color",
           "$value": "#565f89"
-        },
-        "650": {
-          "$type": "color",
-          "$value": "#3f4254"
         },
         "700": {
           "$type": "color",
@@ -3834,7 +3953,8 @@
         },
         "750": {
           "$type": "color",
-          "$value": "#252734"
+          "$value": "#252734",
+          "$description": "A half step, kept on purpose: the dark mode needs a ground between surface (800) and selected (700) for what is raised."
         },
         "800": {
           "$type": "color",
@@ -3856,295 +3976,323 @@
       "blue": {
         "50": {
           "$type": "color",
-          "$value": "#e0e8f9"
+          "$value": "#e9f0fe"
         },
         "100": {
           "$type": "color",
-          "$value": "#98bafe"
+          "$value": "#cdddfe"
         },
         "200": {
           "$type": "color",
-          "$value": "#b7ccf8"
+          "$value": "#afcaff"
         },
         "300": {
           "$type": "color",
-          "$value": "#7aa2f7"
+          "$value": "#93b6fe"
         },
         "400": {
           "$type": "color",
-          "$value": "#6b92e6"
+          "$value": "#7aa2f7"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#678ad5"
         },
         "600": {
           "$type": "color",
-          "$value": "#4a5f8f"
+          "$value": "#5573b5"
         },
         "700": {
           "$type": "color",
-          "$value": "#3557a5"
+          "$value": "#435d95"
         },
         "800": {
           "$type": "color",
-          "$value": "#284895"
+          "$value": "#324877"
         },
         "900": {
           "$type": "color",
-          "$value": "#1b3a85"
+          "$value": "#223359"
         },
         "950": {
           "$type": "color",
-          "$value": "#272e43"
+          "$value": "#13203e"
         }
       },
       "red": {
         "50": {
           "$type": "color",
-          "$value": "#f4e1e8"
+          "$value": "#feebed"
         },
         "100": {
           "$type": "color",
-          "$value": "#fe9aa9"
+          "$value": "#fecfd5"
         },
         "200": {
           "$type": "color",
-          "$value": "#f6b6c4"
+          "$value": "#ffb2bc"
         },
         "300": {
           "$type": "color",
-          "$value": "#f7768e"
+          "$value": "#ff93a4"
         },
         "400": {
           "$type": "color",
-          "$value": "#e5667f"
+          "$value": "#f7768e"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#d56379"
         },
         "600": {
           "$type": "color",
-          "$value": "#89495a"
+          "$value": "#b45164"
         },
         "700": {
           "$type": "color",
-          "$value": "#a72c4c"
+          "$value": "#943f50"
         },
         "800": {
           "$type": "color",
-          "$value": "#96193e"
+          "$value": "#762e3d"
         },
         "900": {
           "$type": "color",
-          "$value": "#840032"
+          "$value": "#581e2b"
         },
         "950": {
           "$type": "color",
-          "$value": "#392835"
+          "$value": "#3d0f19"
         }
       },
       "yellow": {
         "50": {
           "$type": "color",
-          "$value": "#f1eae2"
+          "$value": "#feedd7"
         },
         "100": {
           "$type": "color",
-          "$value": "#f4c787"
+          "$value": "#f9deb9"
         },
         "200": {
           "$type": "color",
-          "$value": "#ead2b1"
+          "$value": "#f1ce9e"
         },
         "300": {
           "$type": "color",
-          "$value": "#e0af68"
+          "$value": "#e9be83"
         },
         "400": {
           "$type": "color",
-          "$value": "#d09f58"
+          "$value": "#e0af68"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#c09455"
         },
         "600": {
           "$type": "color",
-          "$value": "#7d6547"
+          "$value": "#a07a43"
         },
         "700": {
           "$type": "color",
-          "$value": "#7c5200"
+          "$value": "#826232"
         },
         "800": {
           "$type": "color",
-          "$value": "#6a4600"
+          "$value": "#644a21"
         },
         "900": {
           "$type": "color",
-          "$value": "#593a00"
+          "$value": "#493311"
         },
         "950": {
           "$type": "color",
-          "$value": "#36302f"
+          "$value": "#2f1e04"
         }
       },
       "orange": {
         "50": {
           "$type": "color",
-          "$value": "#f3e5e5"
+          "$value": "#feebe6"
         },
         "100": {
           "$type": "color",
-          "$value": "#fdab96"
+          "$value": "#ffd4c8"
         },
         "200": {
           "$type": "color",
-          "$value": "#f0c4ba"
+          "$value": "#fdbcab"
         },
         "300": {
           "$type": "color",
-          "$value": "#eb927b"
+          "$value": "#f4a793"
         },
         "400": {
           "$type": "color",
-          "$value": "#da836c"
+          "$value": "#eb927b"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#ca7c67"
         },
         "600": {
           "$type": "color",
-          "$value": "#835751"
+          "$value": "#aa6654"
         },
         "700": {
           "$type": "color",
-          "$value": "#93422e"
+          "$value": "#8b5142"
         },
         "800": {
           "$type": "color",
-          "$value": "#833420"
+          "$value": "#6d3d30"
         },
         "900": {
           "$type": "color",
-          "$value": "#732511"
+          "$value": "#512a20"
         },
         "950": {
           "$type": "color",
-          "$value": "#372c32"
+          "$value": "#361810"
         }
       },
       "green": {
         "50": {
           "$type": "color",
-          "$value": "#e6efe2"
+          "$value": "#e5f7d5"
         },
         "100": {
           "$type": "color",
-          "$value": "#b7e38a"
+          "$value": "#d3eeb9"
         },
         "200": {
           "$type": "color",
-          "$value": "#c9e2b2"
+          "$value": "#c1e39f"
         },
         "300": {
           "$type": "color",
-          "$value": "#9ece6a"
+          "$value": "#afd985"
         },
         "400": {
           "$type": "color",
-          "$value": "#8fbe5a"
+          "$value": "#9ece6a"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#85af57"
         },
         "600": {
           "$type": "color",
-          "$value": "#5c7548"
+          "$value": "#6d9244"
         },
         "700": {
           "$type": "color",
-          "$value": "#406501"
+          "$value": "#567532"
         },
         "800": {
           "$type": "color",
-          "$value": "#355500"
+          "$value": "#405a21"
         },
         "900": {
           "$type": "color",
-          "$value": "#2b4700"
+          "$value": "#2b4011"
         },
         "950": {
           "$type": "color",
-          "$value": "#2c3430"
+          "$value": "#172703"
         }
       },
       "cyan": {
         "50": {
           "$type": "color",
-          "$value": "#d8e7ed"
+          "$value": "#daf6fb"
         },
         "100": {
           "$type": "color",
-          "$value": "#65b2be"
+          "$value": "#b4e0e8"
         },
         "200": {
           "$type": "color",
-          "$value": "#9cc9d2"
+          "$value": "#90c9d3"
         },
         "300": {
           "$type": "color",
-          "$value": "#449dab"
+          "$value": "#6cb3bf"
         },
         "400": {
           "$type": "color",
-          "$value": "#328e9b"
+          "$value": "#449dab"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#388894"
         },
         "600": {
           "$type": "color",
-          "$value": "#2f5c69"
+          "$value": "#2d737e"
         },
         "700": {
           "$type": "color",
-          "$value": "#056470"
+          "$value": "#225e68"
         },
         "800": {
           "$type": "color",
-          "$value": "#025560"
+          "$value": "#184b53"
         },
         "900": {
           "$type": "color",
-          "$value": "#004750"
+          "$value": "#0d383f"
         },
         "950": {
           "$type": "color",
-          "$value": "#202d39"
+          "$value": "#05272c"
         }
       },
       "magenta": {
         "50": {
           "$type": "color",
-          "$value": "#e9e5f6"
+          "$value": "#f2edfe"
         },
         "100": {
           "$type": "color",
-          "$value": "#c2a6f7"
+          "$value": "#e1d4fe"
         },
         "200": {
           "$type": "color",
-          "$value": "#d1c2f0"
+          "$value": "#d0bbfb"
         },
         "300": {
           "$type": "color",
-          "$value": "#ad8ee6"
+          "$value": "#bea5f1"
         },
         "400": {
           "$type": "color",
-          "$value": "#9e7fd5"
+          "$value": "#ad8ee6"
+        },
+        "500": {
+          "$type": "color",
+          "$value": "#9479c7"
         },
         "600": {
           "$type": "color",
-          "$value": "#645586"
+          "$value": "#7c64a8"
         },
         "700": {
           "$type": "color",
-          "$value": "#6a4b9c"
+          "$value": "#65518b"
         },
         "800": {
           "$type": "color",
-          "$value": "#5c3c8d"
+          "$value": "#4f3e6e"
         },
         "900": {
           "$type": "color",
-          "$value": "#4f2e7d"
+          "$value": "#3a2b53"
         },
         "950": {
           "$type": "color",
-          "$value": "#2f2b41"
+          "$value": "#261a39"
         }
       },
       "alpha": {
@@ -4257,7 +4405,7 @@
         },
         "muted": {
           "$type": "color",
-          "$value": "{color.neutral.350}",
+          "$value": "{color.neutral.300}",
           "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too."
         },
         "inverse": {
@@ -4289,29 +4437,29 @@
         },
         "focus": {
           "$type": "color",
-          "$value": "{color.blue.100}",
+          "$value": "{color.blue.300}",
           "$description": "The keyboard focus ring."
         }
       },
       "accent": {
         "default": {
           "$type": "color",
-          "$value": "{color.blue.100}",
+          "$value": "{color.blue.300}",
           "$description": "Links, icons, and accents on a ground."
         },
         "fill": {
           "$type": "color",
-          "$value": "{color.blue.100}",
+          "$value": "{color.blue.300}",
           "$description": "The fill of a primary button."
         },
         "fill-hover": {
           "$type": "color",
-          "$value": "{color.blue.50}",
+          "$value": "{color.blue.200}",
           "$description": "The fill under the pointer."
         },
         "fill-active": {
           "$type": "color",
-          "$value": "{color.blue.200}",
+          "$value": "{color.blue.400}",
           "$description": "The fill while pressed."
         },
         "on-fill": {
@@ -4333,7 +4481,7 @@
       "danger": {
         "default": {
           "$type": "color",
-          "$value": "{color.red.100}",
+          "$value": "{color.red.300}",
           "$description": "Errors and destructive actions. Text and icons."
         },
         "soft": {
@@ -4348,12 +4496,12 @@
         },
         "fill": {
           "$type": "color",
-          "$value": "{color.red.100}",
+          "$value": "{color.red.300}",
           "$description": "The fill of a destructive button."
         },
         "fill-hover": {
           "$type": "color",
-          "$value": "{color.red.50}",
+          "$value": "{color.red.200}",
           "$description": "The destructive fill under the pointer."
         },
         "on-fill": {
@@ -4365,7 +4513,7 @@
       "warning": {
         "default": {
           "$type": "color",
-          "$value": "{color.yellow.100}",
+          "$value": "{color.yellow.400}",
           "$description": "Warnings and cautions. Text and icons."
         },
         "soft": {
@@ -4382,7 +4530,7 @@
       "success": {
         "default": {
           "$type": "color",
-          "$value": "{color.green.100}",
+          "$value": "{color.green.400}",
           "$description": "Success and done. Text and icons."
         },
         "soft": {
@@ -4399,7 +4547,7 @@
       "info": {
         "default": {
           "$type": "color",
-          "$value": "{color.cyan.100}",
+          "$value": "{color.cyan.200}",
           "$description": "Information and neutral notices. Text and icons."
         },
         "soft": {
@@ -4416,14 +4564,14 @@
       "brand": {
         "default": {
           "$type": "color",
-          "$value": "{color.orange.100}",
+          "$value": "{color.orange.300}",
           "$description": "Pi Pocket's mark."
         }
       },
       "spark": {
         "default": {
           "$type": "color",
-          "$value": "{color.magenta.100}",
+          "$value": "{color.magenta.300}",
           "$description": "Loaders and thoughts."
         }
       },
@@ -4440,37 +4588,37 @@
         },
         "keyword": {
           "$type": "color",
-          "$value": "{color.magenta.100}",
+          "$value": "{color.magenta.300}",
           "$description": "Keywords."
         },
         "string": {
           "$type": "color",
-          "$value": "{color.green.100}",
+          "$value": "{color.green.400}",
           "$description": "Strings."
         },
         "number": {
           "$type": "color",
-          "$value": "{color.orange.100}",
+          "$value": "{color.orange.300}",
           "$description": "Numbers."
         },
         "function": {
           "$type": "color",
-          "$value": "{color.blue.100}",
+          "$value": "{color.blue.300}",
           "$description": "Functions."
         },
         "type": {
           "$type": "color",
-          "$value": "{color.yellow.100}",
+          "$value": "{color.yellow.400}",
           "$description": "Types."
         },
         "operator": {
           "$type": "color",
-          "$value": "{color.cyan.100}",
+          "$value": "{color.cyan.200}",
           "$description": "Operators."
         },
         "tag": {
           "$type": "color",
-          "$value": "{color.red.100}",
+          "$value": "{color.red.300}",
           "$description": "Tags and selectors."
         }
       },
@@ -4759,74 +4907,89 @@
       "16": {
         "$type": "dimension",
         "$value": "64px"
-      },
-      "gap": {
-        "in": {
-          "$type": "dimension",
-          "$value": "{space.1}",
-          "$description": "Between things inside one tile."
-        },
-        "out": {
-          "$type": "dimension",
-          "$value": "{space.2}",
-          "$description": "Between tiles."
-        }
-      },
-      "hair": {
-        "$type": "dimension",
-        "$value": "2px",
-        "$description": "A hairline of space: the padding of a badge, the offset of a focus ring."
       }
     },
     "radius": {
+      "scale": {
+        "xs": {
+          "$type": "dimension",
+          "$value": "2px",
+          "$description": "State squares and the smallest marks."
+        },
+        "sm": {
+          "$type": "dimension",
+          "$value": "4px",
+          "$description": "Inline code, keys, tags, and segments."
+        },
+        "md": {
+          "$type": "dimension",
+          "$value": "6px",
+          "$description": "Rows, buttons, and fields."
+        },
+        "lg": {
+          "$type": "dimension",
+          "$value": "8px",
+          "$description": "Cards and windows."
+        },
+        "xl": {
+          "$type": "dimension",
+          "$value": "12px",
+          "$description": "Sheets, the message box, and pop-ups."
+        },
+        "full": {
+          "$type": "dimension",
+          "$value": "999px",
+          "$description": "Pills and avatars: fully round."
+        }
+      },
       "mark": {
         "$type": "dimension",
-        "$value": "2px",
+        "$value": "{radius.scale.xs}",
         "$description": "State squares."
       },
       "tag": {
         "$type": "dimension",
-        "$value": "4px",
+        "$value": "{radius.scale.sm}",
         "$description": "Inline code, keys, small tags."
       },
       "seg": {
         "$type": "dimension",
-        "$value": "5px",
-        "$description": "A segment in its track."
+        "$value": "{radius.scale.sm}",
+        "$description": "A segment in its track. The app uses 5 px; here 4 px, on the scale."
       },
       "row": {
         "$type": "dimension",
-        "$value": "6px",
+        "$value": "{radius.scale.md}",
         "$description": "Small buttons and list rows."
       },
       "control": {
         "$type": "dimension",
-        "$value": "7px",
-        "$description": "Icon buttons, fields, segmented tracks."
+        "$value": "{radius.scale.md}",
+        "$description": "Icon buttons, fields, segmented tracks. The app uses 7 px; here 6 px, on the scale."
       },
       "card": {
         "$type": "dimension",
-        "$value": "8px",
+        "$value": "{radius.scale.lg}",
         "$description": "Cards and primary buttons."
       },
       "window": {
         "$type": "dimension",
-        "$value": "10px",
-        "$description": "Windows, approval cards, peek tiles."
+        "$value": "{radius.scale.lg}",
+        "$description": "Windows, approval cards, peek tiles. The app uses 10 px; here 8 px, the same as a card."
       },
       "sheet": {
         "$type": "dimension",
-        "$value": "12px",
+        "$value": "{radius.scale.xl}",
         "$description": "The message box, sheets, the launcher."
       },
       "float": {
         "$type": "dimension",
-        "$value": "12px",
-        "$description": "Pop-ups and menus. Equal to radius.sheet today; kept apart so that floating things can be rounded on their own."
+        "$value": "{radius.scale.xl}",
+        "$description": "Pop-ups and menus. The same step as a sheet; kept apart so that floating things can be rounded on their own."
       },
       "pill": {
         "$type": "dimension",
-        "$value": "999px",
+        "$value": "{radius.scale.full}",
         "$description": "Pills and avatars."
       }
     },
@@ -4867,30 +5030,6 @@
       "avatar": {
         "$type": "dimension",
         "$value": "28px"
-      },
-      "step-mark": {
-        "$type": "dimension",
-        "$value": "19px",
-        "$description": "The mark of a step in an activity timeline."
-      },
-      "switch": {
-        "width": {
-          "$type": "dimension",
-          "$value": "36px"
-        },
-        "height": {
-          "$type": "dimension",
-          "$value": "20px"
-        },
-        "thumb": {
-          "$type": "dimension",
-          "$value": "14px"
-        }
-      },
-      "dot": {
-        "$type": "dimension",
-        "$value": "6px",
-        "$description": "A status dot."
       }
     },
     "breakpoint": {
@@ -4981,14 +5120,14 @@
         "$type": "shadow",
         "$value": [
           {
-            "color": "#272e43",
+            "color": "#13203e",
             "offsetX": "0px",
             "offsetY": "0px",
             "blur": "0px",
             "spread": "3px"
           },
           {
-            "color": "#98bafe",
+            "color": "#93b6fe",
             "offsetX": "0px",
             "offsetY": "0px",
             "blur": "0px",
@@ -5389,6 +5528,11 @@
           "$type": "color",
           "$value": "{color.text.disabled}"
         }
+      },
+      "focus-offset": {
+        "$type": "dimension",
+        "$value": "2px",
+        "$description": "The gap between a button and its focus ring."
       }
     },
     "input": {
@@ -5447,12 +5591,23 @@
         "$value": "{color.accent.fill}"
       },
       "thumb": {
-        "$type": "color",
-        "$value": "{color.text.inverse}"
+        "$type": "dimension",
+        "$value": "14px",
+        "$description": "The size of the thumb."
       },
       "thumb-on": {
         "$type": "color",
         "$value": "{color.accent.on-fill}"
+      },
+      "width": {
+        "$type": "dimension",
+        "$value": "36px",
+        "$description": "The width of the track."
+      },
+      "height": {
+        "$type": "dimension",
+        "$value": "20px",
+        "$description": "The height of the track."
       }
     },
     "segmented": {
@@ -5479,6 +5634,11 @@
       "radius-seg": {
         "$type": "dimension",
         "$value": "{radius.seg}"
+      },
+      "gap": {
+        "$type": "dimension",
+        "$value": "{space.1}",
+        "$description": "The gap between segments, and around them."
       }
     },
     "badge": {
@@ -5555,6 +5715,16 @@
       "radius": {
         "$type": "dimension",
         "$value": "{radius.pill}"
+      },
+      "padding-y": {
+        "$type": "dimension",
+        "$value": "2px",
+        "$description": "The vertical padding of a badge."
+      },
+      "dot": {
+        "$type": "dimension",
+        "$value": "6px",
+        "$description": "The status dot in a badge."
       }
     },
     "card": {
@@ -5625,12 +5795,17 @@
       "row-selected": {
         "$type": "color",
         "$value": "{color.accent.soft}"
+      },
+      "padding": {
+        "$type": "dimension",
+        "$value": "{space.1}",
+        "$description": "The padding of a menu around its rows."
       }
     },
     "step": {
       "mark-size": {
         "$type": "dimension",
-        "$value": "{size.step-mark}"
+        "$value": "19px"
       },
       "running": {
         "$type": "color",
@@ -5669,6 +5844,20 @@
       "border": {
         "$type": "color",
         "$value": "{color.border.subtle}"
+      }
+    },
+    "layout": {
+      "gap": {
+        "in": {
+          "$type": "dimension",
+          "$value": "{space.1}",
+          "$description": "Between things inside one tile."
+        },
+        "out": {
+          "$type": "dimension",
+          "$value": "{space.2}",
+          "$description": "Between tiles."
+        }
       }
     }
   },

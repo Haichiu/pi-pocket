@@ -546,7 +546,26 @@ export function valueCell(ctx: Ctx, token: ResolvedToken): string {
         : text;
 }
 
-export function tableRows(ctx: Ctx, tokens: ResolvedToken[]): string {
+/** A link to a heading: an icon that shows on hover or focus, and copies the address of the heading when it is used. */
+export function anchor(id: string, label: string): string {
+    // The icon is drawn by the page's CSS (a mask), so each link is a few bytes.
+    return `<a class="anchor" href="#${esc(id)}" aria-label="Link to ${esc(label)}"></a>`;
+}
+
+/** A token's value in one mode, as the cell of a column: a color has its own swatch (not the page's variable, which is for one mode). */
+function modeCell(ctx: Ctx, token: ResolvedToken, mode: string): string {
+    const value = valueIn(token, mode)?.value;
+    const text = esc(clip(plain(token.type, value), 160));
+    const hex = token.type === "color" ? colorValueText(value) : undefined;
+
+    return `<td data-label="${esc(modeLabel(mode))}" class="num wrap">${hex === undefined ? "" : `<i class="mini-sw" style="background:${esc(hex)}"></i>`}${text}</td>`;
+}
+
+/**
+ * The rows of a table of tokens. With `columns`, a column for each mode (and a swatch of its own in each); without, one
+ * value that follows the mode in force. A row carries its type and tier, for the table's filters.
+ */
+export function tableRows(ctx: Ctx, tokens: ResolvedToken[], columns = false): string {
     return tokens
         .map((token) => {
             const deprecated =
@@ -554,7 +573,7 @@ export function tableRows(ctx: Ctx, tokens: ResolvedToken[]): string {
                     ? ""
                     : ` <span class="pill warn">Deprecated${typeof token.deprecated === "string" ? `: ${esc(clip(token.deprecated, 80))}` : ""}</span>`;
 
-            return `<tr data-q="${esc(`${token.name} ${token.cssVar} ${token.type} ${token.tier} ${token.description ?? ""}`.toLowerCase())}"><td data-label="Token"><span class="${deprecated === "" ? "" : "dep"}">${copyName(token)}</span><button class="tk">${esc(token.cssVar)}</button>${deprecated}${token.description === undefined ? "" : `<div class="desc">${esc(token.description)}</div>`}</td><td data-label="Type">${esc(token.type)} <span class="pill">${esc(token.tier)}</span></td><td data-label="Value" class="num wrap">${valueCell(ctx, token)}</td></tr>`;
+            return `<tr data-q="${esc(`${token.name} ${token.cssVar} ${token.type} ${token.tier} ${token.description ?? ""}`.toLowerCase())}"><td data-label="Token"><span class="${deprecated === "" ? "" : "dep"}">${copyName(token)}</span>${token.cssVar === `--${token.path.join("-")}` ? "" : `<button class="tk">${esc(token.cssVar)}</button>`}${deprecated}${token.description === undefined ? "" : `<div class="desc">${esc(token.description)}</div>`}</td><td data-label="Type"><span>${esc(token.type)}</span> <span class="pill">${esc(token.tier)}</span></td>${columns ? ctx.modes.map((mode) => modeCell(ctx, token, mode)).join("") : `<td data-label="Value" class="num wrap">${valueCell(ctx, token)}</td>`}</tr>`;
         })
         .join("");
 }

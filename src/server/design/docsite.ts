@@ -33,6 +33,7 @@ import {
     colorOf,
     BASE_GROUNDS,
     BASE_TEXTS,
+    anchor,
     countsLine,
     sectionCount,
     findToken,
@@ -372,7 +373,7 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
     const body = sections
         .map(
             (section) =>
-                `<section class="block" id="${section.id}" data-pid="${section.id}" aria-labelledby="${section.id}-title"${section.searchable ? " data-searchable" : ""}><p class="eyebrow">${esc(section.group)}</p><h2 id="${section.id}-title">${esc(section.title)}</h2>${section.html}</section>`,
+                `<section class="block" id="${section.id}" data-pid="${section.id}" aria-labelledby="${section.id}-title"${section.searchable ? " data-searchable" : ""}><p class="eyebrow">${esc(section.group)}</p><h2 id="${section.id}-title">${esc(section.title)}${anchor(section.id, section.title)}</h2>${section.html}</section>`,
         )
         .join("");
 
@@ -476,7 +477,7 @@ ${ctx.modes.length > 1 ? `<div class="seg" role="group" aria-label="Mode">${mode
 </header>
 <div class="layout">
 <aside class="side" id="nav">
-<div class="search"><label class="sr" for="q" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Filter tokens and components</label>${ICON_SEARCH}<input id="q" type="search" placeholder="Filter tokens" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">/</kbd></div>
+<div class="search"><label class="sr" for="q" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Filter tokens, values, and components</label>${ICON_SEARCH}<input id="q" type="search" placeholder="Filter tokens and values" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">/</kbd></div>
 <nav class="nav" aria-label="Sections"><div class="nav-group"><a href="#overview" aria-current="true">Overview</a></div>${navGroups}</nav>
 </aside>
 <main id="main">
@@ -493,5 +494,15 @@ ${body}
 `;
 
     // The search reads each item's own text (the script does it once, on the first search), so no copy of it is kept.
-    return { html: html.replace(/ data-q="[^"]*"/g, " data-s"), assets: [] };
+    return {
+        html: html
+            .replace(/ data-q="[^"]*"/g, " data-s")
+            // A sub-heading with an id (Roles, Palette, Typefaces, ...) gets its link too.
+            .replace(
+                /<h3 id="([^"]+)">([^<]*)<\/h3>/g,
+                (_all, id: string, text: string) =>
+                    `<h3 id="${id}">${text}${anchor(id, text)}</h3>`,
+            ),
+        assets: [],
+    };
 }

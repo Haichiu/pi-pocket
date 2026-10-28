@@ -28,8 +28,8 @@ Pi Pocket looks like a tiling window manager that learned to be gentle: soft til
 
 ## Space, layout, and corners
 
-- Space moves on a 4 px grid: `space.1` is 4, `space.2` is 8, `space.3` is 12, `space.4` is 16. Tiles are 8 px apart (`space.gap.out`), and things inside a tile 4 px (`space.gap.in`).
-- Corners follow what they round. Inline code is `radius.tag` (4), a row is `radius.row` (6), a field is `radius.control` (7), a card is `radius.card` (8), a window is `radius.window` (10), and a sheet or the message box is `radius.sheet` (12). Avatars and badges are `radius.pill`.
+- Space moves on a 4 px grid: `space.1` is 4, `space.2` is 8, `space.3` is 12, `space.4` is 16. Tiles are 8 px apart (`layout.gap.out`), and things inside a tile 4 px (`layout.gap.in`).
+- Corners follow what they round, and come from one scale of 2, 4, 6, 8, and 12 px and round. Inline code is `radius.tag` (4), a row or a field is `radius.row` or `radius.control` (6), a card or a window is `radius.card` or `radius.window` (8), and a sheet or the message box is `radius.sheet` (12). Avatars and badges are `radius.pill`.
 - Below 700 px (`breakpoint.md`) the layout is one column. The app adds side panes at 960 and 1100 px (`breakpoint.lg` and `breakpoint.xl`).
 - Keep a line of text under 75 characters. The conversation column is 720 to 1200 px.
 

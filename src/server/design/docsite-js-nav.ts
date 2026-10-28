@@ -28,10 +28,18 @@ export const JS_NAV = `    // Navigation on a phone.
         var query = (field.value || "").trim().toLowerCase();
         var words = query.split(/\\s+/).filter(Boolean);
         var shown = 0;
+        // Rows of the token table that a phone has not drawn yet are in the search too.
+        if (words.length > 0 && typeof restoreRows === "function") { restoreRows(); }
         $$("[data-s]").forEach(function (item) {
             var text = item.__q || (item.__q = item.textContent.toLowerCase());
             var hit = words.every(function (word) { return text.indexOf(word) !== -1; });
-            item.hidden = !hit;
+            if (item.__type !== undefined) {
+                // A table row is also hidden by the table's own filters: hidden when either says so.
+                item.__g = !hit;
+                item.hidden = item.__g || !!item.__l;
+            } else {
+                item.hidden = !hit;
+            }
             if (hit) { shown++; }
         });
         $$("[data-group]").forEach(function (group) {
