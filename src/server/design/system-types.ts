@@ -29,8 +29,16 @@ export interface ModeValue {
     value: unknown;
     /** The CSS for the value: `#7aa2f7`, `16px`, `0 1px 2px rgb(0 0 0 / 0.2)`, `var(--color-blue-500)` for a reference. */
     css: string;
+    /** The CSS with every reference replaced by its value, so it needs no variable: `#7aa2f7` for an alias. Always set by the engine. */
+    literal?: string;
+    /** A color's `#rrggbb` (`#rrggbbaa` with alpha) in sRGB, for a picker or a label. Colors only, when the value is not `currentColor`. */
+    hex?: string;
+    /** A typography token's members as CSS, by property (`font-size`, `line-height`, `font-family`, `font-weight`, `letter-spacing`). */
+    parts?: Record<string, string>;
     /** The referenced token's name when the raw value in this mode is a reference (`color.blue.500`). */
     alias?: string;
+    /** The result of the token's contrast pair in this mode (only on a token that declares one). */
+    contrast?: { on: string; ratio: number; min: number; pass: boolean };
 }
 
 /** One token, resolved. */
@@ -48,8 +56,10 @@ export interface ResolvedToken {
     deprecated?: boolean | string;
     /** The value in each mode, by mode name. Every mode of the system is present. */
     modes: Record<string, ModeValue>;
-    /** The contrast this text color must reach against another token, in every mode. */
+    /** The contrast this text color must reach against another token, in every mode. The first pair when it declares several. */
     contrast?: { on: string; min: number };
+    /** The Tailwind variable that `$extensions["com.pi-pocket"].tailwind` names for this token (`--color-brand`). */
+    tailwind?: string;
 }
 
 /** One component specimen (`.pi/design/components/<slug>.html`). */
@@ -98,6 +108,8 @@ export interface DesignSystem {
     description?: string;
     /** Mode names; the first is the default (the one in `tokens.json`). */
     modes: string[];
+    /** Whether each mode is light or dark (its `colorScheme`, else its name), for `color-scheme` and the media query. */
+    schemes: Record<string, "light" | "dark">;
     tokens: ResolvedToken[];
     components: ComponentSpec[];
     /** `guidelines.md`, bounded. Untrusted project text. */
@@ -108,15 +120,25 @@ export interface DesignSystem {
 
 /**
  * A change to write. Each field is optional; what is left out stays. `tokens` and `modes` replace whole files;
- * `set` changes single tokens in place (the Design workspace's editor uses it).
+ * `set` changes single tokens in place (the Design workspace's editor uses it). The engine applies the fields in this
+ * order: `tokens`, `modes`, `name`/`description`, `set`, `remove`, `components`, `guidelines`.
  */
 export interface SystemChange {
     /** The whole `tokens.json` (a DTCG object). */
     tokens?: unknown;
     /** Whole mode files, by mode name; `null` removes a mode. */
     modes?: Record<string, unknown | null>;
-    /** Single token values, by mode (the default mode's name for `tokens.json`) and token name. */
-    set?: { mode: string; token: string; value: unknown }[];
+    /** The system's name and description (kept in `tokens.json`). */
+    name?: string;
+    description?: string;
+    /**
+     * Single token values, by mode (the default mode's name for `tokens.json`; any other valid mode name makes or
+     * edits `tokens.<mode>.json`) and token name. `value` is a DTCG `$value`, or a whole token object with `$value`.
+     * A token that is new in the default mode needs a `type` (or a value the engine can read the type from).
+     */
+    set?: { mode: string; token: string; value: unknown; type?: TokenType; description?: string }[];
+    /** Tokens to delete from a mode (from the default mode: the token itself); empty groups go too. */
+    remove?: { mode: string; token: string }[];
     /** Component files, by slug; `null` removes one. */
     components?: Record<string, string | null>;
     guidelines?: string;

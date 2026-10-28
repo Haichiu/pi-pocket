@@ -25,6 +25,7 @@ import {
     type ArtifactVersion,
 } from "../docs.ts";
 import type { PocketHost } from "../host.ts";
+import { loadDesignSystem } from "../design/tokens.ts";
 import { assetName, assetType } from "../http/artifact-assets.ts";
 import { expandHome } from "../paths.ts";
 
@@ -97,6 +98,68 @@ async function readArtifact(path: string): Promise<string> {
     } catch {
         throw new Error("Artifact paths must contain UTF-8 text, not binary data.");
     }
+}
+
+/** The compiled design system files that a page links, by their name in the bundle. */
+const DESIGN_FILES = {
+    "ds/tokens.css": "css",
+    "ds/tailwind.css": "tailwind",
+    "ds/components.css": "components",
+} as const;
+
+/**
+ * Adds the project's compiled design system to `prepared` for each `ds/…` file that `content` links and the call does
+ * not bring itself or drop: a snapshot of `.pi/design/dist/` as it is now (compiled from the source files, so it is never
+ * stale). Returns notes for the result text. It reads files before the commit, so a replayed call finds what it wrote.
+ */
+async function attachDesignSystem(
+    content: string,
+    prepared: Map<string, { asset: ArtifactAsset; bytes: Buffer }>,
+    removed: readonly string[],
+    cwd: string | undefined,
+): Promise<string[]> {
+    const wanted = (Object.keys(DESIGN_FILES) as (keyof typeof DESIGN_FILES)[]).filter(
+        (name) => content.includes(name) && !prepared.has(name) && !removed.includes(name),
+    );
+
+    if (wanted.length === 0) {
+        return [];
+    }
+
+    let system;
+
+    try {
+        system = cwd === undefined ? undefined : loadDesignSystem(cwd);
+    } catch (error) {
+        return [
+            `The page links ${wanted.join(", ")}, but the design system could not be read: ${(error as Error).message}`,
+        ];
+    }
+
+    if (system === undefined) {
+        return [
+            `The page links ${wanted.join(", ")}, but this project has no design system (.pi/design/), so the link will not load. Create one with design_system init, or remove the link.`,
+        ];
+    }
+
+    for (const name of wanted) {
+        const bytes = Buffer.from(system.compiled[DESIGN_FILES[name]], "utf8");
+
+        prepared.set(name, {
+            asset: {
+                hash: createHash("sha256").update(bytes).digest("hex"),
+                size: bytes.length,
+                type: assetType(name),
+            },
+            bytes,
+        });
+    }
+
+    const errors = system.problems.filter((problem) => problem.level === "error").length;
+
+    return [
+        `Attached ${wanted.join(", ")} from the design system "${system.name}" (a snapshot of now; publish again to refresh).${errors > 0 ? ` The system has ${errors} error${errors === 1 ? "" : "s"}: run design_system validate.` : ""}`,
+    ];
 }
 
 function pathType(path: string): ArtifactType | undefined {
@@ -203,6 +266,7 @@ async function publish(
         version.taskId === api.taskId && (version.callId ?? api.callId) === api.callId;
     const replayed = previous?.versions.find(mine);
     let version = replayed?.version;
+    let notes: string[] = [];
 
     if (inline && version === undefined && previous !== undefined && previous.type !== "html") {
         throw notHtml(previous.type);
@@ -343,6 +407,27 @@ async function publish(
             });
         }
 
+        // A page that links the project's design system gets its compiled files, unless the call brings its own.
+        if (type === "html" && content.includes("ds/")) {
+            let cwd: string | undefined;
+
+            try {
+                cwd = (await api.agent(context)).cwd;
+            } catch {
+                // No session folder to look in: the page keeps its link.
+            }
+
+            notes = await attachDesignSystem(content, prepared, args.removeAssets ?? [], cwd);
+            preparedSize = [...prepared.values()].reduce(
+                (total, each) => total + each.bytes.length,
+                0,
+            );
+
+            if (preparedSize > MAX_ASSETS_BYTES) {
+                throw new Error(`Bundle assets are limited to ${MAX_ASSETS_BYTES} bytes.`);
+            }
+        }
+
         version = await api.commit(async (tx) => {
             const doc = await tx.doc(ArtifactsDoc, api.conversationId);
             const current = Object.hasOwn(doc.items, id) ? doc.items[id] : undefined;
@@ -458,8 +543,8 @@ async function publish(
                           api.callId.includes("/")
                               ? "It does not show as a card here: this call ran inside codemode, so the version has no card."
                               : `It shows as a card in your reply, and keeps showing version ${version}.`
-                      }`
-                    : `Published "${args.title}" as artifact ${id}, version ${version}. The user opens it from the artifact card.`,
+                      }${notes.map((note) => ` ${note}`).join("")}`
+                    : `Published "${args.title}" as artifact ${id}, version ${version}. The user opens it from the artifact card.${notes.map((note) => ` ${note}`).join("")}`,
             },
         ],
         details: inline
