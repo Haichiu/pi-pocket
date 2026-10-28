@@ -15,7 +15,13 @@ import {
  * A typography block of a theme (Material UI, Theme UI): the base `fontFamily` and `fontSize`, and each variant
  * (`h1: { fontSize: "2.5rem", fontFamily: … }`) as a size.
  */
-function typographyVars(facts: Facts, file: string, scope: Scope, block: Literal): void {
+function typographyVars(
+    facts: Facts,
+    file: string,
+    scope: Scope,
+    block: Literal,
+    heading = false,
+): void {
     if (typeof block !== "object" || block === null || Array.isArray(block)) {
         return;
     }
@@ -40,9 +46,9 @@ function typographyVars(facts: Facts, file: string, scope: Scope, block: Literal
 
     for (const [key, child] of Object.entries(variants)) {
         if (key === "fontFamily") {
-            add("base", "font", child);
+            add(heading ? "heading" : "base", "font", child);
         } else if (key === "fontSize") {
-            add("base", "text", child);
+            add(heading ? "heading" : "base", "text", child);
         } else if (typeof child === "object" && child !== null && !Array.isArray(child)) {
             const variant = child as Record<string, Literal>;
 
@@ -193,12 +199,28 @@ export function themeVars(facts: Facts, file: string, text: string): void {
         return end === undefined ? [] : [{ at: open.index, end }];
     });
 
+    const block = [...text.matchAll(/(?<![\w$.])(?:headings|typography)\s*:\s*(?=\{)/g)].flatMap(
+        (open) => {
+            const end = braceEnd(text, open.index + open[0].length);
+
+            return end === undefined ? [] : [{ at: open.index, end }];
+        },
+    );
+
     for (const match of text.matchAll(heads)) {
         if (++seen > 60) {
             break;
         }
 
         if (semantic.some((span) => span.at < match.index && match.index < span.end)) {
+            continue;
+        }
+
+        // The family and the size inside `headings: {…}` or `typography: {…}` are the headings', read as a block.
+        if (
+            match[3] !== undefined &&
+            block.some((span) => span.at < match.index && match.index < span.end)
+        ) {
             continue;
         }
 
@@ -228,7 +250,7 @@ export function themeVars(facts: Facts, file: string, text: string): void {
         const scope = scopeAt(match.index);
 
         if (key === "typography" || key === "headings") {
-            typographyVars(facts, file, scope, literal);
+            typographyVars(facts, file, scope, literal, key === "headings");
 
             continue;
         }

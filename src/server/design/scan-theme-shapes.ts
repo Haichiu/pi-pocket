@@ -16,7 +16,7 @@
 import { parseColor } from "./color.ts";
 import { addVar, type Category, type Facts } from "./scan-facts.ts";
 import { hasAntdTheme } from "./scan-facts-antd.ts";
-import { leaves, modeOf } from "./scan-facts-lists.ts";
+import { leaves, modeOf, THEME_KEYS } from "./scan-facts-lists.ts";
 import { JsProject } from "./scan-js-eval.ts";
 import { isDarkSelector, type Literal, type Scope, UNKNOWN } from "./scan-parse.ts";
 
@@ -253,8 +253,14 @@ function looksLikeTheme(rel: string, text: string): boolean {
         return false;
     }
 
-    // A token file in a format the scan reads on its own: its leaves have `$value` or `value` with a `type`.
-    if (rel.endsWith(".json") && /"\$value"|"value"\s*:/.test(text)) {
+    // A token file in a format the scan reads on its own: its leaves have `$value` or `value` with a `type`; a WordPress
+    // `theme.json`; a Figma export.
+    if (
+        rel.endsWith(".json") &&
+        /"\$value"|"value"\s*:|schemas\.wp\.org|"variableCollections"|"settings"\s*:\s*\{[\s\S]{0,400}"color"/.test(
+            text,
+        )
+    ) {
         return false;
     }
 
@@ -385,7 +391,7 @@ function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: E
 
     if (isRoleObject(node)) {
         roles(node, here, emit);
-        flat(node, here, emit);
+        flat(node, path, here, emit);
 
         // Other keys of the object (`palette: { mode, primary: {…}, grey: {…} }`) may hold ramps.
         for (const [key, child] of entries) {
@@ -415,10 +421,60 @@ function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: E
         return;
     }
 
+    flat(node, path, here, emit);
+
+    // Mantine's `headings: { sizes: { h1: { fontSize: rem(40) } } }` and a `typography` block of variants.
+    for (const key of ["headings", "typography"]) {
+        const block = node[key];
+        const sizes = isObject(block) && isObject(block.sizes) ? block.sizes : block;
+
+        if (isObject(sizes)) {
+            for (const [variant, child] of Object.entries(sizes)) {
+                if (
+                    isObject(child) &&
+                    (typeof child.fontSize === "string" || typeof child.fontSize === "number")
+                ) {
+                    emit(
+                        variant,
+                        typeof child.fontSize === "number" ? `${child.fontSize}px` : child.fontSize,
+                        here,
+                        "text",
+                    );
+                }
+            }
+        }
+    }
+
     for (const [key, child] of entries) {
-        if (isObject(child) || Array.isArray(child)) {
+        const category = THEME_KEYS[key];
+
+        if (
+            category !== undefined &&
+            SCALES.has(category) &&
+            !/^(?:typography|headings|other)$/.test(key) &&
+            (isObject(child) || Array.isArray(child))
+        ) {
+            scale(child, [...path, key], category, here, emit);
+        } else if (isObject(child) || Array.isArray(child)) {
             walk(child, [...path, key], modeOf(key) ?? here, depth + 1, emit);
         }
+    }
+}
+
+const SCALES = new Set<Category>(["font", "text", "space", "radius", "shadow", "duration", "ease"]);
+
+/** A scale of a theme (`fontSizes`, `spacing`, `radius`, `shadows`) whose values are known. */
+function scale(node: Literal, path: string[], category: Category, mode: Scope, emit: Emit): void {
+    const found: { path: string[]; value: string }[] = [];
+
+    leaves(node, [], found, category);
+
+    for (const leaf of found.slice(0, 60)) {
+        const unitless = category === "text" || category === "space" || category === "radius";
+        const value =
+            unitless && /^-?\d+(?:\.\d+)?$/.test(leaf.value) ? `${leaf.value}px` : leaf.value;
+
+        emit([path.at(-1)!, ...leaf.path].join("-"), value, mode, category);
     }
 }
 
@@ -466,10 +522,12 @@ function roles(node: { [key: string]: Literal }, mode: Scope, emit: Emit): void 
 }
 
 /** Sizes, radii, shadows, and families in a flat dictionary of tokens named for what they are (`fontSizeBase300`, `borderRadiusLarge`). */
-function flat(node: { [key: string]: Literal }, mode: Scope, emit: Emit): void {
+function flat(node: { [key: string]: Literal }, path: string[], mode: Scope, emit: Emit): void {
     if (flatOff) {
         return;
     }
+
+    const prefix = path.length > 1 ? `${path.at(-1)}-` : "";
 
     for (const [key, value] of Object.entries(node)) {
         if (typeof value !== "string" && typeof value !== "number") {
@@ -480,23 +538,23 @@ function flat(node: { [key: string]: Literal }, mode: Scope, emit: Emit): void {
         const text = typeof value === "number" ? `${value}px` : value;
 
         if (words.includes("font") && words.includes("size") && /^\d/.test(text)) {
-            emit(key, text, mode, "text");
+            emit(`${prefix}${key}`, text, mode, "text");
         } else if ((words.includes("radius") || words.includes("radii")) && /^\d/.test(text)) {
-            emit(key, text, mode, "radius");
+            emit(`${prefix}${key}`, text, mode, "radius");
         } else if (
             (words.includes("shadow") || words.includes("elevation")) &&
             typeof value === "string" &&
             /\d/.test(value)
         ) {
-            emit(key, value, mode, "shadow");
+            emit(`${prefix}${key}`, value, mode, "shadow");
         } else if (
             words.includes("font") &&
             words.includes("family") &&
             typeof value === "string"
         ) {
-            emit(key, value, mode, "font");
+            emit(`${prefix}${key}`, value, mode, "font");
         } else if (/^(?:spacing|space)\w*/i.test(key) && /^\d/.test(text)) {
-            emit(key, text, mode, "space");
+            emit(`${prefix}${key}`, text, mode, "space");
         }
     }
 }

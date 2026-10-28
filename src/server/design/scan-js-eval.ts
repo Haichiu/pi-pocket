@@ -1078,6 +1078,13 @@ class Parser {
             );
         }
 
+        // Unit helpers: Mantine's `rem(12)` is `0.75rem`.
+        if (/^(?:rem|px|em)$/i.test(callee) && args.length === 1 && typeof args[0] === "number") {
+            return callee.toLowerCase() === "rem"
+                ? `${Math.round((args[0] / 16) * 10_000) / 10_000}rem`
+                : `${args[0]}${callee.toLowerCase()}`;
+        }
+
         if (MERGER.test(last) || /^(?:Object\.)?assign$/i.test(callee)) {
             return Object.assign({}, ...objects);
         }
