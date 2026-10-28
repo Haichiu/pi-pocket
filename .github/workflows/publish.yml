@@ -76,4 +76,4 @@ jobs:
                       *) dist_tag=latest ;;
                   esac
                   echo "Publishing pi-pocket@$VERSION with the dist-tag $dist_tag"
-                  npm publish --ignore-scripts --access public --tag "$dist_tag"
+                  npm publish --ignore-scripts --access public --tag "$dist_tag" --loglevel verbose
