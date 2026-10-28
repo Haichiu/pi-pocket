@@ -1071,6 +1071,14 @@ test("a dark-first draft is scored by theme: the mode named light is the light t
     assert.equal(score.darkColors.f1, 1);
     assert.equal(score.roles.f1, 1);
     assert.equal(score.darkRoles.f1, 1);
+    // A role that the scan does not make differ between themes is not a dark role: precision stays at most 1.
+    const flat = extract(flatten(tree, { light: { color: { bg: { $value: "#ffffff" } } } }));
+    const partial = scoreScan(expected, flat);
+
+    assert.ok(
+        partial.darkRoles.precision <= 1 && partial.darkRoles.matched <= partial.darkRoles.actual,
+    );
+    assert.equal(partial.darkRoles.matched, 1, "only bg differs between the themes");
     // The same colors with the files the usual way round score the same.
     assert.equal(scoreScan(expected, extract(flatten(light, { dark: tree }))).darkRoles.f1, 1);
 });

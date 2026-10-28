@@ -645,7 +645,12 @@ export function scoreScan(expected: Expected, found: Extracted): ScanScore {
         if (want?.dark !== undefined) {
             darkExpected++;
 
-            if (have?.dark !== undefined && fitsColor(accept(want.dark), have.dark)) {
+            // A dark value counts only when the scan says the dark theme differs: precision is right over claimed.
+            if (
+                have?.darkChanged === true &&
+                have.dark !== undefined &&
+                fitsColor(accept(want.dark), have.dark)
+            ) {
                 darkRight++;
             }
         }

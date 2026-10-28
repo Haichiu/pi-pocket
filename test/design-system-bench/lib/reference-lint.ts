@@ -128,7 +128,7 @@ const SCRIPT = String.raw`(() => {
     // Declared families that are not installed: the same text measures the same in the family and in the fallback.
     const canvas = document.createElement('canvas').getContext('2d');
     const width = (family, base) => { canvas.font = '40px ' + family + ', ' + base; return canvas.measureText('mmmmmmwwwiiiillll 0123456789').width; };
-    for (const d of facts.declarations.filter((d) => d.prop === 'font-family')) {
+    for (const d of facts.declarations.filter((d) => d.prop === 'font-family' && !d.value.includes('var('))) {
         const first = d.value.split(',')[0].trim().replace(/^["']|["']$/g, '');
         if (/^(serif|sans-serif|monospace|system-ui|inherit|initial|ui-[a-z-]+)$/i.test(first)) continue;
         const quoted = '"' + first + '"';
