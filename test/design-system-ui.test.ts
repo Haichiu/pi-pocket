@@ -1306,7 +1306,7 @@ test(
 
         // An edit, and then the open design, under a tap: it shows the edit, and the way back.
         await openToken("color.accent.default");
-        await filled('input[aria-label="color.accent.default in light: color"]', "#e8590c");
+        await filled('input[aria-label="color.accent.default in light: color"]', "#0b8f5a");
         await waitFor(
             "the edit",
             `return JSON.stringify(Boolean(document.querySelector(".dsy-savebar")))`,

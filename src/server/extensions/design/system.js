@@ -942,3 +942,6 @@ export function shadowOf(value) {
 
     return safeCss(css);
 }
+
+/** How many things the unsaved edits change in `system` (a step that puts a value back changes nothing). */
+export const unsavedCount = (system, history) => (system ? changeOf(system, history).count : 0);

@@ -3,7 +3,15 @@
 // that shows every edit live. A person who cannot steer sees all of it and changes none of it.
 import { DEVICES } from "./devices.js";
 import { modeTitle } from "./system-widgets.js";
-import { changeOf, createModel, editsOf, SECTIONS, sectionOf, tokenEdits } from "./system.js";
+import {
+    changeOf,
+    createModel,
+    editsOf,
+    SECTIONS,
+    sectionOf,
+    tokenEdits,
+    unsavedCount,
+} from "./system.js";
 
 /** How often the open view asks whether Pi (or someone else) changed the system on disk. */
 const REFRESH_MS = 20_000;
@@ -267,6 +275,7 @@ export function createSystemView(env, canvas, sections) {
 
     /** The section tabs: only the sections that have something in them, and Components and Guidelines. */
     function SectionTabs({ s, data, split, hasDesign }) {
+        const unsaved = unsavedCount(data, s.history);
         const counts = useMemo(() => {
             const out = {};
 
@@ -327,7 +336,7 @@ export function createSystemView(env, canvas, sections) {
                         onClick=${() => store.set({ sysPane: s.sysPane === "preview" ? "system" : "preview" })}
                     >
                         <${Ico} name="eye" size=${16} />
-                        ${s.history.past.length > 0 && html`<i class="dsy-eye-dot"></i>`}
+                        ${unsaved > 0 && html`<i class="dsy-eye-dot"></i>`}
                     </button>`
                 }
                 ${
@@ -625,7 +634,7 @@ export function createSystemView(env, canvas, sections) {
     /** The open design, live with the edits: a choice of design and size, and the page. */
     function Preview({ s, designs, design, shown, size, canEdit, pane }) {
         const narrowHead = pane === "page";
-        const edits = s.history.past.length;
+        const edits = unsavedCount(s.system.data, s.history);
 
         if (!design) {
             return html`<div class="dsy-preview">

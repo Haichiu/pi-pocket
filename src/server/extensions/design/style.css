@@ -3203,3 +3203,7 @@ button.dsy-chip:disabled {
     margin-top: 14px;
     padding: 8px 14px;
 }
+
+.dsy-unsaved {
+    background: var(--dsn-accent-soft);
+}

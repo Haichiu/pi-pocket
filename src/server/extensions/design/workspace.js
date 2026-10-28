@@ -12,6 +12,7 @@ import { createSystemWidgets } from "./system-widgets.js";
 import { changed } from "./tweaks.js";
 import { createViews } from "./views.js";
 import { resolveDevice, useStore } from "./state.js";
+import { unsavedCount } from "./system.js";
 
 /** The sheet's own width classes: below 560 px it stacks; from 900 px the side panel sits beside the canvas. */
 const NARROW = 560;
@@ -584,6 +585,13 @@ export function createWorkspace(env) {
             }
         }, [s.artifact, s.conversation]);
 
+        // The design system is read once in the background, so that the picker can say what it holds.
+        useEffect(() => {
+            if (s.conversation !== null && s.system.status === "idle") {
+                void env.systemData.load({ quiet: true });
+            }
+        }, [s.conversation]);
+
         // A deck is shown at slide size by default, and a page is never shown at it.
         const deck = design?.kind === "deck" || s.deck !== null;
         // Until the person picks a size, the page follows the panel: the phone's frame in a narrow one.
@@ -602,6 +610,7 @@ export function createWorkspace(env) {
                 : latest
             : 1;
         const group = design ? siblingsOf(designs, design) : [];
+        const unsaved = unsavedCount(s.system.data, s.history);
 
         // Pi makes a new version while the person is in the middle of something (a mode, a draft, text edits): the page they
         // work on stays, with the way to the new one, instead of loading under them.
@@ -715,6 +724,16 @@ export function createWorkspace(env) {
                     ${`Version ${shown} of ${latest}. `}
                     <button type="button" class="dsn-link" onClick=${() => env.showVersion(null)}>
                         Show the newest
+                    </button>
+                </div>`
+            }
+            ${
+                unsaved > 0 &&
+                s.view === "canvas" &&
+                html`<div class="dsn-old dsy-unsaved">
+                    ${`The design system has ${unsaved} unsaved change${unsaved === 1 ? "" : "s"}, shown here. `}
+                    <button type="button" class="dsn-link" onClick=${env.openSystem}>
+                        Open the system
                     </button>
                 </div>`
             }
