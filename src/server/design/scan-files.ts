@@ -46,7 +46,7 @@ const DOT_STYLE_FOLDERS = new Set([".storybook", ".vitepress", ".vuepress", ".do
 const STYLE =
     /\.(?:css|scss|sass|less|pcss|postcss|html?|vue|svelte|astro|mdx|tsx|jsx|ts|js|mjs|cjs|mts|cts)$/i;
 const TOKEN_JSON =
-    /(?:^|\/)(?:[^/]*tokens?[^/]*|theme[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$/i;
+    /(?:^|\/)(?:[^/]*tokens?[^/]*|theme[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$/i;
 
 export const LIMITS = {
     /** Files read. */
@@ -106,6 +106,16 @@ export function priority(rel: string): number {
         score -= 10;
     }
 
+    // A script that is not named for a theme or styles comes after every file that is.
+    if (
+        /^\.(?:[cm]?[jt]s)$/.test(extension) &&
+        !/(?:tailwind\.config|theme|tokens?|colors?|palette|design|variables|styles?|constants?|config)/i.test(
+            rel,
+        )
+    ) {
+        score -= 15;
+    }
+
     return score - rel.split("/").length * 2;
 }
 
@@ -115,11 +125,10 @@ function wanted(rel: string, name: string): boolean {
         return TOKEN_JSON.test(rel) && name.endsWith(".json");
     }
 
-    // Scripts only when they may hold a theme or styles (so a project of ten thousand .ts files costs a walk, not a read).
+    // A script may hold a theme or CSS-in-JS styles. The walk keeps them all (a bounded number, behind the best files);
+    // the scan reads the ones that are not named for a theme only when they look like styles.
     if (/\.(?:[cm]?[jt]s)$/i.test(name) && !/\.d\.[cm]?ts$/.test(name)) {
-        return /(?:tailwind\.config|theme|tokens?|colors?|palette|design|variables|styles?|constants?|config)/i.test(
-            rel,
-        );
+        return true;
     }
 
     return !name.endsWith(".d.ts");

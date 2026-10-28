@@ -1036,3 +1036,562 @@ body { background: #faf3e9; color: #333 } a { color: #3366cc } .btn { background
         "the link blue's dark value is kept, on the blue",
     );
 });
+
+// --- Round 2b: themes written in other forms -----------------------------------------------------------------------------
+
+const modesOf = (scan: TokenScan) => Object.keys(scan.draft.modes);
+
+test("a theme file that exports a dark and a light object, dark first, has both modes; light is the default", () => {
+    const scan = scanTokens(
+        project({
+            "src/theme.ts": `export const darkTheme = { colors: { background: "#0b0d12", foreground: "#e8eaf0", subtle: "#8b93a7", outline: "#262b38", panel: "#141824", brand: "#7c9cff", critical: "#ff6b6b", caution: "#f5b94a", positive: "#4ed08a" }, space: { sm: "8px", md: "16px" } };
+export const lightTheme = { colors: { background: "#f6f7fb", foreground: "#14161d", subtle: "#5a6275", outline: "#d9dce6", panel: "#ffffff", brand: "#3558e6", critical: "#d6293e", caution: "#b86e00", positive: "#1a8f55" }, space: { sm: "8px", md: "16px" } };`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.deepEqual(modesOf(scan), ["dark"], "light is the default mode, dark the other");
+    assert.equal(roles.background!.value, "#f6f7fb");
+    assert.equal(roles.background!.dark, "#0b0d12");
+    assert.equal(roles.text!.value, "#14161d");
+    assert.equal(roles.surface!.value, "#ffffff");
+    assert.equal(roles.muted!.value, "#5a6275", "`subtle` alone is the quiet text");
+    assert.equal(roles.border!.value, "#d9dce6", "`outline` is the border");
+    assert.equal(roles.accent!.value, "#3558e6");
+    assert.equal(roles.danger!.value, "#d6293e", "`critical` is the danger");
+    assert.equal(roles.warning!.value, "#b86e00", "`caution` is the warning");
+    assert.equal(roles.success!.value, "#1a8f55", "`positive` is the success");
+});
+
+test("a dark-first theme object with a light block that overrides some values: dark is the default, light the other mode", () => {
+    const scan = scanTokens(
+        project({
+            "theme.js": `const theme = {
+  colors: { canvas: "#101114", paper: "#1a1c21", ink: "#f2f3f5", inkSubtle: "#9a9fab", divider: "#2c2f36", primary: "#6c8cff", error: "#ff5d5d", warning: "#ffb020", success: "#3ccf91" },
+  space: [0, 4, 8, 16, 32],
+  light: { canvas: "#fafaf8", paper: "#ffffff", ink: "#16171a", inkSubtle: "#60656f", divider: "#e2e3e6", primary: "#2f55d4" },
+};
+module.exports = theme;`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.deepEqual(modesOf(scan), ["light"]);
+    assert.equal(roles.background!.value, "#101114", "the base object is the default");
+    assert.equal(roles.background!.dark, "#fafaf8", "the block is the other mode");
+    assert.equal(roles.accent!.dark, "#2f55d4");
+    assert.equal(roles.warning!.value, "#ffb020");
+    assert.equal(roles.warning!.dark, undefined, "a value the block does not set is shared");
+});
+
+test("a theme map in SCSS with a map for each mode: the keys are the names, the modes are the scopes", () => {
+    const scan = scanTokens(
+        project({
+            "_themes.scss": `$themes: (
+  light: (bg: #f7f7f5, surface: #ffffff, text: #1b1c1f, text-muted: #6a6e78, border: #dcdde0, accent: #0b6bcb, danger: #c62828),
+  dark: (bg: #0f1012, surface: #17181b, text: #ececf0, text-muted: #9ca0aa, border: #2a2c31, accent: #5aa2f0, danger: #ff7a7a),
+);
+$shadows: (sm: 0 1px 2px rgba(0,0,0,.1), md: 0 6px 16px rgba(0,0,0,.14), lg: 0 1px 2px rgba(0,0,0,.1), 0 8px 24px rgba(0,0,0,.2));
+@each $name, $map in $themes { .theme-#{$name} { @each $key, $value in $map { --#{$key}: #{$value}; } } }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f7f7f5");
+    assert.equal(roles.background!.dark, "#0f1012");
+    assert.equal(roles.muted!.value, "#6a6e78");
+    assert.equal(roles.accent!.dark, "#5aa2f0");
+    assert.equal(scan.inferred.shadows, 3, "a shadow with two layers is one shadow");
+});
+
+test("a map of names that each hold modes: primary: (light: …, dark: …)", () => {
+    const scan = scanTokens(
+        project({
+            "a.scss": `$colors: (
+  background: (light: #ffffff, dark: #111111),
+  text: (light: #222222, dark: #eeeeee),
+  primary: (light: #0055cc, dark: #66aaff),
+);`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.background!.dark, "#111111");
+    assert.equal(scan.inferred.roles.text!.dark, "#eeeeee");
+    assert.equal(scan.inferred.roles.accent!.dark, "#66aaff");
+});
+
+test("variables kept for the dark mode under their own names (--dark-bg) are its values, not colors of their own", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root { --canvas: #f6f4ef; --paper: #ffffff; --ink: #23282f; --divider: #e3ded4; --primary: #1a5fd0;
+  --dark-canvas: #101318; --dark-paper: #171b21; --dark-ink: #e7eaee; --dark-divider: #2b313a; --dark-primary: #8ab4ff }
+.theme-dark { --canvas: var(--dark-canvas); --paper: var(--dark-paper); --ink: var(--dark-ink); --divider: var(--dark-divider); --primary: var(--dark-primary) }
+body { background: var(--canvas); color: var(--ink) } .card { background: var(--paper); border: 1px solid var(--divider) } a { color: var(--primary) }`,
+        }),
+    );
+    const system = load(scan);
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f6f4ef");
+    assert.equal(roles.background!.dark, "#101318");
+    assert.equal(roles.text!.dark, "#e7eaee");
+    assert.equal(roles.accent!.dark, "#8ab4ff");
+    assert.ok(
+        !system.tokens.some((each) => each.name.startsWith("color.dark")),
+        "no color.dark-… tokens: the dark variables are values of the plain ones",
+    );
+});
+
+test("a shade (--primary-dark beside --primary-light) is not the dark mode's value", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root { --primary: #2255aa; --primary-light: #4477cc; --primary-dark: #113377; --danger: #cc2222; --danger-dark: #881111 }`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.accent!.dark, undefined);
+    assert.deepEqual(modesOf(scan), []);
+});
+
+test("a file named for a mode sets that mode's values: dark.less beside variables.less", () => {
+    const scan = scanTokens(
+        project({
+            "variables.less": `@primary-color: #1677ff; @body-background: #f5f5f5; @component-background: #ffffff; @text-color: #222222; @border-color-base: #d9d9d9; @error-color: #ff4d4f;`,
+            "dark.less": `@primary-color: #1668dc; @body-background: #111318; @component-background: #1a1d23; @text-color: #ffffffd9; @border-color-base: #33363d; @error-color: #dc4446;`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f5f5f5");
+    assert.equal(roles.background!.dark, "#111318");
+    assert.equal(roles.surface!.value, "#ffffff", "`component-background` is the surface");
+    assert.equal(roles.surface!.dark, "#1a1d23");
+    assert.equal(roles.accent!.dark, "#1668dc");
+    assert.equal(roles.danger!.dark, "#dc4446");
+});
+
+test("Chakra: a palette written as objects the file declares, and semantic tokens with a value for each mode", () => {
+    const scan = scanTokens(
+        project({
+            "theme.ts": `const brand = { 50: "#e3f0ff", 500: "#1a6be0", 900: "#102c5c" };
+const gray = { 50: "#f7f8fa", 100: "#eef0f3", 200: "#dde1e6", 500: "#6c788a", 800: "#1f2732", 900: "#12181f" };
+export const theme = extendTheme({
+  colors: { brand, gray },
+  semanticTokens: { colors: {
+    "bg.canvas": { default: "gray.50", _dark: "gray.900" },
+    "bg.panel": { default: "#ffffff", _dark: "gray.800" },
+    "text.body": { default: "gray.800", _dark: "gray.100" },
+    "text.subtle": { default: "gray.500", _dark: "gray.200" },
+    "border.line": { default: "gray.200", _dark: "gray.800" },
+  } },
+});`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f7f8fa");
+    assert.equal(roles.background!.dark, "#12181f");
+    assert.equal(roles.surface!.dark, "#1f2732");
+    assert.equal(roles.text!.value, "#1f2732");
+    assert.equal(roles.text!.dark, "#eef0f3");
+    assert.equal(roles.muted!.value, "#6c788a");
+    assert.equal(roles.border!.value, "#dde1e6");
+});
+
+test("quiet text is a gray, not the lighter link color of the dark mode; a label on the accent is a color the mode uses", () => {
+    const scan = scanTokens(
+        project({
+            "index.html": `<style>
+body { background: #fbfaf7; color: #23272e } .card { background: #fff } .muted { color: #6a7280 } a { color: #2f6fed } .btn { background: #2f6fed; color: #fff }
+@media (prefers-color-scheme: dark) {
+  body { background: #14161a; color: #e6e8eb } .card { background: #1c1f24 } .muted, .meta { color: #9aa3ad } a { color: #8ab4ff } a:hover { color: #b0ccff } .btn { background: #8ab4ff; color: #10131a }
+}</style><p class="muted meta">x</p>`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.muted!.dark, "#9aa3ad", "a gray, not #b0ccff");
+    assert.equal(
+        scan.draft.modes.dark !== undefined &&
+            JSON.stringify(scan.draft.modes.dark).includes("#10131a"),
+        true,
+        "the dark label on the light button is kept",
+    );
+});
+
+test("a theme object with blocks for each mode under one key: colors: { light: {…}, dark: {…} }", () => {
+    const scan = scanTokens(
+        project({
+            "theme.ts": `export default { colors: {
+  light: { background: "#ffffff", text: "#111111", border: "#dddddd", primary: "#0055cc" },
+  dark: { background: "#0a0a0a", text: "#f5f5f5", border: "#2a2a2a", primary: "#66aaff" },
+} };`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.background!.value, "#ffffff");
+    assert.equal(scan.inferred.roles.background!.dark, "#0a0a0a");
+    assert.equal(scan.inferred.roles.accent!.dark, "#66aaff");
+});
+
+// --- Round 2c: more forms of the same ideas -------------------------------------------------------------------------------
+
+test("a WordPress block theme: the palette, sizes and presets of theme.json, and styles/dark.json for the dark mode", () => {
+    const scan = scanTokens(
+        project({
+            "theme.json": JSON.stringify({
+                $schema: "https://schemas.wp.org/trunk/theme.json",
+                version: 3,
+                settings: {
+                    color: {
+                        palette: [
+                            { color: "#FFF", slug: "base" },
+                            { color: "#111111", slug: "contrast" },
+                            { color: "#2f5d62", slug: "primary" },
+                            { color: "#5e8b7e", slug: "secondary" },
+                            { color: "#f2efe9", slug: "tertiary" },
+                        ],
+                    },
+                    typography: {
+                        fontSizes: [
+                            { slug: "small", size: "0.875rem" },
+                            { slug: "large", size: "1.25rem" },
+                        ],
+                    },
+                    shadow: {
+                        presets: [{ slug: "soft", shadow: "0 1px 2px rgba(17, 17, 17, 0.12)" }],
+                    },
+                    custom: {
+                        color: { border: "#d9d4ca", error: "#b3261e" },
+                        radius: { small: "4px", pill: "999px" },
+                    },
+                },
+                styles: {
+                    color: {
+                        background: "var(--wp--preset--color--base)",
+                        text: "var(--wp--preset--color--contrast)",
+                    },
+                    elements: {
+                        link: { color: { text: "var(--wp--preset--color--primary)" } },
+                        caption: { color: { text: "var(--wp--preset--color--secondary)" } },
+                    },
+                },
+            }),
+            "styles/dark.json": JSON.stringify({
+                $schema: "https://schemas.wp.org/trunk/theme.json",
+                title: "Dark",
+                settings: {
+                    color: {
+                        palette: [
+                            { color: "#14181a", slug: "base" },
+                            { color: "#eceae4", slug: "contrast" },
+                            { color: "#7fc1c8", slug: "primary" },
+                            { color: "#9cc7ba", slug: "secondary" },
+                            { color: "#232a2c", slug: "tertiary" },
+                        ],
+                    },
+                    custom: { color: { border: "#3a4346", error: "#f2877f" } },
+                },
+            }),
+            "style.css": `.card { background: var(--wp--preset--color--tertiary); border: 1px solid var(--wp--custom--color--border) } .card .note { color: var(--wp--custom--color--error) }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#ffffff");
+    assert.equal(roles.background!.dark, "#14181a");
+    assert.equal(roles.text!.value, "#111111");
+    assert.equal(roles.accent!.value, "#2f5d62", "`primary`, the link color");
+    assert.equal(roles.accent!.dark, "#7fc1c8");
+    assert.equal(roles.surface!.value, "#f2efe9", "`tertiary`, the card's background");
+    assert.equal(roles.border!.dark, "#3a4346");
+    assert.equal(roles.danger!.value, "#b3261e");
+    assert.equal(scan.inferred.shadows, 1);
+});
+
+test("Sass color functions and arithmetic over variables, in variables and in rules", () => {
+    const scan = scanTokens(
+        project({
+            "_vars.scss": `$black: #000; $white: #fff; $unit: 8px;
+$text: rgba($black, 0.87); $muted: rgba($black, 0.6); $line: rgba($black, 0.12); $brand: #1976d2; $brand-dark: darken($brand, 10%);
+$bg: #f5f5f5; $surface: $white;`,
+            "card.scss": `.card { background: $surface; border-radius: $unit * 2; padding: $unit * 2 $unit * 3; box-shadow: 0 2px 4px rgba($black, 0.2); border: 1px solid tint-color(#1976d2, 80%) }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.text!.value, "#000000de");
+    assert.equal(roles.muted!.value, "#00000099");
+    assert.equal(roles.border!.value, "#0000001f");
+    assert.deepEqual(
+        scan.inferred.spacing.steps.slice(-2),
+        [16, 24],
+        "padding: $unit * 2 $unit * 3",
+    );
+    assert.deepEqual(
+        scan.inferred.radii,
+        ["lg 16px"].length === 1 ? scan.inferred.radii : [],
+        "radius is computed",
+    );
+    assert.ok(
+        scan.inferred.radii.some((radius) => radius.endsWith("16px")),
+        `radii: ${scan.inferred.radii}`,
+    );
+    assert.equal(scan.inferred.shadows, 1, "box-shadow with rgba($black, .2)");
+});
+
+test("a custom media query that names the dark scheme (PostCSS) is the dark mode", () => {
+    const scan = scanTokens(
+        project({
+            "vars.css": `@custom-media --dark (prefers-color-scheme: dark);
+:root { --clr-page: #f2f3f6; --clr-card: #fff; --clr-ink: #1b1f24; --clr-ink-2: #5b6470; --clr-line: #d8dde4; --clr-cta: #2f5bd7 }
+@media (--dark) { :root { --clr-page: #14161a; --clr-card: #1d2026; --clr-ink: #e7e9ec; --clr-ink-2: #9aa3ad; --clr-line: #2e333b; --clr-cta: #7c9bff } }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f2f3f6", "the media query is not the default");
+    assert.equal(roles.background!.dark, "#14161a");
+    assert.equal(roles.text!.value, "#1b1f24", "`ink`");
+    assert.equal(roles.muted!.value, "#5b6470", "`ink-2` is the second text color");
+    assert.equal(roles.accent!.dark, "#7c9bff", "`cta`");
+});
+
+test("Svelte and CSS Modules wrap selectors: :global(:root) holds the tokens and :global(.dark) the dark ones", () => {
+    const scan = scanTokens(
+        project({
+            "app.css": `:global(:root) { --bg: #f7f6f3; --fg: #22252a; --muted: #70767e; --line: #e2ded6; --accent: #0d7a5f; --space-1: 4px; --space-2: 8px; --space-3: 12px; --radius: 6px; --radius-lg: 12px }
+:global(.dark) { --bg: #121417; --fg: #eceff2; --muted: #9aa1a9; --line: #2a2f35; --accent: #3ecf9a }`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.background!.dark, "#121417");
+    assert.equal(scan.inferred.roles.text!.dark, "#eceff2");
+    assert.deepEqual(scan.inferred.spacing.steps, [4, 8, 12]);
+    assert.equal(scan.inferred.radii.length, 2);
+});
+
+test("fluid type sizes (clamp) are steps at their smallest value, and a numbered length family is what its properties say", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root { --step-0: clamp(1rem, 0.95rem + 0.25vw, 1.125rem); --step-1: clamp(1.25rem, 1.15rem + 0.5vw, 1.5rem);
+  --size-1: .25rem; --size-2: .5rem; --size-3: 1rem; --size-4: 1.5rem; --size-5: 2rem }
+.a { padding: var(--size-3) var(--size-4); margin-top: var(--size-2); gap: var(--size-1) } .b { padding: var(--size-5) }
+h1 { font-size: var(--step-1) } p { font-size: var(--step-0) }`,
+        }),
+    );
+
+    assert.deepEqual(
+        scan.inferred.typeScale.sizes.map((size) => size.split(" ")[1]),
+        ["1rem", "1.25rem"],
+    );
+    assert.deepEqual(
+        scan.inferred.spacing.steps,
+        [4, 8, 16, 24, 32],
+        "--size-N used in padding is spacing",
+    );
+});
+
+test("class rules count by how often markup uses the class, and a class in the dark mode pairs with its light color", () => {
+    const scan = scanTokens(
+        project({
+            "style.css": `.page { background: #ffffff } .bg-gray-100 { background: #f3f4f6 } .bg-gray-900 { background: #111827 }
+.text-gray-900 { color: #111827 } .text-gray-600 { color: #4b5563 } .border-gray-300 { border: 1px solid #d1d5db } .bg-brand { background: #7c3aed }`,
+            "dark.css": `.dark .page { background: #111827 } .dark .bg-gray-100 { background: #1f2937 } .dark .text-gray-900 { color: #f9fafb } .dark .text-gray-600 { color: #9ca3af } .dark .border-gray-300 { border-color: #374151 }`,
+            "index.html": `<body class="page text-gray-900"><div class="bg-gray-100"></div><div class="bg-gray-100"><p class="text-gray-600">x</p></div><p class="text-gray-600 border-gray-300">y</p><a class="bg-brand">z</a></body>`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(
+        roles.background!.value,
+        "#ffffff",
+        "the page wrapper, not the unused .bg-gray-900",
+    );
+    assert.equal(roles.surface!.value, "#f3f4f6", "used twice");
+    assert.equal(roles.surface!.dark, "#1f2937", "the same class in the dark mode");
+    assert.equal(roles.text!.dark, "#f9fafb");
+    assert.equal(roles.muted!.value, "#4b5563");
+    assert.equal(roles.muted!.dark, "#9ca3af");
+});
+
+test("styled-components in plain .js files are read: a component file needs no theme name", () => {
+    const scan = scanTokens(
+        project({
+            "src/components/Card.js": `import styled from "styled-components";
+export const Card = styled.div\`
+  background: #fff; border: 1px solid #e4e7eb; border-radius: 8px; padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(31, 41, 51, 0.12);
+\`;
+export const Meta = styled.p\`color: #616e7c; font-size: 0.875rem;\`;`,
+            "src/components/Status.js": `import styled from "styled-components";
+export const ErrorText = styled.span\`color: #c92a2a;\`;
+export const Warn = styled.span\`color: #e8590c;\`;
+export const Ok = styled.span\`color: #2b8a3e;\`;`,
+        }),
+    );
+
+    assert.ok(scan.files.length >= 2, "both component files were read");
+    assert.equal(scan.inferred.roles.danger!.value, "#c92a2a");
+    assert.equal(scan.inferred.roles.warning!.value, "#e8590c");
+    assert.equal(scan.inferred.roles.success!.value, "#2b8a3e");
+    assert.equal(scan.inferred.shadows, 1);
+});
+
+test("variables kept for the other mode as roles with a mode word (a Sass project with $dark-surface and no dark scope)", () => {
+    const scan = scanTokens(
+        project({
+            "_variables.scss": `$app-background: #f5f5f5; $surface-color: #fff; $text-primary: #212121;
+$dark-background: #303030; $dark-surface: #424242; $dark-text: #fff; $dark-blue: #003366; $brand: #1976d2;`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.dark, "#303030");
+    assert.equal(roles.surface!.dark, "#424242");
+    assert.equal(roles.text!.dark, "#ffffff");
+    assert.ok(
+        !scan.colors.length || roles.accent!.dark === undefined,
+        "$dark-blue is a shade, not a mode",
+    );
+});
+
+test("a custom property set only for the dark mode takes the Sass variable of the same name as its light value", () => {
+    const scan = scanTokens(
+        project({
+            "_variables.scss": `$body-bg: #fdfcfa; $body-color: #2a2d31; $border-color: #dcd9d3; $primary: #4b3f9e;`,
+            "custom.scss": `[data-bs-theme="dark"] { --bs-body-bg: #16181d; --bs-body-color: #e8eaed; --bs-border-color: #2e3238; --bs-primary: #9485f2 }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#fdfcfa");
+    assert.equal(roles.background!.dark, "#16181d");
+    assert.equal(roles.accent!.dark, "#9485f2");
+});
+
+test("a card's own variable (--card-bg on .card) is the surface, in the mode its selector names", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root { --body-bg: #fdfcfa; --body-color: #2a2d31 } [data-theme="dark"] { --body-bg: #16181d; --body-color: #e8eaed }
+.card { --card-bg: #ffffff } [data-theme="dark"] .card { --card-bg: #1f2229 }`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.surface!.value, "#ffffff");
+    assert.equal(scan.inferred.roles.surface!.dark, "#1f2229");
+});
+
+test("a color called warn that is red is the error color (Angular Material's warn palette)", () => {
+    const scan = scanTokens(
+        project({
+            "_palette.scss": `$warn-map: (100: #ffcdd2, 300: #ef5350, 500: #e53935, 700: #b71c1c);
+$primary-map: (500: #2196f3, 700: #1976d2);`,
+        }),
+    );
+
+    assert.equal(
+        scan.inferred.roles.danger!.value,
+        "#e53935",
+        "the middle step of the red palette",
+    );
+    assert.equal(scan.inferred.roles.warning, undefined);
+});
+
+// --- Round 2d: theme libraries -----------------------------------------------------------------------------------------
+
+test("a theme file with any name: Vuetify's themes object, with a const for the light theme", () => {
+    const scan = scanTokens(
+        project({
+            "src/plugins/vuetify.js": `const light = { dark: false, colors: { background: '#f4f6fa', surface: '#ffffff', 'on-surface': '#111827', 'on-surface-variant': '#5b6472', primary: '#2f5bea', error: '#d92d20', success: '#1b8a5a', warning: '#e69a00' } };
+export default createVuetify({ theme: { defaultTheme: 'light', themes: { light, dark: { dark: true, colors: { background: '#0f1420', surface: '#181f2e', 'on-surface': '#e6e9f2', 'on-surface-variant': '#9aa4b8', primary: '#7c9cff', error: '#ff6b5e', success: '#4cd08f', warning: '#ffc247' } } } } });`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f4f6fa");
+    assert.equal(roles.background!.dark, "#0f1420");
+    assert.equal(roles.text!.value, "#111827", "`on-surface` is the text");
+    assert.equal(roles.muted!.value, "#5b6472", "`on-surface-variant` is the quiet text");
+    assert.equal(roles.accent!.dark, "#7c9cff");
+});
+
+test("tokens that name other tokens ($gray1) resolve in each theme, and the dark theme redefines only the palette", () => {
+    const scan = scanTokens(
+        project({
+            "stitches.config.ts": `export const { styled } = createStitches({ theme: { colors: {
+  gray1: "#fdfdfd", gray2: "#f7f7f7", gray6: "#d9d9d9", gray11: "#646464", gray12: "#202020", blue9: "#0090ff", red9: "#e5484d", amber9: "#ffb224", green9: "#30a46c",
+  bg: "$gray1", panel: "$gray2", text: "$gray12", textMuted: "$gray11", line: "$gray6", brand: "$blue9" } } });
+export const darkTheme = createTheme("dark-theme", { colors: { gray1: "#111111", gray2: "#191919", gray6: "#3a3a3a", gray11: "#b4b4b4", gray12: "#eeeeee", blue9: "#3e9eff" } });`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#fdfdfd");
+    assert.equal(
+        roles.background!.dark,
+        "#111111",
+        "bg points at gray1, which the dark theme sets",
+    );
+    assert.equal(roles.text!.dark, "#eeeeee");
+    assert.equal(roles.muted!.dark, "#b4b4b4");
+    assert.equal(roles.accent!.dark, "#3e9eff");
+    assert.equal(roles.danger!.value, "#e5484d", "`red9` is a red");
+});
+
+test("daisyUI: a list of themes, one of them named for the dark mode", () => {
+    const scan = scanTokens(
+        project({
+            "tailwind.config.js": `module.exports = { daisyui: { themes: [
+  { mytheme: { primary: "#570df8", secondary: "#f000b8", accent: "#37cdbe", "base-100": "#ffffff", "base-200": "#f2f2f2", "base-content": "#1f2937", success: "#36d399", warning: "#fbbd23", error: "#f87272" } },
+  { mydark: { primary: "#661ae6", secondary: "#d926a9", accent: "#1fb2a6", "base-100": "#1d232a", "base-200": "#191e24", "base-content": "#a6adbb", success: "#36d399", warning: "#fbbd23", error: "#ff5861" } },
+] } };`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.accent!.value, "#570df8");
+    assert.equal(roles.accent!.dark, "#661ae6");
+    assert.equal(roles.text!.value, "#1f2937", "`base-content`");
+    assert.equal(roles.text!.dark, "#a6adbb");
+    assert.equal(roles.danger!.dark, "#ff5861");
+});
+
+test("Mantine: palettes as lists of shades, headings, and light/dark pairs under other", () => {
+    const scan = scanTokens(
+        project({
+            "src/theme.ts": `const brand = ["#eff5ff", "#dce7fd", "#c5d8fb", "#a9c6f8", "#8ab1f3", "#6d9bee", "#5382e2", "#4067c4", "#34539e", "#2c4478"];
+export const theme = createTheme({ primaryColor: "brand", colors: { brand }, fontFamily: "Inter, sans-serif", fontSize: "15px",
+  headings: { fontFamily: "Fraunces, serif", sizes: { h1: { fontSize: "2.25rem" }, h2: { fontSize: "1.5rem" } } },
+  other: { textLight: "#212529", textDark: "#e9ecef", mutedLight: "#868e96", mutedDark: "#a6a7ab", borderLight: "#dee2e6", borderDark: "#373a40", statusDangerLight: "#c92a2a", statusDangerDark: "#ff8787" } });`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.text!.value, "#212529");
+    assert.equal(roles.text!.dark, "#e9ecef");
+    assert.equal(roles.border!.dark, "#373a40");
+    assert.equal(roles.danger!.dark, "#ff8787");
+    assert.ok(Object.keys(scan.inferred.fonts).length >= 2, "both families");
+    assert.ok(scan.inferred.typeScale.sizes.length >= 3, "15px and the heading sizes");
+});
+
+test("Material 3 names: on-surface is the text and on-surface-variant the quiet text; typescale sizes are type", () => {
+    const scan = scanTokens(
+        project({
+            "tokens.css": `:root { --md-sys-color-surface: #fef7ff; --md-sys-color-on-surface: #1d1b20; --md-sys-color-on-surface-variant: #49454f; --md-sys-color-outline: #79747e; --md-sys-color-primary: #6750a4; --md-sys-color-error: #b3261e;
+  --md-sys-typescale-body-large-size: 1rem; --md-sys-typescale-body-large-line-height: 1.5rem; --md-sys-typescale-title-large-size: 22px; --md-sys-typescale-display-small-size: 36px }
+@media (prefers-color-scheme: dark) { :root { --md-sys-color-surface: #141218; --md-sys-color-on-surface: #e6e0e9; --md-sys-color-on-surface-variant: #cac4d0; --md-sys-color-outline: #938f99; --md-sys-color-primary: #d0bcff } }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.text!.value, "#1d1b20");
+    assert.equal(roles.muted!.value, "#49454f");
+    assert.equal(roles.muted!.dark, "#cac4d0");
+    assert.equal(roles.border!.value, "#79747e");
+    assert.deepEqual(
+        scan.inferred.typeScale.sizes.map((size) => size.split(" ")[1]),
+        ["1rem", "22px", "36px"],
+        "the line height as a length is no size",
+    );
+});

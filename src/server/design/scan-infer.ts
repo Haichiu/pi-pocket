@@ -60,6 +60,12 @@ export type { Draft, Inferred };
 const vkey = (variable: { kind: VarFact["kind"]; hint?: Category; name: string }) =>
     `${variable.kind === "theme" ? "css" : variable.kind}:${variable.hint ?? ""}:${variable.name}`;
 
+const kebab = (name: string) =>
+    name
+        .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-");
+
 const slug = (text: string) =>
     text
         .toLowerCase()
@@ -77,6 +83,8 @@ interface Variable {
     dark?: VarFact;
     /** A value from the other mode's scope, used only when the default scope has none. */
     spare?: VarFact;
+    /** It holds the other mode's value of another variable (`--dark-bg` beside `--bg`). */
+    twin?: boolean;
     hint?: Category;
 }
 
@@ -114,9 +122,166 @@ function variables(facts: Facts, alt: "dark" | "light"): Variable[] {
         variable.light ??= variable.spare;
     }
 
+    pairModeTwins(map, alt);
+    pairSassNames(map, alt);
+    pairModeSuffixes(map, alt);
+
     return [...map.values()].filter(
         (variable) => variable.light !== undefined || variable.dark !== undefined,
     );
+}
+
+/**
+ * Variables that a project keeps for the other mode under their own names (`--dark-bg`, `--bg-dark`, `$night-ink`) are
+ * the other mode's value of the plain variable (`--bg`): they are not colors of their own. A dark-named variable that the
+ * plain one points at in the dark scope (`--bg: var(--dark-bg)`) is one for sure; without that, three pairs make a scheme,
+ * and a name that has a `-light` or `-main` sibling (`primary-dark` beside `primary-light`) is a shade, not a mode.
+ */
+function pairModeTwins(map: Map<string, Variable>, alt: "dark" | "light"): void {
+    const mode = alt === "dark" ? /^(?:dark|night)$/ : /^(?:light|day)$/;
+    const plain = (name: string) => kebab(name).replace(/^(?:color|colour|clr)-/, "");
+    const byName = new Map<string, Variable>();
+
+    for (const [key, variable] of map) {
+        if (
+            key.startsWith("css:") ||
+            key.startsWith("scss:") ||
+            key.startsWith("less:") ||
+            key.startsWith("js:")
+        ) {
+            byName.set(`${variable.kind}:${plain(variable.name)}`, variable);
+        }
+    }
+
+    const pairs: { twin: Variable; base: Variable; sure: boolean }[] = [];
+
+    for (const variable of map.values()) {
+        const words = plain(variable.name).split("-");
+        const at = words.findIndex((word) => mode.test(word));
+
+        if (at === -1 || words.length < 2 || variable.light === undefined) {
+            continue;
+        }
+
+        const base = byName.get(
+            `${variable.kind}:${words.filter((_, index) => index !== at).join("-")}`,
+        );
+
+        if (base === undefined || base === variable) {
+            continue;
+        }
+
+        const target = new RegExp(String.raw`var\(\s*--${variable.name}\s*[,)]`);
+        const sure = base.dark !== undefined && target.test(base.dark.value);
+        const shade =
+            at === words.length - 1 &&
+            [...map.values()].some(
+                (other) =>
+                    /^(?:light|main|base|default)$/.test(
+                        plain(other.name).slice(words.slice(0, at).join("-").length + 1),
+                    ) && plain(other.name).startsWith(`${words.slice(0, at).join("-")}-`),
+            );
+
+        if (sure || !shade) {
+            pairs.push({ twin: variable, base, sure });
+        }
+    }
+
+    if (pairs.length < 3 && !pairs.some((pair) => pair.sure)) {
+        return;
+    }
+
+    for (const { twin, base } of pairs) {
+        base.dark ??= { ...twin.light!, scope: alt };
+        twin.twin = true;
+    }
+}
+
+/**
+ * `bodyLight`/`bodyDark`, `text-light`/`text-dark`: two variables, one for each mode, with no plain variable between
+ * them, are one variable with two values. Two such pairs make a scheme.
+ */
+function pairModeSuffixes(map: Map<string, Variable>, alt: "dark" | "light"): void {
+    const ends = alt === "dark" ? (["light", "dark"] as const) : (["dark", "light"] as const);
+    const stems = new Map<string, { first?: Variable; second?: Variable }>();
+
+    for (const variable of map.values()) {
+        const words = kebab(variable.name).split("-");
+        const last = words.at(-1);
+
+        if (
+            (last !== ends[0] && last !== ends[1]) ||
+            words.length < 2 ||
+            variable.light === undefined ||
+            variable.twin === true
+        ) {
+            continue;
+        }
+
+        const stem = `${variable.kind}:${variable.hint ?? ""}:${words.slice(0, -1).join("-")}`;
+        const pair = stems.get(stem) ?? {};
+
+        pair[last === ends[0] ? "first" : "second"] = variable;
+        stems.set(stem, pair);
+    }
+
+    const complete = [...stems].filter(
+        ([, pair]) => pair.first !== undefined && pair.second !== undefined,
+    );
+
+    if (complete.length < 2) {
+        return;
+    }
+
+    for (const [key, { first, second }] of complete) {
+        const name = key.split(":").slice(2).join(":");
+
+        if (map.has(`${first!.kind}:${first!.hint ?? ""}:${name}`)) {
+            continue;
+        }
+
+        const merged: Variable = {
+            name,
+            kind: first!.kind,
+            light: first!.light,
+            dark: { ...second!.light!, scope: alt },
+            ...(first!.hint === undefined ? {} : { hint: first!.hint }),
+        };
+
+        first!.twin = true;
+        second!.twin = true;
+        map.set(vkey(merged), merged);
+    }
+}
+
+/**
+ * A custom property that a project sets only in the other mode (`[data-bs-theme="dark"] { --bs-body-bg: #16181d }`) is the
+ * other mode's value of the Sass or Less variable of the same name (`$body-bg`), which holds the default.
+ */
+function pairSassNames(map: Map<string, Variable>, alt: "dark" | "light"): void {
+    const plain = (name: string) =>
+        kebab(name).replace(/^(?:bs|ifm|sl|mui|ant|chakra|mantine|pico|vt)-/, "");
+    const preprocessed = new Map<string, Variable>();
+
+    for (const variable of map.values()) {
+        if (variable.kind === "scss" || variable.kind === "less") {
+            preprocessed.set(plain(variable.name), variable);
+        }
+    }
+
+    for (const variable of map.values()) {
+        if (
+            (variable.kind === "css" || variable.kind === "theme") &&
+            variable.light === undefined
+        ) {
+            const base = preprocessed.get(plain(variable.name));
+
+            if (base !== undefined && base.dark === undefined && variable.dark !== undefined) {
+                base.dark = { ...variable.dark, scope: alt };
+                variable.twin = true;
+            }
+        }
+    }
 }
 
 /** A variable's value with its references followed. `via` is the variable it points at first. */
@@ -327,7 +492,11 @@ const FONT_WORDS =
     /sans-serif|serif|monospace|system-ui|ui-sans-serif|ui-monospace|ui-serif|cursive/i;
 
 /** What a variable holds, from where it is set, its value, and then its name. */
-function categorize(variable: Variable, text: string): Category | undefined {
+function categorize(
+    variable: Variable,
+    text: string,
+    layouts?: Facts["varLayout"],
+): Category | undefined {
     if (variable.hint !== undefined) {
         return variable.hint;
     }
@@ -342,7 +511,12 @@ function categorize(variable: Variable, text: string): Category | undefined {
     if (
         channelColor(text, name) !== undefined ||
         parseColor(text) !== undefined ||
-        /^color-mix\(/i.test(text)
+        /^color-mix\(/i.test(text) ||
+        // Sass and Less color functions over a variable: `rgba($black, .87)`, `darken($brand, 10%)`.
+        (variable.kind !== "css" &&
+            variable.kind !== "theme" &&
+            /^([a-z][a-z-]*)\(\s*[$@\w#]/i.test(text) &&
+            SASS_COLOR.has(/^([a-z][a-z-]*)/i.exec(text)![1]!.toLowerCase()))
     ) {
         return "color";
     }
@@ -403,8 +577,36 @@ function categorize(variable: Variable, text: string): Category | undefined {
             return "space";
         }
 
-        if (/font-size|^text-|-text-|^fs-|^type-|(?:^|-)step-\d/.test(name)) {
+        // A line height written as a length is not a size.
+        if (/line-height|leading|(?:^|-)lh$/.test(name)) {
+            return undefined;
+        }
+
+        if (/font-size|typescale|type-scale|^text-|-text-|^fs-|^type-|(?:^|-)step-\d/.test(name)) {
             return px(text) !== undefined && px(text)! >= 8 && px(text)! <= 160 ? "text" : "size";
+        }
+
+        // A length with a neutral name (`--size-4`) is what the properties that take it say it is.
+        // The numbered family decides (`--size-1` to `--size-8`), since not every step is used.
+        const stem = (each: string) => each.replace(/[-_]?\d+$/, "");
+        const layout = { space: 0, text: 0, radius: 0, box: 0 };
+
+        for (const [each, counts] of layouts ?? []) {
+            if (
+                each === variable.name ||
+                (/\d$/.test(variable.name) && stem(each) === stem(variable.name))
+            ) {
+                layout.space += counts.space;
+                layout.text += counts.text;
+                layout.radius += counts.radius;
+                layout.box += counts.box;
+            }
+        }
+
+        const most = Math.max(layout.space, layout.text, layout.radius, layout.box);
+
+        if (most > 0 && layout.box < most) {
+            return layout.space === most ? "space" : layout.radius === most ? "radius" : "text";
         }
 
         return "size";
@@ -702,6 +904,8 @@ interface Prepared {
     classified: Classified[];
     /** The other mode: `dark` in most projects, `light` in a dark-first one. */
     alt: "dark" | "light";
+    /** Colors kept for the other mode under names of their own (`$dark-text`), as the roles they stand for. */
+    others: { role: string; entry: Classified }[];
 }
 
 /**
@@ -720,6 +924,50 @@ function evalColor(
 
     if (direct !== undefined || depth > 6) {
         return direct;
+    }
+
+    // A Sass or Less variable (`$black`, `v.$dark-text`, `@primary`).
+    const sassVar = /^(?:[\w-]+\.)?[$@]([\w-]+)$/.exec(trimmed);
+
+    if (sassVar !== null) {
+        const target = index.get(`scss:${sassVar[1]}`) ?? index.get(`less:${sassVar[1]}`);
+
+        // Bootstrap and Sass libraries define these; a project that imports them does not repeat them.
+        if (target === undefined && (sassVar[1] === "black" || sassVar[1] === "white")) {
+            return parseColor(sassVar[1]);
+        }
+
+        const value = (
+            mode === "dark" ? (target?.dark ?? target?.light) : (target?.light ?? target?.dark)
+        )?.value;
+
+        return value === undefined
+            ? undefined
+            : evalColor(value, sassVar[1]!, mode, index, depth + 1);
+    }
+
+    const call = /^([a-z][a-z-]*)\(([\s\S]*)\)$/i.exec(trimmed);
+
+    if (call !== null && SASS_COLOR.has(call[1]!.toLowerCase())) {
+        const args = commaParts(call[2]!);
+        const color =
+            args[0] === undefined ? undefined : evalColor(args[0], name, mode, index, depth + 1);
+
+        const amount = (text: string | undefined) => {
+            const match = /^(-?\d*\.?\d+)(%?)$/.exec((text ?? "").trim());
+
+            return match === null
+                ? undefined
+                : match[2] === "%"
+                  ? Number(match[1]) / 100
+                  : Number(match[1]);
+        };
+
+        if (color !== undefined) {
+            return sassColor(call[1]!.toLowerCase(), color, args.slice(1), amount, (arg) =>
+                evalColor(arg, name, mode, index, depth + 1),
+            );
+        }
     }
 
     const reference = /^var\(\s*--([\w-]+)\s*(?:,\s*([\s\S]+))?\)$/.exec(trimmed);
@@ -768,6 +1016,170 @@ function evalColor(
         : mixColors(mix[1]!.toLowerCase(), operands[0], operands[1]);
 }
 
+const SASS_COLOR = new Set([
+    "rgba",
+    "rgb",
+    "darken",
+    "lighten",
+    "saturate",
+    "desaturate",
+    "fade-in",
+    "fade-out",
+    "transparentize",
+    "opacify",
+    "mix",
+    "tint-color",
+    "shade-color",
+    "shift-color",
+    "adjust-hue",
+]);
+
+const clamp = (value: number, low = 0, high = 1) => Math.min(high, Math.max(low, value));
+
+/** HSL of an sRGB color: hue in degrees, saturation and lightness 0 to 1. */
+function toHsl({ r, g, b }: Rgba): [number, number, number] {
+    const [x, y, z] = [r, g, b];
+    const high = Math.max(x, y, z);
+    const low = Math.min(x, y, z);
+    const lightness = (high + low) / 2;
+    const delta = high - low;
+
+    if (delta === 0) {
+        return [0, 0, lightness];
+    }
+
+    const saturation = delta / (1 - Math.abs(2 * lightness - 1));
+    const hue =
+        high === x ? ((y - z) / delta) % 6 : high === y ? (z - x) / delta + 2 : (x - y) / delta + 4;
+
+    return [(hue * 60 + 360) % 360, saturation, lightness];
+}
+
+function fromHsl(hue: number, saturation: number, lightness: number, a: number): Rgba {
+    const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+    const h = (((hue % 360) + 360) % 360) / 60;
+    const second = chroma * (1 - Math.abs((h % 2) - 1));
+    const [r, g, b] =
+        h < 1
+            ? [chroma, second, 0]
+            : h < 2
+              ? [second, chroma, 0]
+              : h < 3
+                ? [0, chroma, second]
+                : h < 4
+                  ? [0, second, chroma]
+                  : h < 5
+                    ? [second, 0, chroma]
+                    : [chroma, 0, second];
+    const offset = lightness - chroma / 2;
+
+    return { r: r + offset, g: g + offset, b: b + offset, a };
+}
+
+/** The Sass color functions that change one color or mix two (`rgba($c, .5)`, `darken($c, 10%)`, `mix(a, b, 30%)`). */
+function sassColor(
+    fn: string,
+    color: Rgba,
+    rest: string[],
+    amount: (text: string | undefined) => number | undefined,
+    other: (text: string) => Rgba | undefined,
+): Rgba | undefined {
+    const value = amount(rest[0]);
+    const mixWith = (target: Rgba, weight: number): Rgba => ({
+        r: color.r * weight + target.r * (1 - weight),
+        g: color.g * weight + target.g * (1 - weight),
+        b: color.b * weight + target.b * (1 - weight),
+        a: color.a * weight + target.a * (1 - weight),
+    });
+    const [hue, saturation, lightness] = toHsl(color);
+
+    switch (fn) {
+        case "rgba":
+        case "rgb":
+            return value === undefined ? undefined : { ...color, a: clamp(value) };
+
+        case "fade-in":
+        case "opacify":
+            return value === undefined ? undefined : { ...color, a: clamp(color.a + value) };
+
+        case "fade-out":
+        case "transparentize":
+            return value === undefined ? undefined : { ...color, a: clamp(color.a - value) };
+
+        case "darken":
+            return value === undefined
+                ? undefined
+                : fromHsl(hue, saturation, clamp(lightness - value), color.a);
+
+        case "lighten":
+            return value === undefined
+                ? undefined
+                : fromHsl(hue, saturation, clamp(lightness + value), color.a);
+
+        case "saturate":
+            return value === undefined
+                ? undefined
+                : fromHsl(hue, clamp(saturation + value), lightness, color.a);
+
+        case "desaturate":
+            return value === undefined
+                ? undefined
+                : fromHsl(hue, clamp(saturation - value), lightness, color.a);
+
+        case "adjust-hue":
+            return value === undefined
+                ? undefined
+                : fromHsl(
+                      hue + value * (rest[0]?.includes("%") ? 1 : 1),
+                      saturation,
+                      lightness,
+                      color.a,
+                  );
+
+        case "mix": {
+            const second = rest[0] === undefined ? undefined : other(rest[0]);
+            const weight = rest[1] === undefined ? 0.5 : amount(rest[1]);
+
+            return second === undefined || weight === undefined
+                ? undefined
+                : mixWith(second, clamp(weight));
+        }
+
+        // Bootstrap: `tint-color($c, 20%)` mixes in white, `shade-color($c, 20%)` mixes in black.
+        case "tint-color":
+            return value === undefined
+                ? undefined
+                : fromMix(color, { r: 1, g: 1, b: 1, a: 1 }, value);
+
+        case "shade-color":
+            return value === undefined
+                ? undefined
+                : fromMix(color, { r: 0, g: 0, b: 0, a: 1 }, value);
+
+        case "shift-color":
+            return value === undefined
+                ? undefined
+                : value >= 0
+                  ? fromMix(color, { r: 0, g: 0, b: 0, a: 1 }, value)
+                  : fromMix(color, { r: 1, g: 1, b: 1, a: 1 }, -value);
+
+        default:
+            return undefined;
+    }
+}
+
+/** `weight` of `target` mixed into `color` (Bootstrap's `mix($target, $color, $weight)`). */
+function fromMix(color: Rgba, target: Rgba, weight: number): Rgba {
+    const w = clamp(weight);
+
+    return {
+        r: target.r * w + color.r * (1 - w),
+        g: target.g * w + color.g * (1 - w),
+        b: target.b * w + color.b * (1 - w),
+        a: color.a,
+    };
+}
+
 /** Sorts the project's variables into categories and reads their values in both modes. */
 function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
     const all = variables(facts, alt);
@@ -785,13 +1197,28 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
     const classified: Classified[] = [];
 
     for (const variable of all) {
-        // `--text-hero--line-height` belongs to `--text-hero`; it is not a token of its own.
-        if (variable.name.includes("--")) {
+        // `--text-hero--line-height` belongs to `--text-hero`; it is not a token of its own. A variable that holds the
+        // other mode's value of another one (`--dark-bg`) is not either.
+        if (variable.name.includes("--") || variable.twin === true) {
             continue;
         }
 
-        const light = follow(index, variable, "light");
-        const dark = variable.dark === undefined ? undefined : follow(index, variable, "dark");
+        const fluid = (found: { text: string; via?: Variable } | undefined) => {
+            if (found === undefined) {
+                return found;
+            }
+
+            const text = sassColors(found.text, index);
+            const clamp = /^clamp\(\s*([^,()]+),/i.exec(text.trim());
+
+            return clamp === null || px(clamp[1]!) === undefined
+                ? { ...found, text }
+                : { ...found, text: clamp[1]!.trim() };
+        };
+
+        const light = fluid(follow(index, variable, "light"));
+        const dark =
+            variable.dark === undefined ? undefined : fluid(follow(index, variable, "dark"));
         const sample = light?.text ?? dark?.text;
 
         if (
@@ -801,7 +1228,7 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
             continue;
         }
 
-        const category = categorize(variable, sample);
+        const category = categorize(variable, sample, facts.varLayout);
 
         if (category === undefined) {
             continue;
@@ -844,7 +1271,42 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
         classified.push(entry);
     }
 
-    return { index, classified, alt };
+    // `$dark-background`, `$dark-text-muted`: when a project keeps a few colors for the other mode under names that are
+    // roles with a mode word before them, they are that mode's roles, not colors of their own. (`$dark-blue` is a shade.)
+    const mode = alt === "dark" ? /^(?:dark|night)$/ : /^(?:light|day)$/;
+    const loose = classified.flatMap((entry) => {
+        const parts = kebab(entry.variable.name)
+            .replace(/^(?:color|colour|clr)-/, "")
+            .split("-");
+        const at = parts.findIndex((part) => mode.test(part));
+        const rest = parts.filter((_, index) => index !== at);
+        const role =
+            entry.category === "color" && at !== -1 && rest.length > 0
+                ? (["background", "surface", "text", "muted", "border"] as const).find(
+                      (each) => nameScore(each, words(rest.join("-"))) >= 60,
+                  )
+                : undefined;
+
+        return role === undefined ? [] : [{ role, entry, rest: rest.join("-") }];
+    });
+    const others: Prepared["others"] = [];
+
+    // A project that sets the other mode's values on its variables already has that mode (`--color-text` in the dark scope).
+    const sets = facts.vars.some((fact) => fact.scope === alt);
+
+    if (!sets && loose.length >= 2 && new Set(loose.map((item) => item.role)).size >= 2) {
+        for (const item of loose) {
+            others.push({ role: item.rest, entry: item.entry });
+            item.entry.variable.twin = true;
+        }
+    }
+
+    return {
+        index,
+        classified: classified.filter((entry) => entry.variable.twin !== true),
+        alt,
+        others,
+    };
 }
 
 /** Whether the project's page background (in the default scope) is dark. */
@@ -895,20 +1357,87 @@ function useDefaultColors(facts: Facts): void {
     }
 }
 
+/** Sass color functions in a value, over variables or colors, as the colors they come to: `rgba($black, .2)` is `rgba(0, 0, 0, 0.2)`. */
+function sassColors(text: string, index: Map<string, Variable>): string {
+    if (!/[a-z]\(/i.test(text)) {
+        return text;
+    }
+
+    return text.replace(
+        /(?<![\w-])([a-z][a-z-]*)\(((?:[^()]|\([^()]*\))*)\)/gi,
+        (all, fn: string, args: string) => {
+            // Plain CSS `rgba(0, 0, 0, .2)` is a color already.
+            if (!SASS_COLOR.has(fn.toLowerCase()) || parseColor(all) !== undefined) {
+                return all;
+            }
+
+            const color = evalColor(all, "", "light", index);
+
+            return color === undefined || args === ""
+                ? all
+                : `rgba(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)}, ${Math.round(color.a * 100) / 100})`;
+        },
+    );
+}
+
+/**
+ * A rule that sets one color on one class (`.text-gray-900 { color: #111827 }`) is a use for each time markup uses the
+ * class: the definition counted once, the rest are added here.
+ */
+function weighClassRules(facts: Facts): void {
+    for (const [key, rule] of facts.classRules) {
+        const [name] = key.split("|") as [string];
+        const count = (facts.classCount.get(name) ?? 0) - 1;
+
+        for (const [hex, map] of [
+            [rule.light, facts.colors],
+            [rule.dark, facts.darkColors],
+        ] as const) {
+            const fact = hex === undefined ? undefined : map.get(hex);
+
+            // A class on the page's own `<body>` or `<html>` styles the whole page.
+            if (fact !== undefined && facts.rootClasses.has(name)) {
+                fact[rule.kind === "bg" ? "root" : "body"] += rule.kind === "border" ? 0 : 1;
+                fact[rule.kind] += rule.kind === "text" ? 2 : 0;
+            }
+
+            if (fact !== undefined && count > 0) {
+                // Text is mostly set on the page, not by classes: a class adds to a text color a little.
+                fact[rule.kind] +=
+                    rule.kind === "bg" ? Math.min(count, 6) : rule.kind === "text" ? 1 : 0;
+            }
+        }
+    }
+}
+
 /** Sizes computed from custom properties (`padding: calc(var(--gap) * 2)`) are uses of the sizes they come to. */
 function resolveDeferred(facts: Facts, prep: Prepared): void {
+    const lookup = (name: string, kind: "scss" | "less" | "css") => {
+        const target = prep.index.get(`${kind}:${name}`);
+
+        return target === undefined ? undefined : follow(prep.index, target, "light")?.text;
+    };
+
     for (const { prop, value, selector } of facts.deferred.splice(0)) {
-        const resolved = value.replace(/calc\(((?:[^()]|\([^()]*\))*)\)/g, (all, inner: string) => {
-            const math = evalMath(inner, (name, kind) => {
-                const target = prep.index.get(`${kind}:${name}`);
-
-                return target === undefined ? undefined : follow(prep.index, target, "light")?.text;
-            });
-
-            return math ?? all;
+        let resolved = value.replace(/calc\(((?:[^()]|\([^()]*\))*)\)/g, (all, inner: string) => {
+            return evalMath(inner, lookup) ?? all;
         });
 
-        if (!/calc\(|var\(/.test(resolved)) {
+        // Sass color functions over variables: `rgba($black, .2)`, `darken($brand, 10%)`, `tint-color(#c5221f, 88%)`.
+        resolved = sassColors(resolved, prep.index);
+
+        // Arithmetic on lengths: `$unit * 2`, `$unit / 2`, `($a + 4px)`.
+        resolved = resolved.replace(
+            /(?:[$@][\w-]+|\d*\.?\d+[a-z%]*)(?:\s*[*/]\s*(?:[$@][\w-]+|\d*\.?\d+[a-z%]*)|\s+[+-]\s+(?:[$@][\w-]+|\d*\.?\d+[a-z%]*))+/g,
+            (run) => evalMath(run, lookup) ?? run,
+        );
+
+        // A variable left on its own is its value.
+        resolved = resolved.replace(/(?:[\w-]+\.)?[$@]([A-Za-z_][\w-]*)/g, (all, name: string) => {
+            return lookup(name, "scss") ?? lookup(name, "less") ?? all;
+        });
+
+        if (!/calc\(|var\(|(?<![\w-])[$@][A-Za-z_]/.test(resolved)) {
             ingest(facts, {
                 prop,
                 value: resolved,
@@ -996,13 +1525,21 @@ export function infer(facts: Facts, folder: string): Inferred {
 
         return hex === undefined ? [] : [{ hex, text: entry.lightColor! }];
     });
-    const darkDefined = colorVars.flatMap((entry) => {
-        const hex = hexOf(entry.darkColor);
+    const darkDefined = [
+        ...colorVars.flatMap((entry) => {
+            const hex = hexOf(entry.darkColor);
 
-        return hex === undefined ? [] : [{ hex, text: entry.darkColor! }];
-    });
+            return hex === undefined ? [] : [{ hex, text: entry.darkColor! }];
+        }),
+        ...prep.others.flatMap(({ entry }) => {
+            const hex = hexOf(entry.lightColor);
+
+            return hex === undefined ? [] : [{ hex, text: entry.lightColor! }];
+        }),
+    ];
 
     useDefaultColors(facts);
+    weighClassRules(facts);
 
     const lightColors = mergeColors(lightDefined, facts.colors);
     const darkColors = mergeColors(darkDefined, alt === "dark" ? facts.darkColors : new Map());
@@ -1021,13 +1558,20 @@ export function infer(facts: Facts, folder: string): Inferred {
                   },
               ];
     });
-    const namedDark = colorVars.flatMap((entry) => {
-        const hex = hexOf(entry.darkColor);
+    const namedDark = [
+        ...colorVars.flatMap((entry) => {
+            const hex = hexOf(entry.darkColor);
 
-        return hex === undefined
-            ? []
-            : [{ name: entry.variable.name, hex, uses: uses(entry.variable) }];
-    });
+            return hex === undefined
+                ? []
+                : [{ name: entry.variable.name, hex, uses: uses(entry.variable) }];
+        }),
+        ...prep.others.flatMap(({ role, entry }) => {
+            const hex = hexOf(entry.lightColor);
+
+            return hex === undefined ? [] : [{ name: role, hex, uses: uses(entry.variable) }];
+        }),
+    ];
 
     for (const each of namedLight) {
         const entry = lightColors.get(each.hex);
@@ -1060,7 +1604,8 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     const hasDarkVars = classified.some((entry) => entry.variable.dark !== undefined);
 
-    result.hasDark = hasDarkVars || (alt === "dark" && facts.darkColors.size > 0);
+    result.hasDark =
+        hasDarkVars || prep.others.length > 0 || (alt === "dark" && facts.darkColors.size > 0);
 
     // Names paired with the light roles first: the same variable's dark value is the dark role.
     const darkRoles: Partial<Record<RoleName, RoleChoice>> = result.hasDark
@@ -1103,6 +1648,41 @@ export function infer(facts: Facts, folder: string): Inferred {
                 source: holder.variable.name,
                 score: choice.score,
             };
+        }
+    }
+
+    // A class that has a color in each mode (`.text-gray-900` and `.dark .text-gray-900`) pairs the two: the dark color of
+    // the role's class is the role's dark color.
+    if (result.hasDark) {
+        const kindOf: Partial<Record<RoleName, "bg" | "text" | "border">> = {
+            background: "bg",
+            surface: "bg",
+            text: "text",
+            muted: "text",
+            border: "border",
+            accent: "text",
+        };
+
+        for (const [role, choice] of Object.entries(lightRoles) as [RoleName, RoleChoice][]) {
+            const kind = kindOf[role];
+            const pair = [...facts.classRules.values()].find(
+                (rule) =>
+                    rule.kind === kind &&
+                    rule.light !== undefined &&
+                    rule.dark !== undefined &&
+                    rule.light === choice.hex &&
+                    rule.dark !== choice.hex,
+            );
+
+            if (pair !== undefined && darkRoles[role]?.basis !== "name") {
+                darkRoles[role] = {
+                    role,
+                    hex: pair.dark!,
+                    basis: "use",
+                    source: "the same class in the dark mode",
+                    score: choice.score,
+                };
+            }
         }
     }
 
@@ -1218,7 +1798,12 @@ export function infer(facts: Facts, folder: string): Inferred {
     const pendingDark: { path: string[]; hex: string }[] = [];
     // The light color each color token holds, so that two files that name one token agree on which color it is.
     const lightHexOf = new Map<string, string>();
-    const lightAlias = (hex: string) => `{${palette(hex, asValue(hex, lightColors)).join(".")}}`;
+    // The default-mode colors that a dark-first project keeps on its roles as they are, so the palette skips them.
+    const changing = new Set<string>();
+    const lightAlias = (hex: string) =>
+        changing.has(hex)
+            ? asValue(hex, lightColors)
+            : `{${palette(hex, asValue(hex, lightColors)).join(".")}}`;
 
     for (const role of Object.keys(ROLE_PATHS) as RoleName[]) {
         const light = lightRoles[role];
@@ -1229,6 +1814,14 @@ export function infer(facts: Facts, folder: string): Inferred {
 
         const path = ROLE_PATHS[role];
         const dark = darkRoles[role];
+        // A dark-first project keeps the colors that change as they are in the default mode: its light mode is the file
+        // that changes them, and a palette of dark-only grays would show up in the light mode.
+        const changes = dark !== undefined && dark.hex !== light.hex;
+
+        if (alt === "light" && changes) {
+            changing.add(light.hex);
+        }
+
         const node: Obj = { $value: lightAlias(light.hex), $type: "color" };
 
         const source = colorVars.find((entry) => entry.variable.name === light.source);
@@ -1266,10 +1859,33 @@ export function infer(facts: Facts, folder: string): Inferred {
         const poolOf = (
             roles: Partial<Record<RoleName, RoleChoice>>,
             entries: Map<string, ColorEntry>,
-        ) =>
-            [roles.background?.hex, roles.text?.hex, "#ffffff", "#000000"].filter(
-                (hex): hex is string => hex !== undefined && entries.has(hex),
+        ) => {
+            const given = new Set(
+                Object.values(roles)
+                    .map((role) => role?.hex)
+                    .filter((hex): hex is string => hex !== undefined),
             );
+            // A gray that the mode uses only as text (a dark label on a light button) is a color the project has too.
+            const labels = [...entries.values()]
+                .filter(
+                    (each) =>
+                        !given.has(each.hex) &&
+                        each.c < 0.06 &&
+                        each.rgba.a > 0.9 &&
+                        (each.fact?.text ?? 0) > 0 &&
+                        (each.fact?.bg ?? 0) === 0 &&
+                        (each.fact?.border ?? 0) === 0,
+                )
+                .map((each) => each.hex);
+
+            return [
+                ...[roles.background?.hex, roles.text?.hex, "#ffffff", "#000000"].filter(
+                    (hex): hex is string => hex !== undefined && entries.has(hex),
+                ),
+                ...labels,
+            ];
+        };
+
         // White is what a project already puts on its accent when it uses white as a text color and it reads well enough.
         const whiteText =
             (facts.colors.get("#ffffff")?.text ?? 0) > 0 && lightColors.has("#ffffff");
@@ -1301,7 +1917,7 @@ export function infer(facts: Facts, folder: string): Inferred {
 
         if (onLight !== undefined) {
             book.add(path, {
-                $value: `{${palette(onLight, asValue(onLight, lightColors)).join(".")}}`,
+                $value: lightAlias(onLight),
                 $type: "color",
             });
         }
@@ -1324,6 +1940,7 @@ export function infer(facts: Facts, folder: string): Inferred {
         [...lightColors.values()].filter(
             (entry) =>
                 !hexPath.has(entry.hex) &&
+                !changing.has(entry.hex) &&
                 entry.rgba.a > 0.05 &&
                 entry.uses >= 1 &&
                 known.every((other) => !nearColors(other, entry)),
@@ -1337,11 +1954,14 @@ export function infer(facts: Facts, folder: string): Inferred {
     }
 
     // The rest of the project's own color variables, under their own names, as aliases of the palette.
+    const roleNames = new Set([...roleVars].map(kebab));
     const rest = classified.filter(
         (entry) =>
             entry.category === "color" &&
             !scaleVars.has(entry) &&
-            !roleVars.has(entry.variable.name),
+            !roleVars.has(entry.variable.name) &&
+            // The same variable from another file (`inkSubtle` in a theme, `--ink-subtle` in a stylesheet).
+            !roleNames.has(kebab(entry.variable.name)),
     );
 
     for (const entry of topBy(rest, (each) => uses(each.variable) + 0.01, 40)) {

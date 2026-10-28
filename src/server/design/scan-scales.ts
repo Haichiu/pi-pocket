@@ -233,11 +233,41 @@ export function fontScale(
             !entry.path[1]!.startsWith("body"),
     );
 
+    const kindOf = (stack: string[]) =>
+        stack.some((name) => /mono|code|courier|consolas|menlo|monaco/i.test(name)) ||
+        stack.includes("monospace")
+            ? "mono"
+            : stack.includes("serif") && !stack.includes("sans-serif")
+              ? "serif"
+              : "sans";
+
     for (const entry of named) {
         result.fonts[entry.path.join(".")] = (entry.node.$value as string[]).join(", ");
     }
 
     if (explicit.has("font")) {
+        // A monospace family the project uses in a rule while its named stacks have none.
+        const covered = new Set(
+            named.map((entry) => (entry.node.$value as string[])[0]?.toLowerCase()),
+        );
+
+        for (const fact of [...stacks].sort((a, b) => b.count - a.count).slice(0, 8)) {
+            const first = fact.stack[0]?.toLowerCase();
+            const kind = kindOf(fact.stack);
+
+            if (
+                first !== undefined &&
+                kind === "mono" &&
+                !covered.has(first) &&
+                !named.some((entry) => kindOf(entry.node.$value as string[]) === "mono") &&
+                !book.has(["font", kind])
+            ) {
+                book.add(["font", kind], { $value: fact.stack, $type: "fontFamily" });
+                result.fonts[`font.${kind}`] = fact.stack.join(", ");
+                covered.add(first);
+            }
+        }
+
         const sans = named.find((entry) => /sans|body|base|text/.test(entry.path[1]!)) ?? named[0];
         const heading = named.find((entry) => /heading|display|title/.test(entry.path[1]!));
 
@@ -259,13 +289,6 @@ export function fontScale(
         return;
     }
 
-    const kindOf = (stack: string[]) =>
-        stack.some((name) => /mono|code|courier|consolas|menlo|monaco/i.test(name)) ||
-        stack.includes("monospace")
-            ? "mono"
-            : stack.includes("serif") && !stack.includes("sans-serif")
-              ? "serif"
-              : "sans";
     const ranked = [...stacks].sort((a, b) => b.count - a.count);
     const used = new Map<string, FontPick>();
 

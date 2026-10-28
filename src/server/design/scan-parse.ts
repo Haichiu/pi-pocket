@@ -28,6 +28,8 @@ export interface Decl {
 }
 
 export const MAX_VALUE = 400;
+/** The most text of a Sass map. */
+export const MAX_MAP = 8000;
 
 /**
  * Comments hold notes (`fixes #123`) and old code, not the styles in use. Each becomes a line break. An unclosed comment
@@ -37,16 +39,16 @@ export const MAX_VALUE = 400;
 export const COMMENTS =
     /(?<![\w.*"'`/-])\/\*[\s\S]*?(?:\*\/|$)|<!--[\s\S]*?(?:-->|$)|(?<![:\w"'`(/\\])\/\/[^\n]*/g;
 
-const DARK_WORD = String.raw`(?:dark|dark-theme|dark-mode|dark-theme|theme-dark|night|nightmode)`;
-// A class or attribute that selects the dark theme: `.dark`, `[data-theme="dark"]`, `[data-bs-theme=dark]`...
-const DARK_PART = String.raw`(?:\.${DARK_WORD}\b|\[data-(?:bs-)?(?:theme|mode|color-mode|color-scheme|appearance)\s*[~|^$*]?=\s*["']?(?:dark|night)["']?\s*\])`;
+const DARK_WORD = String.raw`(?:dark|dark[-_]theme|dark[-_]mode|darkmode|dark[-_]scheme|theme[-_]{1,2}dark|mode[-_]{1,2}dark|scheme[-_]dark|color[-_]scheme[-_]dark|is[-_]dark|has[-_]dark|ui[-_]dark|app[-_]dark|body[-_]dark|v-theme--dark|chakra-ui-dark|ant-dark|night|night[-_]mode|nightmode|theme[-_]night)`;
+// A class or attribute that selects the dark theme: `.dark`, `[data-theme="dark"]`, `[data-mantine-color-scheme=dark]`...
+const DARK_PART = String.raw`(?:\.${DARK_WORD}(?![\w-])|\[(?:data-[\w-]*)?(?:theme|mode|color-mode|color-scheme|colorscheme|appearance|scheme)\s*[~|^$*]?=\s*["']?(?:dark|night|dark[-_]mode|darkmode)["']?\s*\])`;
 const DARK_ANY = new RegExp(DARK_PART, "i");
 // A root-like compound that ends in the dark class: `html.dark`, `:root[data-theme=dark]`, `body.dark`, `.dark`.
 const DARK_ROOT = new RegExp(
     String.raw`^(?:html|body|:root|\*|:host)?(?:${DARK_PART})+(?::root)?$`,
     "i",
 );
-const LIGHT_PART = String.raw`(?:\.(?:light|light-theme|light-mode|theme-light)\b|\[data-(?:bs-)?(?:theme|mode|color-mode|color-scheme|appearance)\s*[~|^$*]?=\s*["']?light["']?\s*\])`;
+const LIGHT_PART = String.raw`(?:\.(?:light|light[-_]theme|light[-_]mode|lightmode|theme[-_]{1,2}light|mode[-_]{1,2}light|scheme[-_]light|v-theme--light|chakra-ui-light|ant-light|day|day[-_]mode)(?![\w-])|\[(?:data-[\w-]*)?(?:theme|mode|color-mode|color-scheme|colorscheme|appearance|scheme)\s*[~|^$*]?=\s*["']?(?:light|day)["']?\s*\])`;
 // A root-like compound that ends in the light class: `:root[data-mode="light"]`, `html.light`, `.light`.
 const LIGHT_ROOT = new RegExp(
     String.raw`^(?:html|body|:root|\*|:host)?(?:${LIGHT_PART})+(?::root)?$`,
@@ -125,6 +127,10 @@ export const stripComments = (text: string) => text.replace(COMMENTS, "\n");
  */
 export function parseStyles(source: string): Decl[] {
     const text = stripComments(source);
+    // `@custom-media --dark (prefers-color-scheme: dark);` names a query: `@media (--dark)` is the dark mode's.
+    const darkQueries = [
+        ...text.matchAll(/@custom-media\s+(--[\w-]+)\s+[^;{}]*prefers-color-scheme\s*:\s*dark/gi),
+    ].map((match) => match[1]!);
     const decls: Decl[] = [];
     // One entry per open block: its prelude, and the selector it resolves to.
     const stack: { prelude: string; selector: string }[] = [];
@@ -161,13 +167,22 @@ export function parseStyles(source: string): Decl[] {
         const prop = match[1]!;
         const value = match[2]!.replace(/\s*!(?:important|default|global)\s*$/i, "").trim();
         const at = chain().filter((part) => part.startsWith("@"));
-        const dark = at.some((part) => /^@media\b[^{]*prefers-color-scheme\s*:\s*dark/i.test(part));
+        const dark = at.some(
+            (part) =>
+                /^@media\b[^{]*prefers-color-scheme\s*:\s*dark/i.test(part) ||
+                (/^@media\b/i.test(part) &&
+                    darkQueries.some((name) => new RegExp(`\\(\\s*${name}\\s*\\)`).test(part))),
+        );
         const here = selector();
         const theme = at.some((part) => /^@theme\b/i.test(part));
 
         decls.push({
             prop: prop.startsWith("--") || /^[$@]/.test(prop) ? prop : prop.toLowerCase(),
-            value: value.slice(0, MAX_VALUE),
+            // A Sass map (`$themes: (light: (…), dark: (…))`) is long: it is read whole.
+            value: value.slice(
+                0,
+                prop.startsWith("$") && value.startsWith("(") ? MAX_MAP : MAX_VALUE,
+            ),
             selector: here,
             at,
             theme,
@@ -213,7 +228,12 @@ export function parseStyles(source: string): Decl[] {
                 return decls;
             }
 
-            const prelude = buffer.trim().replace(/\s+/g, " ");
+            // Svelte, Vue and CSS Modules wrap selectors: `:global(:root)`, `:global(.dark)`, `:deep(.x)`, `:local(.x)`.
+            const prelude = buffer
+                .trim()
+                .replace(/\s+/g, " ")
+                .replace(/:(?:global|local|deep)\(((?:[^()]|\([^()]*\))*)\)/g, "$1")
+                .replace(/^:global\s+/, "");
 
             buffer = "";
 
@@ -240,7 +260,7 @@ export function parseStyles(source: string): Decl[] {
             buffer += char;
         }
 
-        if (buffer.length > 4000) {
+        if (buffer.length > (buffer.trimStart().startsWith("$") ? MAX_MAP * 2 : 4000)) {
             // A statement this long is not a declaration: drop it rather than grow without bound.
             buffer = buffer.slice(-2000);
         }
@@ -393,7 +413,11 @@ export type Literal =
  * be bare or quoted; values may be strings, numbers, nested literals, or something it cannot know (then `UNKNOWN`, and
  * it skips to the next comma). Bounded by depth and node count. Returns undefined if `start` is not a literal.
  */
-export function readLiteral(text: string, start: number): Literal | undefined {
+export function readLiteral(
+    text: string,
+    start: number,
+    env: ReadonlyMap<string, Literal> = new Map(),
+): Literal | undefined {
     let at = start;
     let nodes = 0;
 
@@ -557,6 +581,9 @@ export function readLiteral(text: string, start: number): Literal | undefined {
                     if (key !== "__proto__" && key !== "constructor" && key !== "prototype") {
                         out[key] = child;
                     }
+                } else if ((text[at] === "," || text[at] === "}") && env.has(key)) {
+                    // `{ brand, gray }`: the objects that the file declares above.
+                    out[key] = env.get(key)!;
                 } else {
                     // `{ shorthand }` or a method: not a value we can read.
                     skipValue();
@@ -630,6 +657,22 @@ export function readLiteral(text: string, start: number): Literal | undefined {
             at += word[0].length;
 
             return word[1] === "null" ? null : word[1] === "true";
+        }
+
+        // `key: brand`: an object that the file declares above.
+        const name = /^[A-Za-z_$][\w$]*/.exec(text.slice(at, at + 80));
+
+        if (name !== null && env.has(name[0])) {
+            const here = at;
+
+            at += name[0].length;
+            skip();
+
+            if (text[at] === "," || text[at] === "}" || text[at] === "]") {
+                return env.get(name[0])!;
+            }
+
+            at = here;
         }
 
         return skipValue();
@@ -707,7 +750,11 @@ export function colorsIn(value: string, named = false): FoundColor[] {
 
 /** A length in pixels, with its authored text: `1.5rem` is 24px at a 16px root. */
 export function px(text: string): number | undefined {
-    const match = /^(-?(?:\d+\.?\d*|\.\d+))(px|rem|em|pt)?$/i.exec(text.trim());
+    // `clamp(1rem, 0.9rem + 1vw, 1.5rem)` is a fluid size: its smallest value is the step.
+    const clamp = /^clamp\(\s*([^,()]+),/i.exec(text.trim());
+    const match = /^(-?(?:\d+\.?\d*|\.\d+))(px|rem|em|pt)?$/i.exec(
+        (clamp === null ? text : clamp[1]!).trim(),
+    );
 
     if (match === null) {
         return undefined;

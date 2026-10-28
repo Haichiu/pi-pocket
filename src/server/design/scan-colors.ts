@@ -212,6 +212,10 @@ export function merge(into: ColorFact | undefined, more: ColorFact, hex: string)
 export function words(name: string): string[] {
     const all = name
         .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+        // `font-color-base` (Infima) is the text color, not a font.
+        .replace(/font[-_]colou?r/gi, "text-color")
+        // `red9`, `gray12`: a name and its step.
+        .replace(/([a-z]{3,})(\d{1,3})(?![\d-])/gi, "$1-$2")
         .toLowerCase()
         .split(/[-_.\s]+/);
     // The prefixes of well-known libraries are no part of what a color is for (`--bs-body-bg`, `--ifm-color-primary`).
@@ -219,7 +223,7 @@ export function words(name: string): string[] {
         (word) =>
             word !== "" &&
             !w(
-                "color colour clr c theme tw ui sys md ref palette colors var bs ifm sl mui ant chakra mantine pico vt",
+                "color colour clr c theme tw ui sys md ref palette colors var bs ifm sl mui ant chakra mantine pico vt wp preset custom",
             ).includes(word),
     );
 
@@ -238,7 +242,7 @@ const STATE = new Set(
 );
 const SURFACEISH = new Set(
     w(
-        "surface card panel elevated raised container popover modal dialog sheet input button btn header footer nav navbar sidebar menu tooltip toast overlay code table row layer tile well",
+        "surface card panel elevated raised container popover modal dialog sheet input button btn header footer nav navbar sidebar menu tooltip toast overlay code table row layer tile well component",
     ),
 );
 const OTHER_ROLE = new Set(
@@ -304,7 +308,7 @@ export function nameScore(role: RoleName, segs: string[]): number {
             const named = has(
                 segs,
                 w(
-                    "surface card panel elevated raised container popover layer sheet tile well paper",
+                    "surface card panel elevated raised container popover layer sheet tile well paper component",
                 ),
             );
             const layered =
@@ -346,6 +350,10 @@ export function nameScore(role: RoleName, segs: string[]): number {
 
             if (
                 state ||
+                // `on-surface-variant` (Material 3) is the quieter text.
+                (onBase && segs.includes("variant")) ||
+                // `text-2`, `ink-3`: the second and third text colors are the quieter ones.
+                (ink && segs.some((seg) => /^[2-4]$/.test(seg))) ||
                 has(
                     segs,
                     w(
@@ -388,6 +396,14 @@ export function nameScore(role: RoleName, segs: string[]): number {
                 (weakAt >= 0 && inkAt >= 0 && inkAt < weakAt);
 
             if (
+                segs.includes("on") &&
+                segs.includes("variant") &&
+                has(segs, ["surface", "background", "bg"])
+            ) {
+                return 78;
+            }
+
+            if (
                 (state && !segs.includes("placeholder")) ||
                 has(
                     segs,
@@ -410,7 +426,16 @@ export function nameScore(role: RoleName, segs: string[]): number {
                 return 70;
             }
 
-            return segs.length === 1 && segs[0] === "muted" ? 45 : 0;
+            // A name that is only the word is the quiet text; `muted` alone is often a tint of the background (shadcn).
+            if (segs.length !== 1) {
+                return 0;
+            }
+
+            return segs[0] === "muted"
+                ? 45
+                : w("subtle faint dim quiet weak hint").includes(segs[0]!)
+                  ? 62
+                  : 0;
         }
 
         case "border": {
@@ -615,8 +640,23 @@ export function chooseRoles(
 
             let score = nameScore(role, segs);
 
+            // A color called `warn` that is red is the error color (Angular Material's `warn` palette).
+            if (role === "danger" && score === 0 && color.c >= 0.1 && hueOk("danger", color)) {
+                const asWarning = nameScore("warning", segs);
+
+                score = asWarning > 0 ? asWarning - 15 : 0;
+            }
+
             if (score === 0) {
                 continue;
+            }
+
+            // Of a palette's steps, the middle one is the color (`warn-500`).
+            if (
+                (role === "danger" || role === "warning" || role === "success") &&
+                segs.some((seg) => /^\d{3}$/.test(seg))
+            ) {
+                score += segs.includes("500") ? 8 : segs.includes("600") ? 5 : 0;
             }
 
             // Sanity from the color itself.
@@ -628,7 +668,11 @@ export function chooseRoles(
             }
 
             if (role === "accent") {
-                // A colored `accent` is the role's own name; a gray one (shadcn's hover surface) is not the brand.
+                // A color is the brand when it has a hue; a gray one (shadcn's hover surface) is not. How vivid it is only
+                // breaks a tie: a muted brand `primary` still beats a vivid `accent-1`.
+                score += color.c >= 0.03 ? 20 + Math.min(10, color.c * 40) : -10;
+
+                // The role's own word beats a synonym, among colors that have a hue.
                 if (
                     segs.includes("accent") &&
                     !segs.includes("primary") &&
@@ -638,7 +682,10 @@ export function chooseRoles(
                     score += 10;
                 }
 
-                score += Math.min(60, color.c * 400) - (color.c < 0.03 ? 10 : 0);
+                // `accent-1`, `accent-2`: one of a set, not the role.
+                if (segs.some((seg) => /^\d$/.test(seg))) {
+                    score -= 15;
+                }
 
                 // A long name that only holds a role word (`tooltipExternalLinkColor`) is not the brand.
                 const strangers = segs.filter(
@@ -815,7 +862,7 @@ export function chooseRoles(
         );
         const top = byUse(
             candidates,
-            (color) => (color.fact?.body ?? 0) * 3 + (color.fact?.text ?? 0),
+            (color) => (color.fact?.body ?? 0) * 6 + (color.fact?.text ?? 0),
         )[0];
 
         if (top !== undefined) {
@@ -839,7 +886,14 @@ export function chooseRoles(
                     ratio < contrastRatio(ink.rgba, page.rgba) - 0.5
                 );
             }),
-            (color) => color.fact?.text ?? 0,
+            // A quiet text is a gray: a tinted color (a light link color) is a weaker candidate than a gray.
+            // A quiet text is also clearly softer than the body text.
+            (color) =>
+                (color.fact?.text ?? 0) *
+                (color.c < 0.05 ? 1 : 0.3) *
+                (contrastRatio(color.rgba, page.rgba) <= contrastRatio(ink.rgba, page.rgba) * 0.7
+                    ? 1
+                    : 0.5),
         )[0];
 
         if (top !== undefined) {
@@ -868,8 +922,30 @@ export function chooseRoles(
     const chroma = entries.filter((color) => color.c >= 0.07 && color.rgba.a > 0.9);
 
     if (chosen.accent === undefined) {
+        const statusSingles = new Set(
+            chroma
+                .filter((color) => !used(color.hex) && color.uses <= 1 && color.c >= 0.1)
+                .flatMap((color) =>
+                    (["danger", "warning", "success"] as const).filter((role) =>
+                        hueOk(role, color),
+                    ),
+                ),
+        ).size;
         const top = byUse(
-            chroma.filter((color) => !used(color.hex)),
+            // Reds, oranges, and greens that are each used once (all of the statuses at once) are more likely the
+            // statuses than the brand.
+            chroma.filter(
+                (color) =>
+                    !used(color.hex) &&
+                    !(
+                        statusSingles >= 2 &&
+                        color.uses <= 1 &&
+                        color.c >= 0.1 &&
+                        (["danger", "warning", "success"] as const).some((role) =>
+                            hueOk(role, color),
+                        )
+                    ),
+            ),
             (color) =>
                 (color.fact?.bg ?? 0) * 1.4 +
                 (color.fact?.text ?? 0) +
