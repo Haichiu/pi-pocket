@@ -1,6 +1,7 @@
 /**
  * The Spacing, Radii, and Other sections of the documentation page. (Split from `docsite.ts`; see it for how the page is built and kept safe.)
  */
+import type { ResolvedToken } from "./system-types.ts";
 import { escapeHtml as esc } from "./docsite-markdown.ts";
 import {
     varOf,
@@ -39,12 +40,21 @@ export function spacingSection(ctx: Ctx): Built {
     }
 
     const parts: string[] = [];
+    // The bars share the width: the longest step fills a row, and the others are in proportion to it.
+    const spaceMax = Math.max(
+        ...space.map((token) => pxOf(valueIn(token, ctx.modes[0]!)?.value) ?? 0),
+        1,
+    );
 
     if (space.length > 0) {
         parts.push(
-            `<h3 id="spacing-steps">Steps</h3><p class="sub">The steps that padding, margins, and gaps move in.</p><div class="spec">${space
+            `<h3 id="spacing-steps">Steps</h3><p class="sub">The steps that padding, margins, and gaps move in. Each bar is in proportion to the longest step.</p><div class="spec cols">${space
                 .map((token) =>
-                    rowOf(ctx, token, `<div class="bar" style="width:${varOf(token, "0")}"></div>`),
+                    rowOf(
+                        ctx,
+                        token,
+                        `<div class="bar" style="width:${Math.max(1, Math.round(((pxOf(valueIn(token, ctx.modes[0]!)?.value) ?? 0) / spaceMax) * 100))}%"></div>`,
+                    ),
                 )
                 .join("")}</div>`,
         );
@@ -52,7 +62,7 @@ export function spacingSection(ctx: Ctx): Built {
 
     if (sizes.length > 0) {
         parts.push(
-            `<h3 id="sizes">Sizes</h3><p class="sub">Heights and widths for controls, icons, and marks.</p><div class="spec">${sizes
+            `<h3 id="sizes">Sizes</h3><p class="sub">Heights and widths for controls, icons, and marks.</p><div class="spec cols">${sizes
                 .map((token) =>
                     rowOf(
                         ctx,
@@ -91,18 +101,58 @@ export function radiiSection(ctx: Ctx): Built {
         ctx.claimed.add(token);
     }
 
+    // A pile of near-equal sizes reads better as the jobs they do: small marks, controls, containers, and round things.
+    const BANDS: { id: string; title: string; note: string; has: (px: number) => boolean }[] = [
+        {
+            id: "marks",
+            title: "Marks and tags",
+            note: "Up to 4 px: small things that sit inside text or a control.",
+            has: (px) => px <= 4,
+        },
+        {
+            id: "controls",
+            title: "Controls",
+            note: "5 to 7 px: buttons, fields, and rows, what a hand presses.",
+            has: (px) => px > 4 && px < 8,
+        },
+        {
+            id: "containers",
+            title: "Containers",
+            note: "8 px and more: cards, windows, sheets, and pop-ups, what holds other things.",
+            has: (px) => px >= 8 && px < 100,
+        },
+        {
+            id: "round",
+            title: "Round",
+            note: "Fully round: pills and avatars.",
+            has: (px) => px >= 100,
+        },
+    ];
+    const pxOfToken = (token: ResolvedToken) => pxOf(valueIn(token, ctx.modes[0]!)?.value) ?? 0;
+
+    const card = (token: ResolvedToken) => {
+        const value = variants(ctx, (mode) => esc(plain(token.type, valueIn(token, mode)?.value)));
+
+        return `<div class="radius" data-q="${esc(`${token.name} ${token.description ?? ""}`.toLowerCase())}"><div class="shape" style="border-radius:${varOf(token, "0")}"></div>${copyName(token)}<span class="desc mono">${value}</span>${token.description === undefined ? "" : `<span class="desc">${esc(token.description)}</span>`}</div>`;
+    };
+
+    const banded = BANDS.map((band) => ({
+        band,
+        tokens: radii
+            .filter((token) => band.has(pxOfToken(token)))
+            .sort((x, y) => pxOfToken(x) - pxOfToken(y)),
+    })).filter((entry) => entry.tokens.length > 0);
     const cards =
         radii.length === 0
             ? ""
-            : `<div class="radii">${radii
-                  .map((token) => {
-                      const value = variants(ctx, (mode) =>
-                          esc(plain(token.type, valueIn(token, mode)?.value)),
-                      );
-
-                      return `<div class="radius" data-q="${esc(`${token.name} ${token.description ?? ""}`.toLowerCase())}"><div class="shape" style="border-radius:${varOf(token, "0")}"></div>${copyName(token)}<span class="desc mono">${value}</span>${token.description === undefined ? "" : `<span class="desc">${esc(token.description)}</span>`}</div>`;
-                  })
-                  .join("")}</div>`;
+            : banded.length === 1
+              ? `<div class="radii">${banded[0]!.tokens.map(card).join("")}</div>`
+              : banded
+                    .map(
+                        ({ band, tokens }) =>
+                            `<div data-group><h4 style="margin-top:22px">${band.title}</h4><p class="sub" style="margin-bottom:0">${band.note}</p><div class="radii">${tokens.map(card).join("")}</div></div>`,
+                    )
+                    .join("");
 
     return {
         html: `<p class="intro">Corners follow what they round.</p>${cards}${note()}${moreTokens(ctx, "radii")}`,

@@ -418,7 +418,7 @@ h4 {
     display: grid;
     gap: 5px;
     justify-items: center;
-    width: 64px;
+    width: 72px;
     padding: 0;
     border: 0;
     background: none;
@@ -441,8 +441,8 @@ h4 {
 .sw span {
     max-width: 100%;
     font: 10.5px/1.2 var(--dd-mono);
-    overflow-wrap: anywhere;
     text-align: center;
+    white-space: nowrap;
 }
 
 .copy-row {
@@ -807,6 +807,10 @@ td.num {
     white-space: nowrap;
 }
 
+td.num.wrap {
+    white-space: normal;
+}
+
 .matrix td {
     padding: 6px;
     text-align: center;
@@ -871,6 +875,11 @@ td.num {
     display: grid;
     gap: 14px;
     margin-top: 14px;
+}
+
+.spec.cols {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+    gap: 10px;
 }
 
 .spec-row {
@@ -999,7 +1008,7 @@ td.num {
 .shadow-tile {
     display: grid;
     justify-items: start;
-    align-content: end;
+    align-content: start;
     gap: 6px;
     min-height: 110px;
     padding: 14px;
@@ -1707,18 +1716,34 @@ export const DOC_JS = `
         return Promise.resolve(fallback());
     }
 
+    // A token name (a "tk" chip) copies its own text; a button with data-copy copies that.
     document.addEventListener("click", function (event) {
-        var target = event.target && event.target.closest ? event.target.closest("[data-copy]") : null;
+        var target = event.target && event.target.closest ? event.target.closest("[data-copy], .tk") : null;
         if (!target) { return; }
-        var text = target.getAttribute("data-copy");
+        var text = target.hasAttribute("data-copy") ? target.getAttribute("data-copy") : target.textContent.trim();
         if (target.hasAttribute("data-copy-from")) {
             var source = document.getElementById(target.getAttribute("data-copy-from"));
             text = source ? source.textContent : "";
         }
+        if (!text) { return; }
         copyText(text || "").then(function (ok) {
             toast(ok ? "Copied " + (text.length > 40 ? "to the clipboard" : text) : "Could not copy");
             target.classList.add("flash");
             setTimeout(function () { target.classList.remove("flash"); }, 900);
+        });
+    });
+
+    // The copy buttons of a color card, made from the three values the card carries.
+    $$(".copy-row").forEach(function (row) {
+        [["CSS var", "var(" + row.getAttribute("data-var") + ")"], ["Tailwind", row.getAttribute("data-tw")], ["JSON", row.getAttribute("data-json")]].forEach(function (pair) {
+            if (!pair[1]) { return; }
+            var button = document.createElement("button");
+            button.type = "button";
+            button.className = "mini";
+            button.textContent = pair[0];
+            button.title = "Copy " + pair[1];
+            button.setAttribute("data-copy", pair[1]);
+            row.appendChild(button);
         });
     });
 
@@ -1837,17 +1862,17 @@ export const DOC_JS = `
         var query = (field.value || "").trim().toLowerCase();
         var words = query.split(/\\s+/).filter(Boolean);
         var shown = 0;
-        $$("[data-q]").forEach(function (item) {
-            var text = item.getAttribute("data-q");
+        $$("[data-s]").forEach(function (item) {
+            var text = item.__q || (item.__q = item.textContent.toLowerCase());
             var hit = words.every(function (word) { return text.indexOf(word) !== -1; });
             item.hidden = !hit;
             if (hit) { shown++; }
         });
         $$("[data-group]").forEach(function (group) {
-            group.hidden = words.length > 0 && !$("[data-q]:not([hidden])", group);
+            group.hidden = words.length > 0 && !$("[data-s]:not([hidden])", group);
         });
         $$("section.block[data-searchable]").forEach(function (section) {
-            section.hidden = words.length > 0 && !$("[data-q]:not([hidden])", section);
+            section.hidden = words.length > 0 && !$("[data-s]:not([hidden])", section);
         });
         if (emptyEl) { emptyEl.hidden = !(words.length > 0 && shown === 0); }
     }

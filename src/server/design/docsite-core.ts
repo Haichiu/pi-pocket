@@ -300,7 +300,7 @@ export function variants(ctx: Ctx, make: (mode: string) => string, tag = "span")
     return ctx.modes
         .map(
             (mode, index) =>
-                `<${tag} class="mv" data-m="${ctx.slug.get(mode)}">${texts[index]}</${tag}>`,
+                `<${tag} class="mv" data-m="${ctx.modes.indexOf(mode)}">${texts[index]}</${tag}>`,
         )
         .join("");
 }
@@ -452,7 +452,7 @@ export function buildContext(system: DesignSystem): Ctx {
 }
 
 export function copyName(token: ResolvedToken): string {
-    return `<button class="tk" data-copy="${esc(token.name)}" title="Copy the token name">${esc(token.name)}</button>`;
+    return `<button class="tk">${esc(token.name)}</button>`;
 }
 
 export function rowOf(ctx: Ctx, token: ResolvedToken, sample: string): string {
@@ -504,7 +504,7 @@ export function tableRows(ctx: Ctx, tokens: ResolvedToken[]): string {
                     ? ""
                     : ` <span class="pill warn">Deprecated${typeof token.deprecated === "string" ? `: ${esc(clip(token.deprecated, 80))}` : ""}</span>`;
 
-            return `<tr data-q="${esc(`${token.name} ${token.cssVar} ${token.type} ${token.tier} ${token.description ?? ""}`.toLowerCase())}"><td data-label="Token"><span class="${deprecated === "" ? "" : "dep"}">${copyName(token)}</span><button class="tk" data-copy="${esc(token.cssVar)}" title="Copy the CSS variable">${esc(token.cssVar)}</button>${deprecated}${token.description === undefined ? "" : `<div class="desc">${esc(token.description)}</div>`}</td><td data-label="Type">${esc(token.type)} <span class="pill">${esc(token.tier)}</span></td><td data-label="Value" class="num" style="white-space:normal">${valueCell(ctx, token)}</td></tr>`;
+            return `<tr data-q="${esc(`${token.name} ${token.cssVar} ${token.type} ${token.tier} ${token.description ?? ""}`.toLowerCase())}"><td data-label="Token"><span class="${deprecated === "" ? "" : "dep"}">${copyName(token)}</span><button class="tk">${esc(token.cssVar)}</button>${deprecated}${token.description === undefined ? "" : `<div class="desc">${esc(token.description)}</div>`}</td><td data-label="Type">${esc(token.type)} <span class="pill">${esc(token.tier)}</span></td><td data-label="Value" class="num wrap">${valueCell(ctx, token)}</td></tr>`;
         })
         .join("");
 }

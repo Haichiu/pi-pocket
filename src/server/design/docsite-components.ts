@@ -57,10 +57,7 @@ export function componentArticle(ctx: Ctx, spec: ComponentSpec, index: number): 
     ];
     const tokenChips = spec.tokens
         .slice(0, 80)
-        .map(
-            (name) =>
-                `<button class="tk" data-copy="${esc(name)}" title="Copy the token name">${esc(name)}</button>`,
-        )
+        .map((name) => `<button class="tk">${esc(name)}</button>`)
         .join("");
 
     return `<article class="comp" id="${id}" data-pid="${id}" data-q="${esc(`${spec.name} ${spec.description} ${spec.slug}`.toLowerCase())}"><div class="comp-head"><h3>${esc(spec.name)}</h3><span class="pill">${states.length} state${states.length === 1 ? "" : "s"}</span></div><p class="intro" style="margin-top:6px">${esc(spec.description)}</p>${componentStage(ctx)}${

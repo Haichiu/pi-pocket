@@ -132,7 +132,10 @@ test("the page has a section and a link for each part of the system, and a stage
 
     // Every token is in the reference table, and the code section has the compiled files.
     for (const named of system.tokens) {
-        assert.ok(html.includes(`data-copy="${named.name}"`), `${named.name} can be copied`);
+        assert.ok(
+            html.includes(`<button class="tk">${named.name}</button>`),
+            `${named.name} can be copied`,
+        );
     }
 
     assert.match(html, /id="code-css"/);
@@ -160,8 +163,8 @@ test("each mode has a switch, and the page opens in the default mode", () => {
         /<html lang="en" class="nojs" data-mode="light" data-theme="light" data-dark-mode="dark">/,
     );
     // A value that differs by mode is written once for each mode; one that does not is written once.
-    assert.match(html, /class="mv" data-m="dark"/);
-    assert.match(html, /html:not\(\[data-mode="dark"\]\) \.mv\[data-m="dark"\]\{display:none\}/);
+    assert.match(html, /class="mv" data-m="1"/);
+    assert.match(html, /html:not\(\[data-mode="dark"\]\) \.mv\[data-m="1"\]\{display:none\}/);
 });
 
 test("the page asks for nothing: no external request, no script or style file, no frame", () => {
@@ -592,7 +595,7 @@ test(
             assert.equal(await page.evaluate("document.getElementById('nomatch').hidden"), true);
             assert.equal(
                 await page.evaluate(
-                    "document.querySelectorAll('[data-q]:not([hidden])').length > 3",
+                    "document.querySelectorAll('[data-s]:not([hidden])').length > 3",
                 ),
                 true,
             );
@@ -617,7 +620,10 @@ test("section counts follow one rule: each token once, in one section, so the co
 
     // A token that no specimen draws is still on the page, in its section's table.
     for (const token of system.tokens) {
-        assert.ok(html.includes(`data-copy="${token.name}"`), `${token.name} is on the page`);
+        assert.ok(
+            html.includes(`<button class="tk">${token.name}</button>`),
+            `${token.name} is on the page`,
+        );
     }
 
     // The same rule as the System view's: the type decides, and for sizes the words of the path.
@@ -637,10 +643,13 @@ test("a ratio is written with one decimal, cut and never rounded up; cards copy 
         ratios.every((text) => /^\d+\.\d:1$/.test(text)),
         String(ratios.find((text) => !/^\d+\.\d:1$/.test(text))),
     );
-    assert.match(html, /data-copy="var\(--color-bg-surface\)"[^>]*>CSS var</);
-    assert.ok(html.includes('data-copy="bg-bg-surface"'), "a Tailwind class");
-    assert.ok(html.includes('data-copy="text-text-primary"'));
-    assert.match(html, /data-copy="color\.bg\.surface\.\$value"[^>]*>JSON</);
+    // The page's script makes the three buttons from the values a card carries.
+    assert.match(
+        html,
+        /<div class="copy-row" data-var="--color-bg-surface" data-tw="bg-bg-surface" data-json="color\.bg\.surface\.\$value"><\/div>/,
+    );
+    assert.match(html, /data-var="--color-text-primary" data-tw="text-text-primary"/);
+    assert.match(html, /data-var="--color-border-default" data-tw="border-border-default"/);
     assert.match(
         html,
         /<footer class="foot"><strong>Pi Pocket<\/strong> · \d+ tokens · 3 modes · 10 components · generated \d{4}-\d{2}-\d{2} by Pi Pocket<\/footer>/,
@@ -761,7 +770,6 @@ test("an exempt pair is labelled and not a failure; notes have an area; the code
     for (const file of [
         "tokens.css",
         "tailwind.css",
-        "components.css",
         "tokens.resolved.json",
         "tokens.light.resolved.json",
         "tokens.dark.resolved.json",
@@ -769,4 +777,53 @@ test("an exempt pair is labelled and not a failure; notes have an area; the code
     ]) {
         assert.ok(html.includes(`<summary>${file}<`), file);
     }
+});
+
+test("the flagship's page is small, its hero swatches are roles, and its radii are grouped by use", () => {
+    const { html } = renderSystemDoc(flagship());
+
+    assert.ok(Buffer.byteLength(html) < 600_000, `${Buffer.byteLength(html)} bytes`);
+
+    // The hero: one swatch for each role, in reading order, labelled by the role and named in full on hover.
+    const hero = /<div class="strip">([\s\S]*?)<\/div>/.exec(html)![1]!;
+    const labels = [...hero.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1]);
+
+    assert.deepEqual(labels, [
+        "background",
+        "surface",
+        "text",
+        "muted",
+        "border",
+        "accent",
+        "danger",
+        "warning",
+        "success",
+        "info",
+        "brand",
+        "code",
+    ]);
+    assert.match(hero, /title="color\.accent\.default"/);
+    assert.ok(
+        labels.every((label) => label!.length <= 12),
+        "short enough not to wrap",
+    );
+
+    // Radii: the jobs they do, small to large, each with a line on why.
+    for (const [title, note] of [
+        ["Marks and tags", "Up to 4 px"],
+        ["Controls", "5 to 7 px"],
+        ["Containers", "8 px and more"],
+        ["Round", "Fully round"],
+    ]) {
+        assert.ok(
+            html.includes(
+                `<h4 style="margin-top:22px">${title}</h4><p class="sub" style="margin-bottom:0">${note}`,
+            ),
+            String(title),
+        );
+    }
+
+    // Spacing bars share the width: the longest step is a full row.
+    assert.match(html, /<div class="spec cols">/);
+    assert.match(html, /<div class="bar" style="width:100%"><\/div>/);
 });

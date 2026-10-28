@@ -41,28 +41,22 @@ export function ratioPill(ratio: number, min: number | undefined, exempt?: strin
     return `<span class="ratio">${fmtRatio(ratio)}:1</span> <span class="pill ${passes ? "ok" : "bad"}">${passes ? label : "Fails"}</span>`;
 }
 
-/** Three ways to copy a token: as a CSS variable, as a Tailwind class (the compiled `@theme` maps `--color-*` to utilities), and as its JSON path. */
+/**
+ * Three ways to copy a token: as a CSS variable, as a Tailwind class (the compiled `@theme` maps `--color-*` to
+ * utilities), and as its JSON path. The page's script makes the buttons from these three values, so that they are
+ * written once and not three times a card.
+ */
 export function copyRow(token: ResolvedToken): string {
-    const button = (label: string, text: string, title: string) =>
-        `<button class="mini" type="button" data-copy="${esc(text)}" title="${esc(title)}">${label}</button>`;
-    const buttons = [button("CSS var", `var(${token.cssVar})`, `Copy var(${token.cssVar})`)];
+    const rest = token.cssVar.startsWith("--color-")
+        ? token.cssVar.slice("--color-".length)
+        : undefined;
+    const prefix = hasSegment(token, TEXT_SEGMENTS)
+        ? "text"
+        : /(^|\.)border(\.|$)/.test(token.name)
+          ? "border"
+          : "bg";
 
-    if (token.cssVar.startsWith("--color-")) {
-        const rest = token.cssVar.slice("--color-".length);
-        const prefix = hasSegment(token, TEXT_SEGMENTS)
-            ? "text"
-            : /(^|\.)border(\.|$)/.test(token.name)
-              ? "border"
-              : "bg";
-
-        buttons.push(
-            button("Tailwind", `${prefix}-${rest}`, `Copy the Tailwind class ${prefix}-${rest}`),
-        );
-    }
-
-    buttons.push(button("JSON", `${token.name}.$value`, `Copy the JSON path ${token.name}.$value`));
-
-    return `<div class="copy-row">${buttons.join("")}</div>`;
+    return `<div class="copy-row" data-var="${esc(token.cssVar)}"${rest === undefined ? "" : ` data-tw="${esc(`${prefix}-${rest}`)}"`} data-json="${esc(`${token.name}.$value`)}"></div>`;
 }
 
 export function swatchCard(ctx: Ctx, token: ResolvedToken): string {
@@ -124,7 +118,7 @@ export function swatchCard(ctx: Ctx, token: ResolvedToken): string {
             ? ""
             : ` <span class="pill warn">Deprecated</span>`;
 
-    return `<article class="card" data-q="${esc(query)}"><button class="sw-chip" data-copy="${esc(`var(${token.cssVar})`)}" title="Copy var(${esc(token.cssVar)})" aria-label="Copy var(${esc(token.cssVar)})">${chip}</button><div class="card-body"><div><button class="tk" data-copy="${esc(token.name)}" title="Copy the token name">${esc(token.name)}</button>${deprecated}</div>${token.description === undefined ? "" : `<p class="desc">${esc(token.description)}</p>`}<dl class="vals">${rows.join("")}</dl>${contrast}${copyRow(token)}</div></article>`;
+    return `<article class="card" data-q="${esc(query)}"><button class="sw-chip" data-copy="${esc(`var(${token.cssVar})`)}" aria-label="Copy var(${esc(token.cssVar)})">${chip}</button><div class="card-body"><div><button class="tk">${esc(token.name)}</button>${deprecated}</div>${token.description === undefined ? "" : `<p class="desc">${esc(token.description)}</p>`}<dl class="vals">${rows.join("")}</dl>${contrast}${copyRow(token)}</div></article>`;
 }
 
 /** The title of the group a color token sits in: its path without the first segment (`color`) and the name. */

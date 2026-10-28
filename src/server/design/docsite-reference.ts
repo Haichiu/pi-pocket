@@ -3,7 +3,6 @@
  */
 import { escapeHtml as esc, plural } from "./docsite-markdown.ts";
 import {
-    MAX_CODE,
     clip,
     modeLabel,
     pxOf,
@@ -64,6 +63,9 @@ export function notesHtml(ctx: Ctx): string {
         .join("")}</ul></details>`;
 }
 
+/** The most of a generated file that the page prints: the files are large, and the page is one file too. */
+const FILE_PREVIEW = 8_000;
+
 /** A snippet in a box with a Copy button; the text is project data, so it is escaped. */
 export function snippet(id: string, text: string): string {
     return `<div class="snip-wrap"><button class="copy" type="button" data-copy-from="${esc(id)}" data-copy="">Copy</button><pre class="snip" id="${esc(id)}"><code>${esc(text)}</code></pre></div>`;
@@ -114,12 +116,6 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
             text: compiled.tailwind,
         },
         {
-            id: "code-components",
-            title: "components.css",
-            note: "The CSS of every component.",
-            text: compiled.components,
-        },
-        {
             id: "code-json",
             title: "tokens.resolved.json",
             note: "Every token and its value in each mode, compact.",
@@ -136,10 +132,10 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
         `<div class="use"><h4>${esc(title)}</h4><p class="sub">${note}</p>${snippet(id, text)}</div>`;
 
     return {
-        html: `<p class="intro">The files that the system generates in <code>.pi/design/dist/</code>. Read tokens as variables, classes, or JSON. Never copy a value by hand.</p><div class="uses">${use("CSS", "Link tokens.css, then read a token with var(). Set data-theme for a mode.", "code-use-css", css)}${use("Tailwind v4", "Import Tailwind, then tailwind.css. Each token is a variable, so the utilities follow it.", "code-use-tailwind", tailwind)}${use("JSON", "For Style Dictionary or Tokens Studio. One DTCG file for each mode, and one compact file for all.", "code-use-json", json)}</div><h3>The files</h3>${files
+        html: `<p class="intro">The files that the system generates in <code>.pi/design/dist/</code> (<code>components.css</code> holds the CSS of every component, which each component above shows). Read tokens as variables, classes, or JSON. Never copy a value by hand.</p><div class="uses">${use("CSS", "Link tokens.css, then read a token with var(). Set data-theme for a mode.", "code-use-css", css)}${use("Tailwind v4", "Import Tailwind, then tailwind.css. Each token is a variable, so the utilities follow it.", "code-use-tailwind", tailwind)}${use("JSON", "For Style Dictionary or Tokens Studio. One DTCG file for each mode, and one compact file for all.", "code-use-json", json)}</div><h3>The files</h3>${files
             .map(
                 (file) =>
-                    `<details class="code"><summary>${esc(file.title)}<span class="desc" style="margin-left:10px;font-weight:400">${esc(file.note)}</span></summary><div class="code-body">${file.id.startsWith("code-mode") && file.text.length > 6_000 ? `<p class="sub">The first 6 KB of ${Math.round(file.text.length / 1024)} KB.</p>${snippet(file.id, clip(file.text, 6_000))}` : snippet(file.id, clip(file.text, MAX_CODE))}</div></details>`,
+                    `<details class="code"><summary>${esc(file.title)}<span class="desc" style="margin-left:10px;font-weight:400">${esc(file.note)}</span></summary><div class="code-body">${file.text.length > FILE_PREVIEW ? `<p class="sub">The first ${FILE_PREVIEW / 1000} KB of ${Math.round(file.text.length / 1024)} KB. The whole file is in <code>.pi/design/dist/</code>, and in the zip that the System view exports.</p>` : ""}${snippet(file.id, clip(file.text, FILE_PREVIEW))}</div></details>`,
             )
             .join("")}`,
         count: files.length,

@@ -13,7 +13,7 @@ import { type DesignSystem, type ResolvedToken } from "./system-types.ts";
 import { contrastRatio, parseColor, readableOn, toHex } from "./docsite-color.ts";
 import { escapeHtml as esc, plural, renderMarkdown } from "./docsite-markdown.ts";
 import { DOC_BOOT_JS, DOC_CSS, DOC_JS } from "./docsite-assets.ts";
-import { groupKey, pairRows, colorSection } from "./docsite-color-section.ts";
+import { pairRows, colorSection } from "./docsite-color-section.ts";
 import { componentsSection } from "./docsite-components.ts";
 import {
     type SystemDoc,
@@ -27,13 +27,11 @@ import {
     safeVar,
     varOf,
     idOf,
-    colorValueText,
     type Ctx,
     valueIn,
     colorOf,
-    GROUND_SEGMENTS,
-    TEXT_SEGMENTS,
-    hasSegment,
+    BASE_GROUNDS,
+    BASE_TEXTS,
     findToken,
     buildContext,
 } from "./docsite-core.ts";
@@ -97,65 +95,102 @@ function chromeAccent(
 const ICON_MENU = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg>`;
 const ICON_SEARCH = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="9" r="5.5"/><path d="m13.5 13.5 3.5 3.5"/></svg>`;
 
+/**
+ * The swatches of the hero, chosen by the role they play, in the order a person reads a system: the ground, the
+ * surface, text, its quieter text, the line, the accent, and the status colors. Each has a short role word as its
+ * label; its full token name is the tooltip and what a tap copies. A role the system does not name is left out, and
+ * when too few are found, the first semantic colors fill the row.
+ */
 function sampler(ctx: Ctx): string {
-    const order = (token: ResolvedToken) => {
-        const text = token.path.join(".");
+    const ROLES: [string, string[], RegExp][] = [
+        ["background", BASE_GROUNDS, /^color\.(bg|background)\.(base|default|canvas|page)$/],
+        [
+            "surface",
+            [
+                "color.bg.surface",
+                "color.surface.default",
+                "color.surface",
+                "color.bg.card",
+                "color.bg.raised",
+            ],
+            /^color\.(surface|card)\./,
+        ],
+        ["text", BASE_TEXTS, /^color\.(text|fg|foreground)\.(primary|default|base)$/],
+        [
+            "muted",
+            ["color.text.muted", "color.text.secondary", "color.fg.muted"],
+            /^color\.(text|fg)\.(muted|secondary|subtle)$/,
+        ],
+        [
+            "border",
+            ["color.border.default", "color.border.subtle", "color.border"],
+            /^color\.border\./,
+        ],
+        [
+            "accent",
+            [
+                "color.accent.default",
+                "color.accent.primary",
+                "color.accent.fill",
+                "color.primary.default",
+                "color.primary",
+                "color.accent",
+            ],
+            /(accent|primary)/,
+        ],
+        [
+            "danger",
+            ["color.danger.default", "color.error.default", "color.danger", "color.error"],
+            /(danger|error|negative)/,
+        ],
+        ["warning", ["color.warning.default", "color.warning"], /warning/],
+        [
+            "success",
+            ["color.success.default", "color.success", "color.positive.default"],
+            /(success|positive)/,
+        ],
+        ["info", ["color.info.default", "color.info"], /info/],
+        ["brand", ["color.brand.default", "color.brand"], /brand/],
+        ["code", ["color.code.bg"], /code\.bg/],
+    ];
+    const semantic = ctx.system.tokens.filter(
+        (token) => token.type === "color" && token.tier === "semantic",
+    );
+    const chosen: { label: string; token: ResolvedToken }[] = [];
 
-        if (/accent|primary|brand/i.test(text)) {
-            return 0;
-        }
+    for (const [label, names, pattern] of ROLES) {
+        const token =
+            findToken(ctx, names) ??
+            semantic.find(
+                (item) =>
+                    pattern.test(item.name) &&
+                    !/on-|inverse|hover|active|soft|line|scrim/.test(item.name),
+            );
 
-        if (/danger|error|warning|success|info|spark/i.test(text)) {
-            return 1;
-        }
-
-        return hasSegment(token, GROUND_SEGMENTS) ? 2 : hasSegment(token, TEXT_SEGMENTS) ? 3 : 4;
-    };
-
-    const roles = ctx.system.tokens
-        .filter(
-            (token) =>
-                token.type === "color" && token.tier !== "primitive" && token.tier !== "component",
-        )
-        .sort((a, b) => order(a) - order(b));
-    const seen = new Set<string>();
-    const chosen: ResolvedToken[] = [];
-
-    const take = (token: ResolvedToken) => {
-        const hex = colorValueText(valueIn(token, ctx.modes[0]!)?.value);
-
-        if (hex !== undefined && !seen.has(hex) && chosen.length < 12) {
-            seen.add(hex);
-            chosen.push(token);
-        }
-    };
-
-    const firsts = new Set<string>();
-
-    // One color of each group first, so that the strip shows the range; then more of the same.
-    for (const token of roles) {
-        const key = groupKey(token);
-
-        if (!firsts.has(key)) {
-            firsts.add(key);
-            take(token);
+        if (token !== undefined && !chosen.some((item) => item.token === token)) {
+            chosen.push({ label, token });
         }
     }
 
-    roles.forEach(take);
+    // A system with few named roles still shows a row: more of its semantic colors, labelled by their last words.
+    for (const token of semantic) {
+        if (chosen.length >= 8) {
+            break;
+        }
+
+        if (!chosen.some((item) => item.token === token)) {
+            chosen.push({ label: token.path.slice(-2).join(" "), token });
+        }
+    }
 
     return chosen.length === 0
         ? ""
         : `<div class="strip">${chosen
-              .map((token) => {
-                  const last = token.path[token.path.length - 1]!;
-                  const short =
-                      last === "default"
-                          ? (token.path[token.path.length - 2] ?? last)
-                          : token.path.slice(-2).join(" ");
-
-                  return `<button type="button" class="sw" data-copy="${esc(token.name)}" title="${esc(token.name)}"><i style="background:${varOf(token)}"></i><span>${esc(clip(short, 24))}</span></button>`;
-              })
+              .slice(0, 12)
+              .map(
+                  ({ label, token }) =>
+                      `<button type="button" class="sw" data-copy="${esc(token.name)}" title="${esc(token.name)}"><i style="background:${varOf(token)}"></i><span>${esc(clip(label, 12))}</span></button>`,
+              )
               .join("")}</div>`;
 }
 
@@ -380,7 +415,7 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
     const modeCss = ctx.modes
         .map(
             (mode) =>
-                `html:not([data-mode="${ctx.slug.get(mode)}"]) .mv[data-m="${ctx.slug.get(mode)}"]{display:none}`,
+                `html:not([data-mode="${ctx.slug.get(mode)}"]) .mv[data-m="${ctx.modes.indexOf(mode)}"]{display:none}`,
         )
         .join("\n");
     const tokenVars = (() => {
@@ -452,5 +487,6 @@ ${body}
 </html>
 `;
 
-    return { html, assets: [] };
+    // The search reads each item's own text (the script does it once, on the first search), so no copy of it is kept.
+    return { html: html.replace(/ data-q="[^"]*"/g, " data-s"), assets: [] };
 }
