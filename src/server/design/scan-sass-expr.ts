@@ -127,7 +127,24 @@ function partsOf(source: string): Part[] {
     return parts;
 }
 
+/** A sticky pattern matched at a position, without cutting the text (the tokenizer stays linear). */
+const at_ = (pattern: RegExp, source: string, at: number): RegExpExecArray | null => {
+    pattern.lastIndex = at;
+
+    return pattern.exec(source);
+};
+
+const COLOR = /#([0-9a-fA-F]{3,8})(?![\w-])/y;
+const VARIABLE = /((?:[a-z][\w-]*\.)?\$[\w-]+)/iy;
+const NUMBER_AT = /(\d*\.?\d+)(?:e[+-]?\d+)?(%|[a-z]+(?![\w-]))?/iy;
+const NAME_LIKE = /\d+[a-z]*-/y;
+const NAME_START = /(?:-{0,2}[a-z_]|#\{)/iy;
+
 function tokenize(source: string): Tok[] {
+    if (source.length > 120_000) {
+        throw new Unsupported("expression too long");
+    }
+
     const out: Tok[] = [];
     let at = 0;
 
@@ -144,7 +161,6 @@ function tokenize(source: string): Tok[] {
             break;
         }
 
-        const rest = source.slice(at);
         const char = source[at]!;
         let match: RegExpExecArray | null;
 
@@ -178,15 +194,15 @@ function tokenize(source: string): Tok[] {
                 out.push({ k: "interp", source: source.slice(at + 2, end - 1), ws });
                 at = end;
             }
-        } else if ((match = /^#([0-9a-fA-F]{3,8})(?![\w-])/.exec(rest)) !== null) {
+        } else if ((match = at_(COLOR, source, at)) !== null) {
             out.push({ k: "color", text: match[0], ws });
             at += match[0].length;
-        } else if ((match = /^((?:[a-z][\w-]*\.)?\$[\w-]+)/i.exec(rest)) !== null) {
+        } else if ((match = at_(VARIABLE, source, at)) !== null) {
             out.push({ k: "var", name: match[1]!.replace(/^[\w-]+\./, ""), ws });
             at += match[1]!.length;
         } else if (
-            (match = /^(\d*\.?\d+)(?:e[+-]?\d+)?(%|[a-z]+(?![\w-]))?/i.exec(rest)) !== null &&
-            !/^\d+[a-z]*-/.test(rest)
+            (match = at_(NUMBER_AT, source, at)) !== null &&
+            at_(NAME_LIKE, source, at) === null
         ) {
             out.push({
                 k: "num",
@@ -195,7 +211,7 @@ function tokenize(source: string): Tok[] {
                 ws,
             });
             at += match[0].length;
-        } else if (/^(?:-{0,2}[a-z_]|#\{)/i.test(rest)) {
+        } else if (at_(NAME_START, source, at) !== null) {
             // A name, with `module.` in front of a function and `#{}` inside.
             let index = at;
 
@@ -217,7 +233,7 @@ function tokenize(source: string): Tok[] {
             out.push({ k: "ident", parts: partsOf(source.slice(at, index)), ws });
             at = index;
         } else {
-            const op = OPERATORS.find((each) => rest.startsWith(each));
+            const op = OPERATORS.find((each) => source.startsWith(each, at));
 
             if (op === undefined) {
                 throw new Unsupported(`unexpected ${char}`);
@@ -251,6 +267,7 @@ class Parser {
     tokens: Tok[];
     at = 0;
     depth = 0;
+    nest = 0;
 
     constructor(source: string) {
         this.tokens = tokenize(source);
@@ -436,6 +453,18 @@ class Parser {
     }
 
     unary(): Node {
+        if (++this.nest > 120) {
+            throw new Unsupported("nested too deep");
+        }
+
+        try {
+            return this.unaryInner();
+        } finally {
+            this.nest -= 1;
+        }
+    }
+
+    unaryInner(): Node {
         const token = this.peek();
 
         if (token.k === "op" && (token.op === "-" || token.op === "+")) {

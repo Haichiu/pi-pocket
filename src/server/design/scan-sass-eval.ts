@@ -286,7 +286,7 @@ class Run implements Env {
             try {
                 this.statement(stmt, emit);
             } catch (error) {
-                if (!(error instanceof Unsupported)) {
+                if (!(error instanceof Unsupported) && !(error instanceof RangeError)) {
                     throw error;
                 }
 
@@ -809,7 +809,7 @@ export function evaluateSass(source: string, project: Project): Evaluated | unde
     try {
         run.block(statementsOf(source, 1), true);
     } catch (error) {
-        if (error instanceof Unsupported) {
+        if (error instanceof Unsupported || error instanceof RangeError) {
             return undefined;
         }
 

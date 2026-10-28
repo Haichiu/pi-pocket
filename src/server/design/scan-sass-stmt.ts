@@ -34,6 +34,7 @@ export function statementsOf(source: string, firstLine: number, depth = 0): Stmt
     let at = 0;
     let line = firstLine;
     let head = "";
+    let blank = true;
     let headLine = line;
     let headStart = 0;
     let parens = 0;
@@ -51,6 +52,7 @@ export function statementsOf(source: string, firstLine: number, depth = 0): Stmt
         }
 
         head = "";
+        blank = true;
         headStart = end;
     };
 
@@ -65,9 +67,11 @@ export function statementsOf(source: string, firstLine: number, depth = 0): Stmt
             continue;
         }
 
-        if (head.trim() === "" && !/\s/.test(char)) {
+        // Where a statement starts: the first character that is not white space after the last one ended.
+        if (blank && !/\s/.test(char)) {
             headLine = line;
             headStart = at;
+            blank = false;
         }
 
         if (char === "/" && source[at + 1] === "/") {

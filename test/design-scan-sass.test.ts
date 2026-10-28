@@ -527,3 +527,24 @@ $border: color.change(c(slate, 200), $alpha: 0.6);
         "a variable that a loop keeps for itself is not a token",
     );
 });
+
+test("hostile Sass runs in bounded time and never throws: an unclosed map, parentheses and unary signs nested thousands deep, thousands of variables", () => {
+    const started = Date.now();
+    const cases = [
+        `$m: (${"a: 1px, ".repeat(20_000)}`.slice(0, 190_000),
+        `$m: (${"a: 1px, ".repeat(20_000)});\n@each $k, $v in $m { --x-#{$k}: #{$v}; }`,
+        `$x: ${"(".repeat(5000)}1${")".repeat(5000)};\n@each $i in 1 { --a: #{$x}; }`,
+        `$x: ${"-".repeat(5000)}1;\n@each $i in 1 { --a: #{$x}; }`,
+        `${Array.from({ length: 4000 }, (_, at) => `$v${at}: mix(#fff, #000, ${at % 100}%);`).join("\n")}\n@each $i in 1 2 3 { --a-#{$i}: 1; }`,
+        `@each $a in ${"(".repeat(2000)} { x`,
+        `@function f($n) { @return f($n + 1); }\n@each $i in 1 { --a: #{f(1)}; }`,
+        `${"@if true { ".repeat(3000)}--x: 1;${" }".repeat(3000)}`,
+        `@for $i from 1 through 3000 { @for $j from 1 through 3000 { --a-#{$i}-#{$j}: #{$i * $j}; } }`,
+    ];
+
+    for (const text of cases) {
+        assert.doesNotThrow(() => expandSassFiles([{ rel: "x.scss", text }]), text.slice(0, 60));
+    }
+
+    assert.ok(Date.now() - started < 6000, `${Date.now() - started} ms`);
+});
