@@ -42,19 +42,20 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
     const fill = toRgba(style.webkitTextFillColor || style.color);
     const gradientText = style.backgroundClip === 'text' || style.webkitBackgroundClip === 'text' || (fill && fill[3] === 0);
 
-    if (text && !gradientText && !(style.color === 'rgb(0, 0, 0)' && rootStyle.color === 'rgb(0, 0, 0)' && parentStyle && parentStyle.color === style.color)) {
+    if (text && !gradientText && inheritedAuthored(el, 'color')) {
         useColor(style.webkitTextFillColor || style.color, 'text');
     }
 
-    useColor(style.backgroundColor, 'background');
+    if (authoredOwn(el, 'backgroundColor', style)) useColor(style.backgroundColor, 'background');
 
     for (const [side, name] of scaleSides) {
-        if (pxOf(style['border' + name + 'Width']) > 0 && !/^(none|hidden)$/.test(style['border' + name + 'Style'])) {
+        // A border drawn in the text color (currentcolor) is the text color's to judge.
+        if (pxOf(style['border' + name + 'Width']) > 0 && !/^(none|hidden)$/.test(style['border' + name + 'Style']) && style['border' + name + 'Color'] !== style.color && authoredOwn(el, 'border' + name + 'Color', style)) {
             useColor(style['border' + name + 'Color'], 'border');
         }
     }
 
-    if (pxOf(style.outlineWidth) > 0 && !/^(none|hidden)$/.test(style.outlineStyle)) useColor(style.outlineColor, 'outline');
+    if (pxOf(style.outlineWidth) > 0 && !/^(none|hidden)$/.test(style.outlineStyle) && authoredOwn(el, 'outlineColor', style)) useColor(style.outlineColor, 'outline');
 
     // Fonts and font sizes, and the text's contrast with what is behind it.
     // Text made invisible on purpose (a screen-reader-only label) is not judged.
@@ -64,20 +65,25 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
         const fontSize = pxOf(style.fontSize);
         const family = familyOf(style.fontFamily);
 
-        const hardFamily = input.literals === true && authoredFamily(el, family);
+        // The font and the size that the author set; the browser's own (a heading's size, the default serif) are not judged.
+        if (inheritedAuthored(el, 'fontFamily')) {
+            const hardFamily = input.literals === true && authoredFamily(el, family);
 
-        group(groups.fonts, family + (hardFamily ? '|L' : ''), () => ({ family, list: style.fontFamily.slice(0, 300), literal: hardFamily }), el);
+            group(groups.fonts, family + (hardFamily ? '|L' : ''), () => ({ family, list: style.fontFamily.slice(0, 300), literal: hardFamily }), el);
 
-        const info = fontInfo.get(family) || { list: style.fontFamily.slice(0, 300), count: 0 };
+            const info = fontInfo.get(family) || { list: style.fontFamily.slice(0, 300), count: 0 };
 
-        info.count++;
-        fontInfo.set(family, info);
+            info.count++;
+            fontInfo.set(family, info);
 
-        if (!textFamilies.has(family)) textFamilies.set(family, el);
+            if (!textFamilies.has(family)) textFamilies.set(family, el);
+        }
 
-        const hardSize = input.literals === true && authoredLength(el, 'font-size', fontSize, style);
+        if (inheritedAuthored(el, 'fontSize')) {
+            const hardSize = input.literals === true && authoredLength(el, 'font-size', fontSize, style);
 
-        group(groups.sizes, 'font-size|' + round(fontSize) + (hardSize ? '|L' : ''), () => ({ kind: 'font-size', px: round(fontSize), props: ['font-size'], literal: hardSize }), el);
+            group(groups.sizes, 'font-size|' + round(fontSize) + (hardSize ? '|L' : ''), () => ({ kind: 'font-size', px: round(fontSize), props: ['font-size'], literal: hardSize }), el);
+        }
 
         const near = overlapped(el, rect);
 
@@ -132,10 +138,10 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
 
     // Spacing and radii.
     if (box) {
-        const space = (value, prop, auto) => {
+        const space = (value, prop, auto, uaProp) => {
             const px = Math.abs(pxOf(value));
 
-            if (auto || !(px > 0.5) || Number.isNaN(px)) return;
+            if (auto || !(px > 0.5) || Number.isNaN(px) || !authoredOwn(el, uaProp, style)) return;
 
             const hard = input.literals === true && authoredLength(el, 'space', px, style);
             const key = 'space|' + round(px) + (hard ? '|L' : '');
@@ -171,12 +177,12 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
         const native = tag === 'input' && /^(checkbox|radio)$/.test(el.type);
 
         for (const [side, name] of scaleSides) {
-            space(style['padding' + name], 'padding', typed('padding-' + side));
-            space(style['margin' + name], 'margin', native || typed('margin-' + side));
+            space(style['padding' + name], 'padding', typed('padding-' + side), 'padding' + name);
+            space(style['margin' + name], 'margin', native || typed('margin-' + side), 'margin' + name);
         }
 
-        space(style.rowGap === 'normal' ? '0px' : style.rowGap, 'gap', false);
-        space(style.columnGap === 'normal' ? '0px' : style.columnGap, 'gap', false);
+        space(style.rowGap === 'normal' ? '0px' : style.rowGap, 'gap', false, 'rowGap');
+        space(style.columnGap === 'normal' ? '0px' : style.columnGap, 'gap', false, 'columnGap');
 
         for (const corner of ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft']) {
             const value = style['border' + corner + 'Radius'];
@@ -185,7 +191,7 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
 
             const px = pxOf(value);
 
-            if (!(px > 0.5) || px >= Math.min(rect.width, rect.height) / 2) continue;
+            if (!(px > 0.5) || px >= Math.min(rect.width, rect.height) / 2 || !authoredOwn(el, 'border' + corner + 'Radius', style)) continue;
 
             const hard = input.literals === true && authoredLength(el, 'radius', px, style);
             const key = 'radius|' + round(px) + (hard ? '|L' : '');
@@ -220,7 +226,10 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
         const inline = style.display === 'inline' && tag !== 'input' && tag !== 'button' && tag !== 'select' && tag !== 'textarea' && el.parentElement && [...el.parentElement.childNodes].some((n) => n !== el && n.nodeType === 3 && n.nodeValue.trim() !== '');
         const bare = (isCheck || (tag === 'input' && el.type === 'range')) && style.appearance !== 'none' && labels.length === 0;
 
-        if (!inline && !bare && width > 0 && height > 0) targets.push({ el, left, top, width, height, tag });
+        // A control that the page has not styled at all (no padding, border, or font size of its own) is the browser's: its size is not the page's.
+        const unstyled = /^(button|input|select|textarea|summary)$/.test(tag) && !authoredOwn(el, 'paddingTop', style) && !authoredOwn(el, 'borderTopWidth', style) && !authoredOwn(el, 'paddingLeft', style) && !inheritedAuthored(el, 'fontSize');
+
+        if (!inline && !bare && !unstyled && width > 0 && height > 0) targets.push({ el, left, top, width, height, tag });
     }
 
     // Overflow: elements that end past the viewport and are not clipped or fixed.

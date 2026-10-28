@@ -81,6 +81,11 @@ export const RULES = {
     "missing-pid": "Missing data-pid",
     "focus-visible": "Focus style",
     "reduced-motion": "Reduced motion",
+    "missing-lang": "Page language",
+    "missing-main": "Main landmark",
+    "form-label": "Field label",
+    "accessible-name": "Accessible name",
+    "input-zoom": "Input zoom on phones",
 };
 
 /** The pins of a report: a finding that names an element (a `data-pid` or a selector), numbered by its place in the list. */

@@ -104,7 +104,7 @@ export function tokensCss(system: DesignSystem = testSystem()): string {
  * the variables, so a page made of `var()`s alone is on the system.
  */
 export const page = (style: string, body: string) =>
-    `${head}<style>${tokensCss()}body{margin:0;font-family:var(--font-body);font-size:var(--font-size-md);line-height:1.5;color:var(--color-text-primary);background:var(--color-bg-page)}${style}</style></head><body>${body}</body></html>`;
+    `${head}<style>${tokensCss()}body{margin:0;font-family:var(--font-body);font-size:var(--font-size-md);line-height:1.5;color:var(--color-text-primary);background:var(--color-bg-page)}${style}</style></head><body><main data-pid="page">${body}</main></body></html>`;
 
 /** Check a page at a phone size against the test system (`null`: no system). */
 export function check(

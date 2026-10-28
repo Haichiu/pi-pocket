@@ -190,7 +190,12 @@ export type CheckRule =
     | "missing-viewport"
     | "missing-pid"
     | "focus-visible"
-    | "reduced-motion";
+    | "reduced-motion"
+    | "missing-lang"
+    | "missing-main"
+    | "form-label"
+    | "accessible-name"
+    | "input-zoom";
 
 /**
  * What a one-tap fix would change, on a finding whose literal equals a token exactly (`applyExactFixes` in `fix.ts`).

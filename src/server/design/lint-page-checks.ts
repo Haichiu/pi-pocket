@@ -2,7 +2,63 @@
  * A part of the script that `lint.ts` runs inside a rendered design (see `lint-page.ts`): checks of the whole page: images, focusable elements, tap targets, overflow, headings, and fonts. The parts are one
  * function body, in this order: setup, values, literals, states, elements, checks, focus. Plain JavaScript in a string.
  */
-export const PAGE_CHECKS = String.raw`// Images without a text alternative (an SVG with role=img counts too).
+export const PAGE_CHECKS = String.raw`// Page semantics: the language, a name for every control, and a main landmark; and the input size that makes a phone zoom.
+const shown = (el) => {
+    const look = getComputedStyle(el);
+    const box = el.getBoundingClientRect();
+
+    return look.display !== 'none' && look.visibility === 'visible' && box.width > 0 && box.height > 0 && el.getAttribute('aria-hidden') !== 'true' && !el.closest('[hidden],[inert]');
+};
+const textOfIds = (ids) => ids.split(/\s+/).map((id) => { const node = doc.getElementById(id); return node ? (node.textContent || '').trim() : ''; }).join('').trim();
+const named = (el) => (el.getAttribute('aria-label') || '').trim() !== '' || (el.getAttribute('aria-labelledby') && textOfIds(el.getAttribute('aria-labelledby')) !== '') || (el.getAttribute('title') || '').trim() !== '';
+
+// A field needs a label, an aria-label, an aria-labelledby, a title, or at least a placeholder.
+for (const el of [...doc.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([type=image]),select,textarea')].slice(0, 300)) {
+    if (!shown(el)) continue;
+
+    const labelled = [...(el.labels || [])].some((label) => (label.textContent || '').trim() !== '');
+
+    if (labelled || named(el) || (el.getAttribute('placeholder') || '').trim() !== '') continue;
+
+    const kind = el.localName === 'input' ? 'input type=' + (el.getAttribute('type') || 'text') : el.localName;
+
+    group(groups.labels, kind, () => ({ kind }), el);
+}
+
+// A link or a button needs a name: its text, an aria-label, an aria-labelledby, a title, an image's alt, or an SVG title.
+for (const el of [...doc.querySelectorAll('a[href],button,[role=button],[role=link],summary')].slice(0, 400)) {
+    // A button inside a label (or with one pointed at it) is named by the label.
+    if (!shown(el) || named(el) || (el.textContent || '').trim() !== '' || [...(el.labels || [])].some((label) => (label.textContent || '').trim() !== '')) continue;
+
+    const image = [...el.querySelectorAll('img')].some((img) => (img.getAttribute('alt') || '').trim() !== '');
+    const svg = [...el.querySelectorAll('svg title')].some((title) => (title.textContent || '').trim() !== '') || [...el.querySelectorAll('svg,[role=img]')].some((node) => named(node));
+
+    if (image || svg) continue;
+
+    const kind = el.localName + (el.getAttribute('role') ? '[role=' + el.getAttribute('role') + ']' : '');
+
+    group(groups.names, kind, () => ({ kind }), el);
+}
+
+// A text field under 16 px makes iOS zoom the page when it gets the focus.
+for (const el of [...doc.querySelectorAll('input,textarea,select')].slice(0, 300)) {
+    if (el.localName === 'input' && !/^(text|email|password|search|tel|url|number|)$/.test(el.getAttribute('type') || '')) continue;
+
+    if (!shown(el)) continue;
+
+    const px = pxOf(getComputedStyle(el).fontSize);
+
+    if (px < 16) group(groups.zoom, 'zoom|' + round(px), () => ({ px: round(px), kind: el.localName === 'input' ? 'input type=' + (el.getAttribute('type') || 'text') : el.localName }), el);
+}
+
+const semantics = {
+    lang: (root.getAttribute('lang') || '').trim() !== '',
+    main: doc.querySelector('main,[role=main]') !== null,
+    html: infoOf(root),
+    body: infoOf(body),
+};
+
+// Images without a text alternative (an SVG with role=img counts too).
 for (const el of [...doc.querySelectorAll('img,input[type=image],[role=img]')].slice(0, 500)) {
     const tag = el.localName;
     const role = el.getAttribute('role');

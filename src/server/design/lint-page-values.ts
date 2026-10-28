@@ -218,7 +218,91 @@ const group = (map, key, make, el) => {
 };
 const finish = (map) => [...map.values()].map((item) => Object.assign({}, item, { el: infoOf(item.el) }));
 
-const groups = { colors: new Map(), fonts: new Map(), sizes: new Map(), contrast: new Map(), targets: new Map(), images: new Map(), pids: new Map() };
+const groups = { colors: new Map(), fonts: new Map(), sizes: new Map(), contrast: new Map(), targets: new Map(), images: new Map(), pids: new Map(), labels: new Map(), names: new Map(), zoom: new Map() };
 const headings = [];
 
+
+// ---------------------------------------------------------------------------------------------------------------------
+// What the author set. A value that the browser gives an element by itself (a button's border and padding, a heading's
+// size, black text) is not the page's, and is not judged. Each tag's defaults are read from a probe of the same tag in
+// a shadow tree, where the page's style sheets do not reach.
+
+const probeHost = doc.createElement('div');
+probeHost.style.cssText = 'all:initial;display:block;position:absolute;visibility:hidden;left:-9999px;top:0;color-scheme:' + (rootStyle.colorScheme || 'normal');
+const probeRoot = probeHost.attachShadow({ mode: 'closed' });
+// Not in the body, so that the walk does not see it.
+root.append(probeHost);
+const UA_PROPS = ['color', 'backgroundColor', 'fontSize', 'fontFamily', 'outlineColor', 'rowGap', 'columnGap'];
+
+for (const side of ['Top', 'Right', 'Bottom', 'Left']) UA_PROPS.push('border' + side + 'Color', 'border' + side + 'Width', 'border' + side + 'Style', 'padding' + side, 'margin' + side);
+
+for (const corner of ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft']) UA_PROPS.push('border' + corner + 'Radius');
+
+const defaults = new Map();
+const defaultsOf = (el, parentPx) => {
+    const key = el.localName + '|' + (el.localName === 'input' ? el.type : '') + '|' + el.hasAttribute('href') + '|' + parentPx;
+
+    if (!defaults.has(key)) {
+        // The browser's default size is a keyword (medium), not 16px: a monospace element is 13px only on the keyword.
+        probeHost.style.fontSize = parentPx === 16 ? '' : parentPx + 'px';
+        const probe = doc.createElement(el.localName);
+
+        if (el.localName === 'input') probe.setAttribute('type', el.type);
+
+        // A link is only a link (blue, underlined) with an address.
+        if (el.hasAttribute('href')) probe.setAttribute('href', '#');
+
+        probeRoot.append(probe);
+        const look = getComputedStyle(probe);
+        const out = {};
+
+        for (const prop of UA_PROPS) out[prop] = look[prop];
+
+        probe.remove();
+        defaults.set(key, out);
+    }
+
+    return defaults.get(key);
+};
+const parentPx = (el) => parseFloat(getComputedStyle(el.parentElement || el).fontSize) || 16;
+const LENGTH_PROP = /^(padding|margin|rowGap|columnGap|border.*Radius)/;
+
+// A property that is not inherited: set by the author when it is not what the tag has by default. A length that is
+// the same number of ems as the default (a paragraph's margin) is the default too.
+const authoredOwn = (el, prop, style) => {
+    const wanted = defaultsOf(el, parentPx(el));
+
+    if (style[prop] === wanted[prop]) return false;
+
+    if (LENGTH_PROP.test(prop)) {
+        const ratio = (value, size) => parseFloat(value) / (parseFloat(size) || 16);
+
+        if (Math.abs(ratio(style[prop], style.fontSize) - ratio(wanted[prop], wanted.fontSize)) < 0.01) return false;
+    }
+
+    return true;
+};
+
+// A property that is inherited (color, font size, font family): set by the author where it changes from the parent's
+// to something that the tag does not have by default, or where it is inherited from such a place.
+const inheritedMemo = new Map();
+const inheritedAuthored = (el, prop) => {
+    const style = getComputedStyle(el);
+    const parent = el.parentElement;
+
+    if (!parent) return style[prop] !== defaultsOf(doc.createElement('div'), 16)[prop];
+
+    const memo = inheritedMemo.get(el);
+
+    if (memo && prop in memo) return memo[prop];
+
+    let answer;
+
+    if (style[prop] === getComputedStyle(parent)[prop]) answer = inheritedAuthored(parent, prop);
+    else answer = style[prop] !== defaultsOf(el, parentPx(el))[prop];
+
+    inheritedMemo.set(el, Object.assign(memo || {}, { [prop]: answer }));
+
+    return answer;
+};
 `;

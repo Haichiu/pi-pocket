@@ -77,6 +77,11 @@ const RULES: readonly CheckRule[] = [
     "missing-pid",
     "focus-visible",
     "reduced-motion",
+    "missing-lang",
+    "missing-main",
+    "form-label",
+    "accessible-name",
+    "input-zoom",
 ];
 
 const clip = (value: unknown, max: number): string =>

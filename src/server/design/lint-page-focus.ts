@@ -136,6 +136,7 @@ for (const { el, count } of [...focusCandidates.values()].slice(0, 40)) {
 if (startActive && startActive !== doc.body) startActive.focus({ preventScroll: true });
 
 calm.remove();
+probeHost.remove();
 
 return {
     elements,
@@ -154,6 +155,10 @@ return {
     fontFaces,
     focus: focusResults,
     pids: finish(groups.pids),
+    semantics,
+    labels: finish(groups.labels),
+    names: finish(groups.names),
+    zoom: finish(groups.zoom),
     motion: { count: motion.count, longest: motion.longest, override: motion.override, unreadable: motion.unreadable, el: motion.first ? infoOf(motion.first) : undefined },
 };
 })`;

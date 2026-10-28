@@ -5,13 +5,15 @@
  *   node src/server/design/check-cli.ts <page.html> [--system <folder>] [--mode <name>] [--viewport <preset|WxH>]
  *                                       [--scheme light|dark] [--json]
  *
- * `--system` is a project folder that has `.pi/design/` (or that folder itself). The files next to the page (its folder,
+ * It renders the page in Chromium (or Chrome, Brave, Edge; `PI_POCKET_BROWSER` names one), so one must be installed:
+ * without it the exit code is 2. `--help` prints the usage. `--system` is a project folder that has `.pi/design/` (or that folder itself). The files next to the page (its folder,
  * without links, dot folders, or `node_modules`) are its bundle, so `ds/tokens.css` and images load as they do in the
  * app; with a system, `ds/tokens.css` and `ds/components.css` are added when the folder has none. Exit code: 0 with no
  * error (warnings are printed), 1 with an error, 2 when the arguments or the files cannot be used.
  */
 import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import { findBrowser } from "../browser/discovery.ts";
 import type { PocketHost } from "../host.ts";
 import type { DesignBundle } from "./bundle.ts";
 import { checkDesign, type CheckOptions } from "./lint.ts";
@@ -44,6 +46,20 @@ const TYPES: Record<string, string> = {
 
 const USAGE =
     "Usage: node src/server/design/check-cli.ts <page.html> [--system <folder>] [--mode <name>] [--viewport <mobile|tablet|desktop|WxH>] [--scheme light|dark] [--json]";
+const HELP = `${USAGE}
+
+Checks an HTML design: values that are not design-system tokens, contrast (text and non-text), tap targets, overflow,
+alt text, labels, names, headings, language, landmarks, fonts, focus, motion. Prints each finding and a total.
+
+  <page.html>        the page; the files next to it are its bundle (images, ds/tokens.css, …)
+  --system <folder>  a project folder with .pi/design/ (or that folder itself)
+  --mode <name>      a mode of the system (light, dark, high-contrast, …): data-theme, its scheme, its tokens
+  --viewport <size>  mobile (390×844), tablet, desktop (default), or WIDTHxHEIGHT
+  --scheme <name>    light (default) or dark
+  --json             print the report as JSON
+
+It needs Chromium, Chrome, Brave, or Edge on this machine (set PI_POCKET_BROWSER to name one).
+Exit code: 0 no error (warnings are printed), 1 at least one error, 2 bad arguments, files, or no browser.`;
 
 interface Io {
     log: (text: string) => void;
@@ -113,6 +129,12 @@ export async function runCheck(args: string[], io: Io): Promise<number> {
     for (let index = 0; index < args.length; index++) {
         const arg = args[index]!;
 
+        if (arg === "--help" || arg === "-h") {
+            io.log(HELP);
+
+            return 0;
+        }
+
         if (arg === "--json") {
             flags.add("json");
         } else if (["--system", "--mode", "--viewport", "--scheme"].includes(arg)) {
@@ -142,6 +164,14 @@ export async function runCheck(args: string[], io: Io): Promise<number> {
 
     if (values.scheme !== undefined && values.scheme !== "light" && values.scheme !== "dark") {
         io.error("--scheme is light or dark.");
+
+        return 2;
+    }
+
+    if (findBrowser() === undefined) {
+        io.error(
+            "The check renders the page in a browser, and none was found. Install Chromium, Chrome, Brave, or Edge, or set PI_POCKET_BROWSER to its path.",
+        );
 
         return 2;
     }
