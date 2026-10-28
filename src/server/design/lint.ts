@@ -76,7 +76,8 @@ const RULE_ORDER: CheckRule[] = [
     "missing-viewport",
     "focus-visible",
     "reduced-motion",
-    "missing-label",
+    "form-label",
+    "accessible-name",
     "missing-lang",
     "input-zoom",
     "missing-main",
@@ -855,11 +856,11 @@ export function analyze(
     for (const group of raw.labels ?? []) {
         add(
             {
-                rule: "missing-label",
+                rule: "form-label",
                 level: "error",
                 ...elementOf(group.el),
                 value: clip(group.kind, 40),
-                message: `A <${clip(group.kind, 40)}> has no label (no label, aria-label, aria-labelledby, title, or placeholder)${more(num(group.count))}. Point a \`<label for="id">\` at it, wrap it in a \`<label>\`, or add \`aria-label="what it is"\`.`,
+                message: `A <${clip(group.kind, 40)}> has no label (no label, aria-label, aria-labelledby, or title; a placeholder is not a label: it goes away when a person types, and not every screen reader reads it)${more(num(group.count))}. Add a \`<label for="id">\` (or wrap the field in a \`<label>\`), or add \`aria-label="what it is"\`.`,
             },
             num(group.count),
         );
@@ -868,7 +869,7 @@ export function analyze(
     for (const group of raw.names ?? []) {
         add(
             {
-                rule: "missing-label",
+                rule: "accessible-name",
                 level: "error",
                 ...elementOf(group.el),
                 value: clip(group.kind, 40),

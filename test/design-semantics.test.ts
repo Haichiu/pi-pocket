@@ -115,7 +115,10 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
         `<button data-pid="b4" aria-labelledby="lbl"></button><span id="lbl">Named by id</span>` +
         `<label>Switch <button role="switch" aria-checked="false" data-pid="b5"></button></label>` +
         `<label for="b6">Pointed at</label><button id="b6" data-pid="b6"></button>` +
-        `<div role="switch" aria-checked="false" data-pid="b7" style="width:20px;height:10px"></div>`;
+        `<div role="switch" aria-checked="false" data-pid="b7" style="width:20px;height:10px"></div>` +
+        `<div role="textbox" data-pid="w1" style="width:80px;height:20px">typed text is the value</div><div role="textbox" data-pid="w1b" aria-label="Search" style="width:80px;height:20px"></div>` +
+        `<div role="checkbox" aria-checked="false" data-pid="w2" style="width:20px;height:20px"></div><div role="checkbox" aria-checked="false" data-pid="w3" style="width:80px;height:20px">Named by its text</div>` +
+        `<div role="tab" data-pid="t1" style="width:40px;height:20px"></div><div role="tab" data-pid="t2" style="width:40px;height:20px">Tab</div>`;
     const bare = page("", body)
         .replace('<html lang="en">', "<html>")
         .replace('<main data-pid="page">', "<div>")
@@ -126,19 +129,30 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
             .map((item) => item.pid)
             .sort();
 
-    // One rule for a field, a button, a link, or a switch with no name.
-    assert.deepEqual(pids("missing-label"), ["a1", "b1", "b7", "n1", "n10", "n6", "n8"]);
-    assert.equal(ofRule(report, "missing-label")[0]!.level, "error");
-    const message = (pid: string) =>
-        ofRule(report, "missing-label").find((item) => item.pid === pid)!.message;
+    // A field (or a widget that stands in for one) is `form-label`; a link, button, tab, or switch is `accessible-name`.
+    // A placeholder is not a name: n2 has only that.
+    assert.deepEqual(pids("form-label"), ["n1", "n10", "n2", "n6", "n8", "w1", "w2"]);
+    assert.deepEqual(pids("accessible-name"), ["a1", "b1", "b7", "t1"]);
+    assert.equal(ofRule(report, "form-label")[0]!.level, "error");
+    assert.equal(ofRule(report, "accessible-name")[0]!.level, "error");
+    const message = (rule: string, pid: string) =>
+        ofRule(report, rule).find((item) => item.pid === pid)!.message;
 
     assert.match(
-        message("n1"),
-        /^A <input type=email> has no label \(no label, aria-label, aria-labelledby, title, or placeholder\)/,
+        message("form-label", "n1"),
+        /^A <input type=email> has no label \(no label, aria-label, aria-labelledby, or title; a placeholder is not a label: it goes away when a person types, and not every screen reader reads it\)/,
     );
-    assert.match(message("b1"), /^A <button> has no accessible name/);
-    assert.match(message("b1"), /Add `aria-label="what it does"`\./);
-    assert.match(message("b7"), /^A <div\[role=switch\]> has no accessible name/);
+    assert.match(
+        message("form-label", "n2"),
+        /Add a `<label for="id">` \(or wrap the field in a `<label>`\), or add `aria-label="what it is"`\./,
+    );
+    assert.match(message("form-label", "w1"), /^A <div\[role=textbox\]> has no label/);
+    assert.match(message("accessible-name", "b1"), /^A <button> has no accessible name/);
+    assert.match(message("accessible-name", "b1"), /Add `aria-label="what it does"`\./);
+    assert.match(
+        message("accessible-name", "b7"),
+        /^A <div\[role=switch\]> has no accessible name/,
+    );
     const lang = ofRule(report, "missing-lang");
 
     assert.equal(lang.length, 1);
@@ -160,7 +174,7 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
 
     assert.equal(ofRule(fine, "missing-lang").length, 0);
     assert.equal(ofRule(fine, "missing-main").length, 0);
-    assert.equal(ofRule(fine, "missing-label").length, 7);
+    assert.equal(ofRule(fine, "form-label").length + ofRule(fine, "accessible-name").length, 11);
     // `role=main` counts, and a deck needs no main.
     const role = await check(
         bare.replace("<div>", '<div role="main">'),
@@ -189,7 +203,7 @@ test("a field under 16px is a warning on a phone, with the token to use", browse
     const phone = await check(page("", body), { viewport: "mobile" });
     const zoom = ofRule(phone, "input-zoom");
 
-    assert.deepEqual(zoom.map((item) => item.pid).sort(), ["area", "plain", "sel", "small"]);
+    // An unstyled input has the size of the browser, not of the page: it is not judged.\n    assert.deepEqual(zoom.map((item) => item.pid).sort(), ["area", "sel", "small"]);
     assert.equal(zoom[0]!.level, "warning");
     assert.match(
         onPid(phone, "input-zoom", "small")!.message,

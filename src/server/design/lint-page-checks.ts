@@ -12,21 +12,37 @@ const shown = (el) => {
 const textOfIds = (ids) => ids.split(/\s+/).map((id) => { const node = doc.getElementById(id); return node ? (node.textContent || '').trim() : ''; }).join('').trim();
 const named = (el) => (el.getAttribute('aria-label') || '').trim() !== '' || (el.getAttribute('aria-labelledby') && textOfIds(el.getAttribute('aria-labelledby')) !== '') || (el.getAttribute('title') || '').trim() !== '';
 
-// A field needs a label, an aria-label, an aria-labelledby, a title, or at least a placeholder.
+// A field needs a label, an aria-label, an aria-labelledby, or a title. A placeholder is not a name: it goes away when a
+// person types and not every screen reader reads it (WCAG 1.3.1, 3.3.2).
+const fieldKind = (el) => (el.localName === 'input' ? 'input type=' + (el.getAttribute('type') || 'text') : el.localName) + (el.getAttribute('role') && !/^(input|select|textarea)$/.test(el.localName) ? '[role=' + el.getAttribute('role') + ']' : '');
+
 for (const el of [...doc.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([type=image]),select,textarea')].slice(0, 300)) {
     if (!shown(el)) continue;
 
     const labelled = [...(el.labels || [])].some((label) => (label.textContent || '').trim() !== '');
 
-    if (labelled || named(el) || (el.getAttribute('placeholder') || '').trim() !== '') continue;
+    if (labelled || named(el)) continue;
 
-    const kind = el.localName === 'input' ? 'input type=' + (el.getAttribute('type') || 'text') : el.localName;
-
-    group(groups.labels, kind, () => ({ kind }), el);
+    group(groups.labels, fieldKind(el), () => ({ kind: fieldKind(el) }), el);
 }
 
-// A link or a button needs a name: its text, an aria-label, an aria-labelledby, a title, an image's alt, or an SVG title.
-for (const el of [...doc.querySelectorAll('a[href],button,[role=button],[role=link],[role=switch],[role=checkbox],[role=radio],[role=tab],[role=menuitem],summary')].slice(0, 400)) {
+// ARIA widgets that stand in for a field: a text box, a search box, a combo box, a slider need a name of their own (their
+// content is their value, not their name); a checkbox or a radio may be named by its content.
+for (const el of [...doc.querySelectorAll('[role=textbox],[role=searchbox],[role=combobox],[role=slider],[role=spinbutton],[role=checkbox],[role=radio]')].slice(0, 300)) {
+    if (/^(input|select|textarea)$/.test(el.localName) || !shown(el) || named(el)) continue;
+
+    const role = el.getAttribute('role');
+
+    if (/^(checkbox|radio)$/.test(role) && (el.textContent || '').trim() !== '') continue;
+
+    group(groups.labels, fieldKind(el), () => ({ kind: fieldKind(el) }), el);
+}
+
+// A link, a button, a tab, a menu item, an option, or a switch needs a name: its text, an aria-label, an aria-labelledby,
+// a title, an image's alt, or an SVG title.
+for (const el of [...doc.querySelectorAll('a[href],button,summary,[role=button],[role=link],[role=switch],[role=tab],[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio],[role=option]')].slice(0, 400)) {
+    if (/^(input|select|textarea)$/.test(el.localName)) continue;
+
     // A button inside a label (or with one pointed at it) is named by the label.
     if (!shown(el) || named(el) || (el.textContent || '').trim() !== '' || [...(el.labels || [])].some((label) => (label.textContent || '').trim() !== '')) continue;
 
@@ -40,11 +56,12 @@ for (const el of [...doc.querySelectorAll('a[href],button,[role=button],[role=li
     group(groups.names, kind, () => ({ kind }), el);
 }
 
-// A text field under 16 px makes iOS zoom the page when it gets the focus.
+// A text field under 16 px makes iOS zoom the page when it gets the focus. Only a size that the author set is judged: the
+// browser's own control size is not the size that iOS goes by.
 for (const el of [...doc.querySelectorAll('input,textarea,select')].slice(0, 300)) {
     if (el.localName === 'input' && !/^(text|email|password|search|tel|url|number|)$/.test(el.getAttribute('type') || '')) continue;
 
-    if (!shown(el)) continue;
+    if (!shown(el) || !inheritedAuthored(el, 'fontSize')) continue;
 
     const px = pxOf(getComputedStyle(el).fontSize);
 
