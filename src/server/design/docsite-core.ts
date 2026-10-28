@@ -9,6 +9,7 @@ import {
 } from "./system-types.ts";
 import { parseColor, toHex, type Rgba } from "./docsite-color.ts";
 import { escapeHtml as esc, plural, slugify } from "./docsite-markdown.ts";
+import { tailwindNames } from "./tokens-compile.ts";
 
 export interface SystemDoc {
     html: string;
@@ -276,6 +277,8 @@ export interface Ctx {
     theme: Map<string, "light" | "dark">;
     byName: Map<string, ResolvedToken>;
     byVar: Map<string, ResolvedToken>;
+    /** The variable of each token in `tailwind.css` (`color.bg.surface` is `--color-surface`, so `bg-surface`). */
+    twVar: Map<string, string>;
     /** The tokens of each section (see `sectionOf`). */
     sections: Map<SectionId, ResolvedToken[]>;
     /** The tokens that a specimen has drawn: the rest of a section go to its table of more tokens. */
@@ -436,6 +439,7 @@ export function buildContext(system: DesignSystem): Ctx {
         theme: new Map(),
         byName: new Map(tokens.map((token) => [token.name, token])),
         byVar: new Map(tokens.map((token) => [token.cssVar, token])),
+        twVar: tailwindNames({ ...system, tokens }),
         sections: new Map(),
         claimed: new Set(),
     };

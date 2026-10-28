@@ -46,10 +46,10 @@ export function ratioPill(ratio: number, min: number | undefined, exempt?: strin
  * utilities), and as its JSON path. The page's script makes the buttons from these three values, so that they are
  * written once and not three times a card.
  */
-export function copyRow(token: ResolvedToken): string {
-    const rest = token.cssVar.startsWith("--color-")
-        ? token.cssVar.slice("--color-".length)
-        : undefined;
+export function copyRow(ctx: Ctx, token: ResolvedToken): string {
+    // The class comes from the variable that the compiled theme gives the token (`--color-surface`, so `bg-surface`).
+    const tailwind = ctx.twVar.get(token.name) ?? token.cssVar;
+    const rest = tailwind.startsWith("--color-") ? tailwind.slice("--color-".length) : undefined;
     const prefix = hasSegment(token, TEXT_SEGMENTS)
         ? "text"
         : /(^|\.)border(\.|$)/.test(token.name)
@@ -118,7 +118,7 @@ export function swatchCard(ctx: Ctx, token: ResolvedToken): string {
             ? ""
             : ` <span class="pill warn">Deprecated</span>`;
 
-    return `<article class="card" data-q="${esc(query)}"><button class="sw-chip" data-copy="${esc(`var(${token.cssVar})`)}" aria-label="Copy var(${esc(token.cssVar)})">${chip}</button><div class="card-body"><div><button class="tk">${esc(token.name)}</button>${deprecated}</div>${token.description === undefined ? "" : `<p class="desc">${esc(token.description)}</p>`}<dl class="vals">${rows.join("")}</dl>${contrast}${copyRow(token)}</div></article>`;
+    return `<article class="card" data-q="${esc(query)}"><button class="sw-chip" data-copy="${esc(`var(${token.cssVar})`)}" aria-label="Copy var(${esc(token.cssVar)})">${chip}</button><div class="card-body"><div><button class="tk">${esc(token.name)}</button>${deprecated}</div>${token.description === undefined ? "" : `<p class="desc">${esc(token.description)}</p>`}<dl class="vals">${rows.join("")}</dl>${contrast}${copyRow(ctx, token)}</div></article>`;
 }
 
 /** The title of the group a color token sits in: its path without the first segment (`color`) and the name. */
