@@ -179,7 +179,13 @@ export interface BrowserPageHandle {
     readonly url: string;
     readonly title: string;
     /** The page as Pi reads it (`text`, with refs such as `[e12]`) and its controls as data. Refs last until the next. */
-    snapshot(): Promise<{ text: string; controls: BrowserControl[]; truncated: boolean }>;
+    snapshot(): Promise<{
+        text: string;
+        controls: BrowserControl[];
+        truncated: boolean;
+        /** Where the page is scrolled, in CSS pixels: the viewport's top and height, and the page's height. */
+        scroll: { y: number; viewport: number; height: number };
+    }>;
     /** What a target is: its description, its kind (an input's type, or a tag), and whether it is a field or a password. */
     inspect(
         target: BrowserTarget,
@@ -374,6 +380,12 @@ export interface PocketHost {
     readonly fetchPublic: FetchPublic;
     /** Who Pi works for in a conversation now: whose message led to its current work. */
     requesterOf(conversationId: ConversationId): string | undefined;
+    /**
+     * The role of a person by id, as core decides it; undefined for an id that is not a person here.
+     *
+     * @experimental In 0.27: it can change in a minor release (docs/extensions/policies/api-stability.md).
+     */
+    roleOf(personId: string): Role | undefined;
     /**
      * Listen to what happens in the app: sessions made, renamed, and archived, messages people send to Pi, and
      * runs that start and end. Returns how to stop; pass that to `web.onDispose`. PiP's conversations send none.

@@ -172,6 +172,16 @@ Since 0.3.0 · Stable
 
 The id of the person that Pi works for in a session now. This is the person whose message started Pi's current work.
 
+### `roleOf`
+
+```ts
+roleOf(personId: string): Role | undefined;
+```
+
+Since 0.27.0 · Experimental
+
+The role of a person by id: `"owner"`, `"guest"`, or `"viewer"`. It is `undefined` for an id that is not a person here. It reads the role that core uses, so a module does not keep its own copy. Use it with `requesterOf` to know if Pi works for the owner. It can change in a minor release. Check that it is there first: `host.roleOf?.(id)`.
+
 ### `heldBack`
 
 ```ts
@@ -647,7 +657,12 @@ One control of a snapshot, as data, up to 500 of them.
 interface BrowserPageHandle {
     readonly url: string;
     readonly title: string;
-    snapshot(): Promise<{ text: string; controls: BrowserControl[]; truncated: boolean }>;
+    snapshot(): Promise<{
+        text: string;
+        controls: BrowserControl[];
+        truncated: boolean;
+        scroll: { y: number; viewport: number; height: number };
+    }>;
     inspect(
         target: BrowserTarget,
     ): Promise<{ label: string; kind: string; editable: boolean; password: boolean }>;
