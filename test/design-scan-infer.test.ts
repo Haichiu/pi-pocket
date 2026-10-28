@@ -781,10 +781,10 @@ test("scales: sizes a pixel apart merge, a percent radius is not a size, a pill 
     );
     assert.deepEqual(
         scan.inferred.spacing.steps,
-        [4, 10, 16],
-        "15 and 16 are one, 4 and 5 are one",
+        [4, 16],
+        "15 and 16 are one, 4 and 5 are one; 10px is used once and is no step",
     );
-    assert.ok(token(system, "space.2-5"), "10px is step 2.5");
+    assert.ok(!token(system, "space.2-5"), "a one-off off the grid is no step");
     assert.equal(token(system, "radius.md")!.modes.light!.css, "6px");
     assert.ok(token(system, "radius.4"), "a used radius the project does not name");
     assert.ok(!token(system, "radius.3"), "3px is 4px");
@@ -1673,4 +1673,387 @@ test("a scan of a folder names the folder in the next call, and a project with n
         scanReport(scanTokens(project({ "a.css": "body { margin: 0 }" }))),
         /Next call: design_system with action init and tokens/,
     );
+});
+
+// --- Round 3b: dark mode in SCSS, scales without tokens, dark-first pages ----------------------------------------------
+
+test("SCSS dark mode written as a mixin: @include dark-mode { … }, a mixin that wraps the dark mode, and if($theme == dark, …)", () => {
+    const scan = scanTokens(
+        project({
+            "_mixins.scss": `@mixin dark-mode { .theme-dark & { @content; } }
+@mixin when-night { @media (prefers-color-scheme: dark) { @content; } }
+@mixin respect($what) { @media (prefers-color-scheme: dark) { @content; } }`,
+            "main.scss": `@import "mixins";
+body { background: #f7f7f5; color: #1b1c1f; @include dark-mode { background: #101114; color: #ececf0; } }
+.card { background: #ffffff; border: 1px solid #dcdde0; @include respect(x) { background: #1a1c21; border-color: #2a2c31; } }
+.meta { color: #6a6e78; @include when-night { color: #9ca0aa; } }
+a { color: #0b6bcb; @include dark-mode { color: #5aa2f0; } }`,
+            "_theme.scss": `$theme: light !default;
+$muted: if($theme == dark, #9ca0aa, #6a6e78);`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f7f7f5");
+    assert.equal(roles.background!.dark, "#101114", "@include dark-mode");
+    assert.equal(
+        roles.surface!.dark,
+        "#1a1c21",
+        "a mixin whose body wraps the dark media query, defined in another file",
+    );
+    assert.equal(roles.text!.dark, "#ececf0");
+    assert.equal(roles.accent!.dark, "#5aa2f0");
+    assert.equal(roles.muted!.dark, "#9ca0aa");
+});
+
+test("indented Sass and Stylus are read: nested rules, a mixin for the dark mode, and the scales in them", () => {
+    const sass = scanTokens(
+        project({
+            "main.sass": `=dark
+  @media (prefers-color-scheme: dark)
+    @content
+.card
+  padding: 12px 16px
+  border-radius: 10px
+  box-shadow: 0 2px 6px rgba(0,0,0,.12)
+  background: #fff
+  +dark
+    background: #1a1c21
+  &:hover
+    box-shadow: 0 8px 24px rgba(0,0,0,.18)
+.btn
+  padding: 8px 12px
+  border-radius: 10px
+.tag
+  padding: 4px 8px
+  border-radius: 6px`,
+        }),
+    );
+
+    assert.deepEqual(sass.inferred.spacing.steps, [4, 8, 12, 16]);
+    assert.equal(sass.inferred.radii.length, 2);
+    assert.equal(sass.inferred.shadows, 2);
+    assert.equal(sass.inferred.hasDark, true, "+dark is @include dark");
+
+    const styl = scanTokens(
+        project({
+            "main.styl": `.card
+  padding 12px 16px
+  border-radius 10px
+  box-shadow 0 2px 6px rgba(0,0,0,.12)
+.btn
+  padding 8px 12px
+  border-radius 10px
+.tag
+  padding 4px 8px
+  border-radius 6px`,
+        }),
+    );
+
+    assert.deepEqual(styl.inferred.spacing.steps, [4, 8, 12, 16]);
+    assert.equal(styl.inferred.shadows, 1);
+});
+
+test("scales that are only literals in rules: React Native shadows from four properties, Angular styles, Vue SCSS", () => {
+    const scan = scanTokens(
+        project({
+            "src/Card.js": `import { StyleSheet } from 'react-native';
+export const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#f4f5f7' },
+  card: { padding: 16, borderRadius: 12, backgroundColor: '#ffffff', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
+  row: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
+});`,
+            "src/app/x.component.ts": `@Component({ selector: 'x', template: '', styles: [\`
+  .box { padding: 24px 32px; border-radius: 6px; }
+  .box h2 { margin: 0 0 8px; }
+\`] })
+export class X {}`,
+        }),
+    );
+
+    assert.equal(scan.inferred.shadows, 1, "0 2px 8px rgba(0, 0, 0, 0.12)");
+    assert.deepEqual(scan.inferred.spacing.steps, [8, 12, 16, 24, 32]);
+    assert.equal(scan.inferred.radii.length, 2);
+    assert.equal(scan.inferred.roles.background!.value, "#f4f5f7", "the container is the page");
+    assert.equal(scan.inferred.roles.surface!.value, "#ffffff", "the card is the surface");
+});
+
+test("a dark-first page with unusual names: the page is read by use, .light and the light media query are the other mode", () => {
+    const scan = scanTokens(
+        project({
+            "tokens.css": `:root { --base: #0f1418; --panel: #171e24; --ink: #e7ebee; --faded: #8fa0ab; --rim: #29323a; --glow: #40d787; --glow-deep: #2fa263; --go: #1c7d46; --stop: #e0564f; --wait: #d9a13b; --drop-1: 0 1px 2px rgba(9,14,18,.2) }
+.light { --base: #f5f6f4; --panel: #ffffff; --ink: #1e252b; --faded: #5b6b76; --rim: #d7dcd8; --glow: #0d8a4e; --go: #14603a; --stop: #c23b35; --wait: #a06a10 }
+body { background: var(--base); color: var(--ink) } .card { background: var(--panel); border: 1px solid var(--rim) } a { color: var(--glow) }
+.hero { background: linear-gradient(135deg, #1e1b4b, #312e81) } .chart { fill: #22d3ee } .chart2 { fill: #a78bfa } .badge { background: #fde68a }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(scan.inferred.modes.default, "dark");
+    assert.equal(roles.background!.value, "#0f1418", "the page, by how it is painted");
+    assert.equal(roles.background!.dark, "#f5f6f4", "the other mode (here the light one)");
+    assert.equal(roles.muted!.value, "#8fa0ab", "`faded`");
+    assert.equal(roles.border!.value, "#29323a", "`rim`");
+    assert.equal(roles.accent!.value, "#40d787");
+    assert.equal(
+        roles.danger!.value,
+        "#e0564f",
+        "a red that a variable names, though no rule uses it",
+    );
+    assert.equal(
+        roles.success!.value,
+        "#1c7d46",
+        "the green with its own name, not --glow-deep, a step of the accent",
+    );
+    assert.equal(roles.warning!.value, "#d9a13b");
+    assert.equal(
+        scan.inferred.shadows,
+        1,
+        "a shadow by its value, whatever the variable is called",
+    );
+
+    const palette = Object.values(scan.inferred.palette).reduce((sum, count) => sum + count, 0);
+
+    assert.ok(
+        palette <= 11,
+        `${palette} colors: the one-offs of a dark-first page (gradient stops, a chart) are left out`,
+    );
+});
+
+test("SCSS variables a custom property is set from are that property; prefers-color-scheme: light is the other mode", () => {
+    const scan = scanTokens(
+        project({
+            "_tokens.scss": `$dark-bg: #131015; $dark-surface: #1d1822; $dark-ink: #ece7f1; $dark-brand: #f0717f;
+:root { --bg: #{$dark-bg}; --surface: #{$dark-surface}; --ink: #{$dark-ink}; --brand: #{$dark-brand}; }
+@media (prefers-color-scheme: light) { :root:not(.dark-theme) { --bg: #faf7f5; --surface: #ffffff; --ink: #221c28; --brand: #d8394d; } }`,
+        }),
+    );
+    const system = load(scan);
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#131015");
+    assert.equal(roles.background!.dark, "#faf7f5");
+    assert.equal(roles.accent!.dark, "#d8394d");
+    assert.ok(
+        !system.tokens.some((each) => each.name.startsWith("color.dark")),
+        "no token for $dark-bg beside --bg",
+    );
+});
+
+test("a one-off used once is left out of a large palette, kept in a small one; a spacing used once off the grid is no step", () => {
+    const small = scanTokens(
+        project({
+            "a.css": `body { background: #fff; color: #111 } .a { color: #36f } .b { border: 1px solid #ddd } .c { background: #fde68a }`,
+        }),
+    );
+    const many = Array.from(
+        { length: 20 },
+        (_, at) =>
+            `.x${at} { color: #${(0x112233 + at * 0x050607).toString(16)}; padding: ${at === 0 ? "6px" : "8px"} }`,
+    ).join("\n");
+    const big = scanTokens(
+        project({
+            "a.css": `${many}\nbody { background: #fff; color: #111 } .a { color: #36f } .a2 { color: #36f }`,
+        }),
+    );
+    const count = (scan: ReturnType<typeof scanTokens>) =>
+        Object.values(scan.inferred.palette).reduce((sum, each) => sum + each, 0);
+
+    assert.ok(count(small) >= 4, "a small page keeps its yellow");
+    assert.ok(count(big) <= 14, `${count(big)} colors out of 20 one-offs`);
+    assert.deepEqual(big.inferred.spacing.steps, [8], "6px used once is no step");
+});
+
+// --- Round 3c: classes of input, not one project --------------------------------------------------------------------------
+
+test("a shadow is found by its value, whatever the name: elev, elevation, depth, lift, z1, raise, with layers, inset, a variable color, a color first", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root {
+  --elev-1: 0 1px 2px rgba(0,0,0,.2);
+  --elevation-2: 0 4px 8px -2px rgba(0,0,0,.25), 0 2px 4px rgba(0,0,0,.1);
+  --depth-3: inset 0 1px 0 rgba(255,255,255,.1), 0 12px 24px rgba(0,0,0,.3);
+  --lift-1: 0 2px 6px #00000033;
+  --z1: 0 1px 3px hsl(220 20% 10% / .3);
+  --raise: 0 0 0 1px rgb(0 0 0 / 0.08), 0 4px 12px rgb(0 0 0 / 0.1);
+  --soft: 0 2px 4px var(--ink);
+  --first: rgba(0,0,0,.2) 0 4px 12px;
+  --pad: 8px 8px 8px 8px;
+  --margin-ish: 12px 16px;
+  --none: none;
+  --t-quick: 120ms; --t-slow: 0.4s;
+  --curve-out: cubic-bezier(0.2, 0, 0, 1); --ease-x: ease-in-out;
+  --voice: "Inter", system-ui, sans-serif;
+}`,
+        }),
+    );
+    const system = load(scan);
+    const shadows = system.tokens.filter((each) => each.type === "shadow");
+
+    assert.equal(shadows.length, 8, shadows.map((each) => each.name).join(", "));
+    assert.ok(
+        !system.tokens.some((each) => each.type === "shadow" && /pad|margin/.test(each.name)),
+        "a padding is no shadow",
+    );
+    assert.deepEqual(
+        system.tokens
+            .filter((each) => each.type === "duration")
+            .map((each) => each.modes.light!.css),
+        ["120ms", "0.4s"],
+    );
+    assert.equal(system.tokens.filter((each) => each.type === "cubicBezier").length, 2);
+    assert.ok(system.tokens.some((each) => each.type === "fontFamily"));
+});
+
+test("status words: good ok positive pass valid are success; bad error critical negative invalid fail are danger; warn caution attention are warning", () => {
+    const forms: [string, string, string, string][] = [
+        ["good", "bad", "warn", "note"],
+        ["ok", "error", "caution", "notice"],
+        ["positive", "negative", "attention", "info"],
+        ["pass", "critical", "warning", "note"],
+        ["valid", "invalid", "caution", "notice"],
+        ["success", "fail", "warn", "info"],
+    ];
+
+    for (const [good, bad, warn, note] of forms) {
+        const scan = scanTokens(
+            project({
+                "a.css": `:root { --bg: #fff; --text: #111; --${good}: #16a34a; --${bad}: #dc2626; --${warn}: #d97706; --${note}: #2563eb }
+[data-bs-theme="dark"] { --bg: #0b0c10; --text: #eee; --${good}: #4ade80; --${bad}: #f87171; --${warn}: #fbbf24; --${note}: #60a5fa }
+.x { color: var(--${good}) }`,
+            }),
+        );
+        const { roles } = scan.inferred;
+
+        assert.equal(roles.success!.value, "#16a34a", `${good} is success`);
+        assert.equal(roles.success!.dark, "#4ade80", `${good}'s dark value follows its name`);
+        assert.equal(roles.danger!.value, "#dc2626", `${bad} is danger`);
+        assert.equal(roles.danger!.dark, "#f87171");
+        assert.equal(roles.warning!.value, "#d97706", `${warn} is warning`);
+        assert.equal(roles.warning!.dark, "#fbbf24");
+        assert.equal(roles.accent, undefined, `${note} is a notice, not the brand`);
+    }
+});
+
+test("a status named only in the other mode: the light color is the used one of its hue, and the dark value is the name's", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root { --bg: #fff; --text: #111 }
+.dark { --bg: #0b0c10; --text: #eee; --success: #4ade80; --danger: #f87171 }
+.ok { color: #16a34a } .bad { color: #dc2626 } .ok2 { border-color: #16a34a }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.success!.value, "#16a34a");
+    assert.equal(roles.success!.dark, "#4ade80");
+    assert.equal(roles.danger!.value, "#dc2626");
+    assert.equal(roles.danger!.dark, "#f87171");
+    assert.equal(roles.accent, undefined, "the used green is the success, not the brand");
+});
+
+test("variables that supply one mode (--light-*, --dark-*, --*-dark, --*-light) stay out of the palette in every form", () => {
+    const forms: Record<string, Record<string, string>> = {
+        "role variables behind light- and dark- twins": {
+            "a.css": `:root { --light-bg: #f6f7fa; --light-ink: #14161c; --light-good: #16a34a; --dark-bg: #0b0c10; --dark-ink: #e8e9ee; --dark-good: #4ade80;
+  --bg: var(--light-bg); --ink: var(--light-ink); --good: var(--light-good) }
+.dark { --bg: var(--dark-bg); --ink: var(--dark-ink); --good: var(--dark-good) }
+body { background: var(--bg); color: var(--ink) } .ok { color: var(--good) }`,
+        },
+        "twins with a suffix and no role variable": {
+            "a.css": `:root { --bg-light: #f6f7fa; --bg-dark: #0b0c10; --ink-light: #14161c; --ink-dark: #e8e9ee; --good-light: #16a34a; --good-dark: #4ade80 }
+body { background: var(--bg-light); color: var(--ink-light) } .ok { color: var(--good-light) }
+@media (prefers-color-scheme: dark) { body { background: var(--bg-dark); color: var(--ink-dark) } .ok { color: var(--good-dark) } }`,
+        },
+        "one twin with a role variable": {
+            "a.css": `:root { --bg: #f6f7fa; --ink: #14161c; --good: #16a34a; --dark-good: #4ade80 }
+.dark { --bg: #0b0c10; --ink: #e8e9ee; --good: var(--dark-good) } body { background: var(--bg); color: var(--ink) } .ok { color: var(--good) }`,
+        },
+        "Sass variables behind interpolation": {
+            "_v.scss": `$light-bg: #f6f7fa; $light-ink: #14161c; $light-good: #16a34a; $dark-bg: #0b0c10; $dark-ink: #e8e9ee; $dark-good: #4ade80;
+:root { --bg: #{$light-bg}; --ink: #{$light-ink}; --good: #{$light-good}; }
+[data-mantine-color-scheme="dark"] { --bg: #{$dark-bg}; --ink: #{$dark-ink}; --good: #{$dark-good}; }`,
+        },
+    };
+
+    for (const [form, files] of Object.entries(forms)) {
+        const scan = scanTokens(project(files));
+        const system = load(scan);
+        const { roles } = scan.inferred;
+
+        assert.equal(roles.background!.value, "#f6f7fa", form);
+        assert.equal(roles.background!.dark, "#0b0c10", form);
+        assert.equal(roles.text!.dark, "#e8e9ee", form);
+        assert.equal(roles.success!.dark, "#4ade80", form);
+        assert.deepEqual(
+            system.tokens
+                .filter((each) =>
+                    /^color\.(?:dark|light)\b|^color\.[\w-]*-(?:dark|light)$/.test(each.name),
+                )
+                .map((each) => each.name),
+            [],
+            `${form}: no color group for the twins`,
+        );
+
+        // A role refers to a palette step: the same hex. Two tokens that hold it as a value are a copy.
+        const hexes = system.tokens
+            .filter((each) => each.type === "color" && each.modes.light!.alias === undefined)
+            .map((each) => each.modes.light!.hex);
+
+        assert.equal(new Set(hexes).size, hexes.length, `${form}: each color once`);
+    }
+});
+
+test("a vendor's theme attribute or class marks the dark mode, with plain literals or Sass interpolation", () => {
+    const selectors = [
+        '[data-bs-theme="dark"]',
+        '[data-color-mode="dark"]',
+        '[data-mantine-color-scheme="dark"]',
+        '[data-joy-color-scheme="dark"]',
+        '[data-theme*="dark"]',
+        "[data-theme^=dark]",
+        '[data-md-color-scheme="slate"]',
+        ".dark-theme",
+        ".theme--dark",
+        ".v-theme--dark",
+        ".ThemeDark",
+        ":root.dark-mode",
+        "html.theme-dark",
+        "[data-bs-theme=dark] body",
+        'html[data-color-mode="dark"][data-dark-theme="dark"]',
+    ];
+
+    for (const selector of selectors) {
+        const literal = scanTokens(
+            project({
+                "a.css": `:root { --bg: #f6f7fa; --text: #14161c } ${selector} { --bg: #0b0c10; --text: #e8e9ee }`,
+            }),
+        );
+        const sass = scanTokens(
+            project({
+                "a.scss": `$bg-l: #f6f7fa; $bg-d: #0b0c10; $t-l: #14161c; $t-d: #e8e9ee;
+:root { --bg: #{$bg-l}; --text: #{$t-l}; } ${selector} { --bg: #{$bg-d}; --text: #{$t-d}; }`,
+            }),
+        );
+
+        for (const scan of [literal, sass]) {
+            assert.equal(scan.inferred.roles.background!.value, "#f6f7fa", selector);
+            assert.equal(scan.inferred.roles.background!.dark, "#0b0c10", selector);
+            assert.equal(scan.inferred.roles.text!.dark, "#e8e9ee", selector);
+        }
+    }
+});
+
+test("interpolation inside a value or with arithmetic is resolved through the Sass variables", () => {
+    const scan = scanTokens(
+        project({
+            "_v.scss": `$ink: rgba(20, 22, 28, .2); $space: 8px; $radius: 6px;
+:root { --shadow-1: 0 1px 2px #{$ink}; --gap: #{$space * 2}; --round: #{$radius}; }
+.card { box-shadow: var(--shadow-1); padding: var(--gap); border-radius: var(--round) }`,
+        }),
+    );
+
+    assert.equal(scan.inferred.shadows, 1);
+    assert.ok(scan.inferred.spacing.steps.includes(16), "the gap is 8px * 2");
+    assert.ok(scan.inferred.radii.some((radius) => radius.endsWith("6px")));
 });

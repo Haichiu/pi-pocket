@@ -251,7 +251,7 @@ const SURFACEISH = new Set(
 );
 const OTHER_ROLE = new Set(
     w(
-        "accent danger error warning success info brand destructive critical secondary tertiary link border outline divider",
+        "accent danger error warning success info brand destructive critical secondary tertiary link border outline divider bad good ok positive negative note notice caution warn pass fail",
     ),
 );
 /** A name made only of the role's own words, and short: `border`, `border-default`; not `divider-light-1`. */
@@ -396,7 +396,10 @@ export function nameScore(role: RoleName, segs: string[]): number {
             );
             const weakAt = segs.findIndex((seg) => ["secondary", "tertiary"].includes(seg));
             const quiet =
-                has(segs, w("muted subtle dim dimmed faint soft weak hint quiet caption meta")) ||
+                has(
+                    segs,
+                    w("muted subtle dim dimmed faint faded soft weak hint quiet caption meta"),
+                ) ||
                 (weakAt >= 0 && inkAt >= 0 && inkAt < weakAt);
 
             if (
@@ -437,7 +440,7 @@ export function nameScore(role: RoleName, segs: string[]): number {
 
             return segs[0] === "muted"
                 ? 45
-                : w("subtle faint dim quiet weak hint").includes(segs[0]!)
+                : w("subtle faint faded dim quiet weak hint").includes(segs[0]!)
                   ? 62
                   : 0;
         }
@@ -445,7 +448,7 @@ export function nameScore(role: RoleName, segs: string[]): number {
         case "border": {
             const named = has(
                 segs,
-                w("border outline divider separator stroke line hairline rule"),
+                w("border outline divider separator stroke line hairline rule rim edge"),
             );
 
             if (
@@ -520,15 +523,28 @@ export function nameScore(role: RoleName, segs: string[]): number {
         case "success": {
             const table = {
                 danger: [
-                    w("danger error destructive critical negative invalid alert err"),
+                    w(
+                        "danger error destructive critical negative invalid alert err bad fail failed failure wrong fatal severe",
+                    ),
                     ["red"],
                 ],
                 warning: [
-                    ["warning", "warn", "caution", "attention"],
+                    ["warning", "warn", "caution", "attention", "alertness", "moderate"],
                     ["amber", "orange", "yellow"],
                 ],
                 success: [
-                    ["success", "positive", "valid", "ok", "confirm", "safe"],
+                    [
+                        "success",
+                        "positive",
+                        "valid",
+                        "ok",
+                        "confirm",
+                        "safe",
+                        "good",
+                        "pass",
+                        "passed",
+                        "done",
+                    ],
                     ["green", "emerald"],
                 ],
             } as const;
@@ -598,6 +614,8 @@ const hueOk = (role: RoleName, color: ColorEntry): boolean => {
 export function chooseRoles(
     colors: Map<string, ColorEntry>,
     named: VarColor[],
+    /** The hue of a status color that the other mode names (`--success` in the dark scope), to find its pair here. */
+    hints: Partial<Record<"danger" | "warning" | "success", number>> = {},
 ): Partial<Record<RoleName, RoleChoice>> {
     const chosen: Partial<Record<RoleName, RoleChoice>> = {};
     const entries = [...colors.values()];
@@ -925,10 +943,41 @@ export function chooseRoles(
 
     const chroma = entries.filter((color) => color.c >= 0.07 && color.rgba.a > 0.9);
 
+    // A status color that the other mode names has its pair in this mode: the used color of the same hue, before the
+    // most used chromatic color is taken for the accent.
+    for (const role of ["danger", "warning", "success"] as const) {
+        const hue = hints[role];
+
+        if (hue === undefined || chosen[role] !== undefined) {
+            continue;
+        }
+
+        const pair = byUse(
+            chroma.filter(
+                (color) =>
+                    !used(color.hex) &&
+                    color.c >= 0.1 &&
+                    color.uses >= 1 &&
+                    Math.abs(((color.h - hue + 540) % 360) - 180) <= 30,
+            ),
+            (color) => color.uses,
+        )[0];
+
+        if (pair !== undefined) {
+            set(role, pair.hex, "use", `used ${pair.uses}× with the hue of the dark ${role}`, 32);
+        }
+    }
+
     if (chosen.accent === undefined) {
         const statusSingles = new Set(
             chroma
-                .filter((color) => !used(color.hex) && color.uses <= 1 && color.c >= 0.1)
+                .filter(
+                    (color) =>
+                        !used(color.hex) &&
+                        color.uses <= 1 &&
+                        color.names.length === 0 &&
+                        color.c >= 0.1,
+                )
                 .flatMap((color) =>
                     (["danger", "warning", "success"] as const).filter((role) =>
                         hueOk(role, color),
@@ -941,9 +990,20 @@ export function chooseRoles(
             chroma.filter(
                 (color) =>
                     !used(color.hex) &&
+                    // A color that a variable names for a status or a notice (`--invalid`, `--note`) is not the brand.
+                    !color.names.some(
+                        (each) =>
+                            (["danger", "warning", "success"] as const).some(
+                                (role) => nameScore(role, words(each.name)) >= 48,
+                            ) ||
+                            words(each.name).some((word) =>
+                                ["info", "note", "notice"].includes(word),
+                            ),
+                    ) &&
                     !(
                         statusSingles >= 2 &&
                         color.uses <= 1 &&
+                        color.names.length === 0 &&
                         color.c >= 0.1 &&
                         (["danger", "warning", "success"] as const).some((role) =>
                             hueOk(role, color),
@@ -955,6 +1015,8 @@ export function chooseRoles(
                 (color.fact?.text ?? 0) +
                 (color.fact?.border ?? 0) +
                 (color.fact?.fill ?? 0) +
+                // A color a variable names is a token of the design; a literal in a gradient is a decoration.
+                (color.names.length > 0 ? 2 : 0) +
                 color.c * 5,
         )[0];
 
@@ -966,6 +1028,16 @@ export function chooseRoles(
     // The hue each status color sits nearest to (Oklch degrees): a red close to 27° is an error, not an orange.
     const centers = { danger: 27, warning: 70, success: 148 } as const;
     const accentColor = chosen.accent === undefined ? undefined : entry(chosen.accent.hex);
+    // A color named for the accent's variable and a suffix (`--glow-deep`, `--brandHover`) is a step of the accent.
+    const variantOfAccent = (color: ColorEntry) =>
+        (accentColor?.names ?? []).some((stem) =>
+            color.names.some(
+                (each) =>
+                    each.name !== stem.name &&
+                    each.name.startsWith(stem.name) &&
+                    /^[-_A-Z0-9]/.test(each.name.slice(stem.name.length)),
+            ),
+        );
 
     for (const role of ["danger", "warning", "success"] as const) {
         if (chosen[role] === undefined) {
@@ -981,20 +1053,36 @@ export function chooseRoles(
                         !used(color.hex) &&
                         hueOk(role, color) &&
                         color.c >= 0.1 &&
-                        color.uses >= 1 &&
-                        // A shade of the accent (near it, or of the same hue) is not a status color.
+                        // Used, or named by a variable (`--stop` is defined, and no rule needs to use it).
+                        (color.uses >= 1 || color.names.length > 0) &&
+                        !variantOfAccent(color) &&
+                        // A shade of the accent (near it, or of the same hue) is not a status color; a color that has a
+                        // name of its own (`--go` beside `--glow`) is its own.
                         (accentColor === undefined ||
                             (distance(color, accentColor) > 0.06 &&
                                 !(
                                     accentColor.c >= 0.07 &&
+                                    color.names.length === 0 &&
                                     Math.abs(((color.h - accentColor.h + 540) % 360) - 180) < 8
                                 ))),
                 ),
-                (color) => Math.log2(1 + color.uses) * 2 + closeness(color) * 3,
+                // A color a variable names is the design's; a literal used once may be a decoration.
+                (color) =>
+                    Math.log2(1 + color.uses) * 2 +
+                    closeness(color) * 3 +
+                    (color.names.length > 0 ? 3 : 0),
             )[0];
 
             if (top !== undefined) {
-                set(role, top.hex, "use", `used ${top.uses}× with the hue of ${role}`, 30);
+                set(
+                    role,
+                    top.hex,
+                    "use",
+                    top.uses === 0
+                        ? `named ${top.names[0]!.name}, with the hue of ${role}`
+                        : `used ${top.uses}× with the hue of ${role}`,
+                    30,
+                );
             }
         }
     }

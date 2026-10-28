@@ -44,7 +44,7 @@ const SKIP = new Set([
 const DOT_STYLE_FOLDERS = new Set([".storybook", ".vitepress", ".vuepress", ".docusaurus"]);
 
 const STYLE =
-    /\.(?:css|scss|sass|less|pcss|postcss|html?|vue|svelte|astro|mdx|tsx|jsx|ts|js|mjs|cjs|mts|cts)$/i;
+    /\.(?:css|scss|sass|less|styl|stylus|pcss|postcss|html?|vue|svelte|astro|mdx|tsx|jsx|ts|js|mjs|cjs|mts|cts)$/i;
 const TOKEN_JSON =
     /(?:^|\/)(?:[^/]*tokens?[^/]*|theme[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$/i;
 
@@ -70,7 +70,7 @@ export function priority(rel: string): number {
     const extension = extname(name);
     let score = 0;
 
-    if (/^\.(?:css|scss|sass|less|pcss|postcss)$/.test(extension)) {
+    if (/^\.(?:css|scss|sass|less|styl|stylus|pcss|postcss)$/.test(extension)) {
         score += 40;
     } else if (extension === ".json") {
         score += 45;

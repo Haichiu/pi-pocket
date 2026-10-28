@@ -41,9 +41,9 @@ export const MAX_MAP = 8000;
 export const COMMENTS =
     /(?<![\w.*"'`/-])\/\*[\s\S]*?(?:\*\/|$)|<!--[\s\S]*?(?:-->|$)|(?<![:\w"'`(/\\])\/\/[^\n]*/g;
 
-const DARK_WORD = String.raw`(?:dark|dark[-_]theme|dark[-_]mode|darkmode|dark[-_]scheme|theme[-_]{1,2}dark|mode[-_]{1,2}dark|scheme[-_]dark|color[-_]scheme[-_]dark|is[-_]dark|has[-_]dark|ui[-_]dark|app[-_]dark|body[-_]dark|v-theme--dark|chakra-ui-dark|ant-dark|night|night[-_]mode|nightmode|theme[-_]night)`;
+const DARK_WORD = String.raw`(?:dark|dark[-_]theme|dark[-_]mode|darkmode|dark[-_]scheme|theme[-_]{0,2}dark|mode[-_]{0,2}dark|scheme[-_]{0,2}dark|color[-_]scheme[-_]dark|is[-_]?dark|has[-_]?dark|ui[-_]dark|app[-_]dark|body[-_]dark|v-theme--dark|chakra-ui-dark|ant-dark|night|night[-_]mode|nightmode|theme[-_]night|dark[-_]?(?:theme|mode|scheme)(?:[-_]active|[-_]on|[-_]enabled)?)`;
 // A class or attribute that selects the dark theme: `.dark`, `[data-theme="dark"]`, `[data-mantine-color-scheme=dark]`...
-const DARK_PART = String.raw`(?:\.${DARK_WORD}(?![\w-])|\[(?:data-[\w-]*)?(?:theme|mode|color-mode|color-scheme|colorscheme|appearance|scheme)\s*[~|^$*]?=\s*["']?(?:dark|night|dark[-_]mode|darkmode)["']?\s*\])`;
+const DARK_PART = String.raw`(?:\.${DARK_WORD}(?![\w-])|\[(?:data-[\w-]*)?(?:theme|mode|color-mode|color-scheme|colorscheme|appearance|scheme)\s*[~|^$*]?=\s*["']?(?:dark|night|slate|dark[-_]mode|darkmode)["']?\s*\])`;
 const DARK_ANY = new RegExp(DARK_PART, "i");
 // A root-like compound that ends in the dark class: `html.dark`, `:root[data-theme=dark]`, `body.dark`, `.dark`.
 const DARK_ROOT = new RegExp(
@@ -56,6 +56,11 @@ const LIGHT_ROOT = new RegExp(
     String.raw`^(?:html|body|:root|\*|:host)?(?:${LIGHT_PART})+(?::root)?$`,
     "i",
 );
+// A root-like element under the dark class: `[data-bs-theme=dark] body`, `.dark :root`.
+const DARK_DESC = new RegExp(
+    String.raw`^(?:html|body|:root|\*|:host)?(?:${DARK_PART})+\s+(?:body|html|:root|\*|main|#root|#app|\.app|\.App)$`,
+    "i",
+);
 // What a custom property on the default scope is set on.
 const ROOT_ONLY =
     /^(?:html|body|:root|\*|:host|#root|#app|#__next|\.app|\.theme|main)(?:\[data-(?:bs-)?(?:theme|mode)\])*$|^\[data-(?:bs-)?(?:theme|mode|color-scheme)\]$/i;
@@ -65,13 +70,20 @@ const ROOT_ANY = /^(?:html|body|:root|\*|:host)(?:\s*:not\([^)]*\))?$/i;
 export const isDarkSelector = (selector: string) => DARK_ANY.test(selector);
 
 /** The scope of one selector of the rule: dark, light (explicitly), the default, or none of them. */
-function partScope(part: string, dark: boolean): Scope {
-    if (DARK_ROOT.test(part)) {
+function partScope(part: string, dark: boolean, light = false): Scope {
+    if (DARK_ROOT.test(part) || DARK_DESC.test(part)) {
         return "dark";
     }
 
     if (LIGHT_ROOT.test(part)) {
         return "light";
+    }
+
+    if (light) {
+        // Inside `prefers-color-scheme: light`, the root selectors define the light values (a dark-first project's other mode).
+        return ROOT_ANY.test(part) || ROOT_ONLY.test(part) || /^:root\b/i.test(part)
+            ? "light"
+            : "other";
     }
 
     if (dark) {
@@ -92,15 +104,15 @@ function partScope(part: string, dark: boolean): Scope {
  * The scope of the rule for a custom property: which mode its values belong to. A rule for `:root, [data-theme=light]`
  * is the default; `.dark` is dark; `:root[data-mode="light"]` is light (the mode of a dark-first project).
  */
-function varScope(selector: string, dark: boolean): Scope {
+function varScope(selector: string, dark: boolean, light = false): Scope {
     const scopes = selector
         .split(",")
         .map((part) => part.trim())
         .filter(Boolean)
-        .map((part) => partScope(part, dark));
+        .map((part) => partScope(part, dark, light));
 
     if (scopes.length === 0) {
-        return dark ? "dark" : "default";
+        return dark ? "dark" : light ? "light" : "default";
     }
 
     if (scopes.includes("default")) {
@@ -116,8 +128,136 @@ function varScope(selector: string, dark: boolean): Scope {
     return scopes.includes("dark") ? "dark" : scopes.includes("light") ? "light" : "other";
 }
 
+/** Whether a name is made of mode words for the dark mode (`dark`, `dark-mode`, `on-dark`, `theme-dark`, `night`). */
+function isDarkWords(name: string): boolean {
+    return name
+        .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .some((word) => word === "dark" || word === "night");
+}
+
+/**
+ * `@include dark { … }`, `@include dark-mode { … }`, `@include theme(dark) { … }`, `@include <a mixin that wraps the dark
+ * mode> { … }`, and an `@if $theme == dark { … }` block hold the dark mode's rules.
+ */
+function isDarkInclude(prelude: string, darkMixins: ReadonlySet<string>): boolean {
+    const include = /^@include\s+([\w.-]+)\s*(?:\(([^)]*)\))?/i.exec(prelude);
+
+    if (include !== null) {
+        const name = include[1]!.replace(/^.*\./, "");
+
+        return (
+            darkMixins.has(name) ||
+            isDarkWords(name) ||
+            /(?:^|[\s,(:])['"]?(?:dark|night)['"]?(?:$|[\s,)])/i.test(include[2] ?? "")
+        );
+    }
+
+    return /^@(?:else\s+)?if\b[^{]*(?:==|=)\s*['"]?(?:dark|night)['"]?\s*$/i.test(prelude);
+}
+
+/**
+ * The Sass mixins of a text that hold the dark mode: one that wraps its `@content` in the dark mode
+ * (`@mixin dark { @media (prefers-color-scheme: dark) { @content } }`, `.theme-dark & { @content }`), or one called dark.
+ * `@include dark { … }` is then the dark mode.
+ */
+export function darkMixinsIn(text: string): Set<string> {
+    const darkMixins = new Set<string>();
+
+    for (const match of text.matchAll(/@mixin\s+([\w-]+)\s*(?:\([^)]*\))?\s*\{/g)) {
+        // The mixin's own text: up to the next mixin, and at most 600 characters.
+        const body = text
+            .slice(match.index + match[0].length, match.index + match[0].length + 600)
+            .split("@mixin")[0]!;
+        const wrapper = body.split("@content")[0]!;
+
+        if (
+            isDarkWords(match[1]!) ||
+            (body.includes("@content") &&
+                (/prefers-color-scheme\s*:\s*dark/i.test(wrapper) || isDarkSelector(wrapper)))
+        ) {
+            darkMixins.add(match[1]!);
+        }
+    }
+
+    return darkMixins;
+}
+
 const MAX_DECLS = 30_000;
 const MAX_DEPTH = 24;
+
+/**
+ * Indented Sass (`.sass`) and Stylus (`.styl`) as braces and semicolons, one output line for each input line (so a line
+ * number stays the file's): a line with deeper lines under it opens a block, any other line is a declaration. `$x: 1` and
+ * `x = 1` are variables; `=name` and `+name` are `@mixin` and `@include`; Stylus' `prop value` has no colon.
+ */
+export function indentedToBraces(source: string): string {
+    const lines = source.split("\n").slice(0, 20_000);
+    const indentOf = (line: string) => /^[ \t]*/.exec(line)![0].replace(/\t/g, "    ").length;
+    const blank = (line: string) => line.trim() === "" || /^\s*\/\//.test(line);
+    const stack: number[] = [];
+    const out: string[] = [];
+
+    for (const [at, line] of lines.entries()) {
+        if (blank(line)) {
+            out.push("");
+
+            continue;
+        }
+
+        const indent = indentOf(line);
+        let closing = "";
+
+        while (stack.length > 0 && stack.at(-1)! >= indent) {
+            stack.pop();
+            closing += "} ";
+        }
+
+        const next = lines.slice(at + 1).find((each) => !blank(each));
+        const opens = next !== undefined && indentOf(next) > indent;
+        let text = line.trim().replace(/;\s*$/, "");
+
+        if (opens) {
+            text = text
+                .replace(/^=\s*/, "@mixin ")
+                .replace(/^\+\s*/, "@include ")
+                .replace(/\s+\/\/.*$/, "");
+            out.push(`${closing}${text} {`);
+            stack.push(indent);
+
+            continue;
+        }
+
+        text = text
+            .replace(/\s+\/\/.*$/, "")
+            .replace(/^=\s*/, "@mixin ")
+            .replace(/^\+\s*/, "@include ");
+
+        // `x = 1` (Stylus) is a variable; `:prop value` (indented Sass) and `prop value` (Stylus) are declarations.
+        const variable = /^(\$?[\w-]+)\s*[?:]?=\s*(.+)$/.exec(text);
+        const colonFirst = /^:([\w-]+)\s+(.+)$/.exec(text);
+        const spaced = /^([a-z][a-z-]*)\s+([^:{}][^{}]*)$/.exec(text);
+
+        if (variable !== null) {
+            text = `${variable[1]!.startsWith("$") ? variable[1] : `$${variable[1]}`}: ${variable[2]}`;
+        } else if (colonFirst !== null) {
+            text = `${colonFirst[1]}: ${colonFirst[2]}`;
+        } else if (
+            spaced !== null &&
+            !text.startsWith("@") &&
+            !/^(?:if|else|for|return|unless)\b/.test(text)
+        ) {
+            text = `${spaced[1]}: ${spaced[2]}`;
+        }
+
+        out.push(`${closing}${text};`);
+    }
+
+    out[out.length - 1] = `${out.at(-1) ?? ""}${" }".repeat(stack.length)}`;
+
+    return out.join("\n");
+}
 
 /** Strips comments, keeping line breaks. */
 // A comment keeps its line breaks, so that a line counted after it is the file's line; one line of it is a space.
@@ -129,7 +269,11 @@ export const stripComments = (text: string) =>
  * does not end a declaration), and SCSS `#{…}`. Variables (`$x: 1`, `@x: 1`) come back as declarations with that prop.
  * Statements that are not declarations (`@import "x";`) are skipped.
  */
-export function parseStyles(source: string, firstLine: number | undefined = 1): Decl[] {
+export function parseStyles(
+    source: string,
+    firstLine: number | undefined = 1,
+    known?: ReadonlySet<string>,
+): Decl[] {
     const text = stripComments(source);
     // The line of an index: the number of line breaks before it.
     const breaks: number[] = [];
@@ -161,6 +305,7 @@ export function parseStyles(source: string, firstLine: number | undefined = 1): 
     const darkQueries = [
         ...text.matchAll(/@custom-media\s+(--[\w-]+)\s+[^;{}]*prefers-color-scheme\s*:\s*dark/gi),
     ].map((match) => match[1]!);
+    const darkMixins = new Set([...darkMixinsIn(text), ...(known ?? [])]);
     const decls: Decl[] = [];
     // One entry per open block: its prelude, and the selector it resolves to.
     const stack: { prelude: string; selector: string }[] = [];
@@ -201,7 +346,11 @@ export function parseStyles(source: string, firstLine: number | undefined = 1): 
             (part) =>
                 /^@media\b[^{]*prefers-color-scheme\s*:\s*dark/i.test(part) ||
                 (/^@media\b/i.test(part) &&
-                    darkQueries.some((name) => new RegExp(`\\(\\s*${name}\\s*\\)`).test(part))),
+                    darkQueries.some((name) => new RegExp(`\\(\\s*${name}\\s*\\)`).test(part))) ||
+                isDarkInclude(part, darkMixins),
+        );
+        const light = at.some((part) =>
+            /^@media\b[^{]*prefers-color-scheme\s*:\s*light/i.test(part),
         );
         const here = selector();
         const theme = at.some((part) => /^@theme\b/i.test(part));
@@ -225,7 +374,7 @@ export function parseStyles(source: string, firstLine: number | undefined = 1): 
                 prop.startsWith("--") || prop.startsWith("$") || prop.startsWith("@")
                     ? theme
                         ? "default"
-                        : varScope(here, dark)
+                        : varScope(here, dark, light)
                     : dark || isDarkSelector(here)
                       ? "dark"
                       : "default",
@@ -351,7 +500,7 @@ export function pageStyles(source: string): { blocks: string[]; inline: Decl[] }
 export function templateStyles(source: string): string[] {
     const found: string[] = [];
     const head =
-        /(?<![\w$.])(?:css|styled(?:\.[a-z][\w]*|\([^)\n]{1,60}\))(?:\.attrs\([^)\n]{0,200}\))?|createGlobalStyle|injectGlobal|keyframes)\s*`/g;
+        /(?<![\w$.])(?:css|styled(?:\.[a-z][\w]*|\([^)\n]{1,60}\))(?:\.attrs\([^)\n]{0,200}\))?|createGlobalStyle|injectGlobal|keyframes|styles\s*:\s*\[?)\s*`/g;
 
     for (const match of source.matchAll(head)) {
         if (found.length >= 400) {
@@ -380,7 +529,7 @@ export function templateStyles(source: string): string[] {
 
 /** The CSS properties that a JSX style object or a CSS-in-JS object may set, as camelCase. */
 const STYLE_KEYS =
-    /\b(color|background|backgroundColor|borderColor|border|borderTop|borderBottom|borderLeft|borderRight|outlineColor|outline|fill|stroke|fontFamily|fontSize|fontWeight|lineHeight|letterSpacing|padding|paddingTop|paddingBottom|paddingLeft|paddingRight|margin|marginTop|marginBottom|marginLeft|marginRight|gap|rowGap|columnGap|borderRadius|boxShadow|textShadow|transition|animation)\s*:\s*(?:(["'`])((?:\\.|(?!\2)[^\\\n]){1,200})\2|(-?\d+(?:\.\d+)?)(?![\w.]))/g;
+    /\b(color|background|backgroundColor|borderColor|border|borderTop|borderBottom|borderLeft|borderRight|outlineColor|outline|fill|stroke|fontFamily|fontSize|fontWeight|lineHeight|letterSpacing|padding|paddingTop|paddingBottom|paddingLeft|paddingRight|paddingHorizontal|paddingVertical|margin|marginTop|marginBottom|marginLeft|marginRight|marginHorizontal|marginVertical|gap|rowGap|columnGap|borderRadius|boxShadow|textShadow|transition|animation)\s*:\s*(?:(["'`])((?:\\.|(?!\2)[^\\\n]){1,200})\2|(-?\d+(?:\.\d+)?)(?![\w.]))/g;
 
 const kebab = (key: string) => key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 // A bare number is pixels for these; for the rest it is unitless or not a length.
@@ -391,17 +540,44 @@ const PIXEL_KEYS = new Set([
     "paddingBottom",
     "paddingLeft",
     "paddingRight",
+    "paddingHorizontal",
+    "paddingVertical",
     "margin",
     "marginTop",
     "marginBottom",
     "marginLeft",
     "marginRight",
+    "marginHorizontal",
+    "marginVertical",
     "gap",
     "rowGap",
     "columnGap",
     "borderRadius",
     "letterSpacing",
 ]);
+
+/** The key of the object that an index sits in (`card` for `card: { padding: 8 }`), looking back at most 2,000 characters. */
+function enclosingKey(source: string, index: number): string | undefined {
+    let depth = 0;
+
+    for (let at = index - 1; at >= Math.max(0, index - 2000); at--) {
+        const char = source[at];
+
+        if (char === "}") {
+            depth += 1;
+        } else if (char === "{") {
+            if (depth === 0) {
+                return /([A-Za-z_$][\w$]*)\s*(?::|=)\s*(?:\w+\.create\(\s*)?$/.exec(
+                    source.slice(Math.max(0, at - 80), at),
+                )?.[1];
+            }
+
+            depth -= 1;
+        }
+    }
+
+    return undefined;
+}
 
 /** Style objects in JavaScript: `{ backgroundColor: "#fff", padding: 8 }` as inline declarations. */
 export function objectStyles(source: string): Decl[] {
@@ -421,16 +597,51 @@ export function objectStyles(source: string): Decl[] {
         }
 
         const value = match[3] ?? (PIXEL_KEYS.has(key) ? `${match[4]!}px` : match[4]!);
+        // The style's own name (`styles.container`, `card: {…}`) says what it paints.
+        const owner = enclosingKey(source, match.index);
 
         decls.push({
-            prop: kebab(key),
+            // React Native's `paddingHorizontal` is CSS's `padding-inline`.
+            prop: kebab(key)
+                .replace(/-horizontal$/, "-inline")
+                .replace(/-vertical$/, "-block"),
             value: value.trim().slice(0, MAX_VALUE),
-            selector: "",
+            selector: owner === undefined ? "" : `.${owner}`,
             at: [],
             scope: "default",
             theme: false,
             inline: true,
         });
+    }
+
+    // React Native shadows are four properties, not a `box-shadow`: `shadowOffset`, `shadowRadius`, `shadowOpacity`,
+    // `shadowColor` of one object make one.
+    for (const match of source.matchAll(/\bshadowRadius\s*:\s*(\d+(?:\.\d+)?)/g)) {
+        if (decls.length >= 5000) {
+            break;
+        }
+
+        const around = source.slice(Math.max(0, match.index - 300), match.index + 300);
+        const height = /\bheight\s*:\s*(-?\d+(?:\.\d+)?)/.exec(around)?.[1] ?? "0";
+        const width = /\bwidth\s*:\s*(-?\d+(?:\.\d+)?)/.exec(around)?.[1] ?? "0";
+        const opacity = /\bshadowOpacity\s*:\s*(\d*\.?\d+)/.exec(around)?.[1] ?? "0.25";
+        const color = /\bshadowColor\s*:\s*(["'])(#[0-9a-fA-F]{3,8}|[a-z]+)\1/.exec(around)?.[2];
+        const rgb = color === undefined ? undefined : colorsIn(color, true)[0];
+
+        if (rgb !== undefined) {
+            const hex = rgb.hex.slice(1, 7);
+            const channel = (at: number) => parseInt(hex.slice(at, at + 2), 16);
+
+            decls.push({
+                prop: "box-shadow",
+                value: `${width}px ${height}px ${match[1]}px rgba(${channel(0)}, ${channel(2)}, ${channel(4)}, ${opacity})`,
+                selector: "",
+                at: [],
+                scope: "default",
+                theme: false,
+                inline: true,
+            });
+        }
     }
 
     return decls;

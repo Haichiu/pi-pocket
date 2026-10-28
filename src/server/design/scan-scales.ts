@@ -601,8 +601,14 @@ export function spacingScale(
         }
     }
 
+    // A value used once that is off the grid (6px, 10px in a 4px grid) or under 4px (a hairline) is a one-off, not a step.
     const kept = topBy(
-        clusters.filter(([size]) => size >= 2),
+        clusters.filter(
+            ([size, count]) =>
+                size >= 2 &&
+                (count >= 2 || (size >= 4 && size % Math.min(base, 4) === 0)) &&
+                (size >= 4 || count >= 3),
+        ),
         ([, count]) => count,
         12,
     ).sort((a, b) => a[0] - b[0]);

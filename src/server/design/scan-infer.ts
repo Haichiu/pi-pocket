@@ -12,6 +12,7 @@ import {
     type RoleName,
     ROLE_PATHS,
     chooseRoles,
+    distance,
     entryOf,
     merge as mergeFact,
     mergeColors,
@@ -206,11 +207,16 @@ function pairModeSuffixes(map: Map<string, Variable>, alt: "dark" | "light"): vo
     const stems = new Map<string, { first?: Variable; second?: Variable }>();
 
     for (const variable of map.values()) {
-        const words = kebab(variable.name).split("-");
-        const last = words.at(-1);
+        const words = kebab(variable.name).replace(/^-/, "").split("-");
+        // The mode word is at the end (`bg-light`) or at the start (`light-bg`).
+        const at = [ends[0], ends[1]].includes(words.at(-1) as never)
+            ? words.length - 1
+            : [ends[0], ends[1]].includes(words[0] as never)
+              ? 0
+              : -1;
 
         if (
-            (last !== ends[0] && last !== ends[1]) ||
+            at === -1 ||
             words.length < 2 ||
             variable.light === undefined ||
             variable.twin === true
@@ -218,10 +224,11 @@ function pairModeSuffixes(map: Map<string, Variable>, alt: "dark" | "light"): vo
             continue;
         }
 
-        const stem = `${variable.kind}:${variable.hint ?? ""}:${words.slice(0, -1).join("-")}`;
+        const mode = words[at];
+        const stem = `${variable.kind}:${variable.hint ?? ""}:${words.filter((_, index) => index !== at).join("-")}`;
         const pair = stems.get(stem) ?? {};
 
-        pair[last === ends[0] ? "first" : "second"] = variable;
+        pair[mode === ends[0] ? "first" : "second"] = variable;
         stems.set(stem, pair);
     }
 
@@ -292,9 +299,12 @@ function follow(
 ): { text: string; via?: Variable } | undefined {
     const find = (name: string, kind: Variable["kind"]) => index.get(`${kind}:${name}`);
     let current = start;
-    let text = (
-        scope === "dark" ? (current.dark ?? current.light) : (current.light ?? current.dark)
-    )?.value;
+    // Sass interpolation of one variable (`#{$dark-bg}`) is the variable.
+    const bare = (value: string | undefined) => value?.replace(/#\{\s*([$@][\w-]+)\s*\}/g, "$1");
+    let text = bare(
+        (scope === "dark" ? (current.dark ?? current.light) : (current.light ?? current.dark))
+            ?.value,
+    );
     let via: Variable | undefined;
 
     for (let hop = 0; hop < 8 && text !== undefined; hop++) {
@@ -326,11 +336,32 @@ function follow(
 
         via ??= next;
         current = next;
-        text = (scope === "dark" ? (next.dark ?? next.light) : (next.light ?? next.dark))?.value;
+        text = bare(
+            (scope === "dark" ? (next.dark ?? next.light) : (next.light ?? next.dark))?.value,
+        );
     }
 
     if (text === undefined) {
         return undefined;
+    }
+
+    // Interpolation inside a longer value or with arithmetic (`0 1px 2px #{$shadow-ink}`, `#{$space * 2}`): the value.
+    if (text.includes("#{")) {
+        const value = (name: string, kind: "scss" | "less" | "css") => {
+            const target = index.get(`${kind}:${name}`);
+
+            return target === undefined ? undefined : follow(index, target, scope)?.text;
+        };
+
+        text = text.replace(/#\{\s*([^{}]+?)\s*\}/g, (all, expression: string) => {
+            const lone = /^(?:[\w-]+\.)?[$@]([\w-]+)$/.exec(expression);
+
+            return (
+                (lone === null
+                    ? evalMath(expression, value)
+                    : (value(lone[1]!, "scss") ?? value(lone[1]!, "less"))) ?? all
+            );
+        });
     }
 
     // SCSS and Less arithmetic (`$space-1 * 3`), and CSS `calc()` over custom properties (`calc(var(--radius) - 2px)`).
@@ -492,6 +523,45 @@ const FONT_WORDS =
     /sans-serif|serif|monospace|system-ui|ui-sans-serif|ui-monospace|ui-serif|cursive/i;
 
 /** What a variable holds, from where it is set, its value, and then its name. */
+const COLOR_TOKEN =
+    /^(?:#[0-9a-f]{3,8}|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix|var|light-dark)\(.*\)|transparent|currentcolor|[a-z]{3,20})$/i;
+
+/**
+ * Whether a value is a `box-shadow`: one or more comma-separated layers, each with two to four lengths (offsets, blur,
+ * spread), at most one color (first or last), and perhaps `inset`.
+ */
+export function looksLikeShadow(text: string): boolean {
+    const layers = commaParts(text.trim());
+
+    if (
+        layers.length === 0 ||
+        layers.length > 8 ||
+        /^(?:none|inherit|initial|unset)$/i.test(text.trim())
+    ) {
+        return false;
+    }
+
+    return layers.every((layer) => {
+        const tokens = layer.match(/(?:[^\s(]|\([^)]*(?:\([^)]*\)[^)]*)*\))+/g) ?? [];
+        const lengths = tokens.filter((token) => /^-?(?:\d*\.?\d+)(?:px|rem|em)?$/i.test(token));
+        const others = tokens.filter(
+            (token) =>
+                !/^-?(?:\d*\.?\d+)(?:px|rem|em)?$/i.test(token) && token.toLowerCase() !== "inset",
+        );
+
+        return (
+            lengths.length >= 2 &&
+            lengths.length <= 4 &&
+            others.length === 1 &&
+            COLOR_TOKEN.test(others[0]!) &&
+            tokens.length ===
+                lengths.length +
+                    others.length +
+                    (tokens.some((token) => token.toLowerCase() === "inset") ? 1 : 0)
+        );
+    });
+}
+
 function categorize(
     variable: Variable,
     text: string,
@@ -541,6 +611,11 @@ function categorize(
     }
 
     if (/shadow|elevation/.test(name) && /\d/.test(text)) {
+        return "shadow";
+    }
+
+    // Layers of offsets, a blur, a color, and `inset`, whatever the variable is called (`--drop-2`, `--lift`, `--z1`).
+    if (looksLikeShadow(text)) {
         return "shadow";
     }
 
@@ -897,6 +972,8 @@ interface Classified {
     lightColor?: string;
     darkColor?: string;
     via?: Variable;
+    /** The variable the dark value was followed through. */
+    darkVia?: Variable;
 }
 
 interface Prepared {
@@ -1195,6 +1272,7 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
     }
 
     const classified: Classified[] = [];
+    const hasDefault = all.filter((variable) => variable.light?.scope === "default").length >= 2;
 
     for (const variable of all) {
         // `--text-hero--line-height` belongs to `--text-hero`; it is not a token of its own. A variable that holds the
@@ -1216,7 +1294,14 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
                 : { ...found, text: clamp[1]!.trim() };
         };
 
-        const light = fluid(follow(index, variable, "light"));
+        // A variable that only the other mode sets, in a project whose default mode sets others, has no default value:
+        // its value is that mode's (`.dark { --success: #4ade80 }`), and the default is found some other way.
+        const otherOnly =
+            variable.light === undefined &&
+            variable.dark !== undefined &&
+            hasDefault &&
+            variable.hint === undefined;
+        const light = otherOnly ? undefined : fluid(follow(index, variable, "light"));
         const dark =
             variable.dark === undefined ? undefined : fluid(follow(index, variable, "dark"));
         const sample = light?.text ?? dark?.text;
@@ -1240,6 +1325,7 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
             light: light?.text,
             dark: dark?.text,
             via: light?.via,
+            ...(dark?.via === undefined ? {} : { darkVia: dark.via }),
         };
 
         if (category === "color") {
@@ -1269,6 +1355,23 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
         }
 
         classified.push(entry);
+    }
+
+    // A variable that a role is set from in one mode and that is named for that mode (`--light-bg` and `--dark-bg` behind
+    // `--bg`) holds that mode's value: it is not a color of its own.
+    const modeNamed = /(?:^|[-_])(?:light|dark|day|night)(?:[-_]|$)/i;
+
+    for (const entry of classified) {
+        for (const through of [entry.via, entry.darkVia]) {
+            if (
+                through !== undefined &&
+                through !== entry.variable &&
+                modeNamed.test(kebab(through.name)) &&
+                !modeNamed.test(kebab(entry.variable.name))
+            ) {
+                through.twin = true;
+            }
+        }
     }
 
     // `$dark-background`, `$dark-text-muted`: when a project keeps a few colors for the other mode under names that are
@@ -1310,7 +1413,7 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
 }
 
 /** Whether the project's page background (in the default scope) is dark. */
-function pageIsDark(prep: Prepared): boolean {
+function pageIsDark(prep: Prepared, facts: Facts): boolean {
     let best: { score: number; color: Rgba } | undefined;
 
     for (const entry of prep.classified) {
@@ -1327,7 +1430,27 @@ function pageIsDark(prep: Prepared): boolean {
         }
     }
 
-    return best !== undefined && luminance(best.color) < 0.2;
+    if (best !== undefined) {
+        return luminance(best.color) < 0.2;
+    }
+
+    // No variable is called the background: the variable, or the color, that the page's root is painted with.
+    const painted = prep.classified
+        .map((entry) => ({
+            color: entry.lightColor === undefined ? undefined : parseColor(entry.lightColor),
+            root: facts.varKinds.get(entry.variable.name)?.root ?? 0,
+            category: entry.category,
+        }))
+        .filter(
+            (entry) => entry.category === "color" && entry.root > 0 && entry.color !== undefined,
+        )
+        .sort((a, b) => b.root - a.root)[0]?.color;
+    const literal = [...facts.colors.values()]
+        .filter((fact) => fact.root > 0)
+        .sort((a, b) => b.root - a.root)[0];
+    const page = painted ?? (literal === undefined ? undefined : parseColor(literal.hex));
+
+    return page !== undefined && luminance(page) < 0.2;
 }
 
 /**
@@ -1418,10 +1541,29 @@ function resolveDeferred(facts: Facts, prep: Prepared): void {
         return target === undefined ? undefined : follow(prep.index, target, "light")?.text;
     };
 
-    for (const { prop, value, selector } of facts.deferred.splice(0)) {
+    for (const { prop, value, selector, scope, file, line } of facts.deferred.splice(0)) {
         let resolved = value.replace(/calc\(((?:[^()]|\([^()]*\))*)\)/g, (all, inner: string) => {
             return evalMath(inner, lookup) ?? all;
         });
+
+        // `map-get($spacers, 3)` is the variable `spacers-3`; `space(3)` is the project's function with 3 for its argument.
+        resolved = resolved.replace(
+            /map[.-]get\(\s*\$([\w-]+)\s*,\s*['"]?([\w-]+)['"]?\s*\)/g,
+            (all, map: string, key: string) => lookup(`${map}-${key}`, "scss") ?? all,
+        );
+        resolved = resolved.replace(
+            /(?<![\w.-])([a-z][\w-]*)\(\s*(-?\d*\.?\d+)\s*\)/gi,
+            (all, name: string, argument: string) => {
+                const fn = facts.sassFunctions.get(name);
+
+                return fn === undefined
+                    ? all
+                    : (evalMath(
+                          fn.expression.replace(new RegExp(`\\$${fn.param}\\b`, "g"), argument),
+                          lookup,
+                      ) ?? all);
+            },
+        );
 
         // Sass color functions over variables: `rgba($black, .2)`, `darken($brand, 10%)`, `tint-color(#c5221f, 88%)`.
         resolved = sassColors(resolved, prep.index);
@@ -1438,14 +1580,16 @@ function resolveDeferred(facts: Facts, prep: Prepared): void {
         });
 
         if (!/calc\(|var\(|(?<![\w-])[$@][A-Za-z_]/.test(resolved)) {
+            facts.file = file;
             ingest(facts, {
                 prop,
                 value: resolved,
                 selector,
                 at: [],
-                scope: "default",
+                scope,
                 theme: false,
                 inline: false,
+                ...(line === undefined ? {} : { line }),
             });
         }
     }
@@ -1493,7 +1637,7 @@ export function infer(facts: Facts, folder: string): Inferred {
     let prep = prepare(facts, "dark");
 
     // A project whose default scope is dark and that names a light scope is dark first: light is its other mode.
-    if (facts.vars.some((fact) => fact.scope === "light") && pageIsDark(prep)) {
+    if (facts.vars.some((fact) => fact.scope === "light") && pageIsDark(prep, facts)) {
         prep = prepare(facts, "light");
     }
 
@@ -1594,7 +1738,24 @@ export function infer(facts: Facts, folder: string): Inferred {
         }
     }
 
-    const lightRoles = chooseRoles(lightColors, namedLight);
+    // A status color that the other mode names (`--success` set in the dark scope only) tells which color of this mode is the
+    // status: the used color of its hue.
+    const hints: Partial<Record<"danger" | "warning" | "success", number>> = {};
+
+    if (prep.classified.some((entry) => entry.variable.dark !== undefined)) {
+        const pairs = chooseRoles(darkColors, namedDark);
+
+        for (const role of ["danger", "warning", "success"] as const) {
+            const found = pairs[role];
+            const color = found?.basis === "name" ? darkColors.get(found.hex) : undefined;
+
+            if (color !== undefined) {
+                hints[role] = color.h;
+            }
+        }
+    }
+
+    const lightRoles = chooseRoles(lightColors, namedLight, hints);
 
     // A project with one background color, called a surface, has no other page color: the surface is the page too.
     if (lightRoles.background === undefined && lightRoles.surface?.basis === "name") {
@@ -1954,18 +2115,33 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     // The colors the project uses most that no variable or role holds yet.
     const known = [...hexPath.keys()].map((hex) => lightColors.get(hex) ?? entryOf(hex)!);
-    const extra = topBy(
-        [...lightColors.values()].filter(
-            (entry) =>
-                !hexPath.has(entry.hex) &&
-                !changing.has(entry.hex) &&
-                entry.rgba.a > 0.05 &&
-                entry.uses >= 1 &&
-                known.every((other) => !nearColors(other, entry)),
-        ),
-        (entry) => entry.uses,
-        16,
+    const candidates = [...lightColors.values()].filter(
+        (entry) =>
+            !hexPath.has(entry.hex) &&
+            !changing.has(entry.hex) &&
+            entry.rgba.a > 0.05 &&
+            entry.uses >= 1 &&
+            known.every((other) => !nearColors(other, entry)),
     );
+    // A color used twice or more is part of the design. One used once is a one-off (a gradient stop, a chart, a badge):
+    // a small palette keeps it, a large one has no room for it.
+    const repeated = candidates.filter((entry) => entry.uses >= 2);
+    // A dark-first project's own colors are the dark mode's: its one-offs are not part of the palette of the other mode.
+    const room =
+        alt === "light" ? 0 : Math.max(0, 14 - hexPath.size - changing.size - repeated.length);
+    const singles: ColorEntry[] = [];
+
+    // A one-off that is a step from a color the design has (a hover shade of the brand) is that color, not a new one.
+    for (const entry of candidates.filter((each) => each.uses < 2)) {
+        if (
+            singles.length < room &&
+            [...known, ...repeated, ...singles].every((other) => distance(other, entry) > 0.025)
+        ) {
+            singles.push(entry);
+        }
+    }
+
+    const extra = topBy([...repeated, ...singles], (entry) => entry.uses, 16);
 
     for (const entry of extra) {
         palette(entry.hex, asValue(entry.hex, lightColors));
@@ -1973,10 +2149,26 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     // The rest of the project's own color variables, under their own names, as aliases of the palette.
     const roleNames = new Set([...roleVars].map(kebab));
+    // A Sass variable that a custom property is set from (`--bg: #{$dark-bg}`) is that property: one token, not two.
+    const sources = new Set(
+        colorVars
+            .flatMap((entry) =>
+                (entry.variable.kind === "css" || entry.variable.kind === "theme"
+                    ? [entry.via, entry.darkVia]
+                    : []
+                ).filter(
+                    (through): through is Variable =>
+                        through !== undefined &&
+                        (through.kind === "scss" || through.kind === "less"),
+                ),
+            )
+            .map((through) => vkey(through)),
+    );
     const rest = classified.filter(
         (entry) =>
             entry.category === "color" &&
             !scaleVars.has(entry) &&
+            !sources.has(vkey(entry.variable)) &&
             !roleVars.has(entry.variable.name) &&
             // The same variable from another file (`inkSubtle` in a theme, `--ink-subtle` in a stylesheet).
             !roleNames.has(kebab(entry.variable.name)),
@@ -2007,13 +2199,21 @@ export function infer(facts: Facts, folder: string): Inferred {
         }
 
         const target = entry.via === undefined ? undefined : aliasOf.get(vkey(entry.via));
-        const primitive = target ?? palette(hex, asValue(hex, lightColors));
+        const darkHex = hexOf(entry.darkColor);
 
-        book.add(path, { $value: `{${primitive.join(".")}}`, $type: "color" });
+        // A dark-first project keeps the colors that change as they are in the default mode, as the roles are (the light
+        // mode's file changes them), so its palette has no dark-only primitive.
+        if (alt === "light" && target === undefined && darkHex !== undefined && darkHex !== hex) {
+            changing.add(hex);
+            book.add(path, { $value: asValue(hex, lightColors), $type: "color" });
+        } else {
+            const primitive = target ?? palette(hex, asValue(hex, lightColors));
+
+            book.add(path, { $value: `{${primitive.join(".")}}`, $type: "color" });
+        }
+
         lightHexOf.set(path.join("."), hex);
         aliasOf.set(vkey(entry.variable), path);
-
-        const darkHex = hexOf(entry.darkColor);
 
         if (darkHex !== undefined && darkHex !== hex) {
             pendingDark.push({ path, hex: darkHex });
@@ -2088,6 +2288,11 @@ export function infer(facts: Facts, folder: string): Inferred {
 
         if (nameOf(entry.variable, entry.category) === "" && book.has(path)) {
             path = [path[0]!, "base"];
+
+            // A second variable with no name of its own (`--gap` beside `$space`) keeps its own name.
+            if (book.has(path)) {
+                path = [path[0]!, slug(kebab(entry.variable.name))];
+            }
         }
 
         if (node === undefined || book.has(path)) {
