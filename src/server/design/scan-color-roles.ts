@@ -93,9 +93,31 @@ export function chooseRoles(
         let best: { variable: VarColor; score: number } | undefined;
         const scored: { variable: VarColor; score: number }[] = [];
 
+        // A family of numbered steps (`ink-0` … `ink-9`) is a ramp, not the roles that a step's word names.
+        const steps = new Map<string, number>();
+
+        for (const variable of named) {
+            const family = /^(.*?)[-_]?(\d{1,3})$/.exec(variable.name)?.[1];
+
+            if (family !== undefined && family !== "") {
+                steps.set(family, (steps.get(family) ?? 0) + 1);
+            }
+        }
+
         for (const variable of named) {
             const color = entry(variable.hex);
             const segs = wordsOf(variable);
+
+            if (
+                (role === "background" ||
+                    role === "surface" ||
+                    role === "text" ||
+                    role === "muted" ||
+                    role === "border") &&
+                (steps.get(/^(.*?)[-_]?\d{1,3}$/.exec(variable.name)?.[1] ?? "") ?? 0) >= 6
+            ) {
+                continue;
+            }
 
             if (
                 color === undefined ||

@@ -225,7 +225,29 @@ export function follow(
     start: Variable,
     scope: "light" | "dark",
 ): { text: string; via?: Variable } | undefined {
-    const find = (name: string, kind: Variable["kind"]) => index.get(`${kind}:${name}`);
+    // A library writes the variables of a theme object under a prefix (`--mantine-color-ink-9` for the theme's `ink` step 9):
+    // a name that is not declared is looked for without its first words.
+    const find = (name: string, kind: Variable["kind"]) => {
+        const lookup = (text: string) =>
+            index.get(`${kind}:${text}`) ?? (kind === "css" ? index.get(`js:${text}`) : undefined);
+        const exact = lookup(name);
+
+        if (exact !== undefined || kind !== "css") {
+            return exact;
+        }
+
+        const parts = name.split("-");
+
+        for (let drop = 1; drop <= 3 && drop < parts.length - 1; drop++) {
+            const found = lookup(parts.slice(drop).join("-"));
+
+            if (found !== undefined) {
+                return found;
+            }
+        }
+
+        return undefined;
+    };
     let current = start;
     // Sass interpolation of one variable (`#{$dark-bg}`) is the variable.
     const bare = (value: string | undefined) => value?.replace(/#\{\s*([$@][\w-]+)\s*\}/g, "$1");

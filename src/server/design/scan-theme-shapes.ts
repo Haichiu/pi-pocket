@@ -295,6 +295,45 @@ function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: E
 
     const entries = Object.entries(node);
 
+    // Mantine: `primaryColor: 'kelp'` names a ramp of `colors`, and `primaryShade` the step that is the primary color.
+    if (typeof node.primaryColor === "string" && isObject(node.colors)) {
+        const chosen = node.colors[node.primaryColor];
+        const shade = node.primaryShade;
+        const pick = (list: Literal | undefined, step: number): string | undefined => {
+            const value = Array.isArray(list)
+                ? list[step]
+                : isObject(list)
+                  ? list[String(step)]
+                  : undefined;
+
+            return isColor(value) ? value : undefined;
+        };
+        const light = pick(
+            chosen,
+            typeof shade === "number"
+                ? shade
+                : isObject(shade) && typeof shade.light === "number"
+                  ? shade.light
+                  : 6,
+        );
+        const dark = pick(
+            chosen,
+            typeof shade === "number"
+                ? shade
+                : isObject(shade) && typeof shade.dark === "number"
+                  ? shade.dark
+                  : 8,
+        );
+
+        if (light !== undefined) {
+            emit("primary", light, "default");
+        }
+
+        if (dark !== undefined && dark !== light) {
+            emit("primary", dark, "dark");
+        }
+    }
+
     // Custom properties: `{ '--c-brand': '37 99 235' }`.
     const properties = entries.filter(
         ([key, child]) =>

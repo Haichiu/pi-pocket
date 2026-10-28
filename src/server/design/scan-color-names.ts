@@ -2,7 +2,29 @@
 import { type RoleName, w } from "./scan-color-base.ts";
 
 /** The words of a variable name: camelCase split, lower case, noise words dropped. */
-export function words(name: string): string[] {
+/** Variables whose library prefix decides what they are: Mantine's `--mantine-color-body` is the page, not the body text. */
+const LIBRARY_NAMES: [RegExp, string][] = [
+    [/^mantine-color-body$/i, "bg-page"],
+    [/^mantine-color-default$/i, "surface"],
+    [/^mantine-color-default-border$/i, "border"],
+    [/^mantine-color-dimmed$/i, "text-muted"],
+    [/^mantine-color-anchor$/i, "link"],
+    [/^mantine-color-placeholder$/i, "text-placeholder"],
+    [/^mantine-color-error$/i, "danger"],
+    [/^chakra-body-bg$/i, "bg-page"],
+    [/^chakra-body-text$/i, "text"],
+    [/^chakra-border-color$/i, "border"],
+    [/^chakra-placeholder-color$/i, "text-placeholder"],
+    [/^pico-background-color$/i, "bg-page"],
+    [/^pico-color$/i, "text"],
+    [/^pico-muted-color$/i, "text-muted"],
+    [/^pico-muted-border-color$/i, "border"],
+    [/^pico-card-background-color$/i, "surface"],
+    [/^pico-primary$/i, "accent"],
+];
+
+export function words(rawName: string): string[] {
+    const name = LIBRARY_NAMES.find(([pattern]) => pattern.test(rawName))?.[1] ?? rawName;
     const all = name
         .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
         // `font-color-base` (Infima) is the text color, not a font.
