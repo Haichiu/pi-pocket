@@ -64,7 +64,6 @@ export function createSystemWidgets(env) {
         const [done, setDone] = useState(false);
         const parts = name.split(".");
         const leaf = parts.pop();
-        const path = parts.length > 0 ? `${parts.join(".")}.` : "";
 
         return html`<button
             type="button"
@@ -81,7 +80,8 @@ export function createSystemWidgets(env) {
                 }
             }}
         >
-            <span class="dsy-name-path">${path}</span><span class="dsy-name-leaf">${leaf}</span>
+            <span class="dsy-name-path">${parts.map((part) => html`${part}.<wbr />`)}</span
+            ><span class="dsy-name-leaf">${leaf}</span>
             <span class=${`dsy-name-icon ${done ? "done" : ""}`}
                 ><${Ico} name=${done ? "check" : "copy"} size=${12}
             /></span>

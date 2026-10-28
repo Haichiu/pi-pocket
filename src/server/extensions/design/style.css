@@ -1737,7 +1737,7 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
     font-family: var(--mono, ui-monospace, monospace);
     font-size: 12.5px;
     text-align: left;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
 }
 
 .dsy-name-path {
@@ -3227,5 +3227,10 @@ button.dsy-chip:disabled {
 }
 
 .dsn[data-size="narrow"] .dsy-check-options .dsn-seg button span {
+    display: none;
+}
+
+/* A row with a play button has room for its name when the chevron goes: the whole row opens it. */
+.dsn[data-size="narrow"] .dsy-row:has(.dsy-play) .dsy-row-open {
     display: none;
 }

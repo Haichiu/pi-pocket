@@ -276,6 +276,7 @@ export function createSystemView(env, canvas, sections) {
     /** The section tabs: only the sections that have something in them, and Components and Guidelines. */
     function SectionTabs({ s, data, split, hasDesign }) {
         const unsaved = unsavedCount(data, s.history);
+        const bar = useRef(null);
         const counts = useMemo(() => {
             const out = {};
 
@@ -297,12 +298,25 @@ export function createSystemView(env, canvas, sections) {
             ? s.sysSection
             : list[0]?.id;
 
+        // The tab that is on comes into view in a bar that scrolls (a phone's).
+        useEffect(() => {
+            const box = bar.current;
+            const tab = box?.querySelector('[aria-selected="true"]');
+
+            if (box && tab) {
+                box.scrollTo({
+                    left: Math.max(0, tab.offsetLeft - (box.clientWidth - tab.offsetWidth) / 2),
+                    behavior: "smooth",
+                });
+            }
+        }, [current]);
+
         // With no system there are no sections to go between.
         if (data === null) {
             return null;
         }
 
-        return html`<div class="dsn-tabs dsy-tabs" role="tablist" aria-label="Sections">
+        return html`<div class="dsn-tabs dsy-tabs" role="tablist" aria-label="Sections" ref=${bar}>
             ${list.map((section) => {
                 const count =
                     section.id === "components"
