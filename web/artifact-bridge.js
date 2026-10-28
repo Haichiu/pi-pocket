@@ -323,6 +323,7 @@ export function checkAppMessage(raw) {
                     !isRecord(target) ||
                     !isText(target.selector, LIMITS.selector) ||
                     (target.pid !== undefined && !isText(target.pid, LIMITS.pid)) ||
+                    (target.reveal !== undefined && typeof target.reveal !== "boolean") ||
                     !(
                         target.label === undefined ||
                         isText(target.label, 8) ||
@@ -340,6 +341,11 @@ export function checkAppMessage(raw) {
 
                 if (target.label !== undefined) {
                     pin.label = target.label;
+                }
+
+                // Scroll this one into view in the page (a person tapped it in a list).
+                if (target.reveal === true) {
+                    pin.reveal = true;
                 }
 
                 targets.push(pin);

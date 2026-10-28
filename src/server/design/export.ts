@@ -32,13 +32,21 @@ export type SaveDesignOptions = {
     path?: string;
     /** Tweak values to apply before the export (as the Design canvas sets them). */
     tweaks?: TweakValues;
+    /** The color scheme and the `data-theme` of a design system's mode to draw the export in (see `modeFor`). */
+    colorScheme?: "light" | "dark";
+    theme?: string;
     /** For a deck's PNG: the slide (from 1, default 1), or `all` for a zip with a PNG of every slide. */
     slide?: number | "all";
     signal?: AbortSignal;
 };
 
 /** What a slide option and tweaks add to an export. */
-export type ExportView = { tweaks?: TweakValues; slide?: number | "all" };
+export type ExportView = {
+    tweaks?: TweakValues;
+    slide?: number | "all";
+    colorScheme?: "light" | "dark";
+    theme?: string;
+};
 
 /** The pixel ratio of PPTX slide images: 2, but no side over 4096 pixels. */
 export function pptxScale(slide: DesignViewport): number {
@@ -58,7 +66,12 @@ export async function saveDesignExport(
         options.viewport,
         host,
         options.signal,
-        { tweaks: options.tweaks, slide: options.slide },
+        {
+            tweaks: options.tweaks,
+            slide: options.slide,
+            colorScheme: options.colorScheme,
+            theme: options.theme,
+        },
     );
 
     options.signal?.throwIfAborted();
@@ -103,7 +116,13 @@ export async function exportDesign(
         const size = format === "pptx" ? SLIDE_SIZE : viewportOf(viewport);
 
         await page.load(size);
-        await page.applyView({ tweaks: view.tweaks });
+        await page.applyView({
+            // Light unless a mode says otherwise: an export does not follow the server's own preference.
+            colorScheme: view.colorScheme ?? "light",
+            theme: view.theme,
+            forceTheme: view.theme !== undefined,
+            tweaks: view.tweaks,
+        });
         await page.evaluate(`document.title = ${JSON.stringify(bundle.meta.title)}`);
 
         if (format === "png") {

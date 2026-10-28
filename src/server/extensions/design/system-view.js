@@ -8,6 +8,7 @@ import {
     createModel,
     editsOf,
     SECTIONS,
+    sectionCounts,
     sectionOf,
     tokenEdits,
     unsavedCount,
@@ -48,7 +49,7 @@ export function createSystemView(env, canvas, sections, widgets) {
                 onChange=${(event) => env.setSysMode(event.currentTarget.value)}
             >
                 ${modes.map((mode) => html`<option value=${mode}>${modeTitle(mode)}</option>`)}
-                <option value="both">${modes.length === 2 ? "Both" : "All"}, side by side</option>
+                <option value="both">${modes.length === 2 ? "Both" : "All"} modes</option>
             </select>`;
         }
 
@@ -278,22 +279,17 @@ export function createSystemView(env, canvas, sections, widgets) {
     function SectionTabs({ s, data, split, hasDesign }) {
         const unsaved = unsavedCount(data, s.history);
         const bar = useRef(null);
-        const counts = useMemo(() => {
-            const out = {};
-
-            for (const token of data?.tokens ?? []) {
-                const id = sectionOf(token);
-
-                out[id] = (out[id] ?? 0) + 1;
-            }
-
-            return out;
-        }, [data]);
+        // What a tab counts is the documentation page's rule (`sectionCounts`): every token of the section, whatever its tier.
+        const counts = useMemo(() => sectionCounts(data?.tokens ?? []), [data]);
+        const present = useMemo(
+            () => new Set((data?.tokens ?? []).map((token) => sectionOf(token))),
+            [data],
+        );
         const list = SECTIONS.filter(
             (section) =>
                 section.id === "components" ||
                 section.id === "guidelines" ||
-                (data !== null && (counts[section.id] ?? 0) > 0),
+                (data !== null && present.has(section.id)),
         );
         const current = list.some((section) => section.id === s.sysSection)
             ? s.sysSection
@@ -312,31 +308,92 @@ export function createSystemView(env, canvas, sections, widgets) {
             }
         }, [current]);
 
+        // A bar that scrolls fades where more of it is out of sight (`data-more`), so that no tab looks cut off by what is
+        // beside the bar.
+        useEffect(() => {
+            const box = bar.current;
+
+            if (!box) {
+                return undefined;
+            }
+
+            const mark = () => {
+                const room = box.scrollWidth - box.clientWidth;
+
+                box.dataset.more = room > 2 && box.scrollLeft < room - 2 ? "right" : "none";
+                box.dataset.less = box.scrollLeft > 2 ? "left" : "none";
+            };
+
+            const watch = new ResizeObserver(mark);
+
+            mark();
+            box.addEventListener("scroll", mark, { passive: true });
+            watch.observe(box);
+
+            return () => {
+                box.removeEventListener("scroll", mark);
+                watch.disconnect();
+            };
+        }, [list.length, data === null]);
+
         // With no system there are no sections to go between.
         if (data === null) {
             return null;
         }
 
-        return html`<div class="dsn-tabs dsy-tabs" role="tablist" aria-label="Sections" ref=${bar}>
-            ${list.map((section) => {
-                const count =
-                    section.id === "components"
-                        ? (data?.components.length ?? 0)
-                        : (counts[section.id] ?? 0);
+        // Arrow keys move between the tabs (and Home and End go to the ends); Tab goes past them, to the next control.
+        const move = (event) => {
+            const at = list.findIndex((section) => section.id === current);
+            const to =
+                event.key === "ArrowRight"
+                    ? (at + 1) % list.length
+                    : event.key === "ArrowLeft"
+                      ? (at - 1 + list.length) % list.length
+                      : event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? list.length - 1
+                          : -1;
 
-                return html`<button
-                    type="button"
-                    role="tab"
-                    key=${section.id}
-                    class=${`dsn-tab ${current === section.id ? "on" : ""}`}
-                    aria-selected=${current === section.id}
-                    onClick=${() => env.setSection(section.id)}
-                >
-                    <span>${section.label}</span>
-                    ${count > 0 && html`<span class="dsn-count">${count}</span>`}
-                </button>`;
-            })}
-            <span class="grow"></span>
+            if (to !== -1) {
+                event.preventDefault();
+                env.setSection(list[to].id);
+                requestAnimationFrame(() =>
+                    bar.current?.querySelector('[role="tab"][aria-selected="true"]')?.focus(),
+                );
+            }
+        };
+
+        return html`<div class="dsy-tabbar">
+            <div
+                class="dsn-tabs dsy-tabs"
+                role="tablist"
+                aria-label="Sections"
+                ref=${bar}
+                onKeyDown=${move}
+            >
+                ${list.map((section) => {
+                    const count =
+                        section.id === "components"
+                            ? (data?.components.length ?? 0)
+                            : (counts[section.id] ?? 0);
+
+                    return html`<button
+                        type="button"
+                        role="tab"
+                        id=${`dsy-tab-${section.id}`}
+                        key=${section.id}
+                        class=${`dsn-tab ${current === section.id ? "on" : ""}`}
+                        aria-selected=${current === section.id}
+                        aria-controls="dsy-panel"
+                        tabindex=${current === section.id ? 0 : -1}
+                        onClick=${() => env.setSection(section.id)}
+                    >
+                        <span>${section.label}</span>
+                        ${count > 0 && html`<span class="dsn-count">${count}</span>`}
+                    </button>`;
+                })}
+            </div>
             <span class="dsy-tabs-end">
                 ${
                     data &&
@@ -929,8 +986,23 @@ export function createSystemView(env, canvas, sections, widgets) {
                 <${Section} ctx=${ctx} />`;
         }
 
+        // What a screen reader is told after a save: a place that is always there, so that the words put in it are read out.
+        // (A refusal and a conflict have their own `alert`s.)
+        const said = s.save.status === "saved" ? s.save.note : "";
+
         const column = html`<div class="dsy-column">
-            <div class="dsy-scroll" ref=${scroll} data-no-swipe>${body}</div>
+            <div
+                class="dsy-scroll"
+                id="dsy-panel"
+                role="tabpanel"
+                aria-labelledby=${`dsy-tab-${current}`}
+                tabindex=${current === "guidelines" && !s.sysWriting ? 0 : undefined}
+                ref=${scroll}
+                data-no-swipe
+            >
+                ${body}
+            </div>
+            <div class="dsy-sr" role="status" aria-live="polite" aria-atomic="true">${said}</div>
             <${SaveBar} s=${s} count=${count} data=${data} canEdit=${canEdit} />
         </div>`;
 

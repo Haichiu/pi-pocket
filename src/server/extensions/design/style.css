@@ -1400,20 +1400,50 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
     padding: 0 11px;
 }
 
-.dsy-tabs-end {
-    position: sticky;
-    right: 0;
-    display: inline-flex;
-    flex: none;
-    background: var(--bg);
-    box-shadow: -14px 0 10px -2px var(--bg);
+/* The sections and the two buttons are side by side, never one over the other: the bar of sections scrolls where it is,
+   and the buttons keep their place at its end. */
+.dsy-tabbar {
+    display: flex;
+    align-items: flex-start;
+    min-width: 0;
 }
 
-.dsy-tabs .icon-button {
+.dsy-tabbar > .dsy-tabs {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.dsy-tabs-end {
+    display: inline-flex;
+    flex: none;
+    height: 34px;
+    align-items: center;
+}
+
+/* Where more sections are out of sight, the bar fades there: the last one in view is not cut off, it goes on. */
+.dsy-tabs[data-more="right"] {
+    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+}
+
+.dsy-tabs[data-less="left"] {
+    mask-image: linear-gradient(to left, #000 calc(100% - 26px), transparent);
+}
+
+.dsy-tabs[data-more="right"][data-less="left"] {
+    mask-image: linear-gradient(
+        to right,
+        transparent,
+        #000 26px,
+        #000 calc(100% - 26px),
+        transparent
+    );
+}
+
+.dsy-tabs-end .icon-button {
     position: relative;
 }
 
-.dsy-tabs .icon-button.on {
+.dsy-tabs-end .icon-button.on {
     background: color-mix(in srgb, var(--accent) 16%, var(--bg));
 }
 
@@ -1638,7 +1668,6 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
 }
 
 .dsy-row.edited::before,
-.dsy-tile.edited::after,
 .dsy-card-tile.edited::after {
     content: "";
     position: absolute;
@@ -2279,6 +2308,7 @@ button.dsy-chip:disabled {
 .dsy-look-card {
     display: flex;
     flex-direction: column;
+    min-width: 0;
     gap: 3px;
     padding: 12px;
     border-radius: 10px;
@@ -2295,8 +2325,10 @@ button.dsy-chip:disabled {
 
 .dsy-look-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
+    gap: 6px 8px;
     margin-top: 8px;
 }
 
@@ -2305,6 +2337,30 @@ button.dsy-chip:disabled {
     border-radius: 7px;
     font-size: 12px;
     font-weight: 600;
+    white-space: nowrap;
+}
+
+.dsy-look-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.dsy-look-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px 2px 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.dsy-look-chip i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
 }
 
 .dsy-look-dots {
@@ -2330,28 +2386,6 @@ button.dsy-chip:disabled {
     flex-direction: column;
 }
 
-.dsy-ramp {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
-    gap: 8px;
-    padding: 12px;
-}
-
-.dsy-tile {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding: 4px;
-    border-radius: 12px;
-    text-align: left;
-}
-
-.dsy-tile .dsy-swatch {
-    width: 100%;
-    height: 46px;
-}
-
 .dsy-tile-name {
     padding: 0 2px;
     overflow: hidden;
@@ -2367,20 +2401,17 @@ button.dsy-chip:disabled {
     font-size: 10.5px;
 }
 
-.dsy-tile.on,
 .dsy-card-tile.on {
     background: var(--dsn-accent-soft);
     box-shadow: 0 0 0 2px var(--accent);
 }
 
 @media (hover: hover) {
-    .dsy-tile:hover:not(.on),
     .dsy-card-tile:hover:not(.on) {
         background: var(--hover);
     }
 }
 
-.dsy-tile.edited::after,
 .dsy-card-tile.edited::after {
     top: 8px;
     right: 8px;
@@ -2417,8 +2448,184 @@ button.dsy-chip:disabled {
     padding: 12px;
 }
 
-.dsy-tiles.wide {
+.dsy-tiles[data-size="lg"] {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+/* Roles as cards: a swatch across the top, the name, the value, and the contrast on its pair. */
+.dsy-tiles[data-size="role"] {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+}
+
+.dsy-tiles[data-size="role"] .dsy-card-tile {
+    align-items: stretch;
+    gap: 6px;
+    padding: 8px;
+    text-align: left;
+}
+
+.dsy-tiles[data-size="role"] .dsy-swatch {
+    width: 100%;
+    height: 46px;
+}
+
+.dsy-card-name {
+    overflow: hidden;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dsy-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px 6px;
+    min-height: 20px;
+}
+
+.dsy-card-meta .dsy-hex {
+    font-size: 11px;
+}
+
+.dsy-card-meta .dsy-badge {
+    height: 18px;
+    padding: 0 6px;
+    gap: 4px;
+    font-size: 10.5px;
+}
+
+.dsy-card-meta .dsy-badge-level {
+    display: none;
+}
+
+/* A pair that falls says so in words, not in color alone. */
+.dsy-card-meta .dsy-badge.fail .dsy-badge-level {
+    display: inline;
+}
+
+/* A label over a run of groups, and the line a group's head may carry after its count. */
+.dsy-section-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 2px 10px;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.dsy-group-note {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dsn[data-size="narrow"] .dsy-group-note {
+    display: none;
+}
+
+.dsy-sub {
+    padding-bottom: 4px;
+}
+
+.dsy-sub + .dsy-sub {
+    border-top: 1px solid var(--dsn-hair);
+}
+
+.dsy-sub-title {
+    margin: 10px 14px 0;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* A ramp as one strip: the steps side by side. */
+.dsy-strip-row {
+    padding: 10px 12px 12px;
+}
+
+.dsy-strip-row + .dsy-strip-row {
+    border-top: 1px solid var(--dsn-hair);
+}
+
+.dsy-strip-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.dsy-strip-steps {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 2px;
+}
+
+.dsn[data-size="narrow"] .dsy-strip-steps {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+    gap: 4px;
+}
+
+.dsy-step-tile {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    padding: 2px;
+    border-radius: 8px;
+}
+
+.dsy-step-tile .dsy-swatch {
+    width: 100%;
+    height: 40px;
+    border-radius: 6px;
+}
+
+.dsy-step-label {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 9.5px;
+    text-align: center;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+.dsy-step-tile.on {
+    background: var(--dsn-accent-soft);
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
+@media (hover: hover) {
+    .dsy-step-tile:hover:not(.on) {
+        background: var(--hover);
+    }
+}
+
+.dsy-step-tile.edited::after {
+    content: "";
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--bg);
+}
+
+.dsy-strip-row > .dsy-ramp-editor {
+    margin: 10px 0 0;
 }
 
 .dsy-motion-sub {
@@ -3268,12 +3475,13 @@ button.dsy-chip:disabled {
     row-gap: 2px;
 }
 
-.dsn[data-size="medium"] .dsy-tabs .dsn-tab:not(.on) .dsn-count {
+.dsn[data-size="medium"] .dsy-tabs .dsn-tab:not(.on) .dsn-count,
+.dsn[data-size="narrow"] .dsy-tabs .dsn-tab:not(.on) .dsn-count {
     display: none;
 }
 
 .dsn[data-size="medium"] .dsy-tabs-end {
-    margin-left: auto;
+    margin-left: 0;
 }
 
 /* ... and a little closer together, so that nine of them very likely fit in one row. */
@@ -3285,6 +3493,149 @@ button.dsy-chip:disabled {
     padding: 0 6px;
 }
 
-.dsn[data-size="medium"] .dsy-tabs .icon-button {
+.dsn[data-size="medium"] .dsy-tabs-end .icon-button {
     width: 30px;
+}
+
+/* ─── The findings on a phone: a bottom sheet, with the page above it ─── */
+
+.dsn-dock[data-sheet="true"] {
+    height: var(--sheet, 62%);
+    max-height: none;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -14px 28px -14px rgb(0 0 0 / 0.6);
+}
+
+.dsy-sheet-handle {
+    display: grid;
+    flex: none;
+    place-items: center;
+    height: 24px;
+    cursor: grab;
+    touch-action: none;
+}
+
+.dsy-sheet-handle span {
+    width: 40px;
+    height: 4px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--text) 30%, var(--bg));
+}
+
+.dsy-sheet-handle:focus-visible {
+    outline: 2px solid var(--focus-ring, var(--accent));
+    outline-offset: -2px;
+    border-radius: 10px;
+}
+
+.dsy-check-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px;
+}
+
+.dsy-check-filter {
+    display: flex;
+    gap: 2px;
+    margin: 0;
+}
+
+.dsy-check-filter button.error.on {
+    color: var(--err);
+}
+
+.dsy-check-filter button.warning.on {
+    color: var(--warn);
+}
+
+.dsy-finding.placed {
+    cursor: pointer;
+}
+
+.dsy-finding.on {
+    background: var(--dsn-accent-soft);
+    box-shadow:
+        -8px 0 0 var(--dsn-accent-soft),
+        8px 0 0 var(--dsn-accent-soft);
+}
+
+button.dsy-pin-button {
+    cursor: pointer;
+}
+
+button.dsy-pin-button[aria-pressed="true"] {
+    box-shadow:
+        0 0 0 2px var(--bg),
+        0 0 0 4px var(--accent);
+}
+
+@media (pointer: coarse) {
+    button.dsy-pin-button {
+        width: 32px;
+        height: 32px;
+        font-size: 13px;
+    }
+}
+
+/* Words for a screen reader only: always in the page, so that a change in them is read out. */
+.dsy-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* The bar keeps the room that the picker's name needs; the rest gives way. */
+.dsy-bars .dsn-picker {
+    flex: 1 0 142px;
+    min-width: 142px;
+}
+
+.dsn[data-size="narrow"] .dsy-bars .dsn-picker {
+    padding: 0 8px;
+    gap: 6px;
+}
+
+.dsn[data-size="narrow"] .dsy-modes button {
+    min-width: 32px;
+    padding: 0 6px;
+}
+
+/* The mode list gives way to the picker's name: it keeps what its longest word needs, and no more. */
+.dsy-modeselect {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.dsn[data-size="narrow"] .dsy-modeselect {
+    width: 108px;
+}
+
+.dsy-search:focus-within {
+    box-shadow: inset 0 -2px 0 var(--focus-ring, var(--accent));
+}
+
+/* Where the keyboard is: a ring of two pixels on every control of the view and its dock, and it never hides under a neighbor. */
+.dsy-main :focus-visible,
+.dsy-bars :focus-visible,
+.dsn-dock :focus-visible {
+    outline: 2px solid var(--focus-ring, var(--accent));
+    outline-offset: 1px;
+}
+
+.dsy-tabs [role="tab"]:focus-visible,
+.dsy-group-head:focus-visible,
+.dsy-step-tile:focus-visible,
+.dsy-check-filter button:focus-visible {
+    outline-offset: -2px;
+}
+
+.dsy-scroll:focus-visible {
+    outline-offset: -2px;
 }

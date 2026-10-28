@@ -7,19 +7,64 @@ import { resolveDevice } from "./state.js";
 import { checkKey } from "./system-data.js";
 
 /**
+ * The modes a check can be made in: those of the design system (a system has as many as its files say: light, dark,
+ * high-contrast…), or light and dark when there is no system to say.
+ */
+const modesOf = (s) => {
+    const modes = s.system.data?.modes;
+
+    return Array.isArray(modes) && modes.length > 0 ? modes : ["light", "dark"];
+};
+
+/** The color scheme of a mode: what the system says of it, else its name. */
+const schemeOf = (s, mode) =>
+    s.system.data?.schemes?.[mode] ?? (mode === "dark" ? "dark" : "light");
+
+/**
+ * The mode that the canvas shows: the one that goes with the color scheme of the page in it (`dark`: whether that is dark;
+ * the canvas follows the app's theme, or the backdrop a person chose). The mode named for the scheme, else the first of that
+ * scheme, else the default.
+ */
+export function canvasMode(s, dark) {
+    const modes = modesOf(s);
+    const want = dark ? "dark" : "light";
+
+    return (
+        modes.find((mode) => mode === want) ??
+        modes.find((mode) => schemeOf(s, mode) === want) ??
+        modes[0]
+    );
+}
+
+/**
  * The options of a check as they are now: what the person chose, else what the canvas shows. `dark` is whether the app
- * is in a dark scheme (the page in the canvas follows it); `seen` is the scheme of the canvas, `scheme` the one checked.
+ * is in a dark scheme (the page in the canvas follows it). `seen` is the mode of the canvas, `mode` the one checked (a
+ * mode of the system), `scheme` its color scheme; `modes` are the choices, and `following` says that none was chosen.
  */
 export function checkOptions(s, dark) {
     const device = resolveDevice(s.device, s.width);
-    const seen = dark ? "dark" : "light";
+    const modes = modesOf(s);
+    const seen = canvasMode(s, dark);
+    const chosen = s.checkWith.mode;
+    const following = chosen === null || !modes.includes(chosen);
+    const mode = following ? seen : chosen;
 
     return {
-        scheme: s.checkWith.scheme ?? seen,
+        mode,
+        scheme: schemeOf(s, mode),
         size: s.checkWith.size ?? exportViewport(device, sizeOf(device, s.custom)),
         seen,
+        modes,
+        following,
+        // A system names its modes; with none, the server has none to check against.
+        named: s.system.data !== null && s.system.data !== undefined,
     };
 }
+
+/** An icon for the modes that have one: the others are told by their names. */
+const MODE_ICONS = { light: "sun", dark: "moon" };
+
+const titleOf = (mode) => mode[0].toUpperCase() + mode.slice(1).replace(/[-_]+/g, " ");
 
 /** What each rule is called, and in what order the groups of findings go. */
 export const RULES = {
@@ -38,7 +83,7 @@ export const RULES = {
 };
 
 /** The pins of a report: a finding that names an element (a `data-pid` or a selector), numbered by its place in the list. */
-export function pinsOfReport(report) {
+export function pinsOfReport(report, focus = null) {
     return (report?.findings ?? []).flatMap((finding, index) =>
         finding.pid || finding.selector
             ? [
@@ -46,6 +91,8 @@ export function pinsOfReport(report) {
                       ...(finding.pid ? { pid: finding.pid } : {}),
                       selector: finding.selector || `[data-pid="${finding.pid}"]`,
                       label: index + 1,
+                      // The one that a person tapped in the list comes into view in the page.
+                      ...(focus !== null && focus.number === index + 1 ? { reveal: true } : {}),
                   },
               ]
             : [],
@@ -54,18 +101,39 @@ export function pinsOfReport(report) {
 
 export function createCheck(env, DockHead) {
     const { pocket, store, systemData } = env;
-    const { html, useEffect, useState } = pocket;
+    const { html, useEffect, useRef, useState } = pocket;
     const { Ico, Segmented } = env.parts;
 
-    function Finding({ finding, number }) {
+    function Finding({ finding, number, focused }) {
         const [copied, setCopied] = useState(false);
+        const placed = Boolean(finding.pid || finding.selector);
 
-        return html`<li class=${`dsy-finding ${finding.level}`}>
-            <span
-                class=${`dsn-pin ${finding.pid || finding.selector ? "" : "off"}`}
-                aria-hidden="true"
-                >${finding.pid || finding.selector ? number : "·"}</span
-            >
+        const show = () => {
+            if (placed) {
+                env.focusFinding(number);
+            }
+        };
+
+        return html`<li
+            class=${`dsy-finding ${finding.level} ${focused ? "on" : ""} ${placed ? "placed" : ""}`}
+            onClick=${show}
+        >
+            ${
+                placed
+                    ? html`<button
+                          type="button"
+                          class="dsn-pin dsy-pin-button"
+                          aria-label=${`Show finding ${number} on the page`}
+                          aria-pressed=${focused}
+                          onClick=${(event) => {
+                              event.stopPropagation();
+                              show();
+                          }}
+                      >
+                          ${number}
+                      </button>`
+                    : html`<span class="dsn-pin off" aria-hidden="true">·</span>`
+            }
             <div class="dsy-finding-body">
                 <div class="dsy-finding-head">
                     <strong>${RULES[finding.rule] ?? finding.rule}</strong>
@@ -85,7 +153,9 @@ export function createCheck(env, DockHead) {
                                 type="button"
                                 class="dsy-chip"
                                 title="Copy"
-                                onClick=${async () => {
+                                onClick=${async (event) => {
+                                    event.stopPropagation();
+
                                     try {
                                         await navigator.clipboard.writeText(finding.suggestion);
                                         setCopied(true);
@@ -111,8 +181,8 @@ export function createCheck(env, DockHead) {
     }
 
     function CheckDock({ s, design, shown, canEdit }) {
-        const options = checkOptions(s, env.darkTheme());
-        const key = checkKey(design.id, shown, options.scheme, options.size);
+        const options = checkOptions(s, env.canvasDark(s));
+        const key = checkKey(design.id, shown, options.mode, options.size);
         const entry = s.checks[key];
         const report = entry?.report;
         const [filter, setFilter] = useState("all");
@@ -133,13 +203,36 @@ export function createCheck(env, DockHead) {
             }
         }, []);
 
-        const run = () =>
+        const run = (now = options) =>
             void systemData.check({
                 artifact: design.id,
                 version: shown,
-                scheme: options.scheme,
-                size: options.size,
+                mode: now.named ? now.mode : undefined,
+                scheme: now.scheme,
+                size: now.size,
             });
+
+        // The mode on the canvas changes while the dock is open (the app's scheme, or the mode in the System view): a check
+        // that was made is made again for the new mode, unless the person chose a mode of their own, or it is already there.
+        const before = useRef(options.seen);
+
+        useEffect(() => {
+            const was = before.current;
+
+            before.current = options.seen;
+
+            if (was === options.seen || !options.following || !canEdit || running) {
+                return;
+            }
+
+            const made = Object.keys(s.checks).some((each) =>
+                each.startsWith(`${design.id}@${shown}:`),
+            );
+
+            if (made && s.checks[key] === undefined) {
+                run();
+            }
+        }, [options.seen]);
 
         const send = () => {
             env.sendToBox(
@@ -147,7 +240,7 @@ export function createCheck(env, DockHead) {
                     title: design.title,
                     id: design.id,
                     version: shown,
-                    scheme: options.scheme,
+                    mode: options.mode,
                     size: options.size,
                     findings: shownFindings.map((each) => each.finding),
                 }),
@@ -159,16 +252,48 @@ export function createCheck(env, DockHead) {
                 count=${report ? report.summary.errors + report.summary.warnings : 0}
             />
             <div class="dsn-dock-body">
+                <div class="dsy-sr" role="status" aria-live="polite" aria-atomic="true">
+                    ${
+                        running
+                            ? `Checking version ${shown}`
+                            : report
+                              ? `Checked version ${shown}: ${report.summary.errors} errors and ${report.summary.warnings} warnings.`
+                              : entry?.status === "failed"
+                                ? entry.error
+                                : ""
+                    }
+                </div>
                 <div class="dsy-check-options">
-                    <${Segmented}
-                        label="Color scheme"
-                        value=${options.scheme}
-                        onChange=${(scheme) => store.set({ checkWith: { ...s.checkWith, scheme } })}
-                        options=${[
-                            { value: "light", label: "Light", icon: "sun" },
-                            { value: "dark", label: "Dark", icon: "moon" },
-                        ]}
-                    />
+                    ${
+                        options.modes.length > 3 ||
+                        (env.sizeClass(s) === "narrow" &&
+                            options.modes.some((mode) => !MODE_ICONS[mode]))
+                            ? html`<select
+                                  class="dsy-modeselect dsy-check-mode"
+                                  aria-label="Mode"
+                                  value=${options.mode}
+                                  onChange=${(event) =>
+                                      store.set({
+                                          checkWith: {
+                                              ...s.checkWith,
+                                              mode: event.currentTarget.value,
+                                          },
+                                      })}
+                              >
+                                  ${options.modes.map((mode) => html`<option value=${mode}>${titleOf(mode)}</option>`)}
+                              </select>`
+                            : html`<${Segmented}
+                                  label="Mode"
+                                  value=${options.mode}
+                                  onChange=${(mode) =>
+                                      store.set({ checkWith: { ...s.checkWith, mode } })}
+                                  options=${options.modes.map((mode) => ({
+                                      value: mode,
+                                      label: titleOf(mode),
+                                      icon: MODE_ICONS[mode],
+                                  }))}
+                              />`
+                    }
                     <${Segmented}
                         label="Size"
                         value=${options.size}
@@ -181,9 +306,16 @@ export function createCheck(env, DockHead) {
                     />
                 </div>
                 ${
-                    options.scheme !== options.seen &&
+                    options.mode !== options.seen &&
                     html`<p class="dsn-note muted small">
-                        ${`The canvas shows this page in ${options.seen} mode. The pins are for the ${options.scheme} check, so some sit on colors you cannot see here.`}
+                        ${`The canvas shows this page in ${options.seen} mode. The pins are for the ${options.mode} check, so some sit on colors you cannot see here.`}
+                        <button
+                            type="button"
+                            class="dsn-link"
+                            onClick=${() => store.set({ checkWith: { ...s.checkWith, mode: null } })}
+                        >
+                            Follow the canvas
+                        </button>
                     </p>`
                 }
                 ${
@@ -208,17 +340,35 @@ export function createCheck(env, DockHead) {
                 ${
                     report &&
                     html`<div class="dsy-check-summary">
-                            <span class=${`dsy-stat ${report.summary.errors > 0 ? "bad" : "ok"}`}>
-                                <strong>${report.summary.errors}</strong
-                                >${` error${report.summary.errors === 1 ? "" : "s"}`}
-                            </span>
-                            <span
-                                class=${`dsy-stat ${report.summary.warnings > 0 ? "warn" : "ok"}`}
+                            ${
+                                findings.length > 0
+                                    ? html`<div
+                                          class="dsy-check-filter"
+                                          role="group"
+                                          aria-label="Show"
+                                      >
+                                          ${["all", "error", "warning"].map(
+                                              (each) =>
+                                                  html`<button
+                                                      type="button"
+                                                      key=${each}
+                                                      class=${`${filter === each ? "on" : ""} ${each}`}
+                                                      aria-pressed=${filter === each}
+                                                      onClick=${() => setFilter(each)}
+                                                  >
+                                                      ${each === "all" ? "All" : each === "error" ? "Errors" : "Warnings"}
+                                                      <span
+                                                          >${each === "all" ? findings.length : findings.filter(({ finding }) => finding.level === each).length}</span
+                                                      >
+                                                  </button>`,
+                                          )}
+                                      </div>`
+                                    : html`<span class="dsy-stat ok">0 errors, 0 warnings</span>`
+                            }
+                            <span class="grow"></span>
+                            <span class="muted small"
+                                >${`${report.summary.elements} elements`}</span
                             >
-                                <strong>${report.summary.warnings}</strong
-                                >${` warning${report.summary.warnings === 1 ? "" : "s"}`}
-                            </span>
-                            <span class="muted small">${report.summary.elements} elements</span>
                         </div>
                         ${
                             report.withoutSystem &&
@@ -228,33 +378,21 @@ export function createCheck(env, DockHead) {
                             </p>`
                         }
                         ${
-                            findings.length > 0 &&
-                            html`<div class="dsy-check-filter" role="group" aria-label="Show">
-                                ${["all", "error", "warning"].map(
-                                    (each) =>
-                                        html`<button
-                                            type="button"
-                                            key=${each}
-                                            class=${filter === each ? "on" : ""}
-                                            aria-pressed=${filter === each}
-                                            onClick=${() => setFilter(each)}
-                                        >
-                                            ${each === "all" ? "All" : each === "error" ? "Errors" : "Warnings"}
-                                            <span
-                                                >${each === "all" ? findings.length : findings.filter(({ finding }) => finding.level === each).length}</span
-                                            >
-                                        </button>`,
-                                )}
-                            </div>`
-                        }
-                        ${
                             findings.length === 0 &&
                             html`<div class="dsy-clean">
                                 <${Ico} name="check" size=${18} /> Nothing to fix in this version.
                             </div>`
                         }
                         <ul class="dsy-findings">
-                            ${shownFindings.map(({ finding, number }) => html`<${Finding} key=${number} finding=${finding} number=${number} />`)}
+                            ${shownFindings.map(
+                                ({ finding, number }) =>
+                                    html`<${Finding}
+                                        key=${number}
+                                        finding=${finding}
+                                        number=${number}
+                                        focused=${s.checkFocus?.number === number}
+                                    />`,
+                            )}
                         </ul>`
                 }
             </div>
@@ -268,7 +406,7 @@ export function createCheck(env, DockHead) {
                             <${Ico} name="send" size=${15} /> Send ${shownFindings.length} to Pi
                         </button>`
                     }
-                    <button type="button" class="button" disabled=${running} onClick=${run}>
+                    <button type="button" class="button" disabled=${running} onClick=${() => run()}>
                         <${Ico} name="shield" size=${15} />
                         ${report ? "Check again" : "Run the check"}
                     </button>

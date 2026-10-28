@@ -27,7 +27,19 @@ export default function setup(pocket) {
         return undefined;
     }
 
-    const store = createStore(initialState());
+    const store = createStore({
+        ...initialState(),
+        appDark: document.documentElement.dataset.mode !== "light",
+    });
+
+    // The app's theme changes the page in the canvas (it follows it): the store says so.
+    new MutationObserver(() => {
+        const appDark = document.documentElement.dataset.mode !== "light";
+
+        if (store.get().appDark !== appDark) {
+            store.set({ appDark });
+        }
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-mode"] });
     const data = createData(pocket, store);
     const systemData = createSystemData(pocket, store, data);
     const parts = createParts(pocket);
@@ -46,7 +58,11 @@ export default function setup(pocket) {
         /** The page's frame, for the parts that talk to it (the slide strip): `{ send, goto, supported }`, or null. */
         frame: { current: null },
         canEdit,
-        darkTheme: () => document.documentElement.dataset.mode !== "light",
+        /** Whether the app is in a dark theme (kept in the store, so that what shows it draws again when it changes). */
+        darkTheme: () => store.get().appDark,
+        /** Whether the page in the canvas is in a dark scheme: the backdrop a person chose, else the app's theme. */
+        canvasDark: (state) =>
+            state.backdrop === "dark" || (state.backdrop === "auto" && state.appDark),
         sizeClass: (state) => {
             const width = state.width || 1000;
 
@@ -104,6 +120,7 @@ export default function setup(pocket) {
                 ...modeless(),
                 draft: null,
                 present: false,
+                checkFocus: null,
                 ...(same ? {} : { slide: 0 }),
             });
         },
@@ -132,7 +149,11 @@ export default function setup(pocket) {
             });
         },
         setDock(dock) {
-            store.set(dock === null ? { dock: null, mode: "view", draft: null } : { dock });
+            store.set(
+                dock === null
+                    ? { dock: null, mode: "view", draft: null, checkFocus: null }
+                    : { dock },
+            );
         },
         setTab(tab) {
             const s = store.get();

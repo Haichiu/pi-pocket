@@ -285,7 +285,7 @@ export function createWorkspace(env) {
         const open_ = openOf(s.notes[design.id]?.comments ?? []).length;
         const edits = (s.edits[`${design.id}@${shown}`] ?? []).length;
         const moved = changed(s.knobs, s.tweaks[design.id] ?? {}).length;
-        const check = checkOptions(s, env.darkTheme());
+        const check = checkOptions(s, env.canvasDark(s));
         const report = s.checks[checkKey(design.id, shown, check.scheme, check.size)]?.report;
         const found = report ? report.summary.errors + report.summary.warnings : 0;
         const tabs = [

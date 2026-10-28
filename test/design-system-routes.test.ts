@@ -391,6 +391,23 @@ test("a check of a design answers with a report that has a fixed shape, for thos
         ),
     );
 
+    // A mode of the system: the page is checked in that mode, in the color scheme that the system gives it.
+    const inDark = await call("owner", "system/check", {
+        id: "ferry",
+        mode: "dark",
+        viewport: "mobile",
+    });
+
+    assert.equal(inDark.status, 200);
+    assert.equal((inDark.data.report as CheckReport).colorScheme, "dark");
+    // A mode that the system does not have, or no name, is refused.
+    const noMode = await call("owner", "system/check", { id: "ferry", mode: "sepia" });
+
+    assert.equal(noMode.status, 400);
+    assert.match(String(noMode.data.error), /no mode "sepia"/);
+    assert.equal((await call("owner", "system/check", { id: "ferry", mode: 5 })).status, 400);
+    assert.equal((await call("owner", "system/check", { id: "ferry", mode: "" })).status, 400);
+
     // Nobody who cannot steer runs one (it draws the page on the server), and the body is checked.
     assert.equal((await call("Vic", "system/check", { id: "ferry" })).status, 404);
     assert.equal((await call("owner", "system/check", { id: "nope" })).status, 400);

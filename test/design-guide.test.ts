@@ -14,7 +14,13 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { designGuide } from "../src/server/design/guide.ts";
-import { SUMMARY_BYTES } from "../src/server/design/guide.ts";
+import { findBrowser } from "../src/server/browser/discovery.ts";
+import type { DesignBundle } from "../src/server/design/bundle.ts";
+import { SUMMARY_BYTES, SYSTEM_EXAMPLE } from "../src/server/design/guide.ts";
+import { checkDesign } from "../src/server/design/lint.ts";
+import type { PocketHost } from "../src/server/host.ts";
+import { createPublicFetch } from "../src/server/public-fetch.ts";
+import { loadSystem } from "./design-system-loader.ts";
 import { MAX_BYTES, SYSTEM_FILE } from "../src/server/design/system.ts";
 
 const folders = new Set<string>();
@@ -353,3 +359,60 @@ test("a broken .pi/design is shown as errors in the summary; a file link is not 
     assert.doesNotMatch(second, /leak|#123456/);
     assert.match(second, /\d+ errors/);
 });
+
+test(
+    "the example design in the guide is correct: on the flagship system it has no error and no tap-target finding",
+    {
+        skip: findBrowser() === undefined ? "No Chromium on this machine." : false,
+    },
+    async () => {
+        const system = loadSystem(FLAGSHIP);
+
+        assert.ok(system !== undefined);
+
+        const bundle: DesignBundle = {
+            meta: { title: "Example", type: "html", versions: [] },
+            version: 1,
+            content: `<!doctype html><html lang="en">${SYSTEM_EXAMPLE}</html>`,
+            assets: [
+                {
+                    name: "ds/tokens.css",
+                    type: "text/css",
+                    bytes: Buffer.from(system.compiled.css),
+                },
+                {
+                    name: "ds/components.css",
+                    type: "text/css",
+                    bytes: Buffer.from(system.compiled.components),
+                },
+            ],
+        };
+
+        for (const colorScheme of ["light", "dark"] as const) {
+            const report = await checkDesign(bundle, system, { colorScheme, viewport: "mobile" }, {
+                fetchPublic: createPublicFetch(),
+            } as PocketHost);
+            const bad = report.findings.filter(
+                (finding) => finding.level === "error" || finding.rule === "tap-target",
+            );
+
+            // The flagship's font is not in the bundle, so a "font-fallback" warning is expected and is not the example's fault.
+            assert.deepEqual(bad, [], `${colorScheme}: ${JSON.stringify(bad)}`);
+            assert.equal(report.summary.byRule["off-system-color"] ?? 0, 0);
+            assert.equal(report.summary.byRule["off-system-size"] ?? 0, 0);
+        }
+
+        // The section carries it after the rules, and the stable part still comes first.
+        const { text } = await render(withSystem());
+
+        assert.ok(text.includes(SYSTEM_EXAMPLE));
+        assert.ok(
+            text.indexOf(SYSTEM_EXAMPLE) >
+                text.indexOf("The project has a design system, so a design"),
+        );
+        assert.match(SYSTEM_EXAMPLE, /ds\/tokens\.css/);
+        assert.match(SYSTEM_EXAMPLE, /data-pid="session-card"/);
+        assert.match(SYSTEM_EXAMPLE, /class="pk-card"/);
+        assert.match(SYSTEM_EXAMPLE, /id="pocket-tweaks"[\s\S]*"--color-accent-fill"/);
+    },
+);

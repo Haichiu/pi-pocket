@@ -7,6 +7,7 @@
  * many elements are one finding with a count in its message. The page is untrusted: everything that comes back from
  * it is shape-checked and bounded before it is used.
  */
+import { createHash } from "node:crypto";
 import type { PocketHost } from "../host.ts";
 import type { DesignBundle } from "./bundle.ts";
 import {
@@ -45,8 +46,11 @@ export interface CheckOptions {
     /** Default: light. */
     colorScheme?: "light" | "dark";
     /**
-     * The system mode to compare with. Default: `dark` for a dark color scheme when the system has that mode, else the
-     * system's default mode. A mode that is not the default also sets `data-theme` on the page's root, if it sets none.
+     * A mode of the system (`system.modes`: `high-contrast`, a brand). The page gets `data-theme="<mode>"` on its root
+     * element, is drawn in the mode's color scheme (`system.schemes`; `colorScheme` is the fallback), and is compared
+     * with that mode's tokens. The name is checked against the system, and a system is needed. Left out: `dark` for a
+     * dark color scheme when the system has that mode (the root gets `data-theme` only if the page sets none), else
+     * the system's default mode.
      */
     mode?: string;
     tweaks?: TweakValues;
@@ -128,12 +132,25 @@ const TIER_RANK: Record<ResolvedToken["tier"], number> = {
     primitive: 2,
 };
 
-/** The mode of `system` that a check at `colorScheme` compares with. */
+/** The view of a system's mode: which mode, which color scheme to draw, and the `data-theme` to set. */
+export interface ModeView {
+    mode: string;
+    scheme: "light" | "dark";
+    /** The value of `data-theme` on the root, when the check sets one. */
+    theme?: string;
+    /** True when the mode was asked for by name: the attribute then replaces the page's own. */
+    named: boolean;
+}
+
+/**
+ * The mode of `system` that a check at `colorScheme` compares with. A named mode is validated and draws in its own
+ * scheme (`system.schemes`); without a name, a dark scheme takes the `dark` mode when the system has one.
+ */
 export function modeFor(
     system: DesignSystem,
     colorScheme: "light" | "dark",
     mode?: string,
-): { mode: string; theme?: string } {
+): ModeView {
     if (mode !== undefined) {
         if (!system.modes.includes(mode)) {
             throw new Error(
@@ -141,14 +158,14 @@ export function modeFor(
             );
         }
 
-        return mode === system.modes[0] ? { mode } : { mode, theme: mode };
+        return { mode, scheme: system.schemes?.[mode] ?? colorScheme, theme: mode, named: true };
     }
 
     if (colorScheme === "dark" && system.modes.includes("dark") && system.modes[0] !== "dark") {
-        return { mode: "dark", theme: "dark" };
+        return { mode: "dark", scheme: "dark", theme: "dark", named: false };
     }
 
-    return { mode: system.modes[0] ?? "light" };
+    return { mode: system.modes[0] ?? "light", scheme: colorScheme, named: false };
 }
 
 /** What the page script resolved for the system's tokens, put back into the token set. */
@@ -165,54 +182,103 @@ function resolveTokens(set: TokenSet, raw: RawPage): void {
 
 type Nearest = { token: TokenSet["colors"][number]; distance: number };
 
-/** Names that say what a color token is for, by how the page uses a color. */
-const ROLE_NAMES: Record<string, RegExp> = {
-    text: /text|fg|foreground|content|ink/i,
-    background: /bg|background|surface|fill|canvas/i,
-    border: /border|line|divider|stroke|outline|ring/i,
-    outline: /focus|ring|outline|border/i,
+/** What a color token is for, by the words of its path: a border, text on a ground, or a ground. None for a palette step. */
+type ColorRole = "text" | "background" | "border";
+
+const ROLE_WORDS: [ColorRole, RegExp][] = [
+    ["border", /^(border|borders|line|lines|divider|dividers|stroke|outline|ring|rule|separator)$/],
+    ["text", /^(text|fg|foreground|content|ink|on|label|copy)$/],
+    ["background", /^(bg|background|surface|fill|canvas|base|ground|wash|soft|scrim|overlay)$/],
+];
+
+/** The role a token's name gives it (the first of border, text, background whose words it holds), if any. */
+export function colorRoleOf(name: string): ColorRole | undefined {
+    const words = name
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .toLowerCase()
+        .split(/[^a-z0-9]+/);
+
+    return ROLE_WORDS.find(([, pattern]) => words.some((word) => pattern.test(word)))?.[0];
+}
+
+/** The CSS property that a use of a color sets, for the edit that a message names. */
+const USE_PROPERTY: Record<string, string> = {
+    text: "color",
+    background: "background-color",
+    border: "border-color",
+    outline: "outline-color",
+};
+
+/** How a page uses a color (`useColor` in the page script) as a token role. */
+const USE_ROLE: Record<string, ColorRole> = {
+    text: "text",
+    background: "background",
+    border: "border",
+    outline: "border",
 };
 
 /**
- * The nearest color token to `color`: the closest, a role before a palette value when two are as near. With a `role`
- * (how the page uses the color), tokens named for another role are left out (a border is not a background), and one
- * named for this role counts as a little nearer.
+ * The nearest color token to `color`: the closest, a role before a palette value when two are as near. With a `use`
+ * (text, background, border, outline), the tokens of that role come first (a color used as a background gets a
+ * background token, not a text token); a palette or accent token with no role can stand in; a token of another role is
+ * the last resort.
  */
-function nearestColor(set: TokenSet, color: RgbaTuple, role?: string): Nearest | undefined {
-    const own = role === undefined ? undefined : ROLE_NAMES[role];
-    const others = Object.entries(ROLE_NAMES)
-        .filter(([name]) => name !== role)
-        .map(([, pattern]) => pattern);
-    const pool =
-        own === undefined
-            ? set.colors
-            : set.colors.filter(
-                  (token) =>
-                      own.test(token.name) || !others.some((pattern) => pattern.test(token.name)),
-              );
+function nearestColor(set: TokenSet, color: RgbaTuple, use?: string): Nearest | undefined {
+    const role = use === undefined ? undefined : USE_ROLE[use];
 
-    let best: Nearest | undefined;
+    const nearest = (tokens: TokenSet["colors"], bonus: ColorRole | undefined) => {
+        let best: Nearest | undefined;
 
-    for (const token of pool) {
-        if (token.rgba === undefined) {
-            continue;
+        for (const token of tokens) {
+            if (token.rgba === undefined) {
+                continue;
+            }
+
+            const distance =
+                colorDistance(color, token.rgba) -
+                (bonus !== undefined && colorRoleOf(token.name) === bonus ? 3 : 0);
+
+            if (
+                best === undefined ||
+                distance < best.distance - 0.5 ||
+                (distance < best.distance + 0.5 &&
+                    TIER_RANK[token.tier] < TIER_RANK[best.token.tier] &&
+                    distance < SAME_COLOR)
+            ) {
+                best = { token, distance };
+            }
         }
 
-        const distance =
-            colorDistance(color, token.rgba) - (own !== undefined && own.test(token.name) ? 3 : 0);
+        return best;
+    };
 
-        if (
-            best === undefined ||
-            distance < best.distance - 0.5 ||
-            (distance < best.distance + 0.5 &&
-                TIER_RANK[token.tier] < TIER_RANK[best.token.tier] &&
-                distance < SAME_COLOR)
-        ) {
-            best = { token, distance };
-        }
+    if (role === undefined) {
+        return nearest(set.colors, undefined);
     }
 
-    return best;
+    const matching = nearest(
+        set.colors.filter((token) => colorRoleOf(token.name) === role),
+        undefined,
+    );
+    const usable = nearest(
+        set.colors.filter((token) => {
+            const own = colorRoleOf(token.name);
+
+            return own === undefined || own === role;
+        }),
+        role,
+    );
+    const best =
+        matching !== undefined && matching.distance <= (usable?.distance ?? Infinity) + 6
+            ? matching
+            : usable;
+
+    if (best !== undefined && best.distance <= FAR_COLOR) {
+        return best;
+    }
+
+    // No token of the role is close: any token that is close at all (the message says that its role differs).
+    return nearest(set.colors, undefined);
 }
 
 /** The length tokens of a kind, with a pixel value. */
@@ -307,6 +373,17 @@ export function analyze(
             const better = nearestColor(tokens, rgba, main?.[0]);
             const near = better !== undefined && better.distance <= FAR_COLOR ? better : undefined;
             const value = formatColor(rgba);
+            const wanted = USE_ROLE[main?.[0] ?? ""];
+            const given = near === undefined ? undefined : colorRoleOf(near.token.name);
+            const property = USE_PROPERTY[main?.[0] ?? ""] ?? "color";
+            const edit =
+                near === undefined
+                    ? ""
+                    : ` Set \`${property}: ${tokenRef(near.token)}\` (${formatColor(near.token.rgba!)}) instead of ${value}.`;
+            const roleNote =
+                wanted !== undefined && given !== undefined && given !== wanted
+                    ? ` It is a ${given} token, and the system has no ${wanted} token this close.`
+                    : "";
 
             add(
                 {
@@ -317,13 +394,11 @@ export function analyze(
                     ...(near === undefined ? {} : { suggestion: tokenRef(near.token) }),
                     message: onSystem
                         ? `${value} is written as a literal (${roles}), so it does not follow the system.` +
-                          (near === undefined
-                              ? ""
-                              : ` Use ${tokenRef(near.token)} (${formatColor(near.token.rgba!)}).`)
+                          (near === undefined ? "" : `${edit}${roleNote}`)
                         : `${value} is not a system color (${roles}).` +
                           (near === undefined
                               ? " No token is close: pick a role from the system."
-                              : ` Use ${tokenRef(near.token)} (${formatColor(near.token.rgba!)}).`),
+                              : `${edit}${roleNote}`),
                 },
                 num(group.count),
             );
@@ -357,7 +432,9 @@ export function analyze(
                         (onSystem
                             ? `Font ${list} is written as a literal (${plural(num(group.count), "element")}), so it does not follow the system.`
                             : `Font ${list} is not a system font (${plural(num(group.count), "element")}).`) +
-                        (token === undefined ? "" : ` Use ${tokenRef(token)}.`),
+                        (token === undefined
+                            ? ""
+                            : ` Set \`font-family: ${tokenRef(token)}\` instead of ${list}.`),
                 },
                 num(group.count),
             );
@@ -406,8 +483,8 @@ export function analyze(
                     suggestion: tokenRef(step),
                     message:
                         equal === undefined
-                            ? `${props === "" ? kind : props} ${px}px is not on ${names[kind]} (${plural(num(group.count), "use")}). Nearest: ${tokenRef(nearest)} (${nearest.px}px).`
-                            : `${props === "" ? kind : props} ${px}px is written as a literal (${plural(num(group.count), "use")}), so it does not follow the system. Use ${tokenRef(equal)}.`,
+                            ? `${props === "" ? kind : props} ${px}px is not on ${names[kind]} (${plural(num(group.count), "use")}). ${sizeEdit(group.props, kind, nearest, px)}`
+                            : `${props === "" ? kind : props} ${px}px is written as a literal (${plural(num(group.count), "use")}), so it does not follow the system. ${sizeEdit(group.props, kind, equal, px)}`,
                 },
                 num(group.count),
             );
@@ -480,9 +557,9 @@ export function analyze(
                     `Text ${swatch(fg)} on ${swatch(bg)} is ${shown}; ${group.large ? "large text" : "text"} needs ${needed}:1${more(num(group.count))}.` +
                     (pass === undefined
                         ? tokens === undefined
-                            ? " Darken the text or lighten the background."
-                            : " No system color passes on this background: change the background."
-                        : ` Use ${tokenRef(pass.token)} (${swatch(pass.token.rgba!)}, ${pass.ratio.toFixed(2)}:1).`),
+                            ? " Darken the `color` or lighten the `background-color`."
+                            : " No system color passes on this background: change its `background-color`."
+                        : ` Set \`color: ${tokenRef(pass.token)}\` (${swatch(pass.token.rgba!)}, ${pass.ratio.toFixed(2)}:1) instead of ${swatch(fg)}.`),
             },
             num(group.count),
         );
@@ -502,8 +579,8 @@ export function analyze(
                 value: `${width}×${height}px`,
                 message:
                     level === "error"
-                        ? `A <${clip(group.tag, 20)}> target is ${width}×${height} px, under the 24×24 px minimum of WCAG 2.2${more(num(group.count))}. Add padding or a larger size.`
-                        : `A <${clip(group.tag, 20)}> target is ${width}×${height} px; 44×44 px is easier to hit on a phone${more(num(group.count))}.`,
+                        ? `A <${clip(group.tag, 20)}> target is ${width}×${height} px, under the 24×24 px minimum of WCAG 2.2${more(num(group.count))}. Set \`min-width: 44px; min-height: 44px\` (or padding) on it.`
+                        : `A <${clip(group.tag, 20)}> target is ${width}×${height} px; 44×44 px is easier to hit on a phone${more(num(group.count))}. Set \`min-width: 44px; min-height: 44px\` (or padding) on it.`,
             },
             num(group.count),
         );
@@ -531,7 +608,7 @@ export function analyze(
                 rule: "image-alt",
                 level: "error",
                 ...elementOf(group.el),
-                message: `An image has ${clip(group.why, 60)}${more(num(group.count))}. Describe it in alt, or use alt="" if it is decoration.`,
+                message: `An image has ${clip(group.why, 60)}${more(num(group.count))}. Add \`alt="what it shows"\`, or \`alt=""\` if it is decoration.`,
             },
             num(group.count),
         );
@@ -543,7 +620,7 @@ export function analyze(
             level: "warning",
             ...elementOf(group.el),
             value: `h${num(group.level)} after h${num(group.previous)}`,
-            message: `A heading jumps from level ${num(group.previous)} to ${num(group.level)}. Use level ${num(group.previous) + 1}, and style it with CSS.`,
+            message: `A heading jumps from level ${num(group.previous)} to ${num(group.level)}. Change the tag to <h${num(group.previous) + 1}> and keep its look with CSS.`,
         });
     }
 
@@ -604,6 +681,8 @@ export function analyze(
         });
     }
 
+    const seen = new Map<string, number>();
+
     return out
         .sort(
             (a, b) =>
@@ -611,13 +690,56 @@ export function analyze(
                 RULE_ORDER.indexOf(a.rule) - RULE_ORDER.indexOf(b.rule) ||
                 b.weight - a.weight,
         )
-        .map(({ weight: _weight, ...finding }) => finding);
+        .map(({ weight: _weight, ...finding }) => {
+            const id = findingId(finding);
+            const again = (seen.get(id) ?? 0) + 1;
+
+            seen.set(id, again);
+
+            return { id: again === 1 ? id : `${id}-${again}`, ...finding };
+        });
+}
+
+/**
+ * A finding's id: the rule, and a hash of where it is (the `data-pid`, else the selector) and what it is about (the
+ * value). The same problem on the same element has the same id in every run, so a pin can follow it; fixing the value
+ * ends it, and a new value is a new id. The color scheme, the viewport, and the wording do not change it.
+ */
+export function findingId(
+    finding: Pick<CheckFinding, "rule" | "pid" | "selector" | "value">,
+): string {
+    const scope =
+        finding.pid !== undefined && finding.pid !== ""
+            ? `pid:${finding.pid}`
+            : `sel:${finding.selector}`;
+    const hash = createHash("sha256")
+        .update(`${finding.rule}\0${scope}\0${finding.value ?? ""}`)
+        .digest("hex")
+        .slice(0, 10);
+
+    return `${finding.rule}-${hash}`;
+}
+
+/** The edit for a length: the property (or properties), the token by name, its value, and what it replaces. */
+function sizeEdit(
+    props: unknown,
+    kind: string,
+    step: { cssVar: string; px: number },
+    px: number,
+): string {
+    const names = (Array.isArray(props) ? props : [])
+        .map((prop) => clip(prop, 30))
+        .filter((prop) => prop !== "");
+    const list = names.length > 0 ? names : [kind === "font-size" ? "font-size" : kind];
+    const set = list.map((prop) => `\`${prop}\``).join(" or ");
+
+    return `Set ${set} to ${tokenRef(step)}, ${step.px}px, instead of ${px}px.`;
 }
 
 /** A report for findings. */
 export function reportOf(
     findings: CheckFinding[],
-    view: { viewport: DesignViewport; colorScheme: "light" | "dark" },
+    view: { viewport: DesignViewport; colorScheme: "light" | "dark"; mode?: string },
     elements: number,
     withoutSystem: boolean,
 ): CheckReport {
@@ -630,6 +752,7 @@ export function reportOf(
     return {
         viewport: view.viewport,
         colorScheme: view.colorScheme,
+        ...(view.mode === undefined ? {} : { mode: view.mode }),
         findings,
         summary: {
             errors: findings.filter((finding) => finding.level === "error").length,
@@ -650,11 +773,11 @@ export async function checkPage(
     system: DesignSystem | undefined,
     view: { viewport: DesignViewport; colorScheme?: "light" | "dark"; mode?: string },
 ): Promise<CheckReport> {
-    const colorScheme = view.colorScheme ?? "light";
+    const picked =
+        system === undefined ? undefined : modeFor(system, view.colorScheme ?? "light", view.mode);
+    const colorScheme = picked?.scheme ?? view.colorScheme ?? "light";
     const tokens =
-        system === undefined
-            ? undefined
-            : tokenSet(system, modeFor(system, colorScheme, view.mode).mode);
+        system === undefined || picked === undefined ? undefined : tokenSet(system, picked.mode);
     const deck = await page.isDeck();
     const input: PageInput = {
         tokenColors: tokens?.colors.map((token) => token.css) ?? [],
@@ -671,7 +794,7 @@ export async function checkPage(
 
     return reportOf(
         analyze(raw, tokens, { deck }),
-        { viewport: view.viewport, colorScheme },
+        { viewport: view.viewport, colorScheme, mode: picked?.mode },
         num(raw.elements),
         system === undefined,
     );
@@ -710,12 +833,25 @@ export async function checkDesign(
     signal?: AbortSignal,
 ): Promise<CheckReport> {
     const viewport = viewportOf(options.viewport ?? "desktop");
-    const colorScheme = options.colorScheme ?? "light";
-    const picked = system === undefined ? undefined : modeFor(system, colorScheme, options.mode);
+
+    if (options.mode !== undefined && system === undefined) {
+        throw new Error("A mode needs a design system: this project has none.");
+    }
+
+    const picked =
+        system === undefined
+            ? undefined
+            : modeFor(system, options.colorScheme ?? "light", options.mode);
+    const colorScheme = picked?.scheme ?? options.colorScheme ?? "light";
 
     return withRender(bundle, host, signal, async (page) => {
         await page.load(viewport, { page: options.page });
-        await page.applyView({ colorScheme, theme: picked?.theme, tweaks: options.tweaks });
+        await page.applyView({
+            colorScheme,
+            theme: picked?.theme,
+            forceTheme: picked?.named,
+            tweaks: options.tweaks,
+        });
         await page.act(options.actions ?? []);
         const view = { viewport, colorScheme, mode: picked?.mode };
 
@@ -739,7 +875,7 @@ export async function checkDesign(
 
         return reportOf(
             findings,
-            { viewport, colorScheme },
+            { viewport, colorScheme, mode: picked?.mode },
             reports.reduce((total, report) => total + report.summary.elements, 0),
             system === undefined,
         );

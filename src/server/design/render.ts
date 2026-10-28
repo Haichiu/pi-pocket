@@ -552,7 +552,13 @@ export class DesignPage {
      * event for every name).
      */
     async applyView(
-        view: { colorScheme?: "light" | "dark"; theme?: string; tweaks?: TweakValues } = {},
+        view: {
+            colorScheme?: "light" | "dark";
+            theme?: string;
+            /** Replace a `data-theme` that the page has (a mode asked for by name). */
+            forceTheme?: boolean;
+            tweaks?: TweakValues;
+        } = {},
     ): Promise<void> {
         if (view.colorScheme !== undefined) {
             await this.send("Emulation.setEmulatedMedia", {
@@ -562,7 +568,9 @@ export class DesignPage {
 
         if (view.theme !== undefined && /^[a-z0-9][a-z0-9-]{0,63}$/.test(view.theme)) {
             await this.evaluate(
-                `document.documentElement.hasAttribute('data-theme') || document.documentElement.setAttribute('data-theme', ${JSON.stringify(view.theme)})`,
+                view.forceTheme === true
+                    ? `document.documentElement.setAttribute('data-theme', ${JSON.stringify(view.theme)})`
+                    : `document.documentElement.hasAttribute('data-theme') || document.documentElement.setAttribute('data-theme', ${JSON.stringify(view.theme)})`,
             );
         }
 

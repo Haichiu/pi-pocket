@@ -294,6 +294,7 @@ export function cleanReport(report: CheckReport): CheckReport {
         const rect = each.rect;
 
         findings.push({
+            ...(typeof each.id === "string" ? { id: clip(each.id, 60) } : {}),
             rule: each.rule,
             level: each.level === "error" ? "error" : "warning",
             selector: clip(each.selector, 500),
@@ -529,6 +530,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             const id = typeof request.body.id === "string" ? request.body.id : "";
             const version = request.body.version;
             const scheme = request.body.colorScheme;
+            const mode = request.body.mode;
             const size = request.body.viewport ?? "mobile";
 
             if (
@@ -542,14 +544,36 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 throw web.error(400, "Choose light or dark.");
             }
 
+            if (
+                mode !== undefined &&
+                (typeof mode !== "string" || mode === "" || mode.length > 100)
+            ) {
+                throw web.error(400, "Choose a mode of the design system.");
+            }
+
             if (typeof size !== "string" || !Object.hasOwn(VIEWPORTS, size)) {
                 throw web.error(400, "Choose mobile, tablet, or desktop.");
             }
 
             const cwd = folderOf(request);
+            const system = await load(cwd);
+
+            // A mode of the system: the page is checked against it, in the color scheme that the system gives it (the
+            // scheme asked for, when the person asked for one).
+            if (mode !== undefined && system !== undefined && !system.modes.includes(mode)) {
+                throw web.error(
+                    400,
+                    `The design system has no mode "${mode.slice(0, 40)}". Modes: ${system.modes.join(", ")}.`,
+                );
+            }
+
+            const checked = mode !== undefined && system !== undefined ? mode : undefined;
+            const colorScheme =
+                scheme ?? (checked === undefined ? undefined : system?.schemes[checked]);
             const options: CheckOptions = {
                 viewport: VIEWPORTS[size as keyof typeof VIEWPORTS],
-                ...(scheme === undefined ? {} : { colorScheme: scheme }),
+                ...(colorScheme === undefined ? {} : { colorScheme }),
+                ...(checked === undefined ? {} : { mode: checked }),
             };
 
             try {
@@ -561,13 +585,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     version,
                     request.context,
                 );
-                const report = await checkDesign(
-                    bundle,
-                    await load(cwd),
-                    options,
-                    host,
-                    request.signal,
-                );
+                const report = await checkDesign(bundle, system, options, host, request.signal);
 
                 return { report: cleanReport(report), id, version: bundle.version };
             } catch (error) {

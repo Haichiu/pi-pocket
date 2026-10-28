@@ -62,35 +62,63 @@ export function sectionOf(token) {
 const title = (text) =>
     text === "" ? "" : text[0].toUpperCase() + text.slice(1).replace(/[-_]+/g, " ");
 
-/** The tokens of a section, in groups the view shows one after another. A color group is `roles` or a `palette`. */
-export function groupsOf(tokens, section, defaultMode) {
+const TIER_RANK = { semantic: 0, primitive: 1, component: 2 };
+const tierOf = (token) => (token.tier in TIER_RANK ? token.tier : "semantic");
+
+/** What the groups of a section with no kinds of their own are called, by tier, when there is more than one. */
+const TIER_TITLES = { semantic: "", primitive: "Primitives", component: "Component tokens" };
+const SCALE_TITLES = { spacing: "Scale", radii: "Corners", shadows: "Elevation" };
+
+/**
+ * The number of tokens in each section, by section id. One rule, the same as the documentation page's (`sectionOf` in
+ * `src/server/design/docsite.ts` is this file's): every token is in exactly one section, whatever its tier, and a
+ * component's own tokens count too. So a tab's number is what its section lists (the roles, the palette, and the folded
+ * component colors), the documentation page says the same number, and the sections add up to the system's tokens.
+ */
+export function sectionCounts(tokens) {
+    const counts = {};
+
+    for (const token of tokens) {
+        const id = sectionOf(token);
+
+        counts[id] = (counts[id] ?? 0) + 1;
+    }
+
+    return counts;
+}
+
+/**
+ * The tokens of a section, in groups the view shows one after another: what a person edits first (the semantic tier: roles,
+ * styles, scales), the primitives after it, and a component's own tokens last. Each group has its `tier`; a color group is
+ * `roles`, a `palette`, or `components`. `fold` says whether it starts folded: primitives when the section has semantic
+ * tokens too, and component tokens always.
+ */
+export function groupsOf(tokens, section) {
     const mine = tokens.filter((token) => sectionOf(token) === section);
     const groups = new Map();
 
-    const add = (id, name, kind, token) => {
-        if (!groups.has(id)) {
-            groups.set(id, { id, title: name, kind, tokens: [] });
+    const add = (id, name, kind, token, tier = tierOf(token)) => {
+        const key = `${section}:${tier}:${id}`;
+
+        if (!groups.has(key)) {
+            groups.set(key, { id: key, title: name, kind, tier, tokens: [] });
         }
 
-        groups.get(id).tokens.push(token);
+        groups.get(key).tokens.push(token);
     };
 
     for (const token of mine) {
+        const tier = tierOf(token);
+
         if (section === "colors") {
             const own = token.path.length >= 3 ? token.path[1] : token.path[0];
-            const aliased = token.modes[defaultMode]?.alias !== undefined;
 
             add(
-                `color:${own}`,
+                own,
                 title(token.path.length >= 3 ? token.path[1] : "Base"),
-                aliased ? "roles" : "palette",
+                tier === "semantic" ? "roles" : tier === "primitive" ? "palette" : "components",
                 token,
             );
-
-            // A group with any reference in it is made of roles; one with only raw values is a palette.
-            if (aliased) {
-                groups.get(`color:${own}`).kind = "roles";
-            }
         } else if (section === "type") {
             const by = {
                 typography: ["styles", "Styles"],
@@ -100,7 +128,14 @@ export function groupsOf(tokens, section, defaultMode) {
             const sub =
                 by ?? (token.type === "number" ? ["leading", "Line height"] : ["sizes", "Sizes"]);
 
-            add(`type:${sub[0]}`, sub[1], "type", token);
+            // A style is what a person edits in this section (it links to the sizes and families), whatever its tier.
+            add(
+                sub[0],
+                tier === "component" ? `Component ${sub[1].toLowerCase()}` : sub[1],
+                "type",
+                token,
+                token.type === "typography" && tier !== "component" ? "semantic" : tier,
+            );
         } else if (section === "motion") {
             const by =
                 token.type === "duration"
@@ -109,23 +144,74 @@ export function groupsOf(tokens, section, defaultMode) {
                       ? ["easing", "Easing"]
                       : ["transitions", "Transitions"];
 
-            add(`motion:${by[0]}`, by[1], "motion", token);
+            add(by[0], by[1], "motion", token);
         } else if (section === "other") {
-            add(`other:${token.path[0]}`, title(token.path[0]), "other", token);
+            add(token.path[0], title(token.path[0]), "other", token);
         } else {
-            add(`${section}:all`, "", section, token);
+            add("all", "", section, token);
         }
     }
 
-    const list = [...groups.values()];
+    const list = [...groups.values()].sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier]);
+    const semantic = list.some((each) => each.tier === "semantic");
 
-    // What people edit (roles) first, the raw palette after it.
-    return section === "colors"
-        ? [
-              ...list.filter((each) => each.kind === "roles"),
-              ...list.filter((each) => each.kind !== "roles"),
-          ]
-        : list;
+    // Two groups of one kind and one name (the semantic durations and the primitive ones) are told apart by their tier.
+    if (section !== "colors") {
+        const seen = new Map();
+
+        for (const group of list) {
+            seen.set(group.title, (seen.get(group.title) ?? 0) + 1);
+        }
+
+        for (const group of list) {
+            if (group.title !== "" && seen.get(group.title) > 1) {
+                group.title = `${group.title} · ${group.tier}`;
+            }
+        }
+    }
+
+    for (const group of list) {
+        // The scales (spacing, radii, shadows) have no kinds of their own: they are named by their tier, when there are several.
+        if (group.title === "" && list.length > 1) {
+            group.title = TIER_TITLES[group.tier] || SCALE_TITLES[section] || "Scale";
+        }
+
+        group.fold = group.tier === "component" || (group.tier === "primitive" && semantic);
+    }
+
+    return list;
+}
+
+/**
+ * The shortest tail of each token's path that tells it from the others in `tokens`: `lift`, and `card.shadow` against
+ * `menu.shadow` when the last word repeats. A `Map` from a token's name to its label.
+ */
+export function tails(tokens) {
+    const depth = new Map(tokens.map((token) => [token.name, 1]));
+    const label = (token) => token.path.slice(-depth.get(token.name)).join(".");
+
+    for (let round = 0; round < 8; round += 1) {
+        const seen = new Map();
+
+        for (const token of tokens) {
+            seen.set(label(token), (seen.get(label(token)) ?? 0) + 1);
+        }
+
+        let moved = false;
+
+        for (const token of tokens) {
+            if (seen.get(label(token)) > 1 && depth.get(token.name) < token.path.length) {
+                depth.set(token.name, depth.get(token.name) + 1);
+                moved = true;
+            }
+        }
+
+        if (!moved) {
+            break;
+        }
+    }
+
+    return new Map(tokens.map((token) => [token.name, label(token)]));
 }
 
 /** Whether a token matches what was typed in the search: its name, description, or any value. */

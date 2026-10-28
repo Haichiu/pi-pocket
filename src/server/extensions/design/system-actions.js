@@ -106,6 +106,14 @@ export function createSystemActions(env, systemData) {
             store.set({ sysSection, sysOpen: null, sysPick: null });
         },
 
+        /**
+         * Show a finding of the page check on the page: its pin, scrolled into view in the frame. A canvas that is zoomed in
+         * goes back to fit first, so that the frame's own scroll is the only one left and the pin is on the screen.
+         */
+        focusFinding(number) {
+            store.set({ checkFocus: { number, at: Date.now() }, zoom: "fit" });
+        },
+
         /** Open the list of tokens that `token` may link to, in `mode`. */
         pickAlias(token, mode) {
             store.set({ sysPick: { token, mode } });
@@ -119,8 +127,9 @@ export function createSystemActions(env, systemData) {
             store.set((s) => ({ sysOpen: s.sysOpen === name ? null : name }));
         },
 
-        toggleGroup(id) {
-            store.set((s) => ({ sysFolded: { ...s.sysFolded, [id]: !s.sysFolded[id] } }));
+        /** Fold a group (`fold` true) or open it. A group that starts folded is opened by saying so, not by taking the choice back. */
+        toggleGroup(id, fold) {
+            store.set((s) => ({ sysFolded: { ...s.sysFolded, [id]: fold } }));
         },
 
         /** Show a long group in full. */
@@ -138,7 +147,7 @@ export function createSystemActions(env, systemData) {
             }
 
             const section = sectionOf(token);
-            const group = groupsOf(system.tokens, section, system.modes[0]).find((each) =>
+            const group = groupsOf(system.tokens, section).find((each) =>
                 each.tokens.some((other) => other.name === name),
             );
 
@@ -148,7 +157,17 @@ export function createSystemActions(env, systemData) {
                 sysOpen: name,
                 sysQuery: "",
                 sysPane: "system",
-                sysFolded: group ? { ...s.sysFolded, [group.id]: false } : s.sysFolded,
+                // The group opens, and the folded group of all the palettes (or all the component colors) that holds it.
+                sysFolded: {
+                    ...s.sysFolded,
+                    ...(group ? { [group.id]: false } : {}),
+                    ...(section === "colors" && token.tier === "primitive"
+                        ? { "colors:palette": false }
+                        : {}),
+                    ...(section === "colors" && token.tier === "component"
+                        ? { "colors:components": false }
+                        : {}),
+                },
                 sysAll: group ? { ...s.sysAll, [group.id]: true } : s.sysAll,
             }));
 

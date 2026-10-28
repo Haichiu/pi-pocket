@@ -130,16 +130,20 @@ test("a token belongs to the section its type, or the words of its name, say", (
 });
 
 test("the fixture's tokens group into roles first and a palette after, and the rest into sections", () => {
-    const groups = sys.groupsOf(system.tokens, "colors", system.modes[0]);
+    const groups = sys.groupsOf(system.tokens, "colors");
     const ids = groups.map((each: { id: string }) => each.id);
+    const group = (id: string) => groups.find((each: { id: string }) => each.id === id);
 
-    assert.ok(ids.indexOf("color:bg") < ids.indexOf("color:gray"), ids.join());
-    assert.equal(groups.find((each: { id: string }) => each.id === "color:gray").kind, "palette");
-    assert.equal(groups.find((each: { id: string }) => each.id === "color:bg").kind, "roles");
-    assert.equal(groups.find((each: { id: string }) => each.id === "color:color").title, "Base");
+    assert.ok(ids.indexOf("colors:semantic:bg") < ids.indexOf("colors:primitive:gray"), ids.join());
+    assert.equal(group("colors:primitive:gray").kind, "palette");
+    assert.equal(group("colors:semantic:bg").kind, "roles");
+    assert.equal(group("colors:primitive:color").title, "Base");
+    // What a person edits first is open; the raw colors are folded.
+    assert.equal(group("colors:semantic:bg").fold, false);
+    assert.equal(group("colors:primitive:gray").fold, true);
     assert.deepEqual(
         sys.groupsOf(system.tokens, "type", "light").map((each: { title: string }) => each.title),
-        ["Families", "Sizes", "Weights", "Line height", "Styles"],
+        ["Styles", "Families", "Sizes", "Weights", "Line height"],
     );
     assert.deepEqual(
         sys.groupsOf(system.tokens, "other", "light").map((each: { title: string }) => each.title),
@@ -150,6 +154,47 @@ test("the fixture's tokens group into roles first and a palette after, and the r
         ["Durations", "Easing"],
     );
     assert.ok(sys.SECTIONS.every((each: { id: string }) => each.id !== "other" || true));
+});
+
+test("a section counts every token in it, whatever its tier: one rule for the tabs and the docs page", () => {
+    const counts = sys.sectionCounts(system.tokens);
+    const colors = system.tokens.filter((each: { type: string }) => each.type === "color");
+
+    assert.equal(counts.colors, colors.length);
+    // Each token is in one section, so the sections add up to the system.
+    assert.equal(
+        Object.values<number>(counts).reduce((sum, each) => sum + each, 0),
+        system.tokens.length,
+    );
+
+    // And a section lists what it counts: its groups hold every one of its tokens.
+    for (const id of Object.keys(counts)) {
+        assert.equal(
+            sys
+                .groupsOf(system.tokens, id)
+                .reduce(
+                    (sum: number, group: { tokens: unknown[] }) => sum + group.tokens.length,
+                    0,
+                ),
+            counts[id],
+            id,
+        );
+    }
+});
+
+test("tiles tell tokens apart by the shortest tail of the path that does", () => {
+    const token = (name: string) => ({ name, path: name.split(".") });
+    const names = sys.tails([
+        token("shadow.lift"),
+        token("card.shadow"),
+        token("menu.shadow"),
+        token("button.radius"),
+    ]);
+
+    assert.equal(names.get("shadow.lift"), "lift");
+    assert.equal(names.get("card.shadow"), "card.shadow");
+    assert.equal(names.get("menu.shadow"), "menu.shadow");
+    assert.equal(names.get("button.radius"), "radius");
 });
 
 test("a search finds a token by its name, its description, or a value", () => {

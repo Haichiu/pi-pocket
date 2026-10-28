@@ -39,9 +39,6 @@ const PROBE: Record<string, string> = {
 
 const SCRIPT = (tokens: { name: string; type: string }[]) => `(() => {
     const root = document.documentElement;
-    const probe = document.createElement('div');
-    probe.style.cssText = 'position:absolute;left:0;top:0;';
-    document.body.append(probe);
     const properties = ${JSON.stringify(PROBE)};
     const out = {};
     for (const token of ${JSON.stringify(tokens)}) {
@@ -51,15 +48,19 @@ const SCRIPT = (tokens: { name: string; type: string }[]) => `(() => {
         const entry = { raw, defined: raw !== '' && !raw.includes('var('), valid: false, computed: '' };
         if (entry.defined && property) {
             entry.valid = CSS.supports(property, raw);
+            // A new element for every token: Chromium can hand back a stale value for an element whose inline style was
+            // rewritten many times (--space-0 read as 0.4px, the value of a variable probed a few hundred tokens before).
+            const probe = document.createElement('div');
             probe.style.cssText = 'position:absolute;left:0;top:0;';
+            document.body.append(probe);
             probe.style.setProperty(property, 'var(' + variable + ')');
             entry.computed = getComputedStyle(probe).getPropertyValue(property);
+            probe.remove();
         } else if (entry.defined) {
             entry.valid = true;
         }
         out[token.name] = entry;
     }
-    probe.remove();
     return out;
 })()`;
 

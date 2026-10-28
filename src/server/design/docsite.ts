@@ -27,7 +27,7 @@ import {
     type Rgba,
 } from "./docsite-color.ts";
 import { DOC_BOOT_JS, DOC_CSS, DOC_JS, FRAME_JS } from "./docsite-assets.ts";
-import { escapeHtml as esc, renderMarkdown, slugify } from "./docsite-markdown.ts";
+import { escapeHtml as esc, plural, renderMarkdown, slugify } from "./docsite-markdown.ts";
 
 /** What `renderSystemDoc` returns: the page, and files that sit beside it in the bundle (none today). */
 export interface SystemDoc {
@@ -700,6 +700,21 @@ function matrix(ctx: Ctx, roles: ResolvedToken[]): string {
     return `<h3 id="color-matrix">Text on grounds</h3><p class="sub">Every text color on every ground, in the mode you chose. AA text needs 4.5:1 and AAA text 7:1; ✕ is below 3:1.</p><div class="table-wrap"><table class="matrix"><thead><tr><th>Text</th>${head}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
 }
 
+/** One sentence on how many contrast checks meet their minimum; none when there is no check. */
+function checkSentence(passing: number, total: number): string {
+    if (total === 0) {
+        return "";
+    }
+
+    if (total === 1) {
+        return ` The contrast check ${passing === 1 ? "meets" : "does not meet"} its minimum.`;
+    }
+
+    return passing === total
+        ? ` All ${total} contrast checks meet their minimum.`
+        : ` ${passing} of ${total} contrast checks meet their minimum.`;
+}
+
 function colorSection(ctx: Ctx): { html: string; count: number } | undefined {
     const colors = tokensOf(ctx, "color");
     const allPalette = colors.filter((token) => token.tier === "primitive");
@@ -778,12 +793,12 @@ function colorSection(ctx: Ctx): { html: string; count: number } | undefined {
 
     if (pairs.table !== "") {
         parts.push(
-            `<h3 id="color-pairs">Contrast pairs</h3><p class="sub">The system checks these pairs in every mode: ${pairs.passing} of ${pairs.total} pass.</p>${pairs.table}`,
+            `<h3 id="color-pairs">Contrast pairs</h3><p class="sub">The system checks these pairs in every mode: ${pairs.passing} of ${plural(pairs.total, "check")} ${pairs.passing === 1 ? "passes" : "pass"}.</p>${pairs.table}`,
         );
     }
 
     return {
-        html: `<p class="intro">${allRoles.length} roles${allPalette.length > 0 ? ` over ${allPalette.length} palette colors` : ""}${components.length > 0 ? ` and ${components.length} component colors` : ""}${ctx.modes.length > 1 ? `, in ${ctx.modes.length} modes` : ""}.${pairs.total > 0 ? ` ${pairs.passing === pairs.total ? "Every" : `${pairs.passing} of ${pairs.total}`} contrast check${pairs.total === 1 ? "" : "s"} ${pairs.passing === pairs.total ? "meets" : "meet"} its minimum.` : ""}</p>${parts.join("")}`,
+        html: `<p class="intro">${plural(allRoles.length, "role")}${allPalette.length > 0 ? ` over ${plural(allPalette.length, "palette color")}` : ""}${components.length > 0 ? ` and ${plural(components.length, "component color")}` : ""}${ctx.modes.length > 1 ? `, in ${ctx.modes.length} modes` : ""}.${checkSentence(pairs.passing, pairs.total)}</p>${parts.join("")}`,
         count: colors.length,
     };
 }
@@ -933,7 +948,7 @@ function typographySection(ctx: Ctx): { html: string; count: number } | undefine
     }
 
     return {
-        html: `<p class="intro">${families.length} typeface${families.length === 1 ? "" : "s"}, ${sizes.length} sizes${composites.length > 0 ? `, and ${composites.length} text styles` : ""}.</p>${parts.join("")}${note()}${moreTokens(ctx, "typography")}`,
+        html: `<p class="intro">${plural(families.length, "typeface")}, ${plural(sizes.length, "size")}${composites.length > 0 ? `, and ${plural(composites.length, "text style")}` : ""}.</p>${parts.join("")}${note()}${moreTokens(ctx, "typography")}`,
         count: mine.length,
     };
 }
@@ -1432,7 +1447,7 @@ function componentsSection(ctx: Ctx): { html: string; count: number } | undefine
     }
 
     return {
-        html: `<p class="intro">${components.length} component${components.length === 1 ? "" : "s"}, each shown in every state and in the mode you chose. Copy the markup to reuse it.</p>${components.map((spec, index) => componentArticle(ctx, spec, index)).join("")}`,
+        html: `<p class="intro">${plural(components.length, "component")}, each shown in every state and in the mode you chose. Copy the markup to reuse it.</p>${components.map((spec, index) => componentArticle(ctx, spec, index)).join("")}`,
         count: components.length,
     };
 }
@@ -1799,13 +1814,13 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
         .filter((section) => section.group !== "Reference" || section.id === "guidelines")
         .map((section) => {
             const lines: Record<string, string> = {
-                color: `${roleCount} roles in ${ctx.modes.length} mode${ctx.modes.length === 1 ? "" : "s"}`,
+                color: `${plural(roleCount, "role")} in ${plural(ctx.modes.length, "mode")}`,
                 typography: "Faces, sizes, and text styles",
                 spacing: "Steps and sizes",
                 radii: "Corners by role",
                 shadows: "Lifts that follow the mode",
                 motion: "Durations, easing, transitions",
-                components: `${ctx.system.components.length} with every state`,
+                components: `${plural(ctx.system.components.length, "component")} with every state`,
                 guidelines: "How to use the system",
                 other: "The rest of the tokens",
             };
@@ -1813,9 +1828,12 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
             return `<a class="tile" href="#${section.id}"><b>${esc(section.title)}</b><span>${esc(lines[section.id] ?? "")}</span></a>`;
         })
         .join("");
-    const stat = (value: string, label: string) =>
+    const statText = (value: string, label: string) =>
         `<div class="stat"><b>${esc(value)}</b><span>${esc(label)}</span></div>`;
-    const overview = `<section class="block" id="overview" data-pid="overview" aria-labelledby="overview-title"><div class="hero"><p class="eyebrow">Design system</p><h1 id="overview-title">${esc(name)}</h1>${system.description === undefined ? "" : `<p class="lead">${esc(clip(system.description, 400))}</p>`}${sampler(ctx)}<div class="stats">${stat(String(ctx.system.tokens.length), "tokens")}${stat(String(roleCount), "color roles")}${stat(String(ctx.modes.length), ctx.modes.length === 1 ? "mode" : "modes")}${stat(String(ctx.system.components.length), "components")}${pairs.total > 0 ? stat(`${pairs.passing}/${pairs.total}`, "contrast checks pass") : ""}</div></div><div class="tiles">${tiles}</div>${problemsHtml(ctx)}${system.tokens.length > MAX_TOKENS ? `<p class="sub" style="margin-top:14px">This page shows the first ${MAX_TOKENS} of ${system.tokens.length} tokens.</p>` : ""}</section>`;
+    // The number, and its noun in the right number: "1 mode", "3 modes".
+    const stat = (count: number, noun: string) =>
+        statText(String(count), plural(count, noun).slice(String(count).length + 1));
+    const overview = `<section class="block" id="overview" data-pid="overview" aria-labelledby="overview-title"><div class="hero"><p class="eyebrow">Design system</p><h1 id="overview-title">${esc(name)}</h1>${system.description === undefined ? "" : `<p class="lead">${esc(clip(system.description, 400))}</p>`}${sampler(ctx)}<div class="stats">${stat(ctx.system.tokens.length, "token")}${stat(roleCount, "color role")}${stat(ctx.modes.length, "mode")}${stat(ctx.system.components.length, "component")}${pairs.total > 0 ? statText(`${pairs.passing}/${pairs.total}`, pairs.total === 1 ? "contrast check passes" : "contrast checks pass") : ""}</div></div><div class="tiles">${tiles}</div>${problemsHtml(ctx)}${system.tokens.length > MAX_TOKENS ? `<p class="sub" style="margin-top:14px">This page shows the first ${MAX_TOKENS} of ${system.tokens.length} tokens.</p>` : ""}</section>`;
     const body = sections
         .map(
             (section) =>
@@ -1930,7 +1948,7 @@ ${ctx.modes.length > 1 ? `<div class="seg" role="group" aria-label="Mode">${mode
 ${overview}
 ${body}
 <p class="empty" id="nomatch" hidden>No token or component matches that filter.</p>
-<footer class="foot"><strong>${esc(name)}</strong> · ${ctx.system.tokens.length} tokens · ${ctx.modes.length} mode${ctx.modes.length === 1 ? "" : "s"} · ${ctx.system.components.length} components · generated ${new Date().toISOString().slice(0, 10)} by Pi Pocket</footer>
+<footer class="foot"><strong>${esc(name)}</strong> · ${plural(ctx.system.tokens.length, "token")} · ${plural(ctx.modes.length, "mode")} · ${plural(ctx.system.components.length, "component")} · generated ${new Date().toISOString().slice(0, 10)} by Pi Pocket</footer>
 </main>
 </div>
 <div class="toast" role="status" aria-live="polite"></div>

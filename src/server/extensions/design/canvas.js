@@ -115,11 +115,14 @@ export function createCanvas(env) {
         const notes = s.notes[design.id];
         const comments = notes?.comments ?? [];
         const checking = s.dock === "check";
-        const check = checkOptions(s, env.darkTheme());
+        const check = checkOptions(s, env.canvasDark(s));
         const pins = s.mode === "comment" || s.dock === "comments" ? pinsOf(comments, version) : [];
         // The pins of a page check are its findings'; those of comments, the open comments'.
         const targets = checking
-            ? pinsOfReport(s.checks[checkKey(design.id, version, check.scheme, check.size)]?.report)
+            ? pinsOfReport(
+                  s.checks[checkKey(design.id, version, check.scheme, check.size)]?.report,
+                  s.checkFocus,
+              )
             : pins.map((comment, index) => ({
                   ...(comment.target.pid ? { pid: comment.target.pid } : {}),
                   selector: comment.target.selector,
@@ -226,7 +229,10 @@ export function createCanvas(env) {
         }, [ready, s.mode, readOnly]);
 
         // Numbered pins on the elements that have open comments on this version.
-        const pinKey = targets.map((target) => `${target.label}${target.selector}`).join("\n");
+        // (a tap on a finding again asks again: the key has the moment of it)
+        const pinKey = `${checking ? (s.checkFocus?.at ?? "") : ""}\n${targets
+            .map((target) => `${target.label}${target.selector}${target.reveal ? "!" : ""}`)
+            .join("\n")}`;
 
         useEffect(() => {
             send({ type: "pocket-highlight", targets: targets.slice(0, 100) });
@@ -324,6 +330,7 @@ export function createCanvas(env) {
                         key=${key}
                         class=${`dsn-frame wait ${loaded ? "loaded" : ""}`}
                         src=${src}
+                        style=${s.backdrop === "auto" ? undefined : `color-scheme:${s.backdrop}`}
                         sandbox=${SANDBOX}
                         allow=${ALLOW}
                         title=${design.title}

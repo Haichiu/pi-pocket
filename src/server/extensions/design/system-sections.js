@@ -1,7 +1,7 @@
 // The sections of the System view: Colors, Type, Spacing, Radii, Shadows, Motion, Other, Components, and Guidelines. Each
 // draws the tokens of its kind as what they are (a swatch, a specimen, a bar, a corner, a shadow, a motion), and opens the
 // editor of one token under its row. They read the model (`system.js`) and change nothing but through `env`.
-import { parseColor, swatchCss, toHex } from "./color.js";
+import { parseColor, ratioText, swatchCss, toHex } from "./color.js";
 import { specimenDocument } from "./specimen.js";
 import {
     cssOf,
@@ -12,11 +12,13 @@ import {
     safeCss,
     shadowOf,
     showValue,
+    tails,
     themeCss,
     typographyMeta,
     typographyStyle,
     typographyStyleOf,
 } from "./system.js";
+import { modeTitle, verdictOf } from "./system-widgets.js";
 
 const SAMPLE = "Sphinx of black quartz, judge my vow";
 
@@ -101,9 +103,13 @@ export function createSystemSections(env, widgets) {
         </li>`;
     }
 
-    /** A group of tokens in a card, with a head that folds it. A search keeps every group with a match open. */
-    function Group({ ctx, group, strip, children, bare = false }) {
-        const folded = ctx.s.sysFolded[group.id] === true && ctx.query === "";
+    /** Whether a group is folded now: what the person chose, else how it starts. A search opens every group with a match. */
+    const foldedNow = (ctx, group) =>
+        ctx.query === "" && (ctx.s.sysFolded[group.id] ?? group.fold === true);
+
+    /** A group of tokens in a card, with a head that folds it. */
+    function Group({ ctx, group, strip, children, bare = false, note = "" }) {
+        const folded = foldedNow(ctx, group);
 
         const more =
             group.hidden > 0 &&
@@ -119,16 +125,21 @@ export function createSystemSections(env, widgets) {
             return html`<section class="dsy-group bare">${children}${more}</section>`;
         }
 
-        return html`<section class="dsy-group" data-folded=${folded} aria-label=${group.title}>
+        return html`<section
+            class="dsy-group"
+            data-folded=${folded}
+            data-tier=${group.tier}
+            aria-label=${group.title}
+        >
             <button
                 type="button"
                 class="dsy-group-head"
                 aria-expanded=${!folded}
-                onClick=${() => env.toggleGroup(group.id)}
+                onClick=${() => env.toggleGroup(group.id, !folded)}
             >
                 <span class="dsy-group-title">${group.title}</span>
                 <span class="dsy-group-count">${group.total ?? group.tokens.length}</span>
-                ${strip}
+                ${note && html`<span class="dsy-group-note">${note}</span>`} ${strip}
                 <${Ico} name="down" size=${15} class="dsy-group-chev" />
             </button>
             ${!folded && html`<div class="dsy-group-body">${children}${more}</div>`}
@@ -142,7 +153,7 @@ export function createSystemSections(env, widgets) {
 
     /** The groups of a section, filtered by the search; a long one is cut, with `hidden` the number it leaves out. */
     function groupsFor(ctx, section) {
-        return groupsOf(ctx.model.tokens, section, ctx.model.defaultMode)
+        return groupsOf(ctx.model.tokens, section)
             .map((group) => {
                 const found = group.tokens.filter((token) => matches(token, ctx.query));
                 const cut = ctx.query === "" && !ctx.s.sysAll[group.id] && found.length > SHOWN;
@@ -159,13 +170,22 @@ export function createSystemSections(env, widgets) {
 
     // ─── Colors ──────────────────────────────────────────────────────────────
 
-    /** The system's look in one small card for each mode: a page, a card on it, text, an accent, the statuses. */
+    /**
+     * The system's look, for each mode, as a small card built from its own roles: a title, body text, quiet text, a primary
+     * button, and a chip for each status. The words are plain on purpose: they say nothing about any product.
+     */
     function Overview({ ctx }) {
         const found = ctx.model.roles();
 
         if (found.canvas === undefined || found.surface === undefined || found.text === undefined) {
             return null;
         }
+
+        const chips = [
+            ["danger", "Error"],
+            ["warning", "Warning"],
+            ["success", "Success"],
+        ].filter(([role]) => found[role] !== undefined);
 
         return html`<div class="dsy-overview" data-count=${ctx.modes.length}>
             ${ctx.modes.map((mode) => {
@@ -177,34 +197,50 @@ export function createSystemSections(env, widgets) {
                         : swatchCss(ctx.model.value(name, mode).value) || fallback;
                 };
 
+                const quiet = color("muted", color("text"));
+
                 return html`<figure
                     class="dsy-look"
                     key=${mode}
                     style=${`background:${color("canvas")}`}
-                    aria-label=${`How ${mode} looks`}
+                    aria-label=${`A card in ${mode}, drawn with the system's roles`}
                 >
                     <div
                         class="dsy-look-card"
                         style=${`background:${color("surface")};box-shadow:0 0 0 1px ${color("border", "rgb(127 127 127 / .3)")}`}
                     >
-                        <strong style=${`color:${color("text")}`}>Booking</strong>
-                        <span style=${`color:${color("muted", color("text"))}`}
-                            >The 9:15 ferry is on time.</span
-                        >
+                        <strong style=${`color:${color("text")}`}>Card title</strong>
+                        <span style=${`color:${color("text")}`}>Body text reads at a glance.</span>
+                        <span style=${`color:${quiet}`}>Muted text for the details.</span>
                         <span class="dsy-look-row">
                             <span
                                 class="dsy-look-button"
                                 style=${`background:${color("accent", color("text"))};color:${color("onAccent", color("surface"))}`}
-                                >Book</span
+                                >Primary</span
                             >
-                            <span class="dsy-look-dots">
-                                <i style=${`background:${color("danger", "transparent")}`}></i>
-                                <i style=${`background:${color("warning", "transparent")}`}></i>
-                                <i style=${`background:${color("success", "transparent")}`}></i>
-                            </span>
+                            <span
+                                class="dsy-look-button ghost"
+                                style=${`color:${color("text")};box-shadow:inset 0 0 0 1px ${color("border", quiet)}`}
+                                >Secondary</span
+                            >
                         </span>
+                        ${
+                            chips.length > 0 &&
+                            html`<span class="dsy-look-chips">
+                                ${chips.map(
+                                    ([role, label]) =>
+                                        html`<span
+                                            class="dsy-look-chip"
+                                            key=${role}
+                                            style=${`color:${color("text")};box-shadow:inset 0 0 0 1px ${color("border", quiet)}`}
+                                            ><i style=${`background:${color(role)}`}></i
+                                            >${label}</span
+                                        >`,
+                                )}
+                            </span>`
+                        }
                     </div>
-                    ${ctx.modes.length > 1 && html`<figcaption style=${`color:${color("muted", color("text"))}`}>${mode}</figcaption>`}
+                    ${ctx.modes.length > 1 && html`<figcaption style=${`color:${quiet}`}>${mode}</figcaption>`}
                 </figure>`;
             })}
         </div>`;
@@ -214,103 +250,146 @@ export function createSystemSections(env, widgets) {
     const alike = (values) =>
         values.every((each) => swatchCss(each.value) === swatchCss(values[0].value));
 
-    function ColorRow({ ctx, token }) {
-        const { model } = ctx;
-        const all = ctx.modes.map((mode) => model.value(token.name, mode));
-        // A color that is the same everywhere (a primitive, mostly) has one swatch, one value, and one badge.
+    /** The editor of the open token of a group, under the group's cards or strip, in a box of its own. */
+    function Opened({ ctx, group }) {
+        const open = group.tokens.find((token) => token.name === ctx.s.sysOpen);
+
+        return (
+            open &&
+            html`<div class="dsy-ramp-editor" data-token=${open.name}>
+                <div class="dsy-ramp-editor-head">
+                    <${CopyName} name=${open.name} />
+                    <span class="grow"></span>
+                    <button
+                        type="button"
+                        class="icon-button"
+                        aria-label=${`Close ${open.name}`}
+                        onClick=${() => env.toggleToken(open.name)}
+                    >
+                        <${Ico} name="close" size=${15} />
+                    </button>
+                </div>
+                <${TokenEditor}
+                    model=${ctx.model}
+                    token=${open}
+                    modes=${ctx.modes}
+                    canEdit=${ctx.canEdit}
+                    narrow=${ctx.narrow}
+                />
+            </div>`
+        );
+    }
+
+    /** What the cards and strips of a color show of it: one swatch (split when its modes differ), its value, and its pair. */
+    function colorFacts(ctx, token) {
+        const all = ctx.modes.map((mode) => ctx.model.value(token.name, mode));
+        const infos = ctx.modes.map((mode) => ctx.model.contrastOf(token.name, mode));
+        // The same color, and the same fortune on its pair, in every mode: drawn once.
         const merged =
             ctx.modes.length > 1 &&
             alike(all) &&
-            // ... and fares the same on its pair, if it has one.
-            new Set(
-                ctx.modes.map((mode) => {
-                    const info = model.contrastOf(token.name, mode);
+            new Set(infos.map((info) => (info ? `${Math.round(info.ratio * 10)}${info.pass}` : "")))
+                .size === 1;
 
-                    return info ? `${Math.round(info.ratio * 10)}${info.pass}` : "";
-                }),
-            ).size === 1;
-        const modes = merged ? ctx.modes.slice(0, 1) : ctx.modes;
-        const values = merged ? all.slice(0, 1) : all;
-        const aliases = [...new Set(values.map((each) => each.alias).filter(Boolean))];
-        const sub =
-            aliases.length > 0
-                ? html`<span class="mono">${aliases.map((name) => `→ ${name}`).join("  ")}</span>`
-                : (token.description ?? "");
+        return {
+            values: merged ? all.slice(0, 1) : all,
+            modes: merged ? ctx.modes.slice(0, 1) : ctx.modes,
+            infos: merged ? infos.slice(0, 1) : infos,
+        };
+    }
 
-        return html`<${TokenRow}
+    /** Roles as cards in a grid: the swatch, the name, the value, and the contrast on its pair. A tap opens its editor. */
+    function RoleCards({ ctx, group }) {
+        const names = tails(group.tokens);
+
+        return html`<${Tiles}
             ctx=${ctx}
-            token=${token}
-            visual=${html`<${Swatch} values=${values.map((each) => each.value)} size=${40} />`}
-            sub=${sub}
-            value=${html`<span class="dsy-values">
-                ${modes.map(
-                    (mode, index) =>
-                        html`<span class="dsy-value-line" key=${mode}>
-                            <span class="dsy-hex mono">${hexOf(values[index].value) || "—"}</span>
-                            <${ContrastBadge}
-                                info=${model.contrastOf(token.name, mode)}
-                                mode=${mode}
-                                modes=${modes.length}
-                            />
-                        </span>`,
-                )}
-            </span>`}
+            group=${group}
+            size="role"
+            label=${(token) => {
+                const facts = colorFacts(ctx, token);
+                const pairs = facts.infos.flatMap((info, index) =>
+                    info
+                        ? [
+                              `${facts.modes.length > 1 ? `${modeTitle(facts.modes[index])} ` : ""}contrast ${ratioText(info.ratio)} ${verdictOf(info)}`,
+                          ]
+                        : [],
+                );
+
+                return [token.name, hexOf(facts.values[0].value), ...pairs]
+                    .filter(Boolean)
+                    .join(", ");
+            }}
+            tile=${(token) => {
+                const facts = colorFacts(ctx, token);
+
+                return html`<${Swatch}
+                        values=${facts.values.map((each) => each.value)}
+                        size=${46}
+                    />
+                    <span class="dsy-card-name mono">${names.get(token.name)}</span>
+                    <span class="dsy-card-meta">
+                        <span class="dsy-hex mono">${hexOf(facts.values[0].value) || "—"}</span>
+                        ${facts.infos.map(
+                            (info, index) =>
+                                html`<${ContrastBadge}
+                                    key=${facts.modes[index]}
+                                    info=${info}
+                                    mode=${facts.modes[index]}
+                                    modes=${facts.modes.length}
+                                />`,
+                        )}
+                    </span>`;
+            }}
         />`;
     }
 
-    /** A ramp of raw colors as tiles: a tap opens the editor of the tile under the ramp. */
-    function Ramp({ ctx, group }) {
-        const open = group.tokens.find((token) => token.name === ctx.s.sysOpen);
+    /** A ramp as one strip: its swatches side by side, each a button that opens the editor of its step under the strip. */
+    function Strip({ ctx, group }) {
+        const names = tails(group.tokens);
 
-        return html`<div class="dsy-ramp-wrap">
-            <div class="dsy-ramp">
+        return html`<div class="dsy-strip-row">
+            <div class="dsy-strip-head">
+                <strong>${group.title}</strong>
+                <span class="muted small">${group.tokens.length}</span>
+            </div>
+            <div class="dsy-strip-steps" role="group" aria-label=${`${group.title} palette`}>
                 ${group.tokens.map((token) => {
-                    const all = ctx.modes.map((mode) => ctx.model.value(token.name, mode));
-                    const values = all.length > 1 && alike(all) ? all.slice(0, 1) : all;
+                    const facts = colorFacts(ctx, token);
                     const edited = ctx.modes.some((mode) => ctx.model.edited(token.name, mode));
 
                     return html`<button
                         type="button"
                         key=${token.name}
                         data-token=${token.name}
-                        class=${`dsy-tile ${token.name === ctx.s.sysOpen ? "on" : ""} ${edited ? "edited" : ""}`}
+                        class=${`dsy-step-tile ${token.name === ctx.s.sysOpen ? "on" : ""} ${edited ? "edited" : ""}`}
                         aria-pressed=${token.name === ctx.s.sysOpen}
-                        aria-label=${`${token.name}, ${hexOf(values[0].value)}`}
-                        title=${token.name}
+                        aria-label=${`${token.name}, ${hexOf(facts.values[0].value)}`}
+                        title=${`${token.name} ${hexOf(facts.values[0].value)}`}
                         onClick=${() => env.toggleToken(token.name)}
                     >
-                        <${Swatch} values=${values.map((each) => each.value)} size=${44} />
-                        <span class="dsy-tile-name mono">${token.path.at(-1)}</span>
-                        <span class="dsy-tile-hex mono">${hexOf(values[0].value)}</span>
+                        <${Swatch} values=${facts.values.map((each) => each.value)} size=${40} />
+                        <span class="dsy-step-label mono">${names.get(token.name)}</span>
                     </button>`;
                 })}
             </div>
-            ${
-                open &&
-                html`<div class="dsy-ramp-editor">
-                    <div class="dsy-ramp-editor-head">
-                        <${CopyName} name=${open.name} />
-                        <span class="grow"></span>
-                        <button
-                            type="button"
-                            class="icon-button"
-                            aria-label="Close"
-                            onClick=${() => env.toggleToken(open.name)}
-                        >
-                            <${Ico} name="close" size=${15} />
-                        </button>
-                    </div>
-                    <${TokenEditor}
-                        model=${ctx.model}
-                        token=${open}
-                        modes=${ctx.modes}
-                        canEdit=${ctx.canEdit}
-                        narrow=${ctx.narrow}
-                    />
-                </div>`
-            }
+            <${Opened} ctx=${ctx} group=${group} />
         </div>`;
     }
+
+    /** The swatches of a group, overlapped, for its head. */
+    const stripOf = (ctx, group) =>
+        html`<span class="dsy-strip" aria-hidden="true">
+            ${group.tokens
+                .slice(0, 9)
+                .map(
+                    (token) =>
+                        html`<i
+                            key=${token.name}
+                            style=${`background:${swatchCss(ctx.model.value(token.name, ctx.modes[0]).value)}`}
+                        ></i>`,
+                )}
+        </span>`;
 
     function Colors({ ctx }) {
         const groups = groupsFor(ctx, "colors");
@@ -321,34 +400,68 @@ export function createSystemSections(env, widgets) {
             />`;
         }
 
+        const roles = groups.filter((group) => group.tier === "semantic");
+        const palette = groups.filter((group) => group.tier === "primitive");
+        const components = groups.filter((group) => group.tier === "component");
+        // All the ramps are one folded group: the roles are what people edit; the palette is what they point at.
+        const together = (id, title, list, tier) => ({
+            id: `colors:${id}`,
+            title,
+            tier,
+            tokens: list.flatMap((group) => group.tokens),
+            total: list.reduce((sum, group) => sum + (group.total ?? group.tokens.length), 0),
+            hidden: list.reduce((sum, group) => sum + (group.hidden ?? 0), 0),
+            // The palette starts folded when there are roles to look at; a system of nothing but a palette shows it.
+            fold: roles.length > 0 || tier === "component",
+        });
+
         return html`${ctx.query === "" && html`<${Overview} ctx=${ctx} />`}
-        ${groups.map(
+        ${
+            roles.length > 0 &&
+            html`<h3 class="dsy-section-label">
+                Roles
+                <span class="dsy-group-count"
+                    >${roles.reduce((sum, group) => sum + group.total, 0)}</span
+                >
+            </h3>`
+        }
+        ${roles.map(
             (group) =>
                 html`<${Group}
                     key=${group.id}
                     ctx=${ctx}
                     group=${group}
-                    strip=${html`<span class="dsy-strip" aria-hidden="true">
-                        ${group.tokens
-                            .slice(0, 9)
-                            .map(
-                                (token) =>
-                                    html`<i
-                                        key=${token.name}
-                                        style=${`background:${swatchCss(ctx.model.value(token.name, ctx.modes[0]).value)}`}
-                                    ></i>`,
-                            )}
-                    </span>`}
+                    strip=${stripOf(ctx, group)}
                 >
-                    ${
-                        group.kind === "roles"
-                            ? html`<ul class="dsy-rows">
-                                  ${group.tokens.map((token) => html`<${ColorRow} key=${token.name} ctx=${ctx} token=${token} />`)}
-                              </ul>`
-                            : html`<${Ramp} ctx=${ctx} group=${group} />`
-                    }
+                    <${RoleCards} ctx=${ctx} group=${group} />
                 <//>`,
-        )}`;
+        )}
+        ${
+            palette.length > 0 &&
+            html`<${Group}
+                ctx=${ctx}
+                group=${together("palette", "Palette", palette, "primitive")}
+                note="the raw colors that roles point at"
+            >
+                ${palette.map((group) => html`<${Strip} key=${group.id} ctx=${ctx} group=${group} />`)}
+            <//>`
+        }
+        ${
+            components.length > 0 &&
+            html`<${Group}
+                ctx=${ctx}
+                group=${together("components", "Component colors", components, "component")}
+                note="each component's own colors"
+            >
+                ${components.map(
+                    (group) =>
+                        html`<div class="dsy-sub" key=${group.id}>
+                            <h4 class="dsy-sub-title">${group.title}</h4>
+                            <${RoleCards} ctx=${ctx} group=${group} />
+                        </div>`,
+                )}
+            <//>`
+        }`;
     }
 
     // ─── Type ────────────────────────────────────────────────────────────────
@@ -462,8 +575,8 @@ export function createSystemSections(env, widgets) {
                 html`<${Group}
                     key=${group.id}
                     ctx=${ctx}
-                    group=${{ ...group, title: group.title || "Scale" }}
-                    bare=${group.title === ""}
+                    group=${group}
+                    bare=${groups.length === 1}
                 >
                     <ul class="dsy-rows">
                         ${group.tokens.map((token) => {
@@ -484,12 +597,10 @@ export function createSystemSections(env, widgets) {
         )}`;
     }
 
-    /** Tiles that open the editor of one token under the grid (radii, shadows). */
-    function Tiles({ ctx, group, tile, wide = false }) {
-        const open = group.tokens.find((token) => token.name === ctx.s.sysOpen);
-
+    /** Tiles that open the editor of one token under the grid (roles, radii, shadows). `size` is the room each takes. */
+    function Tiles({ ctx, group, tile, label, size = "sm" }) {
         return html`<div class="dsy-ramp-wrap">
-            <div class=${`dsy-tiles ${wide ? "wide" : ""}`}>
+            <div class="dsy-tiles" data-size=${size}>
                 ${group.tokens.map((token) => {
                     const edited = ctx.modes.some((mode) => ctx.model.edited(token.name, mode));
 
@@ -499,37 +610,14 @@ export function createSystemSections(env, widgets) {
                         data-token=${token.name}
                         class=${`dsy-card-tile ${token.name === ctx.s.sysOpen ? "on" : ""} ${edited ? "edited" : ""}`}
                         aria-pressed=${token.name === ctx.s.sysOpen}
-                        aria-label=${token.name}
+                        aria-label=${label ? label(token) : token.name}
                         onClick=${() => env.toggleToken(token.name)}
                     >
                         ${tile(token)}
                     </button>`;
                 })}
             </div>
-            ${
-                open &&
-                html`<div class="dsy-ramp-editor">
-                    <div class="dsy-ramp-editor-head">
-                        <${CopyName} name=${open.name} />
-                        <span class="grow"></span>
-                        <button
-                            type="button"
-                            class="icon-button"
-                            aria-label="Close"
-                            onClick=${() => env.toggleToken(open.name)}
-                        >
-                            <${Ico} name="close" size=${15} />
-                        </button>
-                    </div>
-                    <${TokenEditor}
-                        model=${ctx.model}
-                        token=${open}
-                        modes=${ctx.modes}
-                        canEdit=${ctx.canEdit}
-                        narrow=${ctx.narrow}
-                    />
-                </div>`
-            }
+            <${Opened} ctx=${ctx} group=${group} />
         </div>`;
     }
 
@@ -548,8 +636,8 @@ export function createSystemSections(env, widgets) {
                 html`<${Group}
                     key=${group.id}
                     ctx=${ctx}
-                    group=${{ ...group, title: group.title || "Corners" }}
-                    bare=${group.title === ""}
+                    group=${group}
+                    bare=${groups.length === 1}
                 >
                     <${Tiles}
                         ctx=${ctx}
@@ -557,12 +645,13 @@ export function createSystemSections(env, widgets) {
                         tile=${(token) => {
                             const now = ctx.model.value(token.name, mode);
                             const px = pixelsOf(now.value);
+                            const names = tails(group.tokens);
 
                             return html`<span
                                     class="dsy-corner"
                                     style=${`border-radius:${px === null ? 0 : Math.min(px, 36)}px`}
                                 ></span>
-                                <span class="dsy-tile-name mono">${token.path.at(-1)}</span>
+                                <span class="dsy-tile-name mono">${names.get(token.name)}</span>
                                 <span class="dsy-tile-hex mono">${showValue(token, now)}</span>`;
                         }}
                     />
@@ -585,13 +674,13 @@ export function createSystemSections(env, widgets) {
                 html`<${Group}
                     key=${group.id}
                     ctx=${ctx}
-                    group=${{ ...group, title: group.title || "Elevation" }}
-                    bare=${group.title === ""}
+                    group=${group}
+                    bare=${groups.length === 1}
                 >
                     <${Tiles}
                         ctx=${ctx}
                         group=${group}
-                        wide=${true}
+                        size="lg"
                         tile=${(token) =>
                             html`<span class="dsy-stages">
                                     ${ctx.modes.map((mode) => {
@@ -614,7 +703,9 @@ export function createSystemSections(env, widgets) {
                                         </span>`;
                                     })}
                                 </span>
-                                <span class="dsy-tile-name mono">${token.path.at(-1)}</span>`}
+                                <span class="dsy-tile-name mono"
+                                    >${tails(group.tokens).get(token.name)}</span
+                                >`}
                     />
                 <//>`,
         )}`;

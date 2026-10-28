@@ -161,6 +161,11 @@ export type CheckRule =
 
 /** One finding of `checkDesign`. */
 export interface CheckFinding {
+    /**
+     * Stable across runs: the rule and a hash of the element (its `data-pid`, else its selector) and the value, so a pin
+     * can follow a finding. A second finding with the same hash gets `-2`, `-3`.
+     */
+    id?: string;
     rule: CheckRule;
     level: "error" | "warning";
     /** The element, as the inspector names it. Empty for a page-level finding. */
@@ -179,6 +184,8 @@ export interface CheckReport {
     /** The viewport the page was checked at. */
     viewport: { width: number; height: number };
     colorScheme: "light" | "dark";
+    /** The system mode that the page was compared with (absent without a system). */
+    mode?: string;
     findings: CheckFinding[];
     /** Counts by rule and level, and how many elements were checked. */
     summary: {
