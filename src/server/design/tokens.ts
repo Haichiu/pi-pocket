@@ -7,6 +7,7 @@
  *   error. Files that did not change keep their bytes.
  * - `compileDesignSystem(system)` and `systemSummary(system, maxBytes)` are the pure outputs.
  */
+import { defang } from "../fence.ts";
 import type { DesignSystem, SystemChange, SystemProblem } from "./system-types.ts";
 import { SLUG } from "./components.ts";
 import { type Folder, DESIGN_DIR, emptyFolder, readFolder, writeFiles } from "./tokens-io.ts";
@@ -42,7 +43,10 @@ export class DesignSystemError extends Error {
 export function problemLine(problem: SystemProblem): string {
     const where = [problem.file, problem.token].filter((part) => part !== undefined).join(" › ");
 
-    return `${problem.level === "error" ? "error" : "warning"}: ${where === "" ? "" : `${where}: `}${problem.message}`;
+    // The message can quote project text: no closing tag survives in it.
+    return defang(
+        `${problem.level === "error" ? "error" : "warning"}: ${where === "" ? "" : `${where}: `}${problem.message}`,
+    );
 }
 
 /** Loads the project's design system, or undefined when `.pi/design/` is absent. Writes nothing. */
