@@ -25,7 +25,8 @@ export type Category =
     | "tracking"
     | "z"
     | "opacity"
-    | "size";
+    | "size"
+    | "gradient";
 
 /** A custom property or a stylesheet variable. */
 export interface VarFact {

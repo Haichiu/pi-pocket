@@ -14,6 +14,10 @@ const FONT_WORDS =
 const COLOR_TOKEN =
     /^(?:#[0-9a-f]{3,8}|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix|var|light-dark)\(.*\)|transparent|currentcolor|[a-z]{3,20})$/i;
 
+/** A CSS gradient (not a `url()`): safe characters only, since the value is written into a token file and a stylesheet. */
+export const GRADIENT =
+    /^(?:repeating-)?(?:linear|radial|conic)-gradient\([\w\s,.%#()/+*-]{4,360}\)$/i;
+
 /**
  * Whether a value is a `box-shadow`: one or more comma-separated layers, each with two to four lengths (offsets, blur,
  * spread), at most one color (first or last), and perhaps `inset`.
@@ -77,6 +81,10 @@ export function categorize(
             SASS_COLOR.has(/^([a-z][a-z-]*)/i.exec(text)![1]!.toLowerCase()))
     ) {
         return "color";
+    }
+
+    if (GRADIENT.test(text)) {
+        return "gradient";
     }
 
     if (/^\d*\.?\d+(?:ms|s)$/.test(text)) {

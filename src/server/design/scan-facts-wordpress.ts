@@ -1,4 +1,5 @@
 /** WordPress `theme.json` (stream T): the palette, the font sizes, the spacing, and the styles of a block theme. */
+import { luminance, parseColor } from "./color.ts";
 import { parseStyles, type Scope } from "./scan-parse.ts";
 import { addVar, type Category, type Facts } from "./scan-facts.ts";
 import { modeOf } from "./scan-facts-lists.ts";
@@ -136,6 +137,92 @@ function wordpressCss(styles: unknown): string {
     return out.join("\n");
 }
 
+/** What the first word of a `settings.custom` path says the value is. Any other value is read by its name and its syntax. */
+const CUSTOM_HINTS: Record<string, Category> = {
+    color: "color",
+    colors: "color",
+    radius: "radius",
+    radii: "radius",
+    "border-radius": "radius",
+    spacing: "space",
+    space: "space",
+    shadow: "shadow",
+    shadows: "shadow",
+    elevation: "shadow",
+    gradient: "gradient",
+    gradients: "gradient",
+    "font-size": "text",
+    "font-sizes": "text",
+    "font-family": "font",
+    "font-families": "font",
+    "font-weight": "weight",
+    "line-height": "leading",
+    "letter-spacing": "tracking",
+    duration: "duration",
+    easing: "ease",
+};
+
+/**
+ * The sizes of `settings.spacing.spacingScale`, as WordPress makes them: from `mediumStep`, each step below is the one
+ * above divided by `increment` (or less `increment` for `+`), each step above is multiplied (or added to). The middle
+ * is slug 50 and the others are 10 apart, so that a scale of seven steps has the slugs 20 to 80.
+ */
+function spacingScale(scale: unknown): { slug: string; size: string }[] {
+    if (typeof scale !== "object" || scale === null) {
+        return [];
+    }
+
+    const { operator, increment, steps, mediumStep, unit } = scale as Record<string, unknown>;
+    const step = Number(steps);
+    const medium = Number(mediumStep);
+    const by = Number(increment);
+
+    if (
+        !(step >= 1 && step <= 20) ||
+        !(medium > 0) ||
+        !(by > 0) ||
+        !["rem", "em", "px", "%", "vw"].includes(String(unit ?? "rem"))
+    ) {
+        return [];
+    }
+
+    const times = operator !== "+";
+    const middle = Math.round(step / 2 + 1e-9);
+    const sizes: { slug: string; size: string }[] = [];
+    const size = (value: number) => `${Number(value.toFixed(2))}${String(unit ?? "rem")}`;
+    let current = medium;
+
+    for (let below = 1; below < middle; below++) {
+        current = times ? (by > 1 ? current / by : current * by) : current - by;
+
+        if (current <= 0) {
+            break;
+        }
+
+        sizes.unshift({ slug: String(50 - 10 * below), size: size(current) });
+    }
+
+    sizes.push({ slug: "50", size: size(medium) });
+    current = medium;
+
+    for (let above = 1; above <= step - middle; above++) {
+        current = times ? current * by : current + by;
+        sizes.push({ slug: String(50 + 10 * above), size: size(current) });
+    }
+
+    return sizes.filter((each) => /^\d+$/.test(each.slug) && Number(each.slug) > 0);
+}
+
+/** Whether a palette is a dark one: the color that WordPress calls the base (the page) is dark. */
+function paletteIsDark(palette: Record<string, unknown>[]): boolean {
+    const base = palette.find((item) =>
+        /^(?:base|background|bg|canvas|page|body|white|surface)$/i.test(String(item.slug ?? "")),
+    );
+    const color = typeof base?.color === "string" ? parseColor(base.color) : undefined;
+
+    return color !== undefined && luminance(color) < 0.18;
+}
+
 /**
  * A WordPress block theme's `theme.json` (and its style variations in `styles/`): the palette, font sizes, font
  * families, spacing sizes, shadows, and `settings.custom` become variables; `styles` becomes the rules that use them.
@@ -144,7 +231,9 @@ function wordpressCss(styles: unknown): string {
 export function wordpressTheme(facts: Facts, file: string, source: string): boolean {
     if (
         !/\bsettings\b/.test(source) ||
-        !/\b(?:palette|fontSizes|spacingSizes|presets|fontFamilies|custom)\b/.test(source)
+        !/\b(?:palette|fontSizes|spacingSizes|spacingScale|presets|fontFamilies|gradients|radiusSizes|custom)\b/.test(
+            source,
+        )
     ) {
         return false;
     }
@@ -171,46 +260,84 @@ export function wordpressTheme(facts: Facts, file: string, source: string): bool
 
     facts.wordpress = true;
 
+    const list = (value: unknown): Record<string, unknown>[] =>
+        Array.isArray(value) ? value.filter(isObj).slice(0, 80) : [];
+    const key = (value: unknown) => String(value ?? "").replace(/[^\w-]/g, "-");
+    const palette = isObj(settings.color) ? list(settings.color.palette) : [];
+
+    // A theme's own `theme.json` is the default. A style variation (`styles/*.json`, a file with a `title`) is another
+    // look of it: a dark one is the dark mode, and any other is not this theme's default, so it is left out.
+    const variation =
+        /(?:^|\/)styles\//.test(file) ||
+        (typeof root.title === "string" && !/(?:^|\/)theme\.json$/.test(file));
     const title = typeof root.title === "string" ? modeOf(root.title) : undefined;
-    const scope: Scope =
+    let scope: Scope =
         facts.fileMode ?? (title === "dark" || title === "light" ? title : "default");
 
-    const add = (name: string, value: unknown, hint: Category) => {
+    if (variation && scope === "default") {
+        if (!paletteIsDark(palette)) {
+            return true;
+        }
+
+        scope = "dark";
+    }
+
+    const add = (name: string, value: unknown, hint?: Category) => {
         if (typeof value === "string" || typeof value === "number") {
             addVar(facts, {
                 name,
-                value: String(value).slice(0, 400),
+                value: wordpressNames(String(value)).slice(0, 400),
                 scope,
                 kind: "css",
                 file,
-                hint,
+                ...(hint === undefined ? {} : { hint }),
             });
         }
     };
 
-    const list = (value: unknown): Record<string, unknown>[] =>
-        Array.isArray(value) ? value.filter(isObj).slice(0, 80) : [];
-    const key = (value: unknown) => String(value ?? "").replace(/[^\w-]/g, "-");
+    for (const item of palette) {
+        add(`color-${key(item.slug)}`, item.color, "color");
+    }
 
     if (isObj(settings.color)) {
-        for (const item of list(settings.color.palette)) {
-            add(`color-${key(item.slug)}`, item.color, "color");
+        for (const item of list(settings.color.gradients)) {
+            add(`gradient-${key(item.slug)}`, item.gradient, "gradient");
         }
     }
 
     if (isObj(settings.typography)) {
         for (const item of list(settings.typography.fontSizes)) {
-            add(`font-size-${key(item.slug)}`, item.size, "text");
+            // `size` is the size at the widest screen; a fluid size that has only `fluid.max` says it there.
+            const fluid = isObj(item.fluid) ? item.fluid : undefined;
+
+            add(`font-size-${key(item.slug)}`, item.size ?? fluid?.max, "text");
         }
 
         for (const item of list(settings.typography.fontFamilies)) {
-            add(`font-family-${key(item.slug)}`, item.fontFamily, "font");
+            // A family with only `fontFace` has its name there.
+            const face = list(item.fontFace)[0];
+
+            add(
+                `font-family-${key(item.slug ?? item.name)}`,
+                item.fontFamily ?? face?.fontFamily,
+                "font",
+            );
         }
     }
 
     if (isObj(settings.spacing)) {
         for (const item of list(settings.spacing.spacingSizes)) {
             add(`spacing-${key(item.slug)}`, item.size, "space");
+        }
+
+        for (const item of spacingScale(settings.spacing.spacingScale)) {
+            add(`spacing-${item.slug}`, item.size, "space");
+        }
+    }
+
+    if (isObj(settings.border)) {
+        for (const item of list(settings.border.radiusSizes)) {
+            add(`radius-${key(item.slug)}`, item.size, "radius");
         }
     }
 
@@ -220,7 +347,7 @@ export function wordpressTheme(facts: Facts, file: string, source: string): bool
         }
     }
 
-    // `settings.custom`: nested groups, named by their path (`--custom-radius-pill`).
+    // `settings.custom`: nested groups, named by their path (`--custom-radius-pill`); the first word may say what it is.
     const custom = (node: unknown, path: string[]) => {
         if (path.length > 4) {
             return;
@@ -231,21 +358,7 @@ export function wordpressTheme(facts: Facts, file: string, source: string): bool
                 custom(child, [...path, name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()]);
             }
         } else if (typeof node === "string" || typeof node === "number") {
-            const name = path.join("-");
-            const hint: Category | undefined =
-                path[0] === "color"
-                    ? "color"
-                    : path[0] === "radius"
-                      ? "radius"
-                      : path[0] === "spacing"
-                        ? "space"
-                        : path[0] === "shadow"
-                          ? "shadow"
-                          : undefined;
-
-            if (hint !== undefined) {
-                add(`custom-${name}`, node, hint);
-            }
+            add(`custom-${path.join("-")}`, node, CUSTOM_HINTS[path[0] ?? ""]);
         }
     };
 

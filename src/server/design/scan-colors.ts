@@ -588,7 +588,23 @@ export interface VarColor {
     uses: number;
     /** How the variable is used as a color: as a background, as text, as a border. */
     kinds?: Kinds;
+    /** The platform whose naming this variable follows, when that says more than the name does. */
+    platform?: "wordpress";
 }
+
+/**
+ * The words of a variable's name. WordPress block themes call the page `base` and the text `contrast` (Twenty Twenty-Four
+ * and after), which no other system reads that way.
+ */
+const wordsOf = (variable: VarColor): string[] => {
+    const all = words(variable.name);
+
+    if (variable.platform === "wordpress" && all.length === 1) {
+        return all[0] === "base" ? ["bg"] : all[0] === "contrast" ? ["text"] : all;
+    }
+
+    return all;
+};
 
 const hueOk = (role: RoleName, color: ColorEntry): boolean => {
     if (color.c < 0.06) {
@@ -646,7 +662,7 @@ export function chooseRoles(
 
         for (const variable of named) {
             const color = entry(variable.hex);
-            const segs = words(variable.name);
+            const segs = wordsOf(variable);
 
             if (
                 color === undefined ||
