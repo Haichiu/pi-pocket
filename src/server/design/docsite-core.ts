@@ -31,11 +31,13 @@ export const MAX_CODE = 60_000;
 
 /**
  * The page's policy. Nothing loads from outside, no frame or form or `<base>` is allowed, and an image or a font only as
- * data. Script stays inline (the artifact viewer adds its own bridge script, which a nonce policy would block): the
- * page's script strips every script, handler, and address from a component's markup before it shows it.
+ * data. Script runs only with the page's own nonce, which a component's markup cannot carry (and a `javascript:` address
+ * is no script of the page, so it is blocked too). The artifact viewer's bridge script is the first thing in the page,
+ * before this policy, so it has run by then and is not touched. The page's script also builds a component's markup
+ * from an allowlist, so the policy is the second guard and not the only one.
  */
-export const PAGE_CSP =
-    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'";
+export const pageCsp = (nonce: string) =>
+    `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'`;
 
 // ── Small helpers ──────────────────────────────────────────────────────────────────────────────────────────────────
 

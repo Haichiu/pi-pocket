@@ -12,6 +12,7 @@
 import { type DesignSystem, type ResolvedToken } from "./system-types.ts";
 import { contrastRatio, parseColor, readableOn, toHex } from "./docsite-color.ts";
 import { escapeHtml as esc, plural, renderMarkdown } from "./docsite-markdown.ts";
+import { randomBytes } from "node:crypto";
 import { DOC_BOOT_JS, DOC_CSS, DOC_JS } from "./docsite-assets.ts";
 import { pairRows, colorSection } from "./docsite-color-section.ts";
 import { componentsSection } from "./docsite-components.ts";
@@ -20,7 +21,7 @@ import {
     MAX_TOKENS,
     MAX_COMPONENTS,
     MAX_PAGE,
-    PAGE_CSP,
+    pageCsp,
     clip,
     modeLabel,
     safeCss,
@@ -212,6 +213,8 @@ export function renderSystemDoc(system: DesignSystem): SystemDoc {
 
 function build(system: DesignSystem, referenceRows: number): SystemDoc {
     const ctx = buildContext(system);
+    // The page's scripts carry this, and nothing in project text can know it: it is new for each page.
+    const nonce = randomBytes(16).toString("base64url");
     const name = clip(system.name || "Design system", 80);
     const sections: Block[] = [];
     const color = colorSection(ctx);
@@ -450,10 +453,10 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="${PAGE_CSP}">
+<meta http-equiv="Content-Security-Policy" content="${pageCsp(nonce)}">
 <meta name="color-scheme" content="light dark">
 <title>${esc(name)} · Design system</title>
-<script>${DOC_BOOT_JS}</script>
+<script nonce="${nonce}">${DOC_BOOT_JS}</script>
 <style>${DOC_CSS}
 html[data-theme="light"]{--dd-accent:${light.accent};--dd-accent-ink:${light.ink};--dd-accent-soft:${light.soft}}
 html[data-theme="dark"]{--dd-accent:${dark.accent};--dd-accent-ink:${dark.ink};--dd-accent-soft:${dark.soft}}
@@ -482,7 +485,7 @@ ${body}
 </main>
 </div>
 <div class="toast" role="status" aria-live="polite"></div>
-<script>${DOC_JS}</script>
+<script nonce="${nonce}">${DOC_JS}</script>
 </body>
 </html>
 `;

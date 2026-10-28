@@ -1,3 +1,5 @@
+import { SANITIZER_JS } from "./docsite-sanitize.ts";
+
 /**
  * The look and the behavior of the design-system documentation page (docsite.ts), as two text constants. The page is a
  * self-contained artifact that runs in the sandbox, so both are inline: no font, image, or script is fetched. The chrome
@@ -1171,7 +1173,13 @@ td.num.wrap {
     background: var(--g, var(--dd-panel));
     color: var(--t, var(--dd-text));
     font: 14px/1.5 var(--f, system-ui, sans-serif);
+    position: relative;
+    isolation: isolate;
     contain: layout paint;
+}
+
+.comp-host {
+    display: block;
 }
 
 .stage-note {
@@ -1773,26 +1781,13 @@ export const DOC_JS = `
     setMode(root.getAttribute("data-mode"), root.getAttribute("data-theme"));
 
     // Component states. The markup and CSS are project text. Each state is parsed in an inert document (nothing in it
-    // runs or loads), stripped of scripts, handlers, and every address but "#" and small images, and put in a shadow
-    // root: the component's CSS stays in, the page's stays out, and the page's custom properties come in.
-    var BANNED = "script,iframe,frame,frameset,object,embed,link,meta,base,noscript,template,portal,applet";
-    var ADDRESS = ["href", "src", "xlink:href", "action", "formaction", "srcset", "poster", "data", "background", "ping", "cite", "longdesc", "manifest", "codebase", "usemap", "icon", "srcdoc", "target"];
-    function clean(rootNode) {
-        $$(BANNED, rootNode).forEach(function (node) { node.remove(); });
-        $$("*", rootNode).forEach(function (node) {
-            Array.prototype.slice.call(node.attributes).forEach(function (attribute) {
-                var name = attribute.name.toLowerCase();
-                var value = attribute.value.replace(/[\\u0000-\\u0020\\u007f-\\u009f]+/g, "").toLowerCase();
-                if (name.indexOf("on") === 0) { node.removeAttribute(attribute.name); return; }
-                if (ADDRESS.indexOf(name) !== -1 && !/^#/.test(value) && !/^data:image\\/(png|gif|jpeg|webp);/.test(value)) {
-                    node.removeAttribute(attribute.name);
-                }
-            });
-        });
-    }
+    // runs or loads), and a new tree is built from what an allowlist names (docsite-sanitize.ts): no script, no handler,
+    // no animation, no address but "#id", no frame or form. It goes in a shadow root inside a box that clips it and holds
+    // any fixed position: the component's CSS stays in, the page's stays out, the page's custom properties come in.
+    ${SANITIZER_JS}
     var STAGE_CSS = "*{box-sizing:border-box}.__w{overflow:hidden}.__g{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));margin:0 -1px -1px 0}.__c{min-width:0;padding:16px 18px 20px;box-shadow:inset -1px -1px 0 rgb(128 128 128/.28)}.__l{margin:0 0 14px;font:600 11px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;opacity:.62}";
     $$(".comp-stage").forEach(function (stage) {
-        if (!stage.attachShadow) { return; }
+        if (!document.body.attachShadow) { return; }
         var article = stage.closest("article");
         var panels = $$(".snip-wrap[data-kind]", article);
         var css = "";
@@ -1810,20 +1805,24 @@ export const DOC_JS = `
             label.className = "__l";
             label.textContent = panel.getAttribute("data-panel");
             cell.appendChild(label);
-            clean(parsed.body);
-            Array.prototype.slice.call(parsed.body.childNodes).forEach(function (node) { cell.appendChild(document.importNode(node, true)); });
+            cleanInto(parsed, cell);
             grid.appendChild(cell);
         });
-        var shadow = stage.attachShadow({ mode: "open" });
+        // The shadow root is on a box inside the stage: the stage clips and contains what the component's CSS does to its
+        // own host (a fixed position, a huge z-index), so that it cannot cover the page.
+        var host = document.createElement("div");
+        host.className = "comp-host";
+        stage.appendChild(host);
+        var shadow = host.attachShadow({ mode: "open" });
         var style = document.createElement("style");
-        style.textContent = STAGE_CSS + css;
+        style.textContent = STAGE_CSS + cleanCss(css);
         wrap.appendChild(grid);
         shadow.appendChild(style);
         shadow.appendChild(wrap);
         // A specimen is a picture of a state: its links and forms go nowhere.
         shadow.addEventListener("click", function (event) {
             var path = event.composedPath();
-            for (var i = 0; i < path.length; i++) { if (path[i].tagName === "A") { event.preventDefault(); return; } }
+            for (var i = 0; i < path.length; i++) { if (path[i].localName && path[i].localName.toLowerCase() === "a") { event.preventDefault(); return; } }
         });
         shadow.addEventListener("submit", function (event) { event.preventDefault(); });
         var note = $(".stage-note", stage);

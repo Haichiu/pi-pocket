@@ -195,6 +195,7 @@ test("the page asks for nothing: no external request, no script or style file, n
 
     for (const part of [
         "default-src 'none'",
+        "script-src 'nonce-",
         "form-action 'none'",
         "base-uri 'none'",
         "img-src data:",
@@ -204,6 +205,17 @@ test("the page asks for nothing: no external request, no script or style file, n
     }
 
     assert.doesNotMatch(policy, /frame-src/);
+    // Script runs only with the page's nonce, which is new for each page and is on each of the page's two scripts.
+    const nonce = /script-src 'nonce-([\w-]+)'/.exec(policy)?.[1];
+
+    assert.ok(nonce !== undefined && nonce.length >= 20, "a nonce");
+    assert.doesNotMatch(policy, /script-src[^;]*unsafe-inline/);
+    assert.equal((page.match(new RegExp(`<script nonce="${nonce}">`, "g")) ?? []).length, 2);
+    assert.notEqual(
+        /script-src 'nonce-([\w-]+)'/.exec(renderSystemDoc(flagship()).html)?.[1],
+        nonce,
+        "new for each page",
+    );
 });
 
 /** A system built of hostile text in every place that the page prints. */
@@ -523,7 +535,7 @@ test(
             // Every stage has its shadow root, with its states, drawn in the page: each is tall and in the page's layout.
             const sizes = JSON.parse(
                 (await page.evaluate(
-                    "JSON.stringify([...document.querySelectorAll('.comp-stage')].map((stage) => [stage.hasAttribute('data-ready'), !!stage.shadowRoot, stage.getBoundingClientRect().height, stage.shadowRoot.querySelectorAll('.__c').length]))",
+                    "JSON.stringify([...document.querySelectorAll('.comp-stage')].map((stage) => [stage.hasAttribute('data-ready'), !!stage.querySelector('.comp-host').shadowRoot, stage.getBoundingClientRect().height, stage.querySelector('.comp-host').shadowRoot.querySelectorAll('.__c').length]))",
                 )) as string,
             ) as [boolean, boolean, number, number][];
 
@@ -536,7 +548,7 @@ test(
 
             // The probe's script, handlers, addresses, and frame are gone; nothing ran.
             const inside = (await page.evaluate(
-                "document.querySelector('#comp-probe .comp-stage').shadowRoot.innerHTML",
+                "document.querySelector('#comp-probe .comp-host').shadowRoot.innerHTML",
             )) as string;
 
             assert.doesNotMatch(
@@ -550,7 +562,7 @@ test(
 
             // Clicking its button, its links, and its form does nothing, and the page stays where it is.
             await page.evaluate(
-                "(() => { const root = document.querySelector('#comp-probe .comp-stage').shadowRoot; for (const id of ['probe', 'leave', 'out', 'send']) root.getElementById(id)?.click(); })()",
+                "(() => { const root = document.querySelector('#comp-probe .comp-host').shadowRoot; for (const id of ['probe', 'leave', 'out', 'send']) root.getElementById(id)?.click(); })()",
             );
             assert.equal(await page.evaluate("typeof window.__ran"), "undefined");
             assert.equal(await page.evaluate("location.href"), here);
@@ -561,7 +573,7 @@ test(
                 await page.evaluate("new Promise((resolve) => setTimeout(resolve, 400))");
 
                 return page.evaluate(
-                    "getComputedStyle(document.querySelector('#comp-button .comp-stage').shadowRoot.querySelector('.pk-button--primary')).backgroundColor",
+                    "getComputedStyle(document.querySelector('#comp-button .comp-host').shadowRoot.querySelector('.pk-button--primary')).backgroundColor",
                 );
             };
 
@@ -826,4 +838,245 @@ test("the flagship's page is small, its hero swatches are roles, and its radii a
     // Spacing bars share the width: the longest step is a full row.
     assert.match(html, /<div class="spec cols">/);
     assert.match(html, /<div class="bar" style="width:100%"><\/div>/);
+});
+
+/** Probes of component markup and CSS that try to run script or to cover the page. Each is one component. */
+const PROBES: { slug: string; markup: string; css?: string; target: string }[] = [
+    {
+        slug: "smil-animate",
+        // SMIL sets a link's address to a script address; a click then follows it.
+        markup: `<svg width="80" height="30"><a href="#" id="t"><rect width="80" height="30" fill="red"/><animate attributeName="href" values="javascript:window.__ran='animate'" fill="freeze"/></a></svg>`,
+        target: "t",
+    },
+    {
+        slug: "smil-set",
+        markup: `<svg width="80" height="30"><a href="#" id="t"><rect width="80" height="30" fill="red"/><set attributeName="href" to="javascript:window.__ran='set'"/></a></svg>`,
+        target: "t",
+    },
+    {
+        slug: "smil-others",
+        markup: `<svg width="80" height="30"><a id="t" href="#"><rect width="80" height="30" fill="red"/><animateTransform attributeName="href" from="javascript:window.__ran='a'" to="javascript:window.__ran='b'" by="javascript:window.__ran='c'"/><animateMotion path="M0 0"/><discard/></a></svg>`,
+        target: "t",
+    },
+    {
+        slug: "svg-xlink",
+        markup: `<svg width="80" height="30" xmlns:xlink="http://www.w3.org/1999/xlink"><a id="t" xlink:href="javascript:window.__ran='xlink'" href="javascript:window.__ran='href'"><rect width="80" height="30" fill="red"/></a></svg>`,
+        target: "t",
+    },
+    {
+        slug: "use-external",
+        markup: `<svg width="80" height="30"><use id="t" href="https://example.com/x.svg#a" xlink:href="data:image/svg+xml;base64,PHN2Zy8+"/><rect id="r" width="80" height="30" fill="red"/></svg>`,
+        target: "r",
+    },
+    {
+        slug: "foreign-object",
+        markup: `<svg width="120" height="40"><foreignObject width="120" height="40"><div xmlns="http://www.w3.org/1999/xhtml" id="t" onclick="window.__ran='fo'"><img src=x onerror="window.__ran='fo-img'"><script>window.__ran = 'fo-script'</script>html in svg</div></foreignObject><rect id="r" width="120" height="40" fill="red"/></svg>`,
+        target: "r",
+    },
+    {
+        slug: "math-href",
+        markup: `<math id="t" href="javascript:window.__ran='math'" onclick="window.__ran='math-click'"><mtext>x</mtext><mi xlink:href="javascript:window.__ran='mi'">y</mi></math><button id="r">after</button>`,
+        target: "r",
+    },
+    {
+        slug: "style-url",
+        markup: `<div id="t" style="width:80px;height:30px;background:url(https://example.com/x.png);background-image:url('javascript:window.__ran=1');behavior:url(x.htc)">style</div><div id="r" style="color:red;width:20px;height:20px">ok</div>`,
+        css: `#t{background:url(https://example.com/y.png)}@import url(https://example.com/z.css);`,
+        target: "t",
+    },
+    {
+        slug: "host-overlay",
+        // The component's CSS makes its own host cover the whole window, over everything.
+        markup: `<button id="t">under</button>`,
+        css: `:host{position:fixed!important;inset:0!important;z-index:2147483647!important;display:block!important;background:red!important;width:100vw!important;height:100vh!important}`,
+        target: "t",
+    },
+    {
+        slug: "form-submit",
+        markup: `<form id="f" action="javascript:window.__ran='form'" method="post"><input name="a" value="1"><button type="submit" id="t" formaction="javascript:window.__ran='formaction'">go</button></form>`,
+        target: "t",
+    },
+    {
+        slug: "html-links",
+        markup: `<a id="t" href="javascript:window.__ran='a'" onclick="window.__ran='click'">a</a><a id="u" href="https://example.com/">out</a><img src=x onerror="window.__ran='img'"><iframe srcdoc="<script>parent.__ran='frame'</script>"></iframe><object data="javascript:window.__ran='object'"></object><embed src="javascript:window.__ran='embed'"><meta http-equiv="refresh" content="0;url=javascript:window.__ran='meta'"><base href="https://example.com/"><link rel="stylesheet" href="https://example.com/a.css"><button id="b" onclick="window.__ran='button'">b</button>`,
+        target: "t",
+    },
+];
+
+test(
+    "no probe in a component's markup or CSS runs script, leaves the page, or covers it: real clicks in Chromium",
+    { skip: findBrowser() === undefined ? "No Chromium on this machine." : false },
+    async () => {
+        const system = flagship();
+        const base = system.components[0]!;
+
+        system.components = PROBES.map((probe) => ({
+            ...base,
+            slug: probe.slug,
+            name: probe.slug,
+            states: ["default"],
+            markup: { default: probe.markup },
+            css: probe.css ?? "",
+        }));
+
+        const bundle: DesignBundle = {
+            meta: { title: "Docs", type: "html", versions: [] },
+            version: 1,
+            content: renderSystemDoc(system).html,
+            assets: [],
+        };
+
+        await withRender(bundle, host, undefined, async (page) => {
+            await page.load({ width: 1280, height: 800 });
+            await page.evaluate("new Promise((resolve) => setTimeout(resolve, 500))");
+
+            assert.deepEqual(page.errors, []);
+            assert.equal(
+                await page.evaluate("document.querySelectorAll('.comp-stage[data-ready]').length"),
+                PROBES.length,
+            );
+
+            const here = await page.evaluate("location.href");
+
+            const click = async (x: number, y: number) => {
+                const point = { x, y, button: "left", clickCount: 1 };
+
+                await page.send("Input.dispatchMouseEvent", { ...point, type: "mouseMoved" });
+                await page.send("Input.dispatchMouseEvent", { ...point, type: "mousePressed" });
+                await page.send("Input.dispatchMouseEvent", { ...point, type: "mouseReleased" });
+                await page.evaluate("new Promise((resolve) => setTimeout(resolve, 60))");
+            };
+
+            for (const probe of PROBES) {
+                // What is in the shadow root: no element or attribute that could run script or reach out.
+                const inside = (await page.evaluate(
+                    `document.querySelector('#comp-${probe.slug} .comp-host').shadowRoot.innerHTML`,
+                )) as string;
+
+                assert.doesNotMatch(
+                    inside,
+                    /<(script|iframe|object|embed|meta|base|link|math|foreignobject|animate|animatetransform|animatemotion|set|discard|form)\b|\son[a-z]+=|javascript:|attributename|example\.com|formaction|action=/i,
+                    `${probe.slug}: ${inside.slice(0, 300)}`,
+                );
+
+                // Scroll the probe's target into view and press it with a real mouse, in the middle of its box.
+                const at = JSON.parse(
+                    (await page.evaluate(`(() => {
+                        const root = document.querySelector('#comp-${probe.slug} .comp-host').shadowRoot;
+                        const target = root.getElementById('${probe.target}') ?? root.querySelector('a, button, rect, div');
+
+                        target?.scrollIntoView({ block: 'center' });
+                        const box = target?.getBoundingClientRect();
+
+                        return JSON.stringify(box ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : null);
+                    })()`)) as string,
+                ) as { x: number; y: number } | null;
+
+                if (at !== null) {
+                    await click(at.x, at.y);
+                }
+
+                assert.equal(
+                    await page.evaluate("typeof window.__ran"),
+                    "undefined",
+                    `${probe.slug}: a script ran`,
+                );
+                assert.equal(
+                    await page.evaluate("location.href"),
+                    here,
+                    `${probe.slug}: the page moved`,
+                );
+            }
+
+            // A click in the middle of the window, and the corners, runs nothing: the overlay probe did not cover the page.
+            for (const [x, y] of [
+                [640, 400],
+                [20, 20],
+                [1260, 780],
+            ] as const) {
+                const top = await page.evaluate(
+                    `(() => { const el = document.elementFromPoint(${x}, ${y}); return el ? (el.closest('.comp-stage') ? 'stage' : el.tagName) : null; })()`,
+                );
+
+                await click(x, y);
+                assert.equal(await page.evaluate("typeof window.__ran"), "undefined");
+                assert.notEqual(top, "stage", `a component covers the page at ${x},${y}`);
+            }
+
+            // The overlay's fixed host is placed against its own stage (layout containment), not the window, and is clipped to it.
+            const inside = await page.evaluate(
+                `(() => { const stage = document.querySelector('#comp-host-overlay .comp-stage').getBoundingClientRect(); const host = document.querySelector('#comp-host-overlay .comp-host').getBoundingClientRect(); return Math.abs(host.left - stage.left) < 2 && Math.abs(host.top - stage.top) < 2; })()`,
+            );
+
+            assert.equal(inside, true);
+            // The page still works: the filter, with no script error.
+            await page.evaluate("document.querySelector('.seg button[data-mode=dark]').click()");
+            assert.equal(await page.evaluate("document.documentElement.dataset.theme"), "dark");
+            assert.deepEqual(page.errors, []);
+        });
+    },
+);
+
+test("the sanitizer's allowlists name no animation, no frame, no foreign object, no script, and no action attribute", async () => {
+    const lists = await import("../src/server/design/docsite-sanitize.ts");
+    const elements = [...lists.HTML_ELEMENTS, ...lists.SVG_ELEMENTS];
+    const attributes = [
+        ...lists.GLOBAL_ATTRIBUTES,
+        ...lists.HTML_ATTRIBUTES,
+        ...lists.SVG_ATTRIBUTES,
+    ];
+
+    for (const banned of [
+        "script",
+        "iframe",
+        "frame",
+        "object",
+        "embed",
+        "form",
+        "foreignobject",
+        "animate",
+        "set",
+        "animatetransform",
+        "animatemotion",
+        "mpath",
+        "discard",
+        "math",
+        "link",
+        "meta",
+        "base",
+        "template",
+        "image",
+    ]) {
+        assert.ok(!elements.includes(banned), `${banned} is not allowed`);
+        assert.ok(
+            lists.DROPPED_ELEMENTS.includes(banned) || ["form", "image"].includes(banned),
+            `${banned} is dropped`,
+        );
+    }
+
+    for (const banned of [
+        "attributename",
+        "to",
+        "from",
+        "by",
+        "action",
+        "formaction",
+        "srcdoc",
+        "srcset",
+        "poster",
+        "target",
+        "contenteditable",
+        "autofocus",
+        "onclick",
+        "begin",
+        "dur",
+        "keytimes",
+    ]) {
+        assert.ok(!attributes.includes(banned), `${banned} is not allowed`);
+    }
+
+    assert.ok(
+        attributes.every((name) => !name.startsWith("on")),
+        "no handler attribute",
+    );
 });
