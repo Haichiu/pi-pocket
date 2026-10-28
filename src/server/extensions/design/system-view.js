@@ -349,9 +349,9 @@ export function createSystemView(env, canvas, sections, widgets) {
             }
         }, [current]);
 
-        // A bar that scrolls fades where more of it is out of sight (`data-more`, `data-less`). At rest, which is a moment after
-        // it stops, a tab that is not whole is left out (`data-cut`): a bar never shows half a letter, it shows whole tabs and a
-        // fade toward the rest.
+        // A bar that scrolls marks where more of it is out of sight (`data-more`, `data-less`). A tab that is not whole, or that
+        // is under a mark, is left out (`data-cut`) at once, while the bar scrolls too: it never shows half a letter, only whole
+        // tabs and a mark toward the rest.
         useEffect(() => {
             const box = bar.current;
 
@@ -359,16 +359,18 @@ export function createSystemView(env, canvas, sections, widgets) {
                 return undefined;
             }
 
-            let timer = 0;
-
-            // The width of the fade (and of the mark) at an edge that has more: a tab under it is not read, so it is not whole.
+            // The width of the mark at an edge that has more: a tab under it is not read, so it is not whole.
             const FADE = 26;
 
-            const rest = () => {
+            const mark = () => {
                 const room = box.scrollWidth - box.clientWidth;
-                const left = box.scrollLeft + (box.scrollLeft > 2 ? FADE : 0);
-                const right =
-                    box.scrollLeft + box.clientWidth - (box.scrollLeft < room - 2 ? FADE : 0);
+                const more = room > 2 && box.scrollLeft < room - 2;
+                const less = box.scrollLeft > 2;
+                const left = box.scrollLeft + (less ? FADE : 0);
+                const right = box.scrollLeft + box.clientWidth - (more ? FADE : 0);
+
+                box.dataset.more = more ? "right" : "none";
+                box.dataset.less = less ? "left" : "none";
 
                 for (const tab of box.querySelectorAll('[role="tab"]')) {
                     const whole =
@@ -376,18 +378,6 @@ export function createSystemView(env, canvas, sections, widgets) {
 
                     tab.toggleAttribute("data-cut", room > 2 && !whole);
                 }
-
-                box.dataset.rest = "on";
-            };
-
-            const mark = () => {
-                const room = box.scrollWidth - box.clientWidth;
-
-                box.dataset.more = room > 2 && box.scrollLeft < room - 2 ? "right" : "none";
-                box.dataset.less = box.scrollLeft > 2 ? "left" : "none";
-                delete box.dataset.rest;
-                clearTimeout(timer);
-                timer = setTimeout(rest, 160);
             };
 
             const watch = new ResizeObserver(mark);
@@ -397,7 +387,6 @@ export function createSystemView(env, canvas, sections, widgets) {
             watch.observe(box);
 
             return () => {
-                clearTimeout(timer);
                 box.removeEventListener("scroll", mark);
                 watch.disconnect();
             };

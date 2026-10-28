@@ -27,9 +27,13 @@ export function fixExactMatches(
     bundle: DesignBundle,
     system: DesignSystem,
     report: CheckReport,
-    _options?: { mode?: string },
+    options?: { mode?: string; accepted?: ReadonlySet<string> },
 ): FixResult {
-    const fixable = report.findings.filter((finding) => isFixable(finding));
+    // What a person accepted is left as it is: one tap does not rewrite a value that somebody decided is fine.
+    const fixable = report.findings.filter(
+        (finding) =>
+            isFixable(finding) && !(finding.id !== undefined && options?.accepted?.has(finding.id)),
+    );
     const result = applyExactFixes(bundle.content, fixable, system);
     const skipped = new Set(result.skipped.map((each) => each.id));
     const fixes = new Map<string, FixResult["fixes"][number]>();

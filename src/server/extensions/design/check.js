@@ -88,10 +88,22 @@ export const RULES = {
     "input-zoom": "Input zoom on phones",
 };
 
+/**
+ * Whether a finding is about the page as a whole (a missing `lang` or `main`, a viewport tag): it names no `data-pid`, and its
+ * element is the page's own root or body (or none). It has no place on the canvas, so it has no pin: the list holds it.
+ */
+export const pageLevel = (finding) =>
+    !finding.pid &&
+    /^(?:|html|body|:root|html\s*>\s*body)$/i.test(String(finding.selector ?? "").trim());
+
+/** Whether a finding has an element to point at (and so a pin on the canvas). */
+export const placedOn = (finding) =>
+    Boolean(finding.pid || finding.selector) && !pageLevel(finding);
+
 /** The pins of a report: a finding that names an element (a `data-pid` or a selector), numbered by its place in the list. */
 export function pinsOfReport(report, focus = null) {
     return (report?.findings ?? []).flatMap((finding, index) =>
-        finding.pid || finding.selector
+        placedOn(finding)
             ? [
                   {
                       ...(finding.pid ? { pid: finding.pid } : {}),
@@ -108,11 +120,11 @@ export function pinsOfReport(report, focus = null) {
 export function createCheck(env, DockHead) {
     const { pocket, store, systemData } = env;
     const { html, useEffect, useRef, useState } = pocket;
-    const { Ico, Segmented } = env.parts;
+    const { Ico, Segmented, ago } = env.parts;
 
-    function Finding({ finding, number, focused }) {
+    function Finding({ finding, number, focused, onAccept }) {
         const [copied, setCopied] = useState(false);
-        const placed = Boolean(finding.pid || finding.selector);
+        const placed = placedOn(finding);
 
         const show = () => {
             if (placed) {
@@ -177,13 +189,93 @@ export function createCheck(env, DockHead) {
                     </p>`
                 }
                 ${
-                    (finding.selector || finding.pid) &&
+                    (placedOn(finding) || pageLevel(finding)) &&
                     html`<div class="muted small mono dsy-finding-target">
-                        ${finding.pid ? `data-pid="${finding.pid}"` : finding.selector}
+                        ${
+                            pageLevel(finding)
+                                ? "the whole page"
+                                : finding.pid
+                                  ? `data-pid="${finding.pid}"`
+                                  : finding.selector
+                        }
+                    </div>`
+                }
+                ${
+                    onAccept &&
+                    html`<div class="dsy-finding-actions">
+                        <button
+                            type="button"
+                            class="dsy-accept"
+                            title="Accept: this is fine as it is. It leaves the counts, for everyone, until it is undone."
+                            aria-label=${`Accept finding ${number}: ${RULES[finding.rule] ?? finding.rule}`}
+                            onClick=${(event) => {
+                                event.stopPropagation();
+                                onAccept(finding);
+                            }}
+                        >
+                            Accept
+                        </button>
                     </div>`
                 }
             </div>
         </li>`;
+    }
+
+    /** The findings that people accepted, folded: who accepted each and when, and the way to undo it. */
+    function Accepted({ list, notes, design, canEdit }) {
+        const [open, setOpen] = useState(false);
+
+        return html`<section class="dsy-accepted">
+            <button
+                type="button"
+                class="dsy-accepted-head"
+                aria-expanded=${open}
+                onClick=${() => setOpen(!open)}
+            >
+                <${Ico} name="down" size=${15} />
+                <strong>Accepted</strong>
+                <span class="dsn-count">${list.length}</span>
+                <span class="muted small">not in the counts</span>
+            </button>
+            ${
+                open &&
+                html`<ul class="dsy-findings dsy-accepted-list">
+                    ${list.map((finding) => {
+                        const who = notes?.accepted?.[finding.id];
+
+                        return html`<li class="dsy-finding accepted" key=${finding.id}>
+                            <div class="dsy-finding-body">
+                                <div class="dsy-finding-head">
+                                    <strong>${RULES[finding.rule] ?? finding.rule}</strong>
+                                </div>
+                                <p>${finding.message}</p>
+                                <div class="muted small dsy-accepted-by">
+                                    ${
+                                        who
+                                            ? `Accepted by ${who.byName || "someone"} · ${ago(who.at)}`
+                                            : "Accepted"
+                                    }
+                                </div>
+                                ${
+                                    canEdit &&
+                                    html`<div class="dsy-finding-actions">
+                                        <button
+                                            type="button"
+                                            class="dsy-accept"
+                                            title="Undo: it is counted again"
+                                            aria-label=${`Undo the accept of ${RULES[finding.rule] ?? finding.rule}`}
+                                            onClick=${() => env.data.unaccept(design.id, finding.id)}
+                                        >
+                                            Undo
+                                        </button>
+                                    </div>`
+                                }
+                            </div>
+                        </li>`;
+                    })}
+                </ul>`
+            }
+        </section>`;
     }
 
     function CheckDock({ s, design, shown, canEdit, shut = false }) {
@@ -202,12 +294,20 @@ export function createCheck(env, DockHead) {
         const running = entry?.status === "running";
         const name = s.system.data?.name;
 
-        // The design system is read for the line that says what was checked against.
+        const accepted = report?.accepted ?? [];
+        const notes = s.notes[design.id];
+
+        // The design system is read for the line that says what was checked against, and the design's notes for who
+        // accepted what.
         useEffect(() => {
             if (s.system.status === "idle") {
                 void systemData.load({ quiet: true });
             }
-        }, []);
+
+            if (!s.notes[design.id]?.loaded) {
+                void env.data.notes(design.id);
+            }
+        }, [design.id]);
 
         // The findings that one tap can fix: a value that is exactly a token's (`fixable`, from the server).
         const exact = findings.filter(({ finding }) => finding.fixable === true).length;
@@ -332,9 +432,10 @@ export function createCheck(env, DockHead) {
                         class="button small"
                         disabled=${fixing || running}
                         title=${`Fix ${exact} exact match${exact === 1 ? "" : "es"}: a value that is exactly a token's becomes the token`}
+                        aria-label=${`Fix ${exact} exact match${exact === 1 ? "" : "es"}`}
                         onClick=${fix}
                     >
-                        ${fixing ? "Fixing…" : `Fix ${exact}`}
+                        ${fixing ? "Fixing…" : `Fix ${exact} exact`}
                     </button>`
                 }
                 ${
@@ -498,7 +599,12 @@ export function createCheck(env, DockHead) {
                         ${
                             findings.length === 0 &&
                             html`<div class="dsy-clean">
-                                <${Ico} name="check" size=${18} /> Nothing to fix in this version.
+                                <${Ico} name="check" size=${18} />
+                                ${
+                                    accepted.length > 0
+                                        ? `Nothing open in this version: ${accepted.length} accepted.`
+                                        : "Nothing to fix in this version."
+                                }
                             </div>`
                         }
                         <ul class="dsy-findings">
@@ -509,9 +615,23 @@ export function createCheck(env, DockHead) {
                                         finding=${finding}
                                         number=${number}
                                         focused=${s.checkFocus?.number === number}
+                                        onAccept=${
+                                            canEdit && finding.id
+                                                ? (each) => env.data.accept(design.id, each)
+                                                : undefined
+                                        }
                                     />`,
                             )}
-                        </ul>`
+                        </ul>
+                        ${
+                            accepted.length > 0 &&
+                            html`<${Accepted}
+                                list=${accepted}
+                                notes=${notes}
+                                design=${design}
+                                canEdit=${canEdit}
+                            />`
+                        }`
                 }
             </div>
             ${

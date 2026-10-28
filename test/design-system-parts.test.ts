@@ -182,7 +182,7 @@ test("a tab counts what its section shows open, folded groups carry their own co
 
         assert.equal(sum(groups), counts[id].total, id);
         assert.equal(
-            sum(groups.filter((group: { fold: boolean }) => !group.fold)),
+            sum(groups.filter((group: { headline: boolean }) => group.headline)),
             counts[id].open,
             id,
         );
@@ -936,5 +936,108 @@ test("the Ferry page's image has a real source (a small picture, not a broken ic
         image,
         /R0lGODlhAQABAAAAACw/,
         "not the one-pixel gif that draws as a broken image",
+    );
+});
+
+const FLAGSHIP = new URL("../docs/examples/design-system/pocket", import.meta.url).pathname;
+
+test("spacing is grouped as the documentation page groups it: steps, roles, sizes, then a component's own", async () => {
+    const flagship = loadDesignSystem(FLAGSHIP)!;
+    const { renderSystemDoc } = await import("../src/server/design/docsite.ts");
+    const groups = sys.groupsOf(flagship.tokens, "spacing");
+    const names = (kind: string) =>
+        groups
+            .find((group: { kind: string }) => group.kind === kind)
+            ?.tokens.map((each: { name: string }) => each.name) ?? [];
+
+    assert.deepEqual(
+        groups.map((group: { title: string }) => group.title),
+        ["Steps", "Roles", "Sizes", "Component tokens"],
+    );
+    assert.deepEqual(
+        groups.map((group: { fold: boolean }) => group.fold),
+        [false, false, false, true],
+    );
+    assert.ok(
+        names("steps").length >= 8 && names("steps").every((each: string) => /^space\./.test(each)),
+    );
+    assert.deepEqual(names("roles"), ["layout.gap.in", "layout.gap.out"]);
+    assert.ok(
+        names("sizes").includes("size.control.sm") && names("sizes").includes("size.icon.md"),
+    );
+    assert.equal(
+        groups.reduce((sum: number, group: { tokens: unknown[] }) => sum + group.tokens.length, 0),
+        flagship.tokens.filter((each) => sys.sectionOf(each) === "spacing").length,
+        "every token of the section is in a group",
+    );
+
+    // The page has the same three groups, with the same tokens in each.
+    const page = renderSystemDoc(flagship).html;
+
+    const part = (id: string) => {
+        const from = page.indexOf(`<h3 id="${id}">`);
+        const rest = page.slice(from + 1);
+        const to = rest.search(/<h3[ >]|<h2 /);
+
+        return [
+            ...rest
+                .slice(0, to === -1 ? undefined : to)
+                .matchAll(/<button class="tk">([^<]+)<\/button>/g),
+        ].map((each) => each[1]!.replace(/&[a-z]+;/g, ""));
+    };
+
+    assert.deepEqual(names("steps").slice().sort(), part("spacing-steps").sort());
+    assert.deepEqual(names("roles").slice().sort(), part("spacing-roles").sort());
+    assert.deepEqual(names("sizes").slice().sort(), part("sizes").sort());
+});
+
+test("radii: the scale first, then the roles that point at it, then a component's own", () => {
+    const flagship = loadDesignSystem(FLAGSHIP)!;
+    const groups = sys.groupsOf(flagship.tokens, "radii");
+
+    assert.deepEqual(
+        groups.map((group: { title: string }) => group.title),
+        ["Scale", "Roles", "Component tokens"],
+    );
+    assert.deepEqual(
+        groups[0].tokens.map((each: { name: string }) => each.name),
+        [
+            "radius.scale.xs",
+            "radius.scale.sm",
+            "radius.scale.md",
+            "radius.scale.lg",
+            "radius.scale.xl",
+            "radius.scale.full",
+        ],
+    );
+    assert.ok(groups[1].tokens.some((each: { name: string }) => each.name === "radius.card"));
+    // The tab counts the roles: the scale and the component tokens have counts of their own.
+    assert.equal(sys.sectionCounts(flagship.tokens).radii.open, groups[1].tokens.length);
+});
+
+test("every layer of a shadow is told with its color, and the one-line summary names the layers after the first", () => {
+    const lines = sys.shadowLines([
+        { color: "#00000024", offsetX: "0px", offsetY: "24px", blur: "60px", spread: "-16px" },
+        {
+            color: "#ffffff2b",
+            offsetX: "0px",
+            offsetY: "0px",
+            blur: "0px",
+            spread: "1px",
+            inset: true,
+        },
+    ]);
+
+    assert.deepEqual(lines, [
+        { words: "y 24 · blur 60 · spread -16 · 14%", color: "#00000024" },
+        { words: "inset y 0 · blur 0 · spread 1 · 17%", color: "#ffffff2b" },
+    ]);
+    assert.deepEqual(sys.shadowLines(null), []);
+    assert.equal(
+        sys.shadowSummary([
+            { color: "#00000024", offsetX: "0px", offsetY: "24px", blur: "60px", spread: "-16px" },
+            { color: "#ffffff2b", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "1px" },
+        ]),
+        "y 24 · blur 60 · spread -16 · 14% · +1 layer",
     );
 });

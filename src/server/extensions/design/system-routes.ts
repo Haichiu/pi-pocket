@@ -25,6 +25,7 @@ import {
     type ArtifactAsset,
     ArtifactsDoc,
     type ArtifactVersion,
+    DesignCommentsDoc,
 } from "../../docs.ts";
 import type { ConversationWebRequest, ExtensionWeb, PocketHost } from "../../host.ts";
 import { MAX_ASSET_BYTES, MAX_ASSETS, MAX_ASSETS_BYTES, MAX_BYTES } from "../artifacts.ts";
@@ -323,81 +324,61 @@ export function viewOf(system: DesignSystem) {
     };
 }
 
-/** What a report from the page check holds, cut to a fixed shape: its words come from the page. */
+/** A report as the app reads it: the open findings, and the ones that a person accepted, apart and not in the counts. */
+export type CheckedReport = CheckReport & {
+    accepted: CheckFinding[];
+    /** The ids of every finding, accepted or not, as the engine ordered them: an undo puts one back in its place. */
+    order: string[];
+};
+
+/**
+ * What a report from the page check holds, cut to a fixed shape: its words come from the page. The findings whose `id` is in
+ * `accepted` (a person decided that they are fine) go to `accepted`, and the counts are of the open ones only; an engine that
+ * returns its own `accepted` list is read the same way.
+ */
 export function cleanReport(
     report: CheckReport,
     system?: DesignSystem,
     mode?: string,
-): CheckReport {
-    const findings: CheckFinding[] = [];
+    accepted: ReadonlySet<string> = new Set(),
+): CheckedReport {
+    const open: CheckFinding[] = [];
+    const set: CheckFinding[] = [];
+    const order: string[] = [];
+    const listed = (value: unknown): unknown[] =>
+        Array.isArray(value) ? value.slice(0, 2000) : [];
+    const engines = (report as { accepted?: unknown } | undefined)?.accepted;
 
     // What is not a finding (a rule the app does not know, a null) is skipped before it counts toward the limit.
-    for (const each of (Array.isArray(report?.findings) ? report.findings : []).slice(0, 2000)) {
-        if (findings.length >= LIMITS.findings) {
-            break;
-        }
+    for (const [each, apart] of [
+        ...listed(report?.findings).map((one) => [one, false] as const),
+        ...listed(engines).map((one) => [one, true] as const),
+    ]) {
+        const finding = cleanFinding(each as CheckFinding, system, mode);
 
-        if (!RULES.includes(each?.rule)) {
+        if (finding === undefined) {
             continue;
         }
 
-        const rect = each.rect;
-        const fix = each.fix;
+        if (finding.id !== undefined && order.length < LIMITS.findings * 2) {
+            order.push(finding.id);
+        }
 
-        // Whether one tap can fix it: the engine says (`fixable`), else it is an exact match that the stand-in can rewrite.
-        const fixable =
-            (each as { fixable?: unknown }).fixable === true || isFixable(each, system, mode);
+        const into = apart || (finding.id !== undefined && accepted.has(finding.id)) ? set : open;
 
-        findings.push({
-            ...(typeof each.id === "string" ? { id: clip(each.id, 60) } : {}),
-            // A fixable finding keeps what `applyExactFixes` needs; it checks the system again before it rewrites.
-            ...(typeof fix === "object" &&
-            fix !== null &&
-            ["color", "length", "font"].includes(fix.kind) &&
-            Array.isArray(fix.properties)
-                ? {
-                      fix: {
-                          kind: fix.kind,
-                          properties: fix.properties.slice(0, 20).map((each) => clip(each, 60)),
-                          literal: clip(fix.literal, 300),
-                          token: clip(fix.token, 200),
-                          cssVar: clip(fix.cssVar, 200),
-                          mode: clip(fix.mode, 64),
-                      },
-                  }
-                : {}),
-            rule: each.rule,
-            level: each.level === "error" ? "error" : "warning",
-            selector: clip(each.selector, 500),
-            ...(typeof each.pid === "string" && each.pid !== ""
-                ? { pid: clip(each.pid, 200) }
-                : {}),
-            ...(typeof each.value === "string" ? { value: clip(each.value, 200) } : {}),
-            ...(typeof each.suggestion === "string"
-                ? { suggestion: clip(each.suggestion, 300) }
-                : {}),
-            message: clip(each.message, 400),
-            ...(fixable ? { fixable: true } : {}),
-            ...(typeof rect === "object" && rect !== null
-                ? {
-                      rect: {
-                          x: coordinate(rect.x),
-                          y: coordinate(rect.y),
-                          width: coordinate(rect.width),
-                          height: coordinate(rect.height),
-                      },
-                  }
-                : {}),
-        });
+        if (into.length < LIMITS.findings) {
+            into.push(finding);
+        }
     }
 
     const byRule: Partial<Record<CheckRule, number>> = {};
 
-    for (const each of findings) {
+    for (const each of open) {
         byRule[each.rule] = (byRule[each.rule] ?? 0) + 1;
     }
 
     return {
+        order,
         viewport: {
             width: Math.round(coordinate(report?.viewport?.width)),
             height: Math.round(coordinate(report?.viewport?.height)),
@@ -406,14 +387,71 @@ export function cleanReport(
         ...(typeof report?.mode === "string" && report.mode !== ""
             ? { mode: clip(report.mode, 64) }
             : {}),
-        findings,
+        findings: open,
+        accepted: set,
         summary: {
-            errors: findings.filter((each) => each.level === "error").length,
-            warnings: findings.filter((each) => each.level === "warning").length,
+            errors: open.filter((each) => each.level === "error").length,
+            warnings: open.filter((each) => each.level === "warning").length,
             elements: Math.max(0, Math.round(coordinate(report?.summary?.elements))),
             byRule,
         },
         withoutSystem: report?.withoutSystem === true,
+    };
+}
+
+/** One finding in the fixed shape, or none for what is not a finding of a rule the app knows. */
+function cleanFinding(
+    each: CheckFinding,
+    system: DesignSystem | undefined,
+    mode: string | undefined,
+): CheckFinding | undefined {
+    if (!RULES.includes(each?.rule)) {
+        return undefined;
+    }
+
+    const rect = each.rect;
+    const fix = each.fix;
+
+    // Whether one tap can fix it: the engine says (`fixable`), else it is an exact match that the stand-in can rewrite.
+    const fixable =
+        (each as { fixable?: unknown }).fixable === true || isFixable(each, system, mode);
+
+    return {
+        ...(typeof each.id === "string" ? { id: clip(each.id, 60) } : {}),
+        // A fixable finding keeps what `applyExactFixes` needs; it checks the system again before it rewrites.
+        ...(typeof fix === "object" &&
+        fix !== null &&
+        ["color", "length", "font"].includes(fix.kind) &&
+        Array.isArray(fix.properties)
+            ? {
+                  fix: {
+                      kind: fix.kind,
+                      properties: fix.properties.slice(0, 20).map((one) => clip(one, 60)),
+                      literal: clip(fix.literal, 300),
+                      token: clip(fix.token, 200),
+                      cssVar: clip(fix.cssVar, 200),
+                      mode: clip(fix.mode, 64),
+                  },
+              }
+            : {}),
+        rule: each.rule,
+        level: each.level === "error" ? "error" : "warning",
+        selector: clip(each.selector, 500),
+        ...(typeof each.pid === "string" && each.pid !== "" ? { pid: clip(each.pid, 200) } : {}),
+        ...(typeof each.value === "string" ? { value: clip(each.value, 200) } : {}),
+        ...(typeof each.suggestion === "string" ? { suggestion: clip(each.suggestion, 300) } : {}),
+        message: clip(each.message, 400),
+        ...(fixable ? { fixable: true } : {}),
+        ...(typeof rect === "object" && rect !== null
+            ? {
+                  rect: {
+                      x: coordinate(rect.x),
+                      y: coordinate(rect.y),
+                      width: coordinate(rect.width),
+                      height: coordinate(rect.height),
+                  },
+              }
+            : {}),
     };
 }
 
@@ -673,6 +711,21 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         return { id, version: version as number | undefined, options, system, mode: checked };
     };
 
+    /** The ids of the findings that people accepted for a design: the check leaves them out of its counts and a fix leaves them be. */
+    const acceptedOf = async (
+        request: ConversationWebRequest,
+        id: string,
+    ): Promise<Set<string>> => {
+        const doc = await request.snapshot(
+            DesignCommentsDoc,
+            request.conversation.id,
+            request.context,
+        );
+        const item = Object.hasOwn(doc?.items ?? {}, id) ? doc!.items[id] : undefined;
+
+        return new Set(Object.keys(item?.accepted ?? {}));
+    };
+
     // Check a design against the system: the page is rendered and walked in a private Chromium (`checkDesign`).
     web.conversationRoute(
         "POST",
@@ -689,9 +742,19 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     version,
                     request.context,
                 );
-                const report = await checkDesign(bundle, system, options, host, request.signal);
+                const accepted = await acceptedOf(request, id);
+                // The ids are the engine's to leave out (`accepted`); `cleanReport` makes the same split when it did not.
+                const asked: CheckOptions & { accepted?: readonly string[] } = {
+                    ...options,
+                    ...(accepted.size > 0 ? { accepted: [...accepted] } : {}),
+                };
+                const report = await checkDesign(bundle, system, asked, host, request.signal);
 
-                return { report: cleanReport(report, system, mode), id, version: bundle.version };
+                return {
+                    report: cleanReport(report, system, mode, accepted),
+                    id,
+                    version: bundle.version,
+                };
             } catch (error) {
                 if (request.signal.aborted) {
                     throw error;
@@ -753,10 +816,15 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     version,
                     request.context,
                 );
-                const report = await checkDesign(bundle, system, options, host, request.signal);
+                const accepted = await acceptedOf(request, id);
+                const asked: CheckOptions & { accepted?: readonly string[] } = {
+                    ...options,
+                    ...(accepted.size > 0 ? { accepted: [...accepted] } : {}),
+                };
+                const report = await checkDesign(bundle, system, asked, host, request.signal);
 
                 from = bundle.version;
-                result = fixExactMatches(bundle, system, report, { mode: options.mode });
+                result = fixExactMatches(bundle, system, report, { mode: options.mode, accepted });
 
                 if (result.fixed > 0 && Buffer.byteLength(result.content) > MAX_BYTES) {
                     throw web.error(400, "The page is too large.");

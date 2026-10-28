@@ -16,6 +16,13 @@ export const ALLOW = "fullscreen; clipboard-write; accelerometer; gyroscope";
 export const frameUrl = (conversation, id, version) =>
     `/a/${conversation}/${encodeURIComponent(id)}/${version}`;
 
+/** The least a cropped frame shows, in the frame's pixels. */
+const MIN_CROP = 160;
+/** What a cropped frame keeps below its content, in the frame's pixels. */
+const CROP_PAD = 24;
+
+/** The height of a frame of `size` that shows no more than the page's content (`crop`: 0 when it is not known). */
+const shownHeight = (size, crop) => (crop > 0 && crop < size.h ? Math.max(crop, MIN_CROP) : size.h);
 const NO_KNOBS = [];
 const NO_VALUES = {};
 /** The bridge takes at most 100 values in one message. */
@@ -28,10 +35,12 @@ export function createCanvas(env) {
     const { Ico, useSize } = parts;
 
     /** A page at its own size, scaled by `scale`: the box takes the scaled room, the frame inside the full one. */
-    function Stage({ size, scale, children, label }) {
+    function Stage({ size, scale, children, label, crop }) {
+        const shown = shownHeight(size, crop);
+
         return html`<div
             class="dsn-stage"
-            style=${`width:${Math.round(size.w * scale)}px;height:${Math.round(size.h * scale)}px`}
+            style=${`width:${Math.round(size.w * scale)}px;height:${Math.round(shown * scale)}px`}
             title=${label}
         >
             <div
@@ -114,17 +123,25 @@ export function createCanvas(env) {
         const roomSize = useSize(room);
         const [ready, setReady] = useState(0);
         const [loaded, setLoaded] = useState(false);
+        // The height of the page's content (0: not known), from the frame.
+        const [content, setContent] = useState(0);
         const sent = useRef({ at: "", values: {} });
         // The slide to go back to once a page that loads again says it is a deck (`pocket-deck`).
         const pendingSlide = useRef(0);
         // The zoom bar floats over the bottom of the room: the page fits above it.
         const zoom = zoomOf(s.zoom, env.sizeClass(s) === "narrow");
-        const scale = scaleOf(zoom, size, { w: roomSize.w, h: roomSize.h - 40 });
+        const checking = s.dock === "check";
+        // A check shows no more of the frame than its page fills (a short page is not a phone's worth of empty).
+        const crop = checking && content > 0 ? content + CROP_PAD : 0;
+        const scale = scaleOf(
+            zoom,
+            { w: size.w, h: shownHeight(size, crop) },
+            { w: roomSize.w, h: roomSize.h - 40 },
+        );
         const src = frameUrl(s.conversation, design.id, version);
         const key = `${src}#${s.reload}`;
         const notes = s.notes[design.id];
         const comments = notes?.comments ?? [];
-        const checking = s.dock === "check";
         const check = checkOptions(s, env.canvasDark(s));
         const pins = s.mode === "comment" || s.dock === "comments" ? pinsOf(comments, version) : [];
         // The pins of a page check are its findings'; those of comments, the open comments'.
@@ -177,6 +194,8 @@ export function createCanvas(env) {
                         }),
                     },
                 }));
+            } else if (message.type === "pocket-size") {
+                setContent(message.height);
             } else if (message.type === "pocket-pin") {
                 if (message.tap === true) {
                     // A tap on a pin of the check: its finding, and the sheet opens (on a phone it started shut).
@@ -263,6 +282,7 @@ export function createCanvas(env) {
         // A new page: what it said about itself is gone until it says it again.
         useEffect(() => {
             setLoaded(false);
+            setContent(0);
             pendingSlide.current = store.get().slide;
             store.set({ knobs: [], deck: null });
         }, [key]);
@@ -369,7 +389,7 @@ export function createCanvas(env) {
             data-mode=${s.mode}
         >
             <div class="dsn-scroll" data-no-swipe>
-                <${Stage} size=${size} scale=${scale} label=${design.title}>
+                <${Stage} size=${size} scale=${scale} label=${design.title} crop=${crop}>
                     <iframe
                         ref=${frame}
                         key=${key}

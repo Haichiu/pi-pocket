@@ -2165,7 +2165,6 @@
     place-items: center;
     width: 18px;
     height: 34px;
-    background: var(--bg);
     color: var(--text);
     font-size: 20px;
     line-height: 1;
@@ -2186,7 +2185,7 @@
     left: 0;
 }
 
-/* A bar of sections that scrolls: it settles on a whole tab at the left, and at rest it shows no tab that is not whole. */
+/* A bar of sections that scrolls: it settles on a whole tab at the left, and it shows no tab that is not whole, at rest or not. */
 .dsn[data-size="narrow"] .dsy-tabs {
     scroll-snap-type: x proximity;
     scroll-padding-inline: 26px;
@@ -2197,7 +2196,118 @@
     transition: opacity 0.14s;
 }
 
-.dsy-tabs[data-rest] .dsn-tab[data-cut] {
+/* A tab that is not whole goes at once (a fade-out would show half of it); it fades in when it is whole again. */
+.dsn[data-size] .dsy-tabs .dsn-tab[data-cut] {
     opacity: 0;
+    transition: none;
     pointer-events: none;
+}
+
+/* Roles under the step of the scale that they point at. */
+.dsy-by-step + .dsy-by-step {
+    border-top: 1px solid var(--dsn-hair);
+}
+
+.dsy-by-step-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0;
+    padding: 12px 14px 0;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+.dsy-by-step .dsy-tiles {
+    padding-top: 8px;
+}
+
+/* A size is a square of its own size (up to 44 px). */
+.dsy-space .dsy-size {
+    border-radius: 3px;
+}
+
+/* A shadow tile: the stage, the name, and every layer on a line of its own with its color; the copy of the CSS sits at the corner. */
+.dsy-tiles[data-size="shadow"] {
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+}
+
+.dsy-tile-wrap {
+    position: relative;
+    display: flex;
+}
+
+.dsy-tile-wrap > .dsy-card-tile {
+    flex: 1;
+    min-width: 0;
+}
+
+.dsy-copy {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    color: var(--muted);
+}
+
+@media (hover: hover) {
+    .dsy-copy:hover {
+        background: var(--hover);
+        color: var(--text);
+    }
+}
+
+.dsy-shadow-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 100%;
+    padding: 0 2px;
+}
+
+.dsy-shadow-set {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.dsy-shadow-set > em {
+    color: var(--muted);
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.dsy-shadow-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--muted);
+    font-size: 10.5px;
+}
+
+.dsy-shadow-line > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The color of a layer, on a checker so that a see-through one (a shadow's 14% black) still shows. */
+.dsy-shadow-line > i {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background:
+        linear-gradient(var(--c), var(--c)),
+        conic-gradient(#fff 25%, #b9bcc4 0 50%, #fff 0 75%, #b9bcc4 0) 0 0 / 6px 6px;
+    box-shadow: 0 0 0 1px var(--dsn-hair);
 }

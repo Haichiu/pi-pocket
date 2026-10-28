@@ -1,6 +1,6 @@
 // What the System view asks of the server, and keeps in the store: the design system, a save of the person's edits, a
 // check of a design against it, the documentation page, and the files for code.
-import { downloadFile } from "./data.js";
+import { downloadFile, splitReport } from "./data.js";
 import { changeNow } from "./unsaved.js";
 
 /** No edits (as `emptyHistory` in `system.js`, which loads with the System view). */
@@ -227,7 +227,14 @@ export function createSystemData(pocket, store, data) {
                 });
 
                 if (current(conversation)) {
-                    put({ status: "done", report: result.report, at: Date.now() });
+                    // What was accepted is split again from what is known now (the notes may be newer than the check).
+                    const accepted = store.get().notes[artifact]?.accepted;
+
+                    put({
+                        status: "done",
+                        report: accepted ? splitReport(result.report, accepted) : result.report,
+                        at: Date.now(),
+                    });
                 }
             } catch (error) {
                 if (current(conversation)) {

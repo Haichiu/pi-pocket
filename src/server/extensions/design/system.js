@@ -70,10 +70,21 @@ const TIER_TITLES = { semantic: "", primitive: "Primitives", component: "Compone
 const SCALE_TITLES = { spacing: "Scale", radii: "Corners", shadows: "Elevation" };
 
 /**
- * What a tab counts, by section id: `{ open, folded, total }`. A tab says `open`: the tokens its section shows when it opens
- * (the roles of Colors, the styles of Type, a scale), which is what a person works on; the groups that start folded (a
- * palette, a type scale, a component's own tokens) carry their own counts in their heads. `folded` is the rest, and `total`
- * is every token of the section (the sections add up to the system's tokens).
+ * The words that name a section's own groups of tokens: the steps of a spacing scale (`space.4`), its sizes (`size.icon.md`),
+ * and the corners of a radius scale (`radius.md`). These are the documentation page's (`spacingSection` and `radiiSection` in
+ * `src/server/design/docsite-space.ts`): the two group alike, and a test reads the page to check that they do.
+ */
+export const SPACE_ROOT = /^(space|spacing|gap|gaps|sp|spaces)$/;
+export const SIZE_ROOT = /^(size|sizes|sizing)$/;
+export const RADIUS_ROOT = /^(radius|radii|rounded|corners?|round)$/;
+
+const rootOf = (token) => token.path[0].toLowerCase();
+
+/**
+ * What a tab counts, by section id: `{ open, folded, total }`. A tab says `open`: the role tokens of its section, which are
+ * what a person uses (the roles of Colors, the styles of Type; for a section that is only a scale, the scale); the palette, the
+ * scales that roles point at, and a component's own tokens carry their own counts in their groups' heads. `folded` is the
+ * rest, and `total` is every token of the section (the sections add up to the system's tokens).
  */
 export function sectionCounts(tokens) {
     const bySection = {};
@@ -86,7 +97,7 @@ export function sectionCounts(tokens) {
 
     for (const [id, list] of Object.entries(bySection)) {
         const open = groupsOf(list, id)
-            .filter((group) => !group.fold)
+            .filter((group) => group.headline)
             .reduce((sum, group) => sum + group.tokens.length, 0);
 
         counts[id] = { open, folded: list.length - open, total: list.length };
@@ -112,8 +123,29 @@ export function groupsOf(tokens, section) {
             groups.set(key, { id: key, title: name, kind, tier, tokens: [] });
         }
 
-        groups.get(key).tokens.push(token);
+        const group = groups.get(key);
+
+        group.tokens.push(token);
+
+        return group;
     };
+
+    // The radii that another radius points at (in any mode): the steps of a scale, whatever they are called.
+    const aimed = new Set(
+        mine
+            .filter((token) => tierOf(token) !== "component")
+            .flatMap((token) =>
+                Object.values(token.modes ?? {}).flatMap((one) => (one.alias ? [one.alias] : [])),
+            ),
+    );
+    const plainScale =
+        section === "radii" &&
+        !mine.some(
+            (token) =>
+                tierOf(token) === "primitive" ||
+                token.path.includes("scale") ||
+                aimed.has(token.name),
+        );
 
     for (const token of mine) {
         const tier = tierOf(token);
@@ -155,12 +187,42 @@ export function groupsOf(tokens, section) {
             add(by[0], by[1], "motion", token);
         } else if (section === "other") {
             add(token.path[0], title(token.path[0]), "other", token);
+        } else if (section === "spacing") {
+            // The steps of the scale, the roles that use a step (the gaps of a layout), the sizes of controls and marks, and a
+            // component's own: the way that the documentation page groups them (`order` is theirs, not the tier's).
+            const root = rootOf(token);
+            const [id, name, order] =
+                tier === "component"
+                    ? ["components", "Component tokens", 3]
+                    : SPACE_ROOT.test(root)
+                      ? ["steps", "Steps", 0]
+                      : SIZE_ROOT.test(root)
+                        ? ["sizes", "Sizes", 2]
+                        : ["roles", "Roles", 1];
+
+            add(id, name, id, token, tier === "component" ? "component" : "semantic").order = order;
+        } else if (section === "radii") {
+            // The scale first (what the roles point at), then the roles, then a component's own. Radii that point at nothing and
+            // are pointed at by nothing are a scale of their own.
+            const [id, name, order] =
+                tier === "component"
+                    ? ["components", "Component tokens", 2]
+                    : plainScale ||
+                        tier === "primitive" ||
+                        token.path.includes("scale") ||
+                        aimed.has(token.name)
+                      ? ["scale", "Scale", 0]
+                      : ["roles", "Roles", 1];
+
+            add(id, name, id, token, tier === "component" ? "component" : "semantic").order = order;
         } else {
             add("all", "", section, token);
         }
     }
 
-    const list = [...groups.values()].sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier]);
+    const list = [...groups.values()].sort(
+        (a, b) => (a.order ?? TIER_RANK[a.tier]) - (b.order ?? TIER_RANK[b.tier]),
+    );
     const semantic = list.some((each) => each.tier === "semantic");
 
     // Two groups of one kind and one name (the semantic durations and the primitive ones) are told apart by their tier.
@@ -184,7 +246,19 @@ export function groupsOf(tokens, section) {
             group.title = TIER_TITLES[group.tier] || SCALE_TITLES[section] || "Scale";
         }
 
-        group.fold = group.tier === "component" || (group.tier === "primitive" && semantic);
+        // What a tab counts (`headline`): the section's role tokens, the semantic tier, and the primitives only when it has no
+        // roles. A group of a palette, a type scale, or a component's tokens starts folded; the scale of a spacing or radius
+        // section is shown open, before its roles, and counted by its own tokens' tier (a plain scale is the semantic tier).
+        const own = section === "spacing" || section === "radii";
+
+        group.headline = own
+            ? group.tier !== "component" &&
+              (group.tokens.some((token) => tierOf(token) === "semantic") ||
+                  !mine.some((token) => tierOf(token) === "semantic"))
+            : group.tier !== "component" && !(group.tier === "primitive" && semantic);
+        group.fold = own
+            ? group.tier === "component"
+            : group.tier === "component" || (group.tier === "primitive" && semantic);
     }
 
     return list;
@@ -1269,39 +1343,49 @@ export function shadowOf(value) {
     return safeCss(css);
 }
 
-/**
- * A shadow in words and few of them, for a tile: its first layer as `y 18 · blur 40 · 14%` (the offset down, the blur, and the
- * color's alpha when it has one), with `x` and `spread` only when they are not 0, `inset` first when it is, and the layers after
- * the first as `+1 layer`. A size that is not in pixels is written as it is.
- */
-export function shadowSummary(value) {
-    const layers = (Array.isArray(value) ? value : [value]).filter(isObject);
-    const first = layers[0];
-
-    if (first === undefined) {
-        return "";
-    }
-
+/** One layer of a shadow in words: `y 18 · blur 40 · spread -18 · 14%` (`x` and `spread` only when they are not 0; `inset` first). */
+function layerWords(layer) {
     const size = (member) => {
         const px = pixelsOf(member ?? "0px");
 
         return px === null ? (cssOf("dimension", member) ?? "0") : Math.round(px * 10) / 10;
     };
 
-    const [x, y, blur, spread] = [first.offsetX, first.offsetY, first.blur, first.spread].map(size);
-    const alpha = parseColor(first.color)?.a;
+    const [x, y, blur, spread] = [layer.offsetX, layer.offsetY, layer.blur, layer.spread].map(size);
+    const alpha = parseColor(layer.color)?.a;
     const parts = [
         ...(x !== 0 && x !== "0" ? [`x ${x}`] : []),
         `y ${y}`,
         `blur ${blur}`,
         ...(spread !== 0 && spread !== "0" && spread !== undefined ? [`spread ${spread}`] : []),
         ...(alpha === undefined || alpha >= 1 ? [] : [`${Math.round(alpha * 100)}%`]),
-        ...(layers.length > 1
-            ? [`+${layers.length - 1} layer${layers.length === 2 ? "" : "s"}`]
-            : []),
     ];
 
-    return `${first.inset === true ? "inset " : ""}${parts.join(" · ")}`;
+    return `${layer.inset === true ? "inset " : ""}${parts.join(" · ")}`;
+}
+
+/** Every layer of a shadow, in words and with its color: `[{ words: "y 18 · blur 40 · 14%", color }]`. */
+export function shadowLines(value) {
+    return (Array.isArray(value) ? value : [value])
+        .filter(isObject)
+        .map((layer) => ({ words: layerWords(layer), color: layer.color }));
+}
+
+/**
+ * A shadow in a line, for a label: its first layer in words, and the layers after the first as `+1 layer`. (A tile shows every
+ * layer: `shadowLines`.)
+ */
+export function shadowSummary(value) {
+    const lines = shadowLines(value);
+
+    if (lines.length === 0) {
+        return "";
+    }
+
+    return [
+        lines[0].words,
+        ...(lines.length > 1 ? [`+${lines.length - 1} layer${lines.length === 2 ? "" : "s"}`] : []),
+    ].join(" · ");
 }
 
 /** How many things the unsaved edits change in `system` (a step that puts a value back changes nothing). */
