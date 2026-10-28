@@ -856,7 +856,7 @@ test("scanDesignSystem is the draft alone, as the bench calls it", async () => {
     const dir = project({
         "a.css": ":root { --bg: #fff; --text: #111 } .dark { --bg: #000; --text: #eee }",
     });
-    const draft = scanDesignSystem(dir);
+    const draft = await scanDesignSystem(dir);
 
     assert.deepEqual(Object.keys(draft.modes), ["dark"]);
     assert.ok((draft.tokens.color as Record<string, unknown>).bg);
