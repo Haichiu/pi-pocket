@@ -698,10 +698,15 @@ test("a ratio is written with one decimal, cut and never rounded up; cards copy 
     // The page's script makes the three buttons from the values a card carries.
     assert.match(
         html,
-        /<div class="copy-row" data-var="--color-bg-surface" data-tw="bg-bg-surface" data-json="color\.bg\.surface\.\$value"><\/div>/,
+        /<div class="copy-row" data-var="--color-bg-surface" data-tw="bg-surface" data-json="color\.bg\.surface\.\$value"><\/div>/,
     );
-    assert.match(html, /data-var="--color-text-primary" data-tw="text-text-primary"/);
-    assert.match(html, /data-var="--color-border-default" data-tw="border-border-default"/);
+    assert.match(html, /data-var="--color-text-primary" data-tw="text-primary"/);
+    assert.doesNotMatch(
+        html,
+        /data-tw="(bg-bg|text-text|border-border)-/,
+        "the class is the compiled theme's name",
+    );
+    assert.match(html, /data-var="--color-border-default" data-tw="border-default"/);
     assert.match(
         html,
         /<footer class="foot"><strong>Pi Pocket<\/strong> · \d+ tokens · 3 modes · 10 components · generated \d{4}-\d{2}-\d{2} by Pi Pocket<\/footer>/,
@@ -810,7 +815,15 @@ test("an exempt pair is labelled and not a failure; notes have an area; the code
     // Use it: CSS, Tailwind v4, and JSON, and the generated files.
     assert.match(html, /<h4>CSS<\/h4>/);
     assert.match(html, /<h4>Tailwind v4<\/h4>/);
-    assert.match(html, /<h4>JSON<\/h4>/);
+    assert.match(html, /<h4>JSON \(DTCG\)<\/h4>/);
+    assert.match(html, /<h4>Tokens Studio<\/h4>/);
+    assert.match(html, /tokens\.studio\.json\./, "how to load the Tokens Studio file");
+    assert.match(html, /\$themes array/);
+    assert.match(
+        html,
+        /&quot;format&quot;: &quot;2025\.10&quot;/,
+        "how to ask for the 2025.10 forms",
+    );
     assert.ok(
         html.includes("@import &quot;tailwindcss&quot;;\n@import &quot;./tailwind.css&quot;;"),
     );
@@ -822,6 +835,7 @@ test("an exempt pair is labelled and not a failure; notes have an area; the code
     for (const file of [
         "tokens.css",
         "tailwind.css",
+        "tokens.studio.json",
         "tokens.resolved.json",
         "tokens.light.resolved.json",
         "tokens.dark.resolved.json",
