@@ -1,3 +1,5 @@
+import { SANITIZER_JS } from "./docsite-sanitize.ts";
+
 /**
  * The look and the behavior of the design-system documentation page (docsite.ts), as two text constants. The page is a
  * self-contained artifact that runs in the sandbox, so both are inline: no font, image, or script is fetched. The chrome
@@ -418,7 +420,7 @@ h4 {
     display: grid;
     gap: 5px;
     justify-items: center;
-    width: 64px;
+    width: 72px;
     padding: 0;
     border: 0;
     background: none;
@@ -441,8 +443,8 @@ h4 {
 .sw span {
     max-width: 100%;
     font: 10.5px/1.2 var(--dd-mono);
-    overflow-wrap: anywhere;
     text-align: center;
+    white-space: nowrap;
 }
 
 .copy-row {
@@ -807,6 +809,10 @@ td.num {
     white-space: nowrap;
 }
 
+td.num.wrap {
+    white-space: normal;
+}
+
 .matrix td {
     padding: 6px;
     text-align: center;
@@ -871,6 +877,11 @@ td.num {
     display: grid;
     gap: 14px;
     margin-top: 14px;
+}
+
+.spec.cols {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+    gap: 10px;
 }
 
 .spec-row {
@@ -999,7 +1010,7 @@ td.num {
 .shadow-tile {
     display: grid;
     justify-items: start;
-    align-content: end;
+    align-content: start;
     gap: 6px;
     min-height: 110px;
     padding: 14px;
@@ -1152,13 +1163,30 @@ td.num {
     margin: 0;
 }
 
-.comp-frame {
+.comp-stage {
     display: block;
-    width: 100%;
+    min-height: 120px;
     margin-top: 14px;
+    overflow: hidden;
     border: 1px solid var(--dd-line);
     border-radius: var(--dd-radius);
-    background: var(--dd-panel);
+    background: var(--g, var(--dd-panel));
+    color: var(--t, var(--dd-text));
+    font: 14px/1.5 var(--f, system-ui, sans-serif);
+    position: relative;
+    isolation: isolate;
+    contain: layout paint;
+}
+
+.comp-host {
+    display: block;
+}
+
+.stage-note {
+    margin: 0;
+    padding: 16px;
+    color: var(--dd-muted);
+    font-size: 13px;
 }
 
 .dos {
@@ -1656,7 +1684,7 @@ pre.snip {
 }
 `;
 
-/** The script of the page: the mode switch, copy, search, navigation, demos, and the height of the component frames. */
+/** The script of the page: the mode switch, copy, search, navigation, demos, and the component states. */
 export const DOC_JS = `
 (function () {
     "use strict";
@@ -1696,14 +1724,16 @@ export const DOC_JS = `
         return Promise.resolve(fallback());
     }
 
+    // A token name (a "tk" chip) copies its own text; a button with data-copy copies that.
     document.addEventListener("click", function (event) {
-        var target = event.target && event.target.closest ? event.target.closest("[data-copy]") : null;
+        var target = event.target && event.target.closest ? event.target.closest("[data-copy], .tk") : null;
         if (!target) { return; }
-        var text = target.getAttribute("data-copy");
+        var text = target.hasAttribute("data-copy") ? target.getAttribute("data-copy") : target.textContent.trim();
         if (target.hasAttribute("data-copy-from")) {
             var source = document.getElementById(target.getAttribute("data-copy-from"));
             text = source ? source.textContent : "";
         }
+        if (!text) { return; }
         copyText(text || "").then(function (ok) {
             toast(ok ? "Copied " + (text.length > 40 ? "to the clipboard" : text) : "Could not copy");
             target.classList.add("flash");
@@ -1711,8 +1741,22 @@ export const DOC_JS = `
         });
     });
 
-    // Mode: the system's own modes. The theme (light or dark) of the page follows the mode.
-    var frames = $$("iframe.comp-frame");
+    // The copy buttons of a color card, made from the three values the card carries.
+    $$(".copy-row").forEach(function (row) {
+        [["CSS var", "var(" + row.getAttribute("data-var") + ")"], ["Tailwind", row.getAttribute("data-tw")], ["JSON", row.getAttribute("data-json")]].forEach(function (pair) {
+            if (!pair[1]) { return; }
+            var button = document.createElement("button");
+            button.type = "button";
+            button.className = "mini";
+            button.textContent = pair[0];
+            button.title = "Copy " + pair[1];
+            button.setAttribute("data-copy", pair[1]);
+            row.appendChild(button);
+        });
+    });
+
+    // Mode: the system's own modes. The theme (light or dark) of the page follows the mode. Every token variable
+    // is set on the body for each mode, so nothing else needs to change: component states inherit them.
     function setMode(mode, theme) {
         root.setAttribute("data-mode", mode);
         root.setAttribute("data-theme", theme);
@@ -1721,7 +1765,6 @@ export const DOC_JS = `
         });
         var picker = $(".modesel");
         if (picker) { picker.value = mode; }
-        frames.forEach(function (frame) { syncFrame(frame); });
     }
     $$(".seg button").forEach(function (button) {
         button.addEventListener("click", function () {
@@ -1735,32 +1778,59 @@ export const DOC_JS = `
             setMode(option.value, option.getAttribute("data-theme"));
         });
     }
-    var startMode = root.getAttribute("data-mode");
+    setMode(root.getAttribute("data-mode"), root.getAttribute("data-theme"));
 
-    // A component frame is sandboxed: it has no access to this page, and this page none to it. Each side talks by
-    // message. The frame reports its height; this page tells it the mode. Messages are data: check them first.
-    function syncFrame(frame) {
-        if (!frame.contentWindow) { return; }
-        frame.contentWindow.postMessage({ type: "ds-mode", mode: root.getAttribute("data-mode"), theme: root.getAttribute("data-theme") }, "*");
-    }
-    window.addEventListener("message", function (event) {
-        var data = event.data;
-        if (!data || data.type !== "ds-frame" || typeof data.height !== "number" || !isFinite(data.height)) { return; }
-        frames.forEach(function (frame) {
-            if (frame.contentWindow === event.source) {
-                frame.style.height = Math.min(4000, Math.max(40, Math.ceil(data.height) + 2)) + "px";
-            }
+    // Component states. The markup and CSS are project text. Each state is parsed in an inert document (nothing in it
+    // runs or loads), and a new tree is built from what an allowlist names (docsite-sanitize.ts): no script, no handler,
+    // no animation, no address but "#id", no frame or form. It goes in a shadow root inside a box that clips it and holds
+    // any fixed position: the component's CSS stays in, the page's stays out, the page's custom properties come in.
+    ${SANITIZER_JS}
+    var STAGE_CSS = "*{box-sizing:border-box}.__w{overflow:hidden}.__g{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));margin:0 -1px -1px 0}.__c{min-width:0;padding:16px 18px 20px;box-shadow:inset -1px -1px 0 rgb(128 128 128/.28)}.__l{margin:0 0 14px;font:600 11px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;opacity:.62}";
+    $$(".comp-stage").forEach(function (stage) {
+        if (!document.body.attachShadow) { return; }
+        var article = stage.closest("article");
+        var panels = $$(".snip-wrap[data-kind]", article);
+        var css = "";
+        var wrap = document.createElement("div");
+        var grid = document.createElement("div");
+        wrap.className = "__w";
+        grid.className = "__g";
+        panels.forEach(function (panel) {
+            var code = $("pre", panel).textContent;
+            if (panel.getAttribute("data-kind") === "css") { css = code; return; }
+            var cell = document.createElement("div");
+            var label = document.createElement("p");
+            var parsed = new DOMParser().parseFromString(code, "text/html");
+            cell.className = "__c";
+            label.className = "__l";
+            label.textContent = panel.getAttribute("data-panel");
+            cell.appendChild(label);
+            cleanInto(parsed, cell);
+            grid.appendChild(cell);
         });
+        // The shadow root is on a box inside the stage: the stage clips and contains what the component's CSS does to its
+        // own host (a fixed position, a huge z-index), so that it cannot cover the page.
+        var host = document.createElement("div");
+        host.className = "comp-host";
+        stage.appendChild(host);
+        var shadow = host.attachShadow({ mode: "open" });
+        var style = document.createElement("style");
+        style.textContent = STAGE_CSS + cleanCss(css);
+        wrap.appendChild(grid);
+        shadow.appendChild(style);
+        shadow.appendChild(wrap);
+        // A specimen is a picture of a state: its links and forms go nowhere.
+        shadow.addEventListener("click", function (event) {
+            var path = event.composedPath();
+            for (var i = 0; i < path.length; i++) { if (path[i].localName && path[i].localName.toLowerCase() === "a") { event.preventDefault(); return; } }
+        });
+        shadow.addEventListener("submit", function (event) { event.preventDefault(); });
+        var note = $(".stage-note", stage);
+        if (note) { note.remove(); }
+        stage.setAttribute("data-ready", "");
     });
-    frames.forEach(function (frame) {
-        frame.addEventListener("load", function () { syncFrame(frame); });
-    });
-    setMode(startMode, root.getAttribute("data-theme"));
-    var resizeTimer = 0;
-    window.addEventListener("resize", function () {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(function () { frames.forEach(syncFrame); }, 120);
-    });
+    // A capture (the bench, design_preview, a PDF) can wait for this: every state is drawn in the page itself.
+    root.setAttribute("data-docs-ready", "");
 
     // Navigation on a phone.
     var menuButton = $(".icon-btn");
@@ -1791,17 +1861,17 @@ export const DOC_JS = `
         var query = (field.value || "").trim().toLowerCase();
         var words = query.split(/\\s+/).filter(Boolean);
         var shown = 0;
-        $$("[data-q]").forEach(function (item) {
-            var text = item.getAttribute("data-q");
+        $$("[data-s]").forEach(function (item) {
+            var text = item.__q || (item.__q = item.textContent.toLowerCase());
             var hit = words.every(function (word) { return text.indexOf(word) !== -1; });
             item.hidden = !hit;
             if (hit) { shown++; }
         });
         $$("[data-group]").forEach(function (group) {
-            group.hidden = words.length > 0 && !$("[data-q]:not([hidden])", group);
+            group.hidden = words.length > 0 && !$("[data-s]:not([hidden])", group);
         });
         $$("section.block[data-searchable]").forEach(function (section) {
-            section.hidden = words.length > 0 && !$("[data-q]:not([hidden])", section);
+            section.hidden = words.length > 0 && !$("[data-s]:not([hidden])", section);
         });
         if (emptyEl) { emptyEl.hidden = !(words.length > 0 && shown === 0); }
     }
@@ -1851,15 +1921,3 @@ export const DOC_JS = `
 
 /** Runs first, in the head: the page opens in the mode that the visitor's color scheme asks for, with no flash. */
 export const DOC_BOOT_JS = `(function(){try{var r=document.documentElement,m=r.getAttribute("data-dark-mode");if(m&&window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches){r.setAttribute("data-mode",m);r.setAttribute("data-theme","dark")}}catch(e){}})();`;
-
-/** The script inside each component frame (it runs only with the page's nonce): it sizes the frame and follows the mode. */
-export const FRAME_JS = `(function(){
-var id=document.documentElement.getAttribute("data-frame");
-function size(){var g=document.querySelector(".__g");if(!g){return}parent.postMessage({type:"ds-frame",id:id,height:Math.ceil(g.getBoundingClientRect().height)},"*")}
-addEventListener("message",function(e){var d=e.data;if(e.source!==parent||!d||d.type!=="ds-mode"){return}
-if(typeof d.mode==="string"&&/^[a-z0-9-]+$/.test(d.mode)){document.documentElement.setAttribute("data-mode",d.mode)}
-if(d.theme==="light"||d.theme==="dark"){document.documentElement.setAttribute("data-theme",d.theme)}
-size()});
-addEventListener("load",size);
-if(window.ResizeObserver){new ResizeObserver(size).observe(document.body)}
-size()})();`;
