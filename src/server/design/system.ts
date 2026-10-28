@@ -246,7 +246,7 @@ export function designSystemTool(): ToolRegistration {
                     output: [
                         {
                             type: "text" as const,
-                            text: `There is no ${SYSTEM_FILE} in this session yet. Read the codebase or the brand files the person points at, then write the design system: the design tokens as a fenced JSON block, then the components and rules for new designs.`,
+                            text: `There is no ${SYSTEM_FILE} in this session yet. Run design_system scan for a draft from the project's styles, or read the brand files the person points at, then write the design system: the design tokens as a fenced JSON block, then the components and rules for new designs.`,
                         },
                     ],
                 };

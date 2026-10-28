@@ -69,6 +69,56 @@ test("entities, links, ids, and selectors are not colors", () => {
     );
 });
 
+test("issue numbers in comments and ids in a selector list are not colors", () => {
+    const dir = project({
+        "a.tsx": `// fixes issue #123 and PR #186\n/* see #abc */\nconst a = { color: "#0a0a0a" };\n{/* note #def */}`,
+        "b.css": `#add, #bad {\n  color: red;\n}\n#fab,\n#cab .x { color: #fefefe }\n<!-- #bed -->`,
+        "c.html": `<a href="https://x.test/#a">x</a><div style="color:#111"></div><style>.y{color:#222}</style>`,
+    });
+
+    assert.deepEqual(
+        scanTokens(dir)
+            .colors.map((c) => c.value)
+            .sort(),
+        ["#0a0a0a", "#111111", "#222222", "#fefefe"],
+    );
+});
+
+test("a glob in a config is not a comment, and an address keeps its colors", () => {
+    const dir = project({
+        "tailwind.config.js": `export default { content: ["./pages/*.tsx", "src/**/*.{js,tsx}"], theme: { colors: { primary: "#123456" } } };`,
+        "a.css": `a { background: url(//cdn.test/x.png); color: #654321 }`,
+    });
+
+    assert.deepEqual(
+        scanTokens(dir)
+            .colors.map((c) => c.value)
+            .sort(),
+        ["#123456", "#654321"],
+    );
+});
+
+test("JSX styles give fonts and radii", () => {
+    const dir = project({
+        "a.jsx": `const s = { fontFamily: "Inter, sans-serif", borderRadius: 8, color: "#fff" };
+const t = { fontFamily: 'Inter, sans-serif', borderRadius: "8px" };`,
+    });
+    const scan = scanTokens(dir);
+
+    assert.deepEqual(scan.fonts, [{ value: "Inter, sans-serif", count: 2 }]);
+    assert.deepEqual(scan.radii, [{ value: "8px", count: 2 }]);
+});
+
+test("hostile comments and colors scan in linear time", () => {
+    for (const body of ["/*".repeat(LIMITS.fileBytes / 2), "#fff ".repeat(LIMITS.fileBytes / 5)]) {
+        const dir = project({ "a.css": body });
+        const started = Date.now();
+
+        scanTokens(dir);
+        assert.ok(Date.now() - started < 2000);
+    }
+});
+
 test("a hostile file of dashes scans in linear time", () => {
     const dir = project({ "a.css": "-".repeat(LIMITS.fileBytes) });
     const started = Date.now();
@@ -152,6 +202,9 @@ test("checkTokensBlock: none is false, broken or non-object throws", () => {
     assert.throws(() => checkTokensBlock("```json\n[1]\n```"), /JSON object/);
     // An empty block is not an object either.
     assert.throws(() => checkTokensBlock("```json\n```"), /not valid JSON/);
+    // Backticks inside a JSON string do not end the block; the fence must start a line.
+    assert.equal(checkTokensBlock('```json\n{"a": "use ``` here"}\n```'), true);
+    assert.equal(checkTokensBlock('# T\r\n\r\n```json\r\n{"a": 1}\r\n```\r\n'), true);
 });
 
 test("the tool: scan returns a draft and writes nothing; write refuses broken tokens", async () => {
