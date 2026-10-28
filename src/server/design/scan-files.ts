@@ -30,6 +30,10 @@ const SKIP = new Set([
     "__pycache__",
     "target",
     "vendor",
+    "vendors",
+    "third_party",
+    "third-party",
+    "thirdparty",
     "bower_components",
     "exports",
     "storybook-static",
@@ -39,6 +43,18 @@ const SKIP = new Set([
     ".github",
     ".husky",
 ]);
+
+/** Why a folder is not walked, for the report: the first match of its name. Dot folders (`.git`) are not reported. */
+const FOLDER_WHY: [RegExp, string][] = [
+    [/^(?:node_modules|vendors?|bower_components|third[-_]?party)$/i, "vendored code"],
+    [/^(?:dist|build|out|coverage|target|exports|storybook-static)$/i, "build output"],
+];
+
+/** A file or folder that the scan did not read, and why. */
+export interface Skipped {
+    path: string;
+    why: string;
+}
 
 /** Dot folders that hold a project's styles. */
 const DOT_STYLE_FOLDERS = new Set([".storybook", ".vitepress", ".vuepress", ".docusaurus"]);
@@ -174,10 +190,21 @@ function studioSets(root: string, dir: string, depth: number, found: string[]): 
 }
 
 /** The files to read under `root`, best first, and whether a limit left some out. */
-export function collectFiles(root: string): { files: string[]; partial: boolean } {
+export function collectFiles(root: string): {
+    files: string[];
+    partial: boolean;
+    skipped: Skipped[];
+} {
     const found: string[] = [];
+    const skipped: Skipped[] = [];
     let partial = false;
     let seen = 0;
+
+    const note = (path: string, why: string) => {
+        if (skipped.length < 40) {
+            skipped.push({ path, why });
+        }
+    };
 
     const walk = (dir: string, depth: number) => {
         let entries;
@@ -207,7 +234,22 @@ export function collectFiles(root: string): { files: string[]; partial: boolean 
                     walk(join(dir, entry.name), depth + 1);
                 } else if (depth >= LIMITS.depth && !skip) {
                     partial = true;
+                    note(
+                        `${relative(root, join(dir, entry.name)).split(sep).join("/")}/`,
+                        `deeper than ${LIMITS.depth} levels`,
+                    );
+                } else if (skip && !entry.name.startsWith(".")) {
+                    note(
+                        `${relative(root, join(dir, entry.name)).split(sep).join("/")}/`,
+                        FOLDER_WHY.find(([pattern]) => pattern.test(entry.name))?.[1] ??
+                            "ignored folder",
+                    );
                 }
+            } else if (entry.isSymbolicLink() && !entry.name.startsWith(".")) {
+                note(
+                    relative(root, join(dir, entry.name)).split(sep).join("/"),
+                    "a link, not followed",
+                );
             } else if (entry.isFile()) {
                 const path = join(dir, entry.name);
                 const rel = relative(root, path).split(sep).join("/");
@@ -231,16 +273,32 @@ export function collectFiles(root: string): { files: string[]; partial: boolean 
         studioSets(root, dir, 0, found);
     }
 
-    const ranked = found
+    // A minified file (`app.min.css`) is the build of a source, not the design: it is left out when the project has style
+    // files of its own, and read (last) when it has nothing else.
+    const isMin = (rel: string) => /\.min\.[a-z]+$/i.test(rel);
+    const own = found.filter(
+        (rel) => !isMin(rel) && /\.(?:css|scss|sass|less|styl|stylus|pcss)$/i.test(rel),
+    );
+    const kept = own.length > 0 ? found.filter((rel) => !isMin(rel)) : found;
+
+    for (const rel of found.filter((each) => !kept.includes(each))) {
+        note(rel, "minified");
+    }
+
+    const ranked = kept
         .map((rel) => ({ rel, score: priority(rel) }))
         .sort((a, b) => b.score - a.score || a.rel.localeCompare(b.rel))
         .map((entry) => entry.rel);
 
     if (ranked.length > LIMITS.files) {
         partial = true;
+        note(
+            `${ranked.length - LIMITS.files} files`,
+            `over the limit of ${LIMITS.files} files read; the lowest ranked were left out`,
+        );
     }
 
-    return { files: ranked.slice(0, LIMITS.files), partial };
+    return { files: ranked.slice(0, LIMITS.files), partial, skipped };
 }
 
 /** The first `limit` bytes of a file as text (a stylesheet's size by default); it reads no more and never follows a link. */

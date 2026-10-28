@@ -5,6 +5,7 @@
  */
 import { type Scope } from "./scan-parse.ts";
 import { type Imported } from "./scan-import.ts";
+import type { Skipped } from "./scan-files.ts";
 
 /** A list of words from one string. */
 const w = (text: string) => text.split(" ");
@@ -121,6 +122,8 @@ export interface Facts {
     file?: string;
     /** The mode that the file being read is named for (`dark.less`), when it is one. */
     fileMode?: Scope;
+    /** What the walk and the read left out, and why (a vendored folder, a minified file, a file cut at its limit). */
+    skipped: Skipped[];
     /** Declarations that compute a size from custom properties (`calc(var(--gap) * 2)`): the scan resolves them later. */
     deferred: {
         prop: string;
@@ -209,6 +212,7 @@ export function newFacts(): Facts {
         classRadius: new Map(),
         classWeight: new Map(),
         scoped: new Map(),
+        skipped: [],
         imported: {
             default: {},
             dark: {},

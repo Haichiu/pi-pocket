@@ -32,6 +32,7 @@ import {
     type RawSystem,
 } from "./tokens-base.ts";
 import { compileDesignSystem } from "./tokens-compile.ts";
+import { rampProblems } from "./tokens-ramps.ts";
 import {
     convert,
     inferType,
@@ -906,6 +907,11 @@ export function buildSystem(raw: RawSystem): DesignSystem {
             first,
             `Rename ${names.length === 1 ? `"${first}"` : "each"} to a role (for example "${group}.card"), or to a step of a scale ("${group}.4", "${group}.5"), and point the tokens that use ${names.length === 1 ? "it" : "them"} at the new name.`,
         );
+    }
+
+    // A numbered ramp that is not steady in lightness: the two steps are named.
+    for (const problem of rampProblems(tokens, modes)) {
+        report.warn(problem.message, "tokens.json", problem.second, problem.fix);
     }
 
     // Semantic colors should name a primitive, so that a mode can change the palette in one place.

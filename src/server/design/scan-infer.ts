@@ -20,6 +20,7 @@ import {
     spacingScale,
 } from "./scan-scales.ts";
 import { finishImports } from "./scan-import.ts";
+import { reviewScales } from "./scan-review.ts";
 import { buildSystem } from "./tokens-model.ts";
 import { chooseColorRoles, type InferContext } from "./scan-roles.ts";
 import { paletteTokens } from "./scan-palette.ts";
@@ -48,6 +49,7 @@ export function infer(facts: Facts, folder: string): Inferred {
         notes: [],
         imported: 0,
         dropped: [],
+        review: [],
     };
     const meta = { $extensions: { "com.pi-pocket": { name: folder } } };
 
@@ -155,6 +157,7 @@ export function infer(facts: Facts, folder: string): Inferred {
     motionScale(facts, book, explicit, result);
     breakpointScale(facts, book, explicit, result);
     dedupeScales(book);
+    result.review = reviewScales(facts, explicit, result);
 
     // 6. Assemble, add the contrast pairs, and keep only what the engine accepts.
     const renamed = new Map<string, string>();

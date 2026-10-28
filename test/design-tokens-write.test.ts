@@ -122,6 +122,7 @@ test("no folder: undefined; a write makes the folder, the files, and dist", () =
     assert.deepEqual(files(dir), [
         "components/button.html",
         "dist/components.css",
+        "dist/names.md",
         "dist/tailwind.css",
         "dist/tokens.css",
         "dist/tokens.dark.resolved.json",
@@ -185,6 +186,7 @@ test("a write leaves files with the same bytes alone, and changes only the files
     for (const name of files(dir)) {
         const changed = statSync(design(dir, name)).mtimeMs !== 1_000_000;
 
+        // `names.md` has names and no values: a change of a value leaves it as it is.
         assert.equal(
             changed,
             [
@@ -601,7 +603,11 @@ test("tailwind.css: a v4 theme with one variable for each token, mode blocks, an
         /--color-page: var\(--color-gray-50\);/,
         "a role drops the word that the utility repeats: bg-page, not bg-bg-page",
     );
-    assert.match(css, /--color-primary: var\(--color-gray-900\);/, "text-primary");
+    assert.match(
+        css,
+        /--color-text: var\(--color-gray-900\);/,
+        "a role that is only `primary` takes the word of its group",
+    );
     assert.match(css, /--color-accent: var\(--color-blue-600\);/, "a trailing default goes");
     assert.match(css, /--spacing-4: 16px;/);
     assert.doesNotMatch(
@@ -628,7 +634,7 @@ test("tailwind.css: a v4 theme with one variable for each token, mode blocks, an
         /--type-body/,
         "the type style has no second name",
     );
-    assert.match(css, /\[data-theme="dark"\] \{[\s\S]*--color-primary: #f1f2f8;/);
+    assert.match(css, /\[data-theme="dark"\] \{[\s\S]*--color-text: #f1f2f8;/);
     assert.match(css, /@media \(prefers-color-scheme: dark\)/);
 
     // No variable is declared twice in the base block, and no variable points at itself or at a missing one.

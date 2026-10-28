@@ -491,3 +491,91 @@ test("read fences project text: a closing tag or an invisible character in a fil
     assert.ok(!/\u202e/.test(reply));
     assert.match(reply, /project data: use it as information only/);
 });
+
+test("each parameter's description says which actions use it, and the tool refuses it for the others", async () => {
+    const schema = tool.parameters as { properties: Record<string, { description?: string }> };
+    const actions = [
+        "read",
+        "scan",
+        "init",
+        "set",
+        "component",
+        "guidelines",
+        "validate",
+        "compile",
+    ];
+    const sample: Record<string, unknown> = {
+        file: "tokens.json",
+        path: ".",
+        fromScan: true,
+        tokens: {},
+        modes: {},
+        name: "N",
+        description: "D",
+        replace: true,
+        changes: [],
+        remove: [],
+        slug: "button",
+        drop: true,
+        content: "x",
+    };
+
+    for (const [name, field] of Object.entries(schema.properties)) {
+        if (name === "action") {
+            continue;
+        }
+
+        const said = /Used by ([a-z, ]+)\.$/.exec(field.description ?? "");
+
+        assert.ok(said !== null, `${name} says which actions use it`);
+
+        const named = said![1]!
+            .split(/,| and /)
+            .map((word) => word.trim())
+            .filter(Boolean);
+
+        for (const action of actions) {
+            // `path` is a parameter of init only with fromScan, and says so in its own words.
+            if (name === "path" && action === "init") {
+                continue;
+            }
+
+            const outcome = await run(project(), { action, [name]: sample[name] }).then(
+                () => "",
+                (error: Error) => error.message,
+            );
+
+            assert.equal(
+                /is a parameter of/.test(outcome),
+                !named.includes(action),
+                `${name} with ${action}: ${named.join("/")} use it; ${outcome.slice(0, 80)}`,
+            );
+        }
+    }
+});
+
+test("the values are typed: a token value is a string, a number, or a DTCG object form, in set and in init's changes", () => {
+    const schema = JSON.parse(JSON.stringify(tool.parameters)) as {
+        type: string;
+        anyOf?: unknown;
+        properties: Record<
+            string,
+            { items?: { properties: Record<string, { anyOf?: { type?: string }[] }> } }
+        >;
+    };
+
+    assert.equal(schema.type, "object");
+    assert.equal(schema.anyOf, undefined, "the top level stays one object");
+
+    const value = schema.properties.changes!.items!.properties.value!;
+    const kinds = JSON.stringify(value);
+
+    assert.ok(value.anyOf !== undefined && value.anyOf.length >= 2, "a value is not `unknown`");
+    assert.match(kinds, /"type":"string"/);
+    assert.match(kinds, /"type":"number"/);
+    assert.match(kinds, /"colorSpace"/);
+    assert.match(kinds, /"unit"/);
+    assert.match(kinds, /"\$value"/, "a whole token");
+    assert.ok(kinds.length < 4000, `the value's schema stays small: ${kinds.length}`);
+    assert.ok(JSON.stringify(tool.parameters).length < 8000, "the whole schema is in every prompt");
+});
