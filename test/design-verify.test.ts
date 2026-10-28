@@ -313,7 +313,7 @@ test(
             text,
             /- error off-system-color \[data-pid="off"\]: #7ba3f8 is not a system color/,
         );
-        assert.match(text, /Use var\(--color-accent-default\)/);
+        assert.match(text, /Set `color: var\(--color-accent-default\)`/);
         assert.match(text, /No console errors or failed requests\./);
         const lines = text.split("\n").filter((line) => line.startsWith("- "));
 
