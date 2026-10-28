@@ -16,6 +16,7 @@ import {
     type DesignItem,
 } from "../docs.ts";
 import type { ConversationWebRequest, ExtensionWeb, PocketHost } from "../host.ts";
+import { systemRoutes } from "./design/system-routes.ts";
 
 /** An artifact as the index keeps it, with the fields of bundles (`group`, `kind`) that an older index lacks. */
 type DesignArtifact = ArtifactMeta & { group?: string; kind?: string };
@@ -615,6 +616,8 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
 
     // Export (`POST export`) is the agent side's; the file comes through core's download route.
     designRoutes(web, host);
+    // The System view: read and edit the design system, check a design against it, publish its docs, export it for code.
+    systemRoutes(web, host);
 
     return extension;
 }
