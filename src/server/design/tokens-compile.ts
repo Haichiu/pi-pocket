@@ -345,6 +345,27 @@ function tailwindName(token: ResolvedToken): string | undefined {
     }
 }
 
+/** The scales that a dimension token can belong to, by the name of its group. */
+export type Scale = "text" | "space" | "radius" | "breakpoint" | "container" | "tracking" | "blur";
+
+/**
+ * Which scale a dimension token is part of, read from its path: `text.*`, `font.size.*` (font sizes), `space.*`,
+ * `spacing.*`, `gap.*` (spacing), `radius.*`, `radii.*`, `rounded.*` (corners), `breakpoint.*`, `screen.*`
+ * (breakpoints), `container.*`, `tracking.*`, `blur.*`. Other dimensions (`size.*`, `dim.*`, `border.width.*`) belong to
+ * no scale. The Tailwind file and the checks share this one rule.
+ */
+export function scaleOf(token: ResolvedToken): Scale | undefined {
+    if (token.type !== "dimension") {
+        return undefined;
+    }
+
+    const prefix = /^--(text|spacing|radius|breakpoint|container|tracking|blur)-/.exec(
+        tailwindName({ ...token, tailwind: undefined }) ?? "",
+    )?.[1];
+
+    return prefix === undefined ? undefined : (({ spacing: "space" }[prefix] ?? prefix) as Scale);
+}
+
 /** The Tailwind file's declarations for a token in a mode: Tailwind's name carries the value, ours points at it. */
 function tailwindDecls(token: ResolvedToken, mode: string, taken: Map<string, string>): Decl[] {
     const value = token.modes[mode]!;

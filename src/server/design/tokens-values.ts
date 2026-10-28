@@ -131,7 +131,8 @@ function cssText(text: string, ctx: Ctx, what: string): Out | undefined {
 
     const expanded = expand(text.trim().replace(/\s+/g, " "), ctx);
 
-    return expanded === undefined ? undefined : { ...expanded, value: text.trim() };
+    // The value has no reference left: the text with each one replaced by what it holds.
+    return expanded === undefined ? undefined : { ...expanded, value: expanded.literal };
 }
 
 /** Wraps a whole-value reference: the same value, kept as a `var()` in CSS. */

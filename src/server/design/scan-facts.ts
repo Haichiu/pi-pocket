@@ -74,9 +74,29 @@ export interface ColorFact {
     root: number;
     /** As the text color of the root or of paragraphs. */
     body: number;
+    /** As a background on a card, panel, modal, or the like. */
+    surface: number;
     /** When it was first seen: the earlier of two equal colors is the one the author wrote first. */
     order: number;
 }
+
+/** How a color is used, by kind of property (the counts of a `ColorFact`). */
+export type Kinds = Pick<
+    ColorFact,
+    "bg" | "text" | "border" | "fill" | "shadow" | "other" | "root" | "body" | "surface"
+>;
+
+export const emptyKinds = (): Kinds => ({
+    bg: 0,
+    text: 0,
+    border: 0,
+    fill: 0,
+    shadow: 0,
+    other: 0,
+    root: 0,
+    body: 0,
+    surface: 0,
+});
 
 export interface FontFact {
     /** The family names, quotes removed, in order. */
@@ -101,10 +121,18 @@ export interface Facts {
     files: string[];
     partial: boolean;
     tailwind: boolean;
+    /** Declarations that compute a size from custom properties (`calc(var(--gap) * 2)`): the scan resolves them later. */
+    deferred: { prop: string; value: string; selector: string }[];
+    /** 3 or 4: which defaults the utility classes mean. */
+    tailwindVersion: 3 | 4;
+    /** How the project uses Tailwind's default colors by class (`bg-slate-200`, `text-white`), by color name. */
+    classColors: Map<string, Kinds>;
     vars: VarFact[];
     colors: Map<string, ColorFact>;
     darkColors: Map<string, ColorFact>;
     varUse: Map<string, number>;
+    /** How each custom property is used as a color: `background: var(--ink)` is a background use of `--ink`. */
+    varKinds: Map<string, Kinds>;
     classUse: Map<string, number>;
     fonts: Map<string, FontFact>;
     sizes: Map<number, SizeFact>;
@@ -135,10 +163,14 @@ export function newFacts(): Facts {
         files: [],
         partial: false,
         tailwind: false,
+        deferred: [],
+        tailwindVersion: 3,
+        classColors: new Map(),
         vars: [],
         colors: new Map(),
         darkColors: new Map(),
         varUse: new Map(),
+        varKinds: new Map(),
         classUse: new Map(),
         fonts: new Map(),
         sizes: new Map(),
@@ -187,12 +219,14 @@ const rootish = (selector: string) =>
         .split(",")
         .map((part) => part.trim())
         .every((part) => ROOTISH.test(part));
+const SURFACE_SELECTOR =
+    /(?:^|[\s,>+~.#:_-])(?:card|panel|surface|modal|dialog|popover|tile|well|sheet|drawer|dropdown|menu|tooltip|toast|box|pop)[\w-]*/i;
 const HEADING =
     /(?:^|[\s,>+~])(?:h[1-6]|\.h[1-6]|\.(?:title|heading|headline|display)[\w-]*)(?![\w-])/i;
 const BODY = /(?:^|[\s,>+~])(?:body|html|p|:root|\.text|\.body|main)(?![\w-])/i;
 const CODE = /(?:^|[\s,>+~])(?:code|pre|kbd|samp|\.mono|\.code)(?![\w-])/i;
 
-function colorFact(map: Map<string, ColorFact>, hex: string, text: string): ColorFact {
+export function colorFact(map: Map<string, ColorFact>, hex: string, text: string): ColorFact {
     let fact = map.get(hex);
 
     if (fact === undefined) {
@@ -207,6 +241,7 @@ function colorFact(map: Map<string, ColorFact>, hex: string, text: string): Colo
             other: 0,
             root: 0,
             body: 0,
+            surface: 0,
             order: map.size,
         };
         map.set(hex, fact);
@@ -231,17 +266,33 @@ function useColors(facts: Facts, decl: Decl, dark: boolean): void {
         known !== undefined && (kind !== "shadow" || !/^none$/i.test(decl.value)),
     );
 
-    for (const color of found) {
-        const fact = colorFact(map, color.hex, color.text);
-
+    const count = (fact: Kinds) => {
         fact[kind] += 1;
 
         if (kind === "bg" && rootish(decl.selector)) {
             fact.root += 1;
         }
 
+        if (kind === "bg" && SURFACE_SELECTOR.test(decl.selector)) {
+            fact.surface += 1;
+        }
+
         if (kind === "text" && (rootish(decl.selector) || BODY.test(decl.selector))) {
             fact.body += 1;
+        }
+    };
+
+    for (const color of found) {
+        count(colorFact(map, color.hex, color.text));
+    }
+
+    // A color that comes by a variable is a use of that variable (and of the color it holds, once the scan knows it).
+    if (known !== undefined && !dark) {
+        for (const match of decl.value.matchAll(/var\(\s*--([\w-]+)/g)) {
+            const kinds = facts.varKinds.get(match[1]!) ?? emptyKinds();
+
+            count(kinds);
+            facts.varKinds.set(match[1]!, kinds);
         }
     }
 }
@@ -332,12 +383,17 @@ function useSpacing(facts: Facts, value: string): void {
     }
 }
 
-const FULL_RADIUS =
-    /^(?:50%|100%|9999?px|99999?px|999rem|9999rem|100vmax|calc\(infinity \* 1px\))$/i;
+const FULL_RADIUS = /^(?:9{3,}px|9{3,}rem|100vmax|calc\(infinity \* 1px\))$/i;
 
 function useRadius(facts: Facts, value: string): void {
     for (const part of value.split("/").flatMap((half) => parts(half))) {
         const text = part.trim();
+
+        // A percentage makes a circle of a square; it is not a size.
+        if (text.endsWith("%")) {
+            continue;
+        }
+
         const full = FULL_RADIUS.test(text);
         const size = full ? undefined : px(text);
 
@@ -391,8 +447,23 @@ function useMotion(facts: Facts, decl: Decl): void {
     }
 }
 
+const SCALE_PROPS =
+    /^(?:padding|margin|gap|row-gap|column-gap|border-radius|font-size)(?:-[a-z-]+)?$/;
+
 /** Counts a declaration (not a custom property) in all the tallies. */
-function ingest(facts: Facts, decl: Decl): void {
+export function ingest(facts: Facts, decl: Decl): void {
+    // A size computed from custom properties is resolved once the scan knows them.
+    if (
+        SCALE_PROPS.test(decl.prop) &&
+        /calc\(/.test(decl.value) &&
+        /var\(/.test(decl.value) &&
+        facts.deferred.length < 400
+    ) {
+        facts.deferred.push({ prop: decl.prop, value: decl.value, selector: decl.selector });
+
+        return;
+    }
+
     const dark = decl.scope === "dark";
 
     useColors(facts, decl, dark);
@@ -576,6 +647,8 @@ const THEME_KEYS: Record<string, Category> = {
     easings: "ease",
     easing: "ease",
     zIndex: "z",
+    // A typography block: `h1: { fontSize: "2.5rem" }` (read by `typographyVars`, not as a scale).
+    typography: "text",
 };
 
 /** A leaf of a theme object: the path of keys, and its text. */
@@ -596,8 +669,15 @@ function leaves(
     } else if (Array.isArray(literal)) {
         const strings = literal.filter((item): item is string => typeof item === "string");
 
-        // A font stack is a list of names; a Tailwind font size is [size, { lineHeight }].
-        if (strings.length > 0) {
+        // A list of shadows (Material's elevations) is one token each; `none` is no shadow.
+        if (category === "shadow") {
+            strings.forEach((value, at) => {
+                if (value.trim() !== "none") {
+                    out.push({ path: [...path, String(at)], value });
+                }
+            });
+        } else if (strings.length > 0) {
+            // A font stack is a list of names; a Tailwind font size is [size, { lineHeight }].
             out.push({
                 path,
                 value:
@@ -624,6 +704,41 @@ function leaves(
     }
 }
 
+/**
+ * A typography block of a theme (Material UI, Theme UI): the base `fontFamily` and `fontSize`, and each variant
+ * (`h1: { fontSize: "2.5rem", fontFamily: … }`) as a size.
+ */
+function typographyVars(facts: Facts, file: string, scope: Scope, block: Literal): void {
+    if (typeof block !== "object" || block === null || Array.isArray(block)) {
+        return;
+    }
+
+    const add = (name: string, hint: Category, value: unknown) => {
+        const text =
+            typeof value === "number" ? (hint === "text" ? `${value}px` : String(value)) : value;
+
+        if (typeof text === "string" && text !== "") {
+            addVar(facts, { name, value: text.slice(0, 400), scope, kind: "js", file, hint });
+        }
+    };
+
+    for (const [key, child] of Object.entries(block as Record<string, Literal>)) {
+        if (key === "fontFamily") {
+            add("base", "font", child);
+        } else if (key === "fontSize") {
+            add("base", "text", child);
+        } else if (typeof child === "object" && child !== null && !Array.isArray(child)) {
+            const variant = child as Record<string, Literal>;
+
+            add(key, "text", variant.fontSize);
+
+            if (typeof variant.fontFamily === "string") {
+                add(key, "font", variant.fontFamily);
+            }
+        }
+    }
+}
+
 /** Reads theme objects from a JavaScript or TypeScript file: `colors: { … }`, `const palette = { … }`. */
 function themeVars(facts: Facts, file: string, text: string): void {
     const keys = Object.keys(THEME_KEYS).join("|");
@@ -631,7 +746,34 @@ function themeVars(facts: Facts, file: string, text: string): void {
         String.raw`(?<![\w$.])(${keys})\s*:\s*(?=[{[])|(?<![\w$.])(?:const|let|var)\s+(${keys})\s*(?::[^=\n]{1,80})?=\s*(?=[{[])`,
         "g",
     );
+    // The object a key sits in: the nearest declaration (`const darkTheme = …`) or `dark: {` before it. A name with
+    // "dark" or "night" in it holds the dark mode's values.
+    const owners = [
+        ...text.matchAll(
+            /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)|(?<![\w$.])((?:dark|night|light|day)[A-Za-z]*)\s*:\s*(?=\{)/gi,
+        ),
+    ].map((owner) => ({ at: owner.index, name: owner[1] ?? owner[2]! }));
     let seen = 0;
+
+    // A base unit written as a number: `spacing: 8`, `shape: { borderRadius: 4 }` (Material UI, Chakra).
+    for (const match of text.matchAll(
+        /(?<![\w$.])(spacing|borderRadius)\s*:\s*(\d+(?:\.\d+)?)(?![\w.%])(?=\s*[,}\n])/g,
+    )) {
+        if (++seen > 60) {
+            break;
+        }
+
+        const owner = owners.findLast((each) => each.at < match.index);
+
+        addVar(facts, {
+            name: match[1]!,
+            value: `${match[2]}px`,
+            scope: owner !== undefined && /dark|night/i.test(owner.name) ? "dark" : "default",
+            kind: "js",
+            file,
+            hint: match[1] === "spacing" ? "space" : "radius",
+        });
+    }
 
     for (const match of text.matchAll(heads)) {
         if (++seen > 60) {
@@ -643,6 +785,42 @@ function themeVars(facts: Facts, file: string, text: string): void {
         const literal = readLiteral(text, match.index + match[0].length);
 
         if (literal === undefined || literal === UNKNOWN) {
+            continue;
+        }
+
+        const owner = owners.findLast((each) => each.at < match.index);
+        const scope: Scope =
+            owner !== undefined && /dark|night/i.test(owner.name) ? "dark" : "default";
+
+        if (key === "typography") {
+            typographyVars(facts, file, scope, literal);
+
+            continue;
+        }
+
+        // A list of numbers (`space: [0, 4, 8, 16]`, `fontSizes: [12, 14, 16]`) is used like a scale: counted, not named.
+        if (
+            Array.isArray(literal) &&
+            literal.length >= 2 &&
+            literal.every((item) => typeof item === "number")
+        ) {
+            for (const size of literal as number[]) {
+                if (scope === "default" && category === "space" && size > 0) {
+                    bump(facts.spacing, size, 2);
+                } else if (scope === "default" && category === "text" && size >= 8 && size <= 160) {
+                    const fact = facts.sizes.get(size) ?? {
+                        count: 0,
+                        body: 0,
+                        heading: 0,
+                        forms: new Map(),
+                    };
+
+                    fact.count += 2;
+                    bump(fact.forms, `${size}px`);
+                    facts.sizes.set(size, fact);
+                }
+            }
+
             continue;
         }
 
@@ -658,7 +836,7 @@ function themeVars(facts: Facts, file: string, text: string): void {
             addVar(facts, {
                 name: leaf.path.join("-") || key,
                 value: leaf.value.slice(0, 400),
-                scope: "default",
+                scope,
                 kind: "js",
                 file,
                 hint: category,
@@ -671,6 +849,25 @@ function themeVars(facts: Facts, file: string, text: string): void {
 
 const CLASS_USE =
     /(?<![\w-])(?:bg|text|border|ring|fill|stroke|outline|from|to|via|divide|decoration|accent|caret|placeholder|shadow)-([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?:\/\d+)?(?![\w-])/g;
+const DEFAULT_COLOR_CLASS =
+    /(?<![\w-])(bg|text|border|ring|outline|fill|stroke|divide|from|to|via|decoration|accent|caret|placeholder)-((?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)|white|black)(?:\/\d+)?(?![\w-])/g;
+const CLASS_KIND: Record<string, "bg" | "text" | "border" | "fill"> = {
+    bg: "bg",
+    from: "bg",
+    to: "bg",
+    via: "bg",
+    text: "text",
+    placeholder: "text",
+    decoration: "text",
+    caret: "text",
+    accent: "text",
+    border: "border",
+    ring: "border",
+    outline: "border",
+    divide: "border",
+    fill: "fill",
+    stroke: "fill",
+};
 const TEXT_CLASS = /(?<![\w-])text-(xs|sm|base|lg|xl|[2-9]xl)(?![\w-])/g;
 const ROUNDED_CLASS = /(?<![\w-])rounded(?:-(none|xs|sm|md|lg|xl|2xl|3xl|full))?(?![\w-])/g;
 const WEIGHT_CLASS =
@@ -788,6 +985,10 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
         facts.tailwind = true;
     }
 
+    if (/@import\s+["']tailwindcss|@theme\b/.test(text)) {
+        facts.tailwindVersion = 4;
+    }
+
     if (extension === ".json") {
         importTokens(facts.imported, rel, raw);
 
@@ -815,15 +1016,59 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
             ingestStyles(facts, rel, parseStyles(block));
         }
 
-        ingestStyles(facts, rel, objectStyles(raw));
-
         if (THEMEISH.test(rel)) {
+            // A theme object holds values, not styles in use: `border: "#2d3640"` there is a token, not a border.
             themeVars(facts, rel, raw);
+        } else {
+            ingestStyles(facts, rel, objectStyles(raw));
         }
     }
 
     if (isPage || isScript) {
         let seen = 0;
+
+        // Tailwind's default colors by class: `bg-slate-200`, `text-white`, `border-red-500/50`.
+        for (const match of text.matchAll(DEFAULT_COLOR_CLASS)) {
+            if (++seen > 8000) {
+                break;
+            }
+
+            const kinds = facts.classColors.get(match[2]!) ?? emptyKinds();
+            const kind = CLASS_KIND[match[1]!] ?? "other";
+
+            kinds[kind] += 1;
+            facts.classColors.set(match[2]!, kinds);
+        }
+
+        seen = 0;
+
+        // Tailwind's arbitrary values: `bg-[#fff4d6]`, `text-[rgb(0,0,0)]`.
+        for (const match of text.matchAll(
+            /(?<![\w-])(bg|text|border|fill|stroke|ring|outline|from|to|via)-\[(#[0-9a-fA-F]{3,8}|(?:rgba?|hsla?|oklch|oklab)\([^\])]*\))\]/g,
+        )) {
+            if (++seen > 2000) {
+                break;
+            }
+
+            const kind =
+                (
+                    {
+                        bg: "bg",
+                        text: "text",
+                        fill: "fill",
+                        stroke: "fill",
+                        from: "bg",
+                        to: "bg",
+                        via: "bg",
+                    } as Record<string, "bg" | "text" | "fill" | "border">
+                )[match[1]!] ?? "border";
+
+            for (const color of colorsIn(match[2]!.replace(/_/g, " "))) {
+                colorFact(facts.colors, color.hex, color.text)[kind] += 1;
+            }
+        }
+
+        seen = 0;
 
         for (const match of text.matchAll(CLASS_USE)) {
             if (++seen > 8000) {

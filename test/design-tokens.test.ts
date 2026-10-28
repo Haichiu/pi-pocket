@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { RawSystem } from "../src/server/design/tokens-base.ts";
+import { scaleOf } from "../src/server/design/tokens-compile.ts";
 import { buildSystem } from "../src/server/design/tokens-model.ts";
 import type { DesignSystem, ResolvedToken } from "../src/server/design/system-types.ts";
 
@@ -757,4 +758,183 @@ test("the semantic tier pairs aliases with the role words, and a system of palet
     assert.deepEqual(errors(system), []);
     assert.ok(system.tokens.every((each) => each.tier === "primitive"));
     assert.equal(system.tokens[0]!.cssVar, "--color-red-500");
+});
+
+test("composite values come back fully resolved in every mode: no reference is left in a value", () => {
+    const system = build(
+        {
+            $extensions: { "com.pi-pocket": { mode: "day" } },
+            color: {
+                $type: "color",
+                ink: { $value: "#101820" },
+                line: { $value: "{color.ink}" },
+                shadowtone: { $value: "#00000033" },
+            },
+            font: {
+                family: { $type: "fontFamily", sans: { $value: ["Inter", "sans-serif"] } },
+                size: { $type: "dimension", md: { $value: "1rem" } },
+                weight: { $type: "fontWeight", bold: { $value: 700 } },
+            },
+            motion: {
+                $type: "cubicBezier",
+                out: { $value: [0.2, 0, 0, 1] },
+            },
+            time: { $type: "duration", fast: { $value: "120ms" } },
+            space: {
+                $type: "dimension",
+                2: { $value: "8px" },
+                wide: { $value: "calc({space.2} * 3)" },
+            },
+            shadow: {
+                $type: "shadow",
+                card: {
+                    $value: [
+                        {
+                            color: "{color.shadowtone}",
+                            offsetX: "0",
+                            offsetY: "{space.2}",
+                            blur: "16px",
+                        },
+                        {
+                            color: "{color.line}",
+                            offsetX: "0",
+                            offsetY: "0",
+                            blur: "0",
+                            spread: "1px",
+                        },
+                    ],
+                },
+                text: { $value: "0 1px {space.2} {color.shadowtone}" },
+                again: { $value: "{shadow.card}" },
+            },
+            type: {
+                body: {
+                    $type: "typography",
+                    $value: {
+                        fontFamily: "{font.family.sans}",
+                        fontSize: "{font.size.md}",
+                        fontWeight: "{font.weight.bold}",
+                        lineHeight: 1.5,
+                    },
+                },
+            },
+            edge: {
+                $type: "border",
+                hair: { $value: { color: "{color.line}", width: "1px", style: "solid" } },
+            },
+            move: {
+                $type: "transition",
+                std: { $value: { duration: "{time.fast}", timingFunction: "{motion.out}" } },
+            },
+            fade: {
+                $type: "gradient",
+                a: {
+                    $value: [
+                        { color: "{color.ink}", position: 0 },
+                        { color: "{color.line}", position: 1 },
+                    ],
+                },
+            },
+        },
+        {
+            modes: {
+                night: {
+                    color: { ink: { $value: "#f0f4f8" }, shadowtone: { $value: "#000000cc" } },
+                },
+            },
+        },
+    );
+
+    assert.deepEqual(errors(system), []);
+    // The default mode is the one `tokens.json` names.
+    assert.deepEqual(system.modes, ["day", "night"]);
+
+    for (const each of system.tokens) {
+        for (const [mode, value] of Object.entries(each.modes)) {
+            const json = JSON.stringify(value.value);
+
+            assert.ok(!/\{[a-z]/i.test(json), `${each.name} in ${mode} holds a reference: ${json}`);
+            assert.ok(!/var\(/.test(json), `${each.name} in ${mode} holds a var(): ${json}`);
+        }
+    }
+
+    // A mode's override flows into the composites that point at the color.
+    const shadow = token(system, "shadow.card");
+
+    assert.deepEqual(shadow.modes.day!.value, [
+        { color: "#00000033", offsetX: "0", offsetY: "8px", blur: "16px" },
+        { color: "#101820", offsetX: "0", offsetY: "0", blur: "0", spread: "1px" },
+    ]);
+    assert.equal((shadow.modes.night!.value as { color: string }[])[1]!.color, "#f0f4f8");
+    assert.equal((shadow.modes.night!.value as { color: string }[])[0]!.color, "#000000cc");
+    assert.equal(
+        token(system, "shadow.text").modes.day!.value,
+        "0 1px 8px #00000033",
+        "a string form is resolved too",
+    );
+    assert.equal(token(system, "space.wide").modes.day!.value, "calc(8px * 3)");
+    assert.deepEqual(
+        token(system, "shadow.again").modes.day!.value,
+        shadow.modes.day!.value,
+        "an alias holds the target's value",
+    );
+    assert.deepEqual(token(system, "type.body").modes.day!.value, {
+        fontFamily: ["Inter", "sans-serif"],
+        fontSize: "1rem",
+        fontWeight: 700,
+        lineHeight: 1.5,
+    });
+    assert.deepEqual(token(system, "edge.hair").modes.night!.value, {
+        color: "#f0f4f8",
+        width: "1px",
+        style: "solid",
+    });
+    assert.deepEqual(token(system, "move.std").modes.day!.value, {
+        duration: "120ms",
+        timingFunction: [0.2, 0, 0, 1],
+    });
+    assert.deepEqual(token(system, "fade.a").modes.night!.value, [
+        { color: "#f0f4f8", position: 0 },
+        { color: "#f0f4f8", position: 1 },
+    ]);
+    // The type and the tier come from the groups.
+    assert.equal(token(system, "font.size.md").type, "dimension");
+    assert.equal(token(system, "font.weight.bold").type, "fontWeight");
+    assert.equal(token(system, "color.line").tier, "semantic");
+});
+
+test("scaleOf says which dimension tokens are the type, spacing, and radius scales", () => {
+    const system = build({
+        font: {
+            size: { $type: "dimension", md: { $value: "1rem" } },
+            weight: { $type: "fontWeight", bold: { $value: 700 } },
+        },
+        text: { $type: "dimension", sm: { $value: "0.875rem" } },
+        space: { $type: "dimension", 4: { $value: "16px" }, gap: { in: { $value: "8px" } } },
+        spacing: { $type: "dimension", 2: { $value: "8px" } },
+        radius: { $type: "dimension", card: { $value: "12px" } },
+        radii: { $type: "dimension", sm: { $value: "4px" } },
+        breakpoint: { $type: "dimension", md: { $value: "768px" } },
+        size: { $type: "dimension", control: { md: { $value: "36px" } } },
+        dim: { $type: "dimension", 4: { $value: "16px" } },
+        border: { width: { $type: "dimension", hairline: { $value: "1px" } } },
+        ease: { $type: "cubicBezier", out: { $value: [0, 0, 0.2, 1] } },
+    });
+    const scales = Object.fromEntries(system.tokens.map((each) => [each.name, scaleOf(each)]));
+
+    assert.deepEqual(scales, {
+        "font.size.md": "text",
+        "font.weight.bold": undefined,
+        "text.sm": "text",
+        "space.4": "space",
+        "space.gap.in": "space",
+        "spacing.2": "space",
+        "radius.card": "radius",
+        "radii.sm": "radius",
+        "breakpoint.md": "breakpoint",
+        "size.control.md": undefined,
+        "dim.4": undefined,
+        "border.width.hairline": undefined,
+        "ease.out": undefined,
+    });
 });

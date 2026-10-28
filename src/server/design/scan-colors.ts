@@ -4,7 +4,7 @@
  * project's variables first and from how the colors are used second, and names the palette by hue and lightness.
  */
 import { type Rgba, contrastRatio, parseColor, toOklch } from "./color.ts";
-import type { ColorFact } from "./scan-facts.ts";
+import type { ColorFact, Kinds } from "./scan-facts.ts";
 
 /** A list of words from one string. */
 const w = (text: string) => text.split(" ");
@@ -79,6 +79,21 @@ export const entryOf = (hex: string, text = hex): ColorEntry | undefined => {
     };
 };
 
+/**
+ * Whether two colors are one color to a designer: a hair apart (about two levels of a channel), or the same gray a shade
+ * apart (a lightness difference alone, up to about three levels: `#ddd` and `#e0e0e0`). Pure white and pure black are
+ * decisions, not shades: only a level apart is the same.
+ */
+export function nearColors(a: ColorEntry, b: ColorEntry, threshold = 0.0065): boolean {
+    if ([a.hex, b.hex].some((hex) => hex === "#ffffff" || hex === "#000000")) {
+        return distance(a, b) < Math.min(threshold, 0.003);
+    }
+
+    const chroma = Math.hypot(a.la - b.la, a.lb - b.lb);
+
+    return distance(a, b) < threshold || (chroma < 0.004 && Math.abs(a.l - b.l) < 0.0095);
+}
+
 /** The distance of two colors in Oklab (about 0.02 is just visible). */
 export function distance(a: ColorEntry, b: ColorEntry): number {
     return Math.hypot(a.l - b.l, a.la - b.la, a.lb - b.lb);
@@ -137,7 +152,7 @@ export function mergeColors(
             pool.find(
                 (other) =>
                     Math.abs(other.rgba.a - entry.rgba.a) < 0.05 &&
-                    distance(other, entry) < threshold,
+                    nearColors(other, entry, threshold),
             );
 
         if (target !== undefined) {
@@ -154,7 +169,7 @@ export function mergeColors(
     return out;
 }
 
-function merge(into: ColorFact | undefined, more: ColorFact, hex: string): ColorFact {
+export function merge(into: ColorFact | undefined, more: ColorFact, hex: string): ColorFact {
     const fact: ColorFact = into ?? {
         hex,
         forms: new Map(),
@@ -166,6 +181,7 @@ function merge(into: ColorFact | undefined, more: ColorFact, hex: string): Color
         other: 0,
         root: 0,
         body: 0,
+        surface: 0,
         order: more.order,
     };
 
@@ -178,6 +194,7 @@ function merge(into: ColorFact | undefined, more: ColorFact, hex: string): Color
         "other",
         "root",
         "body",
+        "surface",
     ] as const) {
         fact[key] += more[key];
     }
@@ -193,15 +210,27 @@ function merge(into: ColorFact | undefined, more: ColorFact, hex: string): Color
 
 /** The words of a variable name: camelCase split, lower case, noise words dropped. */
 export function words(name: string): string[] {
-    return name
+    const all = name
         .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
         .toLowerCase()
-        .split(/[-_.\s]+/)
-        .filter(
-            (word) =>
-                word !== "" &&
-                !w("color colour clr c theme tw ui sys md ref palette colors var").includes(word),
-        );
+        .split(/[-_.\s]+/);
+    // The prefixes of well-known libraries are no part of what a color is for (`--bs-body-bg`, `--ifm-color-primary`).
+    const found = all.filter(
+        (word) =>
+            word !== "" &&
+            !w(
+                "color colour clr c theme tw ui sys md ref palette colors var bs ifm sl mui ant chakra mantine pico vt",
+            ).includes(word),
+    );
+
+    // `secondary-color` and `tertiary-color` name quiet text: the word `color` says it is a text color.
+    return all.at(-1) === "color" &&
+        found.some((word) => w("secondary tertiary muted subtle dim faint quiet").includes(word)) &&
+        !found.includes("bg") &&
+        !found.includes("background") &&
+        !found.includes("border")
+        ? ["text", ...found]
+        : found;
 }
 
 const STATE = new Set(
@@ -217,8 +246,9 @@ const OTHER_ROLE = new Set(
         "accent danger error warning success info brand destructive critical secondary tertiary link border outline divider",
     ),
 );
+/** A name made only of the role's own words, and short: `border`, `border-default`; not `divider-light-1`. */
 const subset = (segs: string[], allowed: string[]) =>
-    segs.every((seg) => allowed.includes(seg) || /^\d{1,3}$/.test(seg));
+    segs.length <= 2 && segs.every((seg) => allowed.includes(seg) || /^\d{1,3}$/.test(seg));
 const has = (segs: string[], list: readonly string[]) => segs.some((seg) => list.includes(seg));
 
 const VARIANT = w(
@@ -273,11 +303,13 @@ export function nameScore(role: RoleName, segs: string[]): number {
         case "surface": {
             const named = has(
                 segs,
-                w("surface card panel elevated raised container popover layer sheet tile well"),
+                w(
+                    "surface card panel elevated raised container popover layer sheet tile well paper",
+                ),
             );
             const layered =
                 has(segs, ["bg", "background"]) &&
-                has(segs, w("secondary alt subtle muted elevated raised tertiary"));
+                has(segs, w("secondary alt subtle muted elevated raised tertiary soft mute"));
             const base = segs.includes("base") && segs.some((seg) => /^[2-9]\d{2}$/.test(seg));
 
             if (
@@ -294,7 +326,7 @@ export function nameScore(role: RoleName, segs: string[]): number {
             }
 
             return (
-                (named ? 70 : layered ? 58 : 50) +
+                (named ? 70 : layered ? 62 : 50) +
                 (subset(
                     segs,
                     w(
@@ -344,13 +376,16 @@ export function nameScore(role: RoleName, segs: string[]): number {
         }
 
         case "muted": {
-            const quiet = has(
-                segs,
-                w(
-                    "muted secondary subtle dim dimmed faint tertiary soft weak hint quiet caption meta",
-                ),
-            );
             const ink = has(segs, ["text", "fg", "foreground", "content", "ink"]);
+            // `secondary` and `tertiary` also name a brand's second color, whose pair is `secondary-foreground`: they
+            // are quiet text only when the text word comes first (`text-secondary`, `fg-tertiary`).
+            const inkAt = segs.findIndex((seg) =>
+                ["text", "fg", "foreground", "content", "ink"].includes(seg),
+            );
+            const weakAt = segs.findIndex((seg) => ["secondary", "tertiary"].includes(seg));
+            const quiet =
+                has(segs, w("muted subtle dim dimmed faint soft weak hint quiet caption meta")) ||
+                (weakAt >= 0 && inkAt >= 0 && inkAt < weakAt);
 
             if (
                 (state && !segs.includes("placeholder")) ||
@@ -429,8 +464,15 @@ export function nameScore(role: RoleName, segs: string[]): number {
             }
 
             const variant = has(segs, VARIANT);
-            // In a scale the middle step is the color itself.
-            const middle = segs.includes("500") ? 6 : segs.includes("600") ? 3 : 0;
+            // A step of a palette (`brand-500`) is the last choice, after a role name (`primary`); of the steps, the middle.
+            const step = segs.some((seg) => /^\d{2,3}$/.test(seg));
+            const middle = step
+                ? segs.includes("500")
+                    ? -9
+                    : segs.includes("600")
+                      ? -12
+                      : -15
+                : 0;
 
             return (
                 best +
@@ -499,6 +541,8 @@ export interface VarColor {
     name: string;
     hex: string;
     uses: number;
+    /** How the variable is used as a color: as a background, as text, as a border. */
+    kinds?: Kinds;
 }
 
 const hueOk = (role: RoleName, color: ColorEntry): boolean => {
@@ -551,6 +595,7 @@ export function chooseRoles(
         bg: ColorEntry | undefined,
     ): { variable: VarColor; score: number } | undefined => {
         let best: { variable: VarColor; score: number } | undefined;
+        const scored: { variable: VarColor; score: number }[] = [];
 
         for (const variable of named) {
             const color = entry(variable.hex);
@@ -583,7 +628,48 @@ export function chooseRoles(
             }
 
             if (role === "accent") {
+                // A colored `accent` is the role's own name; a gray one (shadcn's hover surface) is not the brand.
+                if (
+                    segs.includes("accent") &&
+                    !segs.includes("primary") &&
+                    !segs.includes("brand") &&
+                    color.c >= 0.03
+                ) {
+                    score += 10;
+                }
+
                 score += Math.min(60, color.c * 400) - (color.c < 0.03 ? 10 : 0);
+
+                // A long name that only holds a role word (`tooltipExternalLinkColor`) is not the brand.
+                const strangers = segs.filter(
+                    (seg) =>
+                        !/^\d+$/.test(seg) &&
+                        !w(
+                            "accent primary brand link highlight cta action interactive main theme key default base 500 600 text dark light hover active focus pressed",
+                        ).includes(seg),
+                );
+
+                score -= Math.min(24, strangers.length * 8);
+            }
+
+            // How the variable is really used beats what it is called: a "text" color that paints the page is the page.
+            const kinds = variable.kinds;
+
+            if (kinds !== undefined) {
+                const fill = kinds.bg;
+                const ink = kinds.text;
+
+                if ((role === "text" || role === "muted") && fill >= 2 && fill > ink * 2) {
+                    score -= 45;
+                } else if (
+                    (role === "background" || role === "surface") &&
+                    ink >= 2 &&
+                    ink > fill * 2
+                ) {
+                    score -= 40;
+                } else if (role === "border" && fill >= 3 && fill > kinds.border * 3) {
+                    score -= 30;
+                }
             }
 
             if (role === "background" && color.c > 0.1) {
@@ -599,8 +685,27 @@ export function chooseRoles(
             // The most referenced variable wins a tie.
             score += Math.min(8, Math.log2(1 + variable.uses));
 
+            scored.push({ variable, score });
+
             if (best === undefined || score > best.score) {
                 best = { variable, score };
+            }
+        }
+
+        // A surface that is the page's own color is no surface (`--surface-1` is the page, `--surface-2` the card): when
+        // another surface has a different color, that one is the role.
+        if (
+            role === "surface" &&
+            best !== undefined &&
+            bg !== undefined &&
+            best.variable.hex === bg.hex
+        ) {
+            const other = scored
+                .filter((each) => each.variable.hex !== bg.hex && each.score >= 60)
+                .sort((a, b) => b.score - a.score)[0];
+
+            if (other !== undefined) {
+                best = other;
             }
         }
 
@@ -613,7 +718,17 @@ export function chooseRoles(
         set("background", bgChoice.variable.hex, "name", bgChoice.variable.name, bgChoice.score);
     }
 
-    const bg = chosen.background === undefined ? undefined : entry(chosen.background.hex);
+    // The page the text sits on: the named background, else the neutral color most used on the page's root. The text
+    // and the quiet text are judged against it (a near-black `--ink` on a near-black page is not the text).
+    const bg =
+        chosen.background === undefined
+            ? [...colors.values()]
+                  .filter(
+                      (color) =>
+                          color.c < 0.06 && color.rgba.a > 0.9 && (color.fact?.root ?? 0) > 0,
+                  )
+                  .sort((a, b) => (b.fact?.root ?? 0) - (a.fact?.root ?? 0))[0]
+            : entry(chosen.background.hex);
 
     // A name that fits two roles (`--muted`) goes to the role where the color makes sense.
     for (const role of ROLES.filter((each) => each !== "background")) {
@@ -680,11 +795,12 @@ export function chooseRoles(
                     distance(color, page) > 0.012 &&
                     distance(color, page) < 0.3,
             ),
-            (color) => color.fact?.bg ?? 0,
+            // A background on a card or a panel counts three times.
+            (color) => (color.fact?.surface ?? 0) * 3 + (color.fact?.bg ?? 0),
         )[0];
 
         if (top !== undefined) {
-            set("surface", top.hex, "use", "second most used background", 35);
+            set("surface", top.hex, "use", "most used background of cards and panels", 35);
         }
     }
 
@@ -786,8 +902,13 @@ export function chooseRoles(
                         hueOk(role, color) &&
                         color.c >= 0.1 &&
                         color.uses >= 1 &&
-                        // A shade of the accent is not a status color.
-                        (accentColor === undefined || distance(color, accentColor) > 0.06),
+                        // A shade of the accent (near it, or of the same hue) is not a status color.
+                        (accentColor === undefined ||
+                            (distance(color, accentColor) > 0.06 &&
+                                !(
+                                    accentColor.c >= 0.07 &&
+                                    Math.abs(((color.h - accentColor.h + 540) % 360) - 180) < 8
+                                ))),
                 ),
                 (color) => Math.log2(1 + color.uses) * 2 + closeness(color) * 3,
             )[0];

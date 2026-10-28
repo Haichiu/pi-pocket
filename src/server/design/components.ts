@@ -256,13 +256,15 @@ export function parseComponent(
     // Tokens: the ones the file names, then the ones its CSS uses.
     const used = new Set<string>();
     const unknownVars = new Set<string>();
+    // A variable the component sets itself (`--notice-bg: …`) is its own, not a missing token.
+    const own = new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map((match) => match[1]!));
 
     for (const match of css.matchAll(/var\(\s*(--[\w-]+)/g)) {
         const token = known.byVar.get(match[1]!);
 
         if (token !== undefined) {
             used.add(token);
-        } else if (!/^--(?:pocket|_|local|tw)\b/.test(match[1]!)) {
+        } else if (!own.has(match[1]!) && !/^--(?:pocket|_|local|tw)\b/.test(match[1]!)) {
             unknownVars.add(match[1]!);
         }
     }
