@@ -12,6 +12,16 @@ import { lstatSync, realpathSync } from "node:fs";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
 import { expandSassFiles } from "./scan-sass-eval.ts";
+import {
+    type Have,
+    knownOf,
+    type RenderedEvidence,
+    renderedDecls,
+    renderProject,
+} from "./scan-render.ts";
+import { ingestStyles } from "./scan-facts-use.ts";
+import { shapeThemes } from "./scan-theme-shapes.ts";
+import { resolveChannels } from "./scan-channels.ts";
 import { indentedToBraces } from "./scan-parse.ts";
 import { LIMITS, collectFiles, readHead, type Skipped } from "./scan-files.ts";
 import { colorsIn, darkMixinsIn } from "./scan-parse.ts";
@@ -99,8 +109,14 @@ const isMinified = (text: string) =>
     text.length / Math.max(1, text.split("\n").length) > 500 &&
     (text.match(/\s/g)?.length ?? 0) / text.length < 0.12;
 
+/** What a browser showed, and the scales that the files already gave. */
+export interface Rendered {
+    evidence: RenderedEvidence;
+    have: Have;
+}
+
 /** Reads the files under `root` into facts. */
-export function readFacts(root: string): Facts {
+export function readFacts(root: string, rendered?: Rendered): Facts {
     const facts = newFacts();
     const { files, partial, skipped } = collectFiles(root);
     let bytes = 0;
@@ -198,6 +214,34 @@ export function readFacts(root: string): Facts {
         }
     }
 
+    // Theme objects by their shape: ramps, role objects, modes, across the scripts' imports. Read after the files, so a
+    // value a file states for itself wins.
+    facts.rank = files.length;
+
+    try {
+        shapeThemes(facts, root, files);
+    } catch {
+        // A script that cannot be read as a theme must not end the scan.
+    }
+
+    // Colors written in parts: the properties that hold channels, and the colors built of them.
+    resolveChannels(facts);
+
+    // What a browser showed of the project's pages is read last: it fills what the files did not say.
+    if (rendered !== undefined) {
+        for (const { file, decls } of renderedDecls(
+            rendered.evidence,
+            knownOf(facts, rendered.have),
+        )) {
+            facts.rank = files.length + 1;
+            facts.file = file;
+            facts.files.push(file);
+            ingestStyles(facts, file, decls);
+        }
+
+        facts.file = undefined;
+    }
+
     return facts;
 }
 
@@ -225,8 +269,8 @@ function counted(facts: Facts): Map<string, number> {
 }
 
 /** Scans the style files under `root` and drafts a design system from them. */
-export function scanTokens(root: string): TokenScan {
-    const facts = readFacts(root);
+export function scanTokens(root: string, rendered?: Rendered): TokenScan {
+    const facts = readFacts(root, rendered);
     const folder = root.split(sep).filter(Boolean).at(-1) ?? "project";
     const inferred = infer(facts, folder);
     const roots = new Map<string, string>();
@@ -280,11 +324,49 @@ export function scanTokens(root: string): TokenScan {
 }
 
 /**
- * The scan as one call: the DTCG draft of the project in `root`, as `{ tokens, modes }` (`tokens` is `tokens.json`; `modes`
- * holds one object for each mode file, by mode name). The report and the roles are in `scanTokens`.
+ * The scan with the project's pages shown in a browser when the files leave something out: the static scan first, then, when
+ * the project has an HTML page (or a built output), the page as the browser computed it, in light and in dark, read after
+ * the files. `render: false` is the static scan alone.
  */
-export function scanDesignSystem(root: string): Draft {
-    return scanTokens(root).draft;
+export async function scanProject(
+    root: string,
+    options: { render?: boolean; signal?: AbortSignal } = {},
+): Promise<TokenScan> {
+    const first = scanTokens(root);
+
+    if (options.render === false || process.env.PI_SCAN_RENDER === "0") {
+        return first;
+    }
+
+    const evidence = await renderProject(root, options.signal);
+
+    if (evidence === undefined) {
+        return first;
+    }
+
+    const have: Have = {
+        fonts: Object.keys(first.inferred.fonts).length > 0,
+        sizes: first.inferred.typeScale.sizes.length >= 3,
+        space: first.inferred.spacing.steps.length >= 3,
+        radii: first.inferred.radii.length > 0,
+        shadows: first.inferred.shadows > 0,
+    };
+    const second = scanTokens(root, { evidence, have });
+
+    second.inferred.sources.unshift(
+        `Rendered: ${evidence.pages.map((each) => each.page).join(", ")} shown in a browser${evidence.pages.some((each) => each.dark !== undefined) ? ", in light and dark" : ""}; the files' own values come first.`,
+    );
+
+    return second;
+}
+
+/**
+ * The scan as one call: the DTCG draft of the project in `root`, as `{ tokens, modes }` (`tokens` is `tokens.json`; `modes`
+ * holds one object for each mode file, by mode name). The report and the roles are in `scanTokens`. It shows the project's
+ * pages in a browser when the files leave something out (`scanProject`).
+ */
+export async function scanDesignSystem(root: string): Promise<Draft> {
+    return (await scanProject(root)).draft;
 }
 
 // --- The report -----------------------------------------------------------------------------------------------------

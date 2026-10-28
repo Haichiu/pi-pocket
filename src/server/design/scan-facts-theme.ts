@@ -15,7 +15,13 @@ import {
  * A typography block of a theme (Material UI, Theme UI): the base `fontFamily` and `fontSize`, and each variant
  * (`h1: { fontSize: "2.5rem", fontFamily: … }`) as a size.
  */
-function typographyVars(facts: Facts, file: string, scope: Scope, block: Literal): void {
+function typographyVars(
+    facts: Facts,
+    file: string,
+    scope: Scope,
+    block: Literal,
+    heading = false,
+): void {
     if (typeof block !== "object" || block === null || Array.isArray(block)) {
         return;
     }
@@ -228,7 +234,7 @@ export function themeVars(facts: Facts, file: string, text: string): void {
         const scope = scopeAt(match.index);
 
         if (key === "typography" || key === "headings") {
-            typographyVars(facts, file, scope, literal);
+            typographyVars(facts, file, scope, literal, key === "headings");
 
             continue;
         }

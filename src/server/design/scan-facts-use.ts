@@ -6,6 +6,7 @@ import { colorsIn, commaParts, type Decl, isDarkSelector, parts, px } from "./sc
 import { nameScore, words } from "./scan-colors.ts";
 import { addVar, bump, type ColorFact, emptyKinds, type Facts, type Kinds } from "./scan-facts.ts";
 import { sassMapVars } from "./scan-facts-sass.ts";
+import { noteChannels } from "./scan-channels.ts";
 
 const COLOR_PROPERTY: [RegExp, "bg" | "text" | "border" | "fill" | "shadow"][] = [
     [
@@ -297,6 +298,8 @@ const SCALE_PROPS =
 
 /** Counts a declaration (not a custom property) in all the tallies. */
 export function ingest(facts: Facts, decl: Decl): void {
+    noteChannels(facts, decl.value);
+
     // A length variable shows what it is for by the property that takes it: `padding: var(--size-4)` is spacing.
     if (decl.value.includes("var(")) {
         const group = SPACING_PROPS.test(decl.prop)
@@ -471,6 +474,72 @@ export function ingest(facts: Facts, decl: Decl): void {
 
 // --- Variables -----------------------------------------------------------------------------------------------------
 
+/** The light and the dark text of a value with `light-dark(a, b)` in it (each call made its first or its second). */
+export function lightDark(value: string): [string, string] | undefined {
+    let light = "";
+    let dark = "";
+    let at = 0;
+    let found = false;
+
+    while (at < value.length) {
+        const open = value.indexOf("light-dark(", at);
+
+        if (open === -1 || (open > 0 && /[\w-]/.test(value[open - 1]!))) {
+            const rest = open === -1 ? value.slice(at) : value.slice(at, open + 11);
+
+            light += rest;
+            dark += rest;
+            at = open === -1 ? value.length : open + 11;
+
+            continue;
+        }
+
+        light += value.slice(at, open);
+        dark += value.slice(at, open);
+
+        const parts = [];
+        let depth = 0;
+        let start = open + 11;
+        let end = -1;
+
+        for (let index = start; index < value.length; index++) {
+            const char = value[index]!;
+
+            if (char === "(") {
+                depth += 1;
+            } else if (char === ")") {
+                if (depth === 0) {
+                    end = index;
+
+                    break;
+                }
+
+                depth -= 1;
+            } else if (char === "," && depth === 0) {
+                parts.push(value.slice(start, index));
+                start = index + 1;
+            }
+        }
+
+        if (end === -1) {
+            return undefined;
+        }
+
+        parts.push(value.slice(start, end));
+
+        if (parts.length !== 2) {
+            return undefined;
+        }
+
+        light += parts[0]!.trim();
+        dark += parts[1]!.trim();
+        at = end + 1;
+        found = true;
+    }
+
+    return found ? [light, dark] : undefined;
+}
+
 export function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
     const mode = facts.fileMode;
     const decls =
@@ -480,7 +549,23 @@ export function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
                   decl.scope === "default" && !decl.inline ? { ...decl, scope: mode } : decl,
               );
 
-    for (const decl of decls) {
+    // `light-dark(a, b)` is two values: `a` in the light mode, `b` in the dark one.
+    const expanded = decls.flatMap((decl): Decl[] => {
+        const pair = decl.value.includes("light-dark(") ? lightDark(decl.value) : undefined;
+
+        if (pair === undefined || decl.scope === "other") {
+            return [decl];
+        }
+
+        return decl.scope === "dark"
+            ? [{ ...decl, value: pair[1] }]
+            : [
+                  { ...decl, value: pair[0] },
+                  { ...decl, value: pair[1], scope: "dark" },
+              ];
+    });
+
+    for (const decl of expanded) {
         if (decl.prop.startsWith("--")) {
             const name = decl.prop.slice(2);
 

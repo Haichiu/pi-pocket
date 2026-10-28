@@ -60,7 +60,7 @@ const THEME_CONTENT =
     /\b(?:colors|colours|palette|themes?)\s*:\s*\{[^]{0,2500}?#[0-9a-fA-F]{3,8}\b[^]{0,1500}?#[0-9a-fA-F]{3,8}\b/;
 
 const THEMEISH =
-    /(?:^|\/)(?:tailwind\.config|[^/]*(?:theme|tokens?|colors?|palette|design|variables|styles?|constants?|config)[^/]*)\.(?:[cm]?[jt]s|tsx?)$|\/(?:theme|themes|tokens|styles|design|constants)\/[^/]+\.[cm]?[jt]sx?$/i;
+    /(?:^|\/)(?:tailwind\.config|[^/]*(?:theme|tokens?|colors?|palette|design|variables|styles?|constants?|config)[^/]*)\.(?:[cm]?[jt]s|tsx?)$|(?:^|\/)(?:theme|themes|tokens|design-tokens|styles|design|constants)\/(?:[^/]+\/)*[^/]+\.[cm]?[jt]sx?$|(?:^|\/)[^/]*(?:tokens|theme|design)[^/]*\/(?:[^/]+\/)*[^/]+\.[cm]?[jt]sx?$/i;
 
 /** The line of the file where a block of it starts, or undefined when the block is not a part of the file as it is. */
 function lineOfBlock(raw: string, block: string): number | undefined {

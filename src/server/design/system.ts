@@ -27,7 +27,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
 import { boundedText } from "./tokens-base.ts";
-import { checkTokensBlock, scanReport, scanRoot, scanTokens } from "./scan.ts";
+import { checkTokensBlock, scanProject, scanReport, scanRoot } from "./scan.ts";
 import { DtcgTree, valueOrToken } from "./system-schema.ts";
 import type { DesignSystem, SystemChange } from "./system-types.ts";
 import { readDesignFile } from "./tokens-io.ts";
@@ -469,7 +469,10 @@ export function designSystemTool(): ToolRegistration {
 
             switch (args.action) {
                 case "scan": {
-                    const draft = scanReport(scanTokens(scanRoot(cwd, args.path)), args.path);
+                    const draft = scanReport(
+                        await scanProject(scanRoot(cwd, args.path)),
+                        args.path,
+                    );
 
                     return text(draft);
                 }
@@ -511,7 +514,7 @@ export function designSystemTool(): ToolRegistration {
                             throw new Error("Give fromScan or tokens, not both.");
                         }
 
-                        const scan = scanTokens(scanRoot(cwd, args.path));
+                        const scan = await scanProject(scanRoot(cwd, args.path));
 
                         if (Object.keys(scan.draft.tokens).every((key) => key.startsWith("$"))) {
                             throw new Error(
