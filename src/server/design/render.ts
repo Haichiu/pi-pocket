@@ -898,6 +898,7 @@ export async function withRender<T>(
         server = await serveBundle(bundle);
         browser = await Chromium.launch(executable, profile, [
             "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+            ...(process.env.PI_POCKET_BROWSER_ARGS?.split(/\s+/).filter(Boolean) ?? []),
         ]);
         controller.signal.throwIfAborted();
         const context = await browser.connection.send("Target.createBrowserContext");
