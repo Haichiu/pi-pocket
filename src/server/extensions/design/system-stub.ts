@@ -467,8 +467,12 @@ function put(tree: Record<string, unknown>, name: string, value: unknown): void 
     const parts = name.split(".");
     let at = tree;
 
+    if (parts.some((part) => ["__proto__", "constructor", "prototype"].includes(part))) {
+        throw new Error(`“${name}” is not a token name.`);
+    }
+
     for (const part of parts.slice(0, -1)) {
-        const next = at[part];
+        const next = Object.hasOwn(at, part) ? at[part] : undefined;
 
         if (!isObject(next)) {
             at[part] = {};
@@ -478,7 +482,7 @@ function put(tree: Record<string, unknown>, name: string, value: unknown): void 
     }
 
     const last = parts.at(-1)!;
-    const token = at[last];
+    const token = Object.hasOwn(at, last) ? at[last] : undefined;
 
     if (isObject(token) && "$value" in token) {
         token.$value = value;

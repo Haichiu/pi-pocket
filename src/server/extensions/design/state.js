@@ -179,6 +179,8 @@ export function systemState() {
         sysOpen: null,
         /** The groups the person folded, by id. */
         sysFolded: {},
+        /** The long groups the person opened in full, by id. */
+        sysAll: {},
         sysQuery: "",
         sysSearch: false,
         /** On a narrow panel: the view itself, or the open design under it (`system` or `preview`). */

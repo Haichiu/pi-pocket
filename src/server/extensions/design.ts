@@ -600,8 +600,8 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
     // `/design-open [artifact]`: opens the workspace in the tab of the person who ran it. A command's name needs a dash,
     // so it is not `/design`.
     web.command("design-open", {
-        description: "Open the Design canvas",
-        args: "[artifact]",
+        description: "Open the Design canvas (or the design system, with `system`)",
+        args: "[artifact | system]",
         scope: "conversation",
         handler: (args, context) => {
             web.send(
@@ -611,21 +611,6 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
             );
 
             return { type: "toast", level: "info", message: "Opening Design" };
-        },
-    });
-
-    // `/design-system`: opens the workspace on the System view, in the tab of the person who ran it.
-    web.command("design-system", {
-        description: "Open the design system",
-        scope: "conversation",
-        handler: (_args, context) => {
-            web.send(
-                "open",
-                { conversation: context.conversationId, artifact: "", system: true },
-                { to: context.user.id },
-            );
-
-            return { type: "toast", level: "info", message: "Opening the design system" };
         },
     });
 

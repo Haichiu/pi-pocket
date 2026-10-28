@@ -11,6 +11,7 @@ import {
     millisecondsOf,
     pixelsOf,
     roles,
+    safeCss,
     shadowOf,
     showValue,
     themeCss,
@@ -104,8 +105,18 @@ export function createSystemSections(env, widgets) {
     function Group({ ctx, group, strip, children, bare = false }) {
         const folded = ctx.s.sysFolded[group.id] === true && ctx.query === "";
 
+        const more =
+            group.hidden > 0 &&
+            html`<button
+                type="button"
+                class="dsn-link dsy-more"
+                onClick=${() => env.showAll(group.id)}
+            >
+                Show ${group.hidden} more
+            </button>`;
+
         if (bare) {
-            return html`<section class="dsy-group bare">${children}</section>`;
+            return html`<section class="dsy-group bare">${children}${more}</section>`;
         }
 
         return html`<section class="dsy-group" data-folded=${folded} aria-label=${group.title}>
@@ -116,11 +127,11 @@ export function createSystemSections(env, widgets) {
                 onClick=${() => env.toggleGroup(group.id)}
             >
                 <span class="dsy-group-title">${group.title}</span>
-                <span class="dsy-group-count">${group.tokens.length}</span>
+                <span class="dsy-group-count">${group.total ?? group.tokens.length}</span>
                 ${strip}
                 <${Ico} name="down" size=${15} class="dsy-group-chev" />
             </button>
-            ${!folded && html`<div class="dsy-group-body">${children}</div>`}
+            ${!folded && html`<div class="dsy-group-body">${children}${more}</div>`}
         </section>`;
     }
 
@@ -357,7 +368,7 @@ export function createSystemSections(env, widgets) {
                     key=${token.name}
                     ctx=${ctx}
                     token=${token}
-                    visual=${html`<span class="dsy-glyph" style=${`font-weight:${now.value}`}>Aa</span>`}
+                    visual=${html`<span class="dsy-glyph" style=${`font-weight:${safeCss(now.value) || 400}`}>Aa</span>`}
                     value=${html`<span class="dsy-hex mono">${showValue(token, now)}</span>`}
                 />`;
             }
@@ -367,7 +378,7 @@ export function createSystemSections(env, widgets) {
                     key=${token.name}
                     ctx=${ctx}
                     token=${token}
-                    visual=${html`<span class="dsy-leading" style=${`line-height:${now.value}`}>Aa<br />Aa</span>`}
+                    visual=${html`<span class="dsy-leading" style=${`line-height:${safeCss(now.value) || 1.4}`}>Aa<br />Aa</span>`}
                     value=${html`<span class="dsy-hex mono">${showValue(token, now)}</span>`}
                 />`;
             }

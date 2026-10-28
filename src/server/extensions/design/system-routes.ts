@@ -46,6 +46,11 @@ export const LIMITS = {
 
 const MODE_NAME = /^[a-z][a-z0-9-]{0,31}$/;
 const TOKEN_NAME = /^[A-Za-z0-9_-]{1,64}(?:\.[A-Za-z0-9_-]{1,64}){0,7}$/;
+/** A name that is a place on every object: never a group or a token, whatever the engine does with it. */
+const INHERITED = new Set(["__proto__", "constructor", "prototype"]);
+
+const tokenName = (name: string): boolean =>
+    TOKEN_NAME.test(name) && !name.split(".").some((part) => INHERITED.has(part));
 const KEY = /^[\w-]{8,64}$/;
 
 /** The artifact the documentation page is published as: each publish adds a version of it. */
@@ -163,7 +168,7 @@ export function cleanChange(
                 typeof edit.mode !== "string" ||
                 !MODE_NAME.test(edit.mode) ||
                 typeof edit.token !== "string" ||
-                !TOKEN_NAME.test(edit.token)
+                !tokenName(edit.token)
             ) {
                 throw web.error(400, "Each change names a mode and a token.");
             }
@@ -266,10 +271,12 @@ export function viewOf(system: DesignSystem) {
 export function cleanReport(report: CheckReport): CheckReport {
     const findings: CheckFinding[] = [];
 
-    for (const each of (Array.isArray(report?.findings) ? report.findings : []).slice(
-        0,
-        LIMITS.findings,
-    )) {
+    // What is not a finding (a rule the app does not know, a null) is skipped before it counts toward the limit.
+    for (const each of (Array.isArray(report?.findings) ? report.findings : []).slice(0, 2000)) {
+        if (findings.length >= LIMITS.findings) {
+            break;
+        }
+
         if (!RULES.includes(each?.rule)) {
             continue;
         }

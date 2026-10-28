@@ -114,6 +114,11 @@ export function createSystemActions(env, systemData) {
             store.set((s) => ({ sysFolded: { ...s.sysFolded, [id]: !s.sysFolded[id] } }));
         },
 
+        /** Show a long group in full. */
+        showAll(id) {
+            store.set((s) => ({ sysAll: { ...s.sysAll, [id]: true } }));
+        },
+
         /** Go to a token: its section, its group unfolded, its editor open, in view. */
         openToken(name) {
             const system = store.get().system.data;
@@ -135,6 +140,7 @@ export function createSystemActions(env, systemData) {
                 sysQuery: "",
                 sysPane: "system",
                 sysFolded: group ? { ...s.sysFolded, [group.id]: false } : s.sysFolded,
+                sysAll: group ? { ...s.sysAll, [group.id]: true } : s.sysAll,
             }));
 
             // After the section has drawn.
