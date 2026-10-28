@@ -288,6 +288,11 @@ export function createSystemView(env, canvas, sections) {
             ? s.sysSection
             : list[0]?.id;
 
+        // With no system there are no sections to go between.
+        if (data === null) {
+            return null;
+        }
+
         return html`<div class="dsn-tabs dsy-tabs" role="tablist" aria-label="Sections">
             ${list.map((section) => {
                 const count =
@@ -581,8 +586,10 @@ export function createSystemView(env, canvas, sections) {
                     <${Ico} name="book" size=${15} />
                     <span>
                         This project has a Markdown design system
-                        (<code>.pi/design-system.md</code>, ${(legacy / 1024).toFixed(1)} KB). Pi
-                        still reads it for its designs. Turn it into tokens to see and edit it here.
+                        (<code>.pi/design-system.md</code>,
+                        ${legacy < 1024 ? `${legacy} bytes` : `${(legacy / 1024).toFixed(1)} KB`}).
+                        Pi still reads it for its designs. Turn it into tokens to see and edit it
+                        here.
                     </span>
                 </p>`
             }

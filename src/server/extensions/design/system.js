@@ -139,7 +139,11 @@ export function matches(token, query) {
     const text = [
         token.name,
         token.description ?? "",
-        ...Object.values(token.modes).flatMap((mode) => [mode.css, mode.alias ?? ""]),
+        ...Object.values(token.modes).flatMap((mode) => [
+            mode.css,
+            mode.alias ?? "",
+            showValue(token, mode),
+        ]),
     ]
         .join(" ")
         .toLowerCase();
@@ -844,14 +848,22 @@ export function themeCss(model, mode) {
 
 // ─── Specimens drawn from a resolved value ───────────────────────────────
 
-/** The font names of the app, for the system's own: a specimen in Geist shows in the font the app has. */
-const FONTS = [
-    [/(^|[\s,"'])Geist(?=[\s,"']|$)/g, '$1"Pocket Sans", Geist'],
-    [/(^|[\s,"'])JetBrains Mono(?=[\s,"']|$)/g, '$1"Pocket Mono", "JetBrains Mono"'],
-];
+/** The names of the app's own fonts, for the system's: a specimen in Geist shows in the font the app has. */
+const FONTS = {
+    geist: '"Pocket Sans", Geist',
+    "jetbrains mono": '"Pocket Mono", "JetBrains Mono"',
+};
 
+/** A font stack with each family of the app's own put first of its pair: `Geist, serif` → `"Pocket Sans", Geist, serif`. */
 export const fontStack = (css) =>
-    FONTS.reduce((text, [pattern, to]) => text.replace(pattern, to), css);
+    css
+        .split(",")
+        .map((part) => {
+            const name = part.trim().replace(/^["']|["']$/g, "");
+
+            return FONTS[name.toLowerCase()] ?? part.trim();
+        })
+        .join(", ");
 
 /** The style text of a resolved typography value (family, size, weight, line height, letter spacing), or "". */
 export function typographyStyle(value) {

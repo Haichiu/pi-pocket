@@ -412,7 +412,7 @@ export function writeSystemFixture(cwd: string, { dark = true } = {}): void {
  * A page that uses the system: its variables inline (what `ds/tokens.css` is), `data-pid`s, and two things the check finds on
  * purpose: a color that is no token, and an image with no alt text.
  */
-export const ferryPage = (tokensCss: string) => `<!doctype html>
+export const ferryPage = (tokensCss: string, probe = false) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ferry</title>
 <style>${tokensCss}</style>
@@ -432,5 +432,15 @@ p { margin: 0 0 var(--space-4); color: var(--color-text-muted); }
 <img data-pid="photo" width="40" height="40" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
 <p data-pid="note" style="color:#7ba3f8">Off-system blue on purpose.</p>
 <div class="row"><button class="btn" data-pid="book">Book a ticket</button><span class="ok" data-pid="status">On time</span></div>
-</div>
+</div>${
+    probe
+        ? `
+<script>
+// For the tests: the page says what its button and its background look like, when it loads and when it is told a tweak.
+const report = () => parent.postMessage({ type: "ferry-saw", button: getComputedStyle(document.querySelector(".btn")).backgroundColor, page: getComputedStyle(document.body).backgroundColor }, "*");
+addEventListener("load", report);
+addEventListener("pocket:tweak", () => setTimeout(report, 30));
+</script>`
+        : ""
+}
 </body></html>`;

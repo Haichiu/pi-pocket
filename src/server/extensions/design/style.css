@@ -3198,3 +3198,8 @@ button.dsy-chip:disabled {
         height: 34px;
     }
 }
+
+.dsy-empty-system {
+    margin-top: 14px;
+    padding: 8px 14px;
+}

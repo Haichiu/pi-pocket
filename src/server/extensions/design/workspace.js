@@ -476,6 +476,9 @@ export function createWorkspace(env) {
                     )}
                 </div>`
             }
+            <button type="button" class="dsn-link dsy-empty-system" onClick=${env.openSystem}>
+                <${Ico} name="palette" size=${15} /> The design system
+            </button>
         </div>`;
     }
 

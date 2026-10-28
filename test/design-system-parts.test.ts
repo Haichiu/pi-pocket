@@ -470,3 +470,97 @@ test("values of the other kinds read as amounts, pixels, and milliseconds", () =
     assert.equal(sys.cssOf("color", { colorSpace: "srgb", components: [1, 0, 0] }), "#ff0000");
     assert.equal(sys.cssOf("shadow", {}), undefined);
 });
+
+test("a component's page is made of its markup and CSS with nothing that loads, runs, or moves a page", async () => {
+    const specimen = await load("specimen");
+    const hostile = {
+        name: "Evil",
+        states: ["default", 'x" onload="alert(1)', "missing"],
+        markup: {
+            default:
+                '<button class="b">Go</button><script>alert(1)</script><meta http-equiv="refresh" content="0;url=https://evil.example"><link rel="stylesheet" href="https://evil.example/x.css"><iframe src="https://evil.example"></iframe><base href="https://evil.example/"><form action="https://evil.example"><input></form><img src="https://evil.example/p.png" alt="">',
+            'x" onload="alert(1)': "<b>ok</b>",
+        },
+        css: ".b{color:red} </style><script>alert(2)</script><style>",
+    };
+    const page = specimen.specimenDocument({
+        component: hostile,
+        mode: 'dark" onload="alert(3)',
+        theme: ":root{--a:1}",
+        colors: { canvas: "rgb(0 0 0)", surface: "rgb(9 9 9)", text: "rgb(255 255 255)" },
+    });
+
+    // A policy that lets nothing in, first among what the page says.
+    assert.ok(page.indexOf("Content-Security-Policy") < page.indexOf("<style>"));
+    assert.match(page, /default-src 'none'/);
+    // None of the tags that load, run, or move a page (the CSS is text of its own element): the one tag that is allowed stays.
+    const outside = page.replace(/<style>[\s\S]*?<\/style>/g, "");
+
+    for (const tag of [
+        "<script",
+        '<meta http-equiv="refresh"',
+        "<link",
+        "<iframe",
+        "<base",
+        "<form",
+    ]) {
+        assert.equal(outside.includes(tag), false, tag);
+    }
+
+    assert.match(page, /<button class="b">Go<\/button>/);
+    // The CSS cannot end its own element; a state's name or a mode's is text, never markup.
+    assert.equal((page.match(/<\/style/g) ?? []).length, 3);
+    assert.ok(!page.includes('onload="alert'));
+    assert.match(page, /&#34; onload=&#34;alert\(1\)/);
+    // A state with no markup is not drawn, and every figure has its name.
+    assert.equal((page.match(/<figure>/g) ?? []).length, 2);
+    assert.equal(specimen.escapeHtml(`<a href="x">&'`), "&#60;a href=&#34;x&#34;&#62;&#38;&#39;");
+});
+
+test("a font family the app has shows in it, and a typography value becomes safe styles", () => {
+    assert.equal(sys.fontStack("Geist, system-ui"), '"Pocket Sans", Geist, system-ui');
+    assert.equal(
+        sys.fontStack('"JetBrains Mono", monospace'),
+        '"Pocket Mono", "JetBrains Mono", monospace',
+    );
+    assert.equal(sys.fontStack("Inter"), "Inter");
+
+    const style = sys.typographyStyle({
+        fontFamily: ["Geist", "sans-serif"],
+        fontSize: { value: 20, unit: "px" },
+        fontWeight: 600,
+        lineHeight: 1.15,
+        letterSpacing: "red; background: url(x)",
+    });
+
+    assert.match(
+        style,
+        /^font-family:"Pocket Sans", Geist, sans-serif;font-size:20px;font-weight:600;line-height:1.15$/,
+    );
+    assert.ok(!style.includes("url"), "an unsafe value is dropped, not cleaned");
+    assert.equal(sys.typographyStyle("x"), "");
+    assert.equal(
+        sys.shadowOf({
+            color: { colorSpace: "srgb", components: [0, 0, 0], alpha: 0.2 },
+            offsetX: "0px",
+            offsetY: { value: 6, unit: "px" },
+            blur: "16px",
+            spread: "-4px",
+        }),
+        "0px 6px 16px -4px rgb(0 0 0 / 0.2)",
+    );
+    assert.equal(sys.shadowOf({ color: "nonsense", offsetX: "0px" }), "");
+    assert.equal(
+        sys.shadowOf([
+            {
+                inset: true,
+                color: "#000",
+                offsetX: "0px",
+                offsetY: "1px",
+                blur: "2px",
+                spread: "0px",
+            },
+        ]),
+        "inset 0px 1px 2px 0px rgb(0 0 0)",
+    );
+});

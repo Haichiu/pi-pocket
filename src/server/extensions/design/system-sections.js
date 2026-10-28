@@ -137,13 +137,23 @@ export function createSystemSections(env, widgets) {
 
     const Empty = ({ text }) => html`<p class="dsy-empty muted">${text}</p>`;
 
-    /** The groups of a section, filtered by the search: `[{ group, tokens }]`. */
+    /** A group shows this many tokens until its "Show more" is tapped: a big system stays quick to draw. */
+    const SHOWN = 120;
+
+    /** The groups of a section, filtered by the search; a long one is cut, with `hidden` the number it leaves out. */
     function groupsFor(ctx, section) {
         return groupsOf(ctx.model.tokens, section, ctx.model.defaultMode)
-            .map((group) => ({
-                ...group,
-                tokens: group.tokens.filter((token) => matches(token, ctx.query)),
-            }))
+            .map((group) => {
+                const found = group.tokens.filter((token) => matches(token, ctx.query));
+                const cut = ctx.query === "" && !ctx.s.sysAll[group.id] && found.length > SHOWN;
+
+                return {
+                    ...group,
+                    total: found.length,
+                    tokens: cut ? found.slice(0, SHOWN) : found,
+                    hidden: cut ? found.length - SHOWN : 0,
+                };
+            })
             .filter((group) => group.tokens.length > 0);
     }
 
