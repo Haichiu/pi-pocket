@@ -1400,20 +1400,50 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
     padding: 0 11px;
 }
 
-.dsy-tabs-end {
-    position: sticky;
-    right: 0;
-    display: inline-flex;
-    flex: none;
-    background: var(--bg);
-    box-shadow: -14px 0 10px -2px var(--bg);
+/* The sections and the two buttons are side by side, never one over the other: the bar of sections scrolls where it is,
+   and the buttons keep their place at its end. */
+.dsy-tabbar {
+    display: flex;
+    align-items: flex-start;
+    min-width: 0;
 }
 
-.dsy-tabs .icon-button {
+.dsy-tabbar > .dsy-tabs {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.dsy-tabs-end {
+    display: inline-flex;
+    flex: none;
+    height: 34px;
+    align-items: center;
+}
+
+/* Where more sections are out of sight, the bar fades there: the last one in view is not cut off, it goes on. */
+.dsy-tabs[data-more="right"] {
+    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+}
+
+.dsy-tabs[data-less="left"] {
+    mask-image: linear-gradient(to left, #000 calc(100% - 26px), transparent);
+}
+
+.dsy-tabs[data-more="right"][data-less="left"] {
+    mask-image: linear-gradient(
+        to right,
+        transparent,
+        #000 26px,
+        #000 calc(100% - 26px),
+        transparent
+    );
+}
+
+.dsy-tabs-end .icon-button {
     position: relative;
 }
 
-.dsy-tabs .icon-button.on {
+.dsy-tabs-end .icon-button.on {
     background: color-mix(in srgb, var(--accent) 16%, var(--bg));
 }
 
@@ -3445,12 +3475,13 @@ button.dsy-chip:disabled {
     row-gap: 2px;
 }
 
-.dsn[data-size="medium"] .dsy-tabs .dsn-tab:not(.on) .dsn-count {
+.dsn[data-size="medium"] .dsy-tabs .dsn-tab:not(.on) .dsn-count,
+.dsn[data-size="narrow"] .dsy-tabs .dsn-tab:not(.on) .dsn-count {
     display: none;
 }
 
 .dsn[data-size="medium"] .dsy-tabs-end {
-    margin-left: auto;
+    margin-left: 0;
 }
 
 /* ... and a little closer together, so that nine of them very likely fit in one row. */
@@ -3462,7 +3493,7 @@ button.dsy-chip:disabled {
     padding: 0 6px;
 }
 
-.dsn[data-size="medium"] .dsy-tabs .icon-button {
+.dsn[data-size="medium"] .dsy-tabs-end .icon-button {
     width: 30px;
 }
 

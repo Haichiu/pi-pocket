@@ -40,6 +40,8 @@ let folder = "";
 let viewerToken = "";
 /** A session whose system has one warning: its dark text is too faint for its pair. */
 let faintSession: ConversationId;
+/** A session whose system has three modes: light, dark, and high-contrast. */
+let threeSession: ConversationId;
 
 const evaluate = async <T>(target: BrowserPage, script: string) =>
     JSON.parse(await target.evaluate(script)) as T;
@@ -149,6 +151,27 @@ async function go(id: ConversationId, target = page, composer = true) {
         "the session",
         `const { store } = await import("/store.js");
         return JSON.stringify(store.state.view.conversation?.id === ${id} && (${!composer} || Boolean(document.querySelector(".composer textarea"))))`,
+        target,
+    );
+}
+
+/**
+ * Another session, as a tap on its row does: the app swaps the conversation and keeps the page, which is far cheaper than
+ * loading the whole app again (that load is most of what a test that visits several sessions costs, and a full run
+ * runs a few dozen browsers at once).
+ */
+async function swap(id: ConversationId, target = page) {
+    await target.evaluate(`
+        (async () => {
+            const { navigate } = await import("/store.js");
+            navigate(${id});
+        })();
+        return "null";
+    `);
+    await waitFor(
+        "the session",
+        `const { store } = await import("/store.js");
+        return JSON.stringify(store.state.view.conversation?.id === ${id})`,
         target,
     );
 }
@@ -309,6 +332,22 @@ before(async () => {
     dark.color.text.primary = { $value: "{color.gray.700}" };
     writeFileSync(darkFile, JSON.stringify(dark));
     faintSession = (await app.commands.createSession(owner(app), { cwd: faint })).id;
+
+    const three = mkdtempSync(join(root, "three-"));
+
+    writeSystemFixture(three);
+    // A third mode: the dark one's values, under another name (its scheme is found from its colors).
+    writeFileSync(
+        join(three, ".pi", "design", "tokens.high-contrast.json"),
+        readFileSync(join(three, ".pi", "design", "tokens.dark.json")),
+    );
+    threeSession = (await app.commands.createSession(owner(app), { cwd: three })).id;
+    await publishAll(app, threeSession);
+    await publishDesign(app, threeSession, {
+        id: "ferry",
+        title: "Ferry booking",
+        content: ferryPage(loadDesignSystem(three)!.compiled.css, true),
+    });
     server = createServer(
         createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} }),
     );
@@ -1129,7 +1168,7 @@ async function phone(t: { after: (fn: () => Promise<void>) => void }, width: num
 const stopNow = () =>
     inPage<{ name: string; region: string; ring: number }>(`
         const at = document.activeElement;
-        const regions = [".dsy-tabs", ".dsy-bars", ".dsy-scroll", ".dsy-savebar", ".dsy-preview", ".dsn-dock-head", ".dsy-sheet-handle", ".dsy-check-options", ".dsy-check-summary", ".dsy-findings", ".dsn-dock-foot", ".dsn-dock"];
+        const regions = [".dsy-tabbar", ".dsy-bars", ".dsy-scroll", ".dsy-savebar", ".dsy-preview", ".dsn-dock-head", ".dsy-sheet-handle", ".dsy-check-options", ".dsy-check-summary", ".dsy-findings", ".dsn-dock-foot", ".dsn-dock"];
         const style = getComputedStyle(at);
         return JSON.stringify({
             name: at.getAttribute("aria-label") || at.textContent.trim().replace(/\\s+/g, " ").slice(0, 40),
@@ -1154,7 +1193,7 @@ test(
         }
 
         const regions = stops.map((each) => each.region);
-        const order = [".dsy-bars", ".dsy-tabs", ".dsy-scroll"];
+        const order = [".dsy-bars", ".dsy-tabbar", ".dsy-scroll"];
         const ranks = regions.map((each) => order.indexOf(each));
 
         assert.ok(
@@ -1381,6 +1420,122 @@ test(
         if ((await count(".dsy-check-filter button")) > 0) {
             await pressed(".dsy-check-filter button", "Warnings");
         }
+    },
+);
+
+test(
+    "the check offers every mode of the system, follows the canvas, and checks again when the canvas changes",
+    bridged,
+    async () => {
+        await swap(threeSession);
+        await openSystem();
+        await focus(true);
+        await inPage(`
+            const select = document.querySelector(".dsy-preview-select");
+            select.value = "ferry";
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            window.__checks = [];
+            const fetched = window.fetch;
+            window.fetch = (url, init) => {
+                if (String(url).includes("system/check")) { window.__checks.push(JSON.parse(init.body)); }
+                return fetched(url, init);
+            };
+            return "null";
+        `);
+        await waitFor(
+            "the page",
+            `return JSON.stringify(Boolean(document.querySelector('.dsy-preview-head button[aria-label="Check this design"]')))`,
+        );
+        await pressed('.dsy-preview-head button[aria-label="Check this design"]');
+        await waitFor(
+            "the dock",
+            `return JSON.stringify(Boolean(document.querySelector('.dsn-dock[data-dock="check"]')))`,
+        );
+
+        const modes = () =>
+            inPage<{ all: string[]; on: string[] }>(`
+                const group = document.querySelector('.dsy-check-options [aria-label="Mode"]');
+                const buttons = [...group.querySelectorAll("button")];
+                return JSON.stringify({
+                    all: buttons.map((each) => each.getAttribute("aria-label")),
+                    on: buttons.filter((each) => each.classList.contains("on")).map((each) => each.getAttribute("aria-label")),
+                });
+            `);
+
+        // Every mode of the system, not only light and dark; the one that goes with the canvas is chosen.
+        assert.deepEqual(await modes(), {
+            all: ["Light", "Dark", "High contrast"],
+            on: ["Dark"],
+        });
+
+        await pressed(".dsn-dock-foot button", "Run the check");
+        await waitFor(
+            "the report",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-check-summary")))`,
+        );
+        assert.deepEqual(
+            await inPage<{ mode: string; colorScheme: string }[]>(
+                `return JSON.stringify(window.__checks.map(({ mode, colorScheme }) => ({ mode, colorScheme })))`,
+            ),
+            [{ mode: "dark", colorScheme: "dark" }],
+        );
+
+        // The mode of the canvas changes (the page in it goes light: the zoom bar's backdrop): the dock follows it, and checks
+        // again in that mode.
+        await pressed('.dsn-zoom button[aria-label="Light backdrop"]');
+        await waitFor(
+            "the check in the new mode",
+            `return JSON.stringify(window.__checks.length === 2 && Boolean(document.querySelector(".dsy-check-summary")) && !document.querySelector(".dsy-checking"))`,
+        );
+        assert.deepEqual(
+            (
+                await inPage<{ mode: string; colorScheme: string }[]>(
+                    `return JSON.stringify(window.__checks)`,
+                )
+            )[1],
+            { id: "ferry", version: 1, colorScheme: "light", mode: "light", viewport: "desktop" },
+        );
+        assert.deepEqual((await modes()).on, ["Light"]);
+        assert.equal(
+            await count(".dsy-check-options ~ .dsn-note"),
+            0,
+            "nothing to say while they agree",
+        );
+
+        // A mode that the person chose is theirs: the canvas changes, and the dock keeps it, and says so.
+        await pressed('.dsy-check-options [aria-label="Mode"] button[aria-label="High contrast"]');
+        await pressed('.dsn-zoom button[aria-label="Dark backdrop"]');
+        await waitFor(
+            "the note",
+            `return JSON.stringify(document.querySelector(".dsy-check-options ~ .dsn-note")?.textContent.includes("canvas shows this page in dark") || false)`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        assert.equal(
+            await inPage<number>(`return JSON.stringify(window.__checks.length)`),
+            2,
+            "no check of its own accord",
+        );
+        assert.deepEqual((await modes()).on, ["High contrast"]);
+
+        // ... until they follow the canvas again: the check of that mode is there already.
+        await pressed(".dsy-check-options ~ .dsn-note button", "Follow the canvas");
+        await waitFor(
+            "following",
+            `return JSON.stringify(document.querySelector('.dsy-check-options [aria-label="Mode"] button.on')?.getAttribute("aria-label") === "Dark")`,
+        );
+        assert.equal(await inPage<number>(`return JSON.stringify(window.__checks.length)`), 2);
+
+        // The message to Pi names the mode.
+        await setBox("");
+        await pressed(".dsn-dock-foot button.primary");
+        await waitFor(
+            "the message",
+            `return JSON.stringify(Boolean(document.querySelector(".composer textarea")?.value))`,
+        );
+        assert.match(await boxText(), /version 1, dark mode, desktop size\)/);
+        await setBox("");
+        await pressed('.dsn-dock button[aria-label="Close"]');
+        await swap(session);
     },
 );
 
@@ -1632,7 +1787,7 @@ test(
 
         const id = (await app.commands.createSession(owner(app), { cwd: broken })).id;
 
-        await go(id);
+        await swap(id);
         await openSystem();
         assert.match(await text(".dsy-problems"), /1 error/);
         assert.match(await text(".dsy-problems"), /color\.accent\.hover/);
@@ -1644,7 +1799,7 @@ test(
         assert.equal(await count(".dsy-problems.open"), 1);
 
         // A warning (the text is too faint in dark): one line with a count, until a tap; the token goes to its row.
-        await go(faintSession);
+        await swap(faintSession);
         await openSystem();
         assert.match(await text(".dsy-problems"), /^1 warning/);
         assert.equal(await count(".dsy-problems ul"), 0, "folded");
@@ -1664,7 +1819,7 @@ test(
             "the row",
             `return JSON.stringify(Boolean(document.querySelector('[data-token="color.text.primary"] .dsy-editor')))`,
         );
-        await go(session);
+        await swap(session);
     },
 );
 
@@ -1704,6 +1859,11 @@ test("every section can be reached at the width of a panel beside the chat", rea
 test("focus mode hides the conversation and gives the panel the whole width", real, async () => {
     await openSystem();
     await focus(false);
+    // (the conversation comes back with a short animation, when an earlier test left the focus on)
+    await waitFor(
+        "the conversation",
+        `return JSON.stringify(document.querySelector(".layout > .pane").getBoundingClientRect().width > 400)`,
+    );
 
     const widths = async () =>
         inPage<{ panel: number; chat: number }>(`
@@ -1722,10 +1882,11 @@ test("focus mode hides the conversation and gives the panel the whole width", re
         `return JSON.stringify(document.documentElement.hasAttribute("data-dsn-focus"))`,
     );
 
-    const during = await widths();
-
-    assert.equal(during.chat, 0);
-    assert.ok(during.panel > 1000, JSON.stringify(during));
+    // (the panel grows with a short animation)
+    await waitFor(
+        "the width",
+        `const chat = document.querySelector(".layout > .pane"); return JSON.stringify(document.querySelector(".ext-panel").getBoundingClientRect().width > 1000 && (chat ? chat.getBoundingClientRect().width : 0) === 0)`,
+    );
     // With the room, the view and the open design sit side by side.
     await waitFor(
         "the room",
@@ -1795,6 +1956,21 @@ test(
             await inPage<boolean>(
                 `return JSON.stringify(document.documentElement.scrollWidth <= 391)`,
             ),
+        );
+        // The sections scroll in a bar of their own, and the buttons at its end are beside it, not over it: no tab is hidden
+        // behind them, and a bar that goes on says so (it fades).
+        assert.deepEqual(
+            await inPage<{ apart: boolean; whole: boolean; more: string }>(`
+                const bar = document.querySelector(".dsy-tabs").getBoundingClientRect();
+                const end = document.querySelector(".dsy-tabs-end").getBoundingClientRect();
+                const first = document.querySelector(".dsy-tabs [role=tab]").getBoundingClientRect();
+                return JSON.stringify({
+                    apart: bar.right <= end.left + 0.5 && end.right <= 391,
+                    whole: first.left >= bar.left && first.right <= bar.right,
+                    more: document.querySelector(".dsy-tabs").dataset.more,
+                });
+            `),
+            { apart: true, whole: true, more: "right" },
         );
         // A card's tap target is at least 44 px, and so is a swatch of a strip, and a tab 34.
         assert.ok(

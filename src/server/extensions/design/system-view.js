@@ -279,7 +279,7 @@ export function createSystemView(env, canvas, sections, widgets) {
     function SectionTabs({ s, data, split, hasDesign }) {
         const unsaved = unsavedCount(data, s.history);
         const bar = useRef(null);
-        // What a tab counts is the documentation page's rule (`sectionCounts`): a component's own tokens are with the component.
+        // What a tab counts is the documentation page's rule (`sectionCounts`): every token of the section, whatever its tier.
         const counts = useMemo(() => sectionCounts(data?.tokens ?? []), [data]);
         const present = useMemo(
             () => new Set((data?.tokens ?? []).map((token) => sectionOf(token))),
@@ -307,6 +307,34 @@ export function createSystemView(env, canvas, sections, widgets) {
                 });
             }
         }, [current]);
+
+        // A bar that scrolls fades where more of it is out of sight (`data-more`), so that no tab looks cut off by what is
+        // beside the bar.
+        useEffect(() => {
+            const box = bar.current;
+
+            if (!box) {
+                return undefined;
+            }
+
+            const mark = () => {
+                const room = box.scrollWidth - box.clientWidth;
+
+                box.dataset.more = room > 2 && box.scrollLeft < room - 2 ? "right" : "none";
+                box.dataset.less = box.scrollLeft > 2 ? "left" : "none";
+            };
+
+            const watch = new ResizeObserver(mark);
+
+            mark();
+            box.addEventListener("scroll", mark, { passive: true });
+            watch.observe(box);
+
+            return () => {
+                box.removeEventListener("scroll", mark);
+                watch.disconnect();
+            };
+        }, [list.length, data === null]);
 
         // With no system there are no sections to go between.
         if (data === null) {
@@ -336,35 +364,36 @@ export function createSystemView(env, canvas, sections, widgets) {
             }
         };
 
-        return html`<div
-            class="dsn-tabs dsy-tabs"
-            role="tablist"
-            aria-label="Sections"
-            ref=${bar}
-            onKeyDown=${move}
-        >
-            ${list.map((section) => {
-                const count =
-                    section.id === "components"
-                        ? (data?.components.length ?? 0)
-                        : (counts[section.id] ?? 0);
+        return html`<div class="dsy-tabbar">
+            <div
+                class="dsn-tabs dsy-tabs"
+                role="tablist"
+                aria-label="Sections"
+                ref=${bar}
+                onKeyDown=${move}
+            >
+                ${list.map((section) => {
+                    const count =
+                        section.id === "components"
+                            ? (data?.components.length ?? 0)
+                            : (counts[section.id] ?? 0);
 
-                return html`<button
-                    type="button"
-                    role="tab"
-                    id=${`dsy-tab-${section.id}`}
-                    key=${section.id}
-                    class=${`dsn-tab ${current === section.id ? "on" : ""}`}
-                    aria-selected=${current === section.id}
-                    aria-controls="dsy-panel"
-                    tabindex=${current === section.id ? 0 : -1}
-                    onClick=${() => env.setSection(section.id)}
-                >
-                    <span>${section.label}</span>
-                    ${count > 0 && html`<span class="dsn-count">${count}</span>`}
-                </button>`;
-            })}
-            <span class="grow"></span>
+                    return html`<button
+                        type="button"
+                        role="tab"
+                        id=${`dsy-tab-${section.id}`}
+                        key=${section.id}
+                        class=${`dsn-tab ${current === section.id ? "on" : ""}`}
+                        aria-selected=${current === section.id}
+                        aria-controls="dsy-panel"
+                        tabindex=${current === section.id ? 0 : -1}
+                        onClick=${() => env.setSection(section.id)}
+                    >
+                        <span>${section.label}</span>
+                        ${count > 0 && html`<span class="dsn-count">${count}</span>`}
+                    </button>`;
+                })}
+            </div>
             <span class="dsy-tabs-end">
                 ${
                     data &&
