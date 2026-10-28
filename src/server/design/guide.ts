@@ -21,7 +21,7 @@ const GUIDE = `Designs live in the Design canvas as HTML artifacts, shown beside
 - Hand off a design to code: design_export with format html into the project, then start a linked session with the team tool and give it the export path.`;
 
 /** The section's text without the design system: stable, so the model provider can use its cache. */
-const WITHOUT = `${GUIDE}\n\nThe project has no design system (${SYSTEM_FILE}) yet. When the person points at a codebase or brand files, read them and write one with design_system.`;
+const WITHOUT = `${GUIDE}\n\nThe project has no design system (${SYSTEM_FILE}) yet. When the person points at a codebase or brand files, run design_system scan for a draft from the project's styles, check it, and write one with design_system.`;
 
 /**
  * The design section: the instructions, and the project's design system when there is one, as bounded text that says
