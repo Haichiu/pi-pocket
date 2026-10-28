@@ -139,7 +139,7 @@ function variables(facts: Facts, alt: "dark" | "light"): Variable[] {
  * and a name that has a `-light` or `-main` sibling (`primary-dark` beside `primary-light`) is a shade, not a mode.
  */
 function pairModeTwins(map: Map<string, Variable>, alt: "dark" | "light"): void {
-    const mode = alt === "dark" ? /^(?:dark|night)$/ : /^(?:light|day)$/;
+    const mode = alt === "dark" ? /^(?:dark|night|dk|drk|d)$/ : /^(?:light|day|lt|lgt|l)$/;
     const plain = (name: string) => kebab(name).replace(/^(?:color|colour|clr)-/, "");
     const byName = new Map<string, Variable>();
 
@@ -1360,14 +1360,47 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
     // A variable that a role is set from in one mode and that is named for that mode (`--light-bg` and `--dark-bg` behind
     // `--bg`) holds that mode's value: it is not a color of its own.
     const modeNamed = /(?:^|[-_])(?:light|dark|day|night)(?:[-_]|$)/i;
+    // The short forms of a mode in a name (`--d-paper`, `--ok-dk`): a source variable is the role variable's name with
+    // only such words added.
+    const modeWords = new Set([
+        "light",
+        "dark",
+        "day",
+        "night",
+        "d",
+        "dk",
+        "drk",
+        "l",
+        "lt",
+        "lgt",
+        "alt",
+    ]);
+
+    const feeds = (through: Variable, role: Variable) => {
+        const extra = kebab(through.name).replace(/^-/, "").split("-");
+        const own = kebab(role.name).replace(/^-/, "").split("-");
+        const start = extra.findIndex((_, at) =>
+            own.every((word, index) => extra[at + index] === word),
+        );
+
+        return (
+            start !== -1 &&
+            extra.length > own.length &&
+            extra
+                .filter((_, index) => index < start || index >= start + own.length)
+                .every((word) => modeWords.has(word)) &&
+            (facts.varUse.get(through.name) ?? 0) <= 1
+        );
+    };
 
     for (const entry of classified) {
         for (const through of [entry.via, entry.darkVia]) {
             if (
                 through !== undefined &&
                 through !== entry.variable &&
-                modeNamed.test(kebab(through.name)) &&
-                !modeNamed.test(kebab(entry.variable.name))
+                ((modeNamed.test(kebab(through.name)) &&
+                    !modeNamed.test(kebab(entry.variable.name))) ||
+                    feeds(through, entry.variable))
             ) {
                 through.twin = true;
             }
