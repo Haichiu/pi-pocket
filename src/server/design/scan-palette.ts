@@ -90,16 +90,31 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
             ]),
         );
 
+    // Of two such families the better named one stays: one made of custom properties over one made of Sass variables, one
+    // whose name is not a container (`ramp`, `scale`, `palette`, `shades`), then the shorter.
+    const rankOf = (family: string, list: Classified[]) =>
+        (list.some(
+            (entry) => entry.variable.light?.kind === "css" || entry.variable.dark?.kind === "css",
+        )
+            ? 0
+            : 4) +
+        (/(?:^|-)(?:ramp|scale|palette|shades?|steps?|map|colors?|list)(?:-|$)/.test(family)
+            ? 2
+            : 0) +
+        family.length / 100;
+
     const twin = (family: string, list: Classified[]) => {
         const mine = stepsOf(list);
 
         return (
             mine.size >= 3 &&
             [...scales].some(([other, otherList]) => {
+                const [theirRank, myRank] = [rankOf(other, otherList), rankOf(family, list)];
+
                 if (
                     other === family ||
-                    other.length > family.length ||
-                    (other.length === family.length && other > family)
+                    theirRank > myRank ||
+                    (theirRank === myRank && other > family)
                 ) {
                     return false;
                 }

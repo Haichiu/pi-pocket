@@ -74,11 +74,11 @@ function seed(
 
 /** Whether a file has an Ant Design theme: it uses Ant Design and sets `token`. */
 export const hasAntdTheme = (text: string) =>
-    USES_ANTD.test(text) && /(?<![\w$.])token\s*:\s*\{/.test(text);
+    USES_ANTD.test(text) && /(?<![\w$.])["']?token["']?\s*:\s*\{/.test(text);
 
 /** Whether a file uses Ant Design: an import from it, a `ThemeConfig`, or one of its algorithms. */
 const USES_ANTD =
-    /from\s+["']antd["']|ThemeConfig|ConfigProvider|@ant-design|\b(?:dark|default|compact)Algorithm\b/;
+    /from\s+["']antd["']|ThemeConfig|ConfigProvider|@ant-design|\b(?:dark|default|compact)Algorithm\b|["']color(?:BgContainer|BgLayout|BgElevated)["']\s*:/;
 
 /** The spans of `components: { … }` in a file that uses Ant Design: what is in them is one component's own. */
 export function antdComponentSpans(text: string): { at: number; end: number }[] {
@@ -86,7 +86,7 @@ export function antdComponentSpans(text: string): { at: number; end: number }[] 
         return [];
     }
 
-    return [...text.matchAll(/(?<![\w$.])components\s*:\s*(?=\{)/g)]
+    return [...text.matchAll(/(?<![\w$.])["']?components["']?\s*:\s*(?=\{)/g)]
         .slice(0, 6)
         .flatMap((match) => {
             const end = closeOf(text, match.index + match[0].length);
@@ -109,7 +109,7 @@ export function antdTheme(
 
     let seen = 0;
 
-    for (const match of text.matchAll(/(?<![\w$.])token\s*:\s*(?=\{)/g)) {
+    for (const match of text.matchAll(/(?<![\w$.])["']?token["']?\s*:\s*(?=\{)/g)) {
         if (++seen > 12) {
             break;
         }

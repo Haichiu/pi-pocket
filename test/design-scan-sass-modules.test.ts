@@ -430,3 +430,26 @@ test("hostile modules run in bounded time and never throw: cycles, long chains, 
 
     assert.ok(Date.now() - started < 8000, `${Date.now() - started} ms`);
 });
+
+test("the indented syntax: modules, a namespace, and a configuration in .sass files", () => {
+    const scan = scanTokens(
+        project({
+            "styles/_brand.sass": `$hue: 220 !default
+$ramp: ()
+@each $step, $light in (100: 90%, 500: 50%, 900: 15%)
+  $ramp: map-merge($ramp, ($step: hsl($hue, 80%, $light)))
+`,
+            "styles/main.sass": `@use "brand" as b with ($hue: 160)
+:root
+  @each $k, $v in b.$ramp
+    --brand-#{$k}: #{$v}
+  --bg: var(--brand-100)
+  --text: var(--brand-900)
+  --accent: var(--brand-500)
+`,
+        }),
+    );
+
+    assert.ok(near(scan.inferred.roles.accent?.value, "#19e6a2"), "hsl(160, 80%, 50%)");
+    assert.ok(near(scan.inferred.roles.background?.value, "#d1faec"), "hsl(160, 80%, 90%)");
+});

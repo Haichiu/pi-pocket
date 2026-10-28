@@ -158,7 +158,7 @@ export function themeVars(facts: Facts, file: string, text: string): void {
     const components = antdComponentSpans(text);
 
     for (const match of text.matchAll(
-        /(?<![\w$.])(spacing|borderRadius)\s*:\s*(\d+(?:\.\d+)?)(?![\w.%])(?=\s*[,}\n])/g,
+        /(?<![\w$.])["']?(spacing|borderRadius)["']?\s*:\s*(\d+(?:\.\d+)?)(?![\w.%])(?=\s*[,}\n])/g,
     )) {
         if (++seen > 60) {
             break;

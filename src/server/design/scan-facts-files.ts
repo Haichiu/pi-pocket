@@ -140,6 +140,11 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
             importTokens(facts.imported, rel, raw);
         }
 
+        // Ant Design's theme editor exports its `ThemeConfig` as JSON: `{ "token": { "colorPrimary": "#1677ff" } }`.
+        if (hasAntdTheme(raw)) {
+            themeVars(facts, rel, raw);
+        }
+
         return;
     }
 

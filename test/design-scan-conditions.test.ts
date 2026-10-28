@@ -343,3 +343,37 @@ test("hostile theme files run in bounded time and never throw", () => {
 
     assert.ok(Date.now() - started < 8000, `${Date.now() - started} ms`);
 });
+
+test("Ant Design: the theme editor's JSON, a file for each mode", () => {
+    const scan = scanTokens(
+        project({
+            "theme.json": JSON.stringify({
+                token: {
+                    colorPrimary: "#00b96b",
+                    colorBgLayout: "#f6f8f7",
+                    colorBgContainer: "#ffffff",
+                    colorText: "#1d2b26",
+                    colorBorder: "#d4ded9",
+                    colorError: "#e5484d",
+                    fontSize: 16,
+                    borderRadius: 10,
+                },
+                components: { Button: { colorPrimary: "#006d3f", borderRadius: 2 } },
+            }),
+            "theme.dark.json": JSON.stringify({
+                token: {
+                    colorPrimary: "#2ec27e",
+                    colorBgLayout: "#0d1210",
+                    colorBgContainer: "#161d1a",
+                    colorText: "#e8f0ec",
+                    colorBorder: "#2a3631",
+                },
+            }),
+        }),
+    );
+
+    assert.deepEqual(roles(scan).accent, ["#00b96b", "#2ec27e"]);
+    assert.deepEqual(roles(scan).background, ["#f6f8f7", "#0d1210"]);
+    assert.deepEqual(roles(scan).danger, ["#e5484d", undefined]);
+    assert.deepEqual(scan.inferred.radii, ["md 10px"], "the radius of a component is left out");
+});
