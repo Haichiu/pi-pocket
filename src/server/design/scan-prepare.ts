@@ -23,7 +23,7 @@ export interface Classified {
     darkVia?: Variable;
 }
 
-interface Prepared {
+export interface Prepared {
     index: Map<string, Variable>;
     classified: Classified[];
     /** The other mode: `dark` in most projects, `light` in a dark-first one. */
