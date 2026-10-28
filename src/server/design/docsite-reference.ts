@@ -154,13 +154,17 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
     const dark = ctx.modes.find((mode) => ctx.theme.get(mode) === "dark" && mode !== first);
     const cssVar = sample?.cssVar ?? "--color-bg-surface";
     const css = `<link rel="stylesheet" href="tokens.css">\n\n.card {\n    background: var(${cssVar});\n    padding: var(${spacing?.cssVar ?? "--space-4"});\n}${dark === undefined ? "" : `\n\n<!-- ${modeLabel(dark)} mode -->\n<html data-theme="${dark}">`}`;
-    // The utility comes from the variable that the compiled theme gives the sample token.
-    const twVar =
-        (sample === undefined ? undefined : ctx.twVar.get(sample.name)) ?? "--color-surface";
-    const utility = twVar.startsWith("--color-")
-        ? `bg-${twVar.slice("--color-".length)}`
-        : "bg-surface";
-    const tailwind = `@import "tailwindcss";\n@import "./tailwind.css";\n\n<div class="${utility} p-4">…</div>`;
+    // The utilities come from the variables that the compiled theme gives the sample tokens (`tailwindNames`): no utility
+    // name is written here. A system with no color or no spacing token shows no class for it.
+    const sampleVar = sample === undefined ? undefined : ctx.twVar.get(sample.name);
+    const spacingVar = spacing === undefined ? undefined : ctx.twVar.get(spacing.name);
+    const classes = [
+        sampleVar?.startsWith("--color-") ? `bg-${sampleVar.slice("--color-".length)}` : undefined,
+        spacingVar?.startsWith("--spacing-")
+            ? `p-${spacingVar.slice("--spacing-".length)}`
+            : undefined,
+    ].filter((name) => name !== undefined);
+    const tailwind = `@import "tailwindcss";\n@import "./tailwind.css";${classes.length === 0 ? "" : `\n\n<div class="${classes.join(" ")}">…</div>`}`;
     const modeFiles = Object.entries(compiled.modes ?? {});
     const jsonName =
         modeFiles[0] === undefined
@@ -196,6 +200,12 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
             note: "A Tailwind v4 @theme block, one variable for each token.",
             text: compiled.tailwind,
         },
+        {
+            id: "code-names",
+            title: "names.md",
+            note: "Every token with its variable in tokens.css and in tailwind.css, and its Tailwind utilities.",
+            text: compiled.names ?? "",
+        },
         ...modeFiles.map(([mode, text], index) => ({
             id: `code-mode-${index}`,
             title: `tokens.${mode}.resolved.json`,
@@ -219,7 +229,7 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
         `<div class="use"><h4>${esc(title)}</h4><p class="sub">${note}</p>${snippet(id, text)}</div>`;
 
     return {
-        html: `<p class="intro">The files that the system generates in <code>.pi/design/dist/</code> (<code>components.css</code> holds the CSS of every component, which each component above shows). Read tokens as variables, classes, or JSON. Never copy a value by hand.</p><div class="uses">${use("CSS", "Link tokens.css, then read a token with var(). Set data-theme for a mode.", "code-use-css", css)}${use("Tailwind v4", "Import Tailwind, then tailwind.css. Each token is a variable, so the utilities follow it.", "code-use-tailwind", tailwind)}${use("JSON (DTCG)", `Style Dictionary reads the file for each mode as it is. For DTCG 2025.10 objects and not strings (<code>"#7aa2f7"</code>, <code>"16px"</code>), set <code>"format": "2025.10"</code> in the <code>com.pi-pocket</code> extension of tokens.json.`, "code-use-json", json)}${use("Tokens Studio", "In Tokens Studio open Tools, Load from file or URL, and pick tokens.studio.json. Each mode is a token set, and each theme turns its set on.", "code-use-studio", studio)}</div><h3>The files</h3>${files
+        html: `<p class="intro">The files that the system generates in <code>.pi/design/dist/</code> (<code>components.css</code> holds the CSS of every component, which each component above shows). Read tokens as variables, classes, or JSON. Never copy a value by hand.</p><div class="uses">${use("CSS", "Link tokens.css, then read a token with var(). Set data-theme for a mode.", "code-use-css", css)}${use("Tailwind v4", `Import Tailwind, then tailwind.css. Each token is a variable, so the utilities follow it.${compiled.names === undefined || compiled.names.trim() === "" ? "" : ' <a href="#code-names">names.md</a> lists every name and utility.'}`, "code-use-tailwind", tailwind)}${use("JSON (DTCG)", `Style Dictionary reads the file for each mode as it is. For DTCG 2025.10 objects and not strings (<code>"#7aa2f7"</code>, <code>"16px"</code>), set <code>"format": "2025.10"</code> in the <code>com.pi-pocket</code> extension of tokens.json.`, "code-use-json", json)}${use("Tokens Studio", "In Tokens Studio open Tools, Load from file or URL, and pick tokens.studio.json. Each mode is a token set, and each theme turns its set on.", "code-use-studio", studio)}</div><h3>The files</h3>${files
             .map(
                 (file) =>
                     `<details class="code"><summary>${esc(file.title)}<span class="desc" style="margin-left:10px;font-weight:400">${esc(file.note)}</span></summary><div class="code-body">${file.text.length > FILE_PREVIEW ? `<p class="sub">The first ${FILE_PREVIEW / 1000} KB of ${Math.round(file.text.length / 1024)} KB. The whole file is in <code>.pi/design/dist/</code>, and in the zip that the System view exports.</p>` : ""}${snippet(file.id, clip(file.text, FILE_PREVIEW))}</div></details>`,
