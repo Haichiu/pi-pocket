@@ -13,7 +13,8 @@ import {
     lengthKind,
     tokenSet,
 } from "../src/server/design/lint-color.ts";
-import { analyze, mergeFindings, modeFor, reportOf } from "../src/server/design/lint.ts";
+import { analyze, findingId, mergeFindings, modeFor, reportOf } from "../src/server/design/lint.ts";
+import { colorRoleOf } from "../src/server/design/lint.ts";
 import type { RawPage } from "../src/server/design/lint-page.ts";
 import {
     bundleOf,
@@ -396,6 +397,84 @@ test("contrast is judged only where the background is certain", browser, async (
     );
 });
 
+test("a suggestion takes a token of the role the color plays", browser, async () => {
+    // The system gets a dark ground that is near #1c1e26 but not equal to it.
+    const system = testSystem();
+
+    system.tokens.push(token("color.bg.inverse", "color", "#1c2230", "#1c2230"));
+    const body =
+        `<div data-pid="ground" style="background:#1c1e26;padding:var(--space-4)"><span data-pid="inside" style="color:var(--color-bg-surface)">x</span></div>` +
+        `<p data-pid="words" style="margin:0;padding:var(--space-2);color:#1c2230;background:var(--color-bg-surface)">Words</p>`;
+    const report = await check(page("", body), {}, system);
+    const ground = onPid(report, "off-system-color", "ground")!;
+    const words = onPid(report, "off-system-color", "words")!;
+
+    // #1c1e26 is exactly the text color, but it is used as a background: the background token comes first.
+    assert.equal(ground.suggestion, "var(--color-bg-inverse)");
+    assert.doesNotMatch(ground.message, /is a text token/);
+    // #1c2230 is used as text: the text token comes first, though the background token is the exact color.
+    assert.equal(words.suggestion, "var(--color-text-primary)");
+    // With no background token near, the text token is the last resort, and the message says what it is.
+    const plain = await check(page("", body), {}, testSystem());
+    const fallback = onPid(plain, "off-system-color", "ground")!;
+
+    assert.equal(fallback.suggestion, "var(--color-text-primary)");
+    assert.match(
+        fallback.message,
+        /It is a text token, and the system has no background token this close/,
+    );
+});
+
+test("a token's role comes from the words of its name", () => {
+    assert.equal(colorRoleOf("color.text.primary"), "text");
+    assert.equal(colorRoleOf("color.accent.on-fill"), "text");
+    assert.equal(colorRoleOf("color.bg.surface"), "background");
+    assert.equal(colorRoleOf("color.accent.fill"), "background");
+    assert.equal(colorRoleOf("color.border.focus"), "border");
+    assert.equal(colorRoleOf("color.borderSubtle"), "border");
+    assert.equal(colorRoleOf("color.blue.500"), undefined);
+    assert.equal(colorRoleOf("color.context.x"), undefined, "words, not letters");
+});
+
+test("a finding's id holds the rule, and a hash of the element and the value", () => {
+    const one = { rule: "contrast" as const, pid: "title", selector: "h1", value: "2.1:1" };
+
+    assert.match(findingId(one), /^contrast-[0-9a-f]{10}$/);
+    assert.equal(
+        findingId(one),
+        findingId({ ...one, selector: "main > h1" }),
+        "the pid is the scope",
+    );
+    assert.notEqual(findingId(one), findingId({ ...one, value: "2.2:1" }));
+    assert.notEqual(findingId(one), findingId({ ...one, pid: "other" }));
+    assert.notEqual(findingId(one), findingId({ ...one, rule: "tap-target" }));
+    assert.notEqual(
+        findingId({ ...one, pid: undefined }),
+        findingId({ ...one, pid: undefined, selector: "h2" }),
+        "without a pid the selector is the scope",
+    );
+});
+
+test("ids are stable between runs and schemes, and unique in a report", browser, async () => {
+    const content = page(
+        "",
+        `<p data-pid="a" style="margin:0;color:#7ba3f8;background:var(--color-bg-surface)">a</p><p data-pid="b" style="margin:0;color:#7ba3f8;background:var(--color-bg-surface)">b</p><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="4" height="4">`,
+    );
+    const first = await check(content);
+    const again = await check(content);
+    const dark = await check(content, { colorScheme: "dark" });
+    const ids = (report: { findings: { id?: string }[] }) => report.findings.map((item) => item.id);
+
+    assert.deepEqual(ids(first), ids(again));
+    assert.equal(new Set(ids(first)).size, first.findings.length);
+    assert.ok(
+        onPid(first, "off-system-color", "a")!.id !== onPid(first, "off-system-color", "b")!.id,
+    );
+    assert.ok(ids(first).every((id) => typeof id === "string"));
+    // The image has no pid: its id comes from its selector, and the image keeps it in the dark run.
+    assert.equal(ofRule(first, "image-alt")[0]!.id, ofRule(dark, "image-alt")[0]!.id);
+});
+
 test("a contrast finding names the system color that passes", browser, async () => {
     const report = await check(
         page(
@@ -495,14 +574,29 @@ test("overflow: a page that scrolls sideways, or hides what does not fit", brows
     const clipped = await check(
         page(
             "body{overflow-x:hidden}",
-            `<div data-pid="cut" style="width:600px;height:20px;background:#ccc"></div>`,
+            `<div data-pid="cut" style="width:600px;height:20px;background:#ccc">Text that is cut off</div><div data-pid="glow" style="position:absolute;left:300px;width:300px;height:20px;background:#ccc"></div>`,
         ),
         {},
         null,
     );
 
     assert.equal(ofRule(clipped, "overflow")[0]!.level, "warning");
+    assert.equal(
+        ofRule(clipped, "overflow")[0]!.pid,
+        "cut",
+        "the text, not the decoration that also runs past the edge",
+    );
     assert.match(ofRule(clipped, "overflow")[0]!.message, /cut off/);
+    const decoration = await check(
+        page(
+            "body{overflow-x:hidden}",
+            `<div data-pid="glow" style="width:600px;height:20px;background:#ccc"></div>`,
+        ),
+        {},
+        null,
+    );
+
+    assert.equal(ofRule(decoration, "overflow").length, 0, "hidden decoration is on purpose");
 });
 
 test("images need alt text; headings keep their order", browser, async () => {

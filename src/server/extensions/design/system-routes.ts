@@ -294,6 +294,7 @@ export function cleanReport(report: CheckReport): CheckReport {
         const rect = each.rect;
 
         findings.push({
+            ...(typeof each.id === "string" ? { id: clip(each.id, 60) } : {}),
             rule: each.rule,
             level: each.level === "error" ? "error" : "warning",
             selector: clip(each.selector, 500),

@@ -129,9 +129,24 @@ const toRgba = (css) => {
     }
 
     const match = RGB.exec(css);
+    const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(css);
+    const slash = /^(.*?)\s*\/\s*([\d.]+%?)\s*\)$/.exec(css);
     let out = null;
 
-    if (match) {
+    if (hex) {
+        // A hex color is exact; the canvas would round a faint one.
+        let digits = hex[1];
+
+        if (digits.length <= 4) digits = digits.replace(/./g, (c) => c + c);
+
+        out = [0, 2, 4].map((at) => parseInt(digits.slice(at, at + 2), 16)).concat([digits.length === 8 ? Math.round((parseInt(digits.slice(6, 8), 16) / 255) * 100) / 100 : 1]);
+    } else if (slash && !match) {
+        // oklch(... / 0.07): the color from the canvas without its alpha (a faint one would lose digits), then the alpha.
+        const base = viaCanvas(slash[1] + ')');
+        const alpha = slash[2].endsWith('%') ? parseFloat(slash[2]) / 100 : parseFloat(slash[2]);
+
+        out = base ? [base[0], base[1], base[2], alpha] : null;
+    } else if (match) {
         const alpha = match[4] === undefined ? 1 : match[4].endsWith('%') ? parseFloat(match[4]) / 100 : parseFloat(match[4]);
 
         out = [Number(match[1]), Number(match[2]), Number(match[3]), alpha];
@@ -584,7 +599,7 @@ for (const el of nodes) {
         if (used.has(role + key)) return;
 
         used.add(role + key);
-        const found = group(groups.colors, key + (hard ? '|L' : ''), () => ({ rgba, roles: {}, literal: hard }), el);
+        const found = group(groups.colors, key + '|' + role + (hard ? '|L' : ''), () => ({ rgba, roles: {}, literal: hard }), el);
 
         if (found) found.roles[role] = (found.roles[role] || 0) + 1;
     };
@@ -768,13 +783,13 @@ for (const el of nodes) {
         }
 
         const inline = style.display === 'inline' && tag !== 'input' && tag !== 'button' && tag !== 'select' && tag !== 'textarea' && el.parentElement && [...el.parentElement.childNodes].some((n) => n !== el && n.nodeType === 3 && n.nodeValue.trim() !== '');
-        const bare = isCheck && style.appearance !== 'none' && labels.length === 0;
+        const bare = (isCheck || (tag === 'input' && el.type === 'range')) && style.appearance !== 'none' && labels.length === 0;
 
         if (!inline && !bare && width > 0 && height > 0) targets.push({ el, left, top, width, height, tag });
     }
 
     // Overflow: elements that end past the viewport and are not clipped or fixed.
-    if (!input.deck && el !== root && el !== body && !state.clip && !state.fixed && rect.right > viewWidth + 1) offenders.push({ el, right: rect.right });
+    if (!input.deck && el !== root && el !== body && !state.clip && !state.fixed && rect.right > viewWidth + 1) offenders.push({ el, right: rect.right, content: (el.textContent || '').trim() !== '' || el.matches(pointed + ',img,video,canvas,svg') });
 
     // Headings in order.
     const level = /^h[1-6]$/.test(tag) ? Number(tag[1]) : el.getAttribute('role') === 'heading' ? Number(el.getAttribute('aria-level')) : 0;
@@ -817,6 +832,9 @@ for (const el of [...doc.querySelectorAll(interactive)].slice(0, 1000)) {
 
     if (el.closest('[inert]') || (input.deck && !el.closest('section.slide'))) continue;
 
+    // A specimen of the focus state (class is-focus, a static ring) is not the real thing: it has the ring at rest.
+    if ([...el.classList].some((name) => /(^|[-_])(focus|focused|focus-visible)($|[-_])/i.test(name)) || el.hasAttribute('data-focus')) continue;
+
     const key = el.localName + '.' + [...el.classList].slice(0, 3).join('.');
 
     if (!focusCandidates.has(key)) focusCandidates.set(key, { el, count: 0 });
@@ -828,7 +846,8 @@ for (const el of [...doc.querySelectorAll(interactive)].slice(0, 1000)) {
 // Tap targets: under 24 px is an error, under 44 px a warning (WCAG 2.2 sets 24 px; 44 px is the common touch advice).
 
 for (const target of targets) {
-    const least = Math.min(target.width, target.height);
+    // Whole pixels: a 43.99 px box from fractional text widths is 44.
+    const least = Math.round(Math.min(target.width, target.height));
     const level = least < 24 ? 'error' : least < 44 ? 'warning' : '';
 
     if (level) {
@@ -849,9 +868,15 @@ if (!input.deck) {
     const viewportX = rootStyle.overflowX === 'visible' && body ? getComputedStyle(body).overflowX : rootStyle.overflowX;
     const clipped = /^(hidden|clip)$/.test(viewportX);
 
-    if (scrollWidth > viewWidth + 1 || (clipped && offenders.length > 0)) {
-        offenders.sort((a, b) => b.right - a.right);
-        overflow = { scrollWidth: Math.round(scrollWidth), clientWidth: Math.round(viewWidth), clipped, offenders: offenders.length, el: offenders[0] ? infoOf(offenders[0].el) : undefined };
+    // Hidden overflow of decoration (a glow, a blob) is on purpose; hidden text, controls, and images are not.
+    const cut = offenders.filter((item) => item.content);
+
+    // Page scrolls: every offender. Page clips: only those with something to read or touch.
+    const shown = clipped ? cut : offenders;
+
+    if ((scrollWidth > viewWidth + 1 && !clipped) || (clipped && cut.length > 0)) {
+        shown.sort((a, b) => b.right - a.right);
+        overflow = { scrollWidth: Math.round(scrollWidth), clientWidth: Math.round(viewWidth), clipped, offenders: shown.length, el: shown[0] ? infoOf(shown[0].el) : undefined };
     }
 }
 
