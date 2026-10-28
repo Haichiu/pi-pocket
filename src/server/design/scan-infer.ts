@@ -123,6 +123,7 @@ function variables(facts: Facts, alt: "dark" | "light"): Variable[] {
     }
 
     pairModeTwins(map, alt);
+    pairSassNames(map, alt);
 
     return [...map.values()].filter(
         (variable) => variable.light !== undefined || variable.dark !== undefined,
@@ -192,6 +193,36 @@ function pairModeTwins(map: Map<string, Variable>, alt: "dark" | "light"): void 
     for (const { twin, base } of pairs) {
         base.dark ??= { ...twin.light!, scope: alt };
         twin.twin = true;
+    }
+}
+
+/**
+ * A custom property that a project sets only in the other mode (`[data-bs-theme="dark"] { --bs-body-bg: #16181d }`) is the
+ * other mode's value of the Sass or Less variable of the same name (`$body-bg`), which holds the default.
+ */
+function pairSassNames(map: Map<string, Variable>, alt: "dark" | "light"): void {
+    const plain = (name: string) =>
+        kebab(name).replace(/^(?:bs|ifm|sl|mui|ant|chakra|mantine|pico|vt)-/, "");
+    const preprocessed = new Map<string, Variable>();
+
+    for (const variable of map.values()) {
+        if (variable.kind === "scss" || variable.kind === "less") {
+            preprocessed.set(plain(variable.name), variable);
+        }
+    }
+
+    for (const variable of map.values()) {
+        if (
+            (variable.kind === "css" || variable.kind === "theme") &&
+            variable.light === undefined
+        ) {
+            const base = preprocessed.get(plain(variable.name));
+
+            if (base !== undefined && base.dark === undefined && variable.dark !== undefined) {
+                base.dark = { ...variable.dark, scope: alt };
+                variable.twin = true;
+            }
+        }
     }
 }
 
@@ -839,6 +870,12 @@ function evalColor(
 
     if (sassVar !== null) {
         const target = index.get(`scss:${sassVar[1]}`) ?? index.get(`less:${sassVar[1]}`);
+
+        // Bootstrap and Sass libraries define these; a project that imports them does not repeat them.
+        if (target === undefined && (sassVar[1] === "black" || sassVar[1] === "white")) {
+            return parseColor(sassVar[1]);
+        }
+
         const value = (
             mode === "dark" ? (target?.dark ?? target?.light) : (target?.light ?? target?.dark)
         )?.value;
@@ -939,7 +976,7 @@ const clamp = (value: number, low = 0, high = 1) => Math.min(high, Math.max(low,
 
 /** HSL of an sRGB color: hue in degrees, saturation and lightness 0 to 1. */
 function toHsl({ r, g, b }: Rgba): [number, number, number] {
-    const [x, y, z] = [r / 255, g / 255, b / 255];
+    const [x, y, z] = [r, g, b];
     const high = Math.max(x, y, z);
     const low = Math.min(x, y, z);
     const lightness = (high + low) / 2;
@@ -974,12 +1011,7 @@ function fromHsl(hue: number, saturation: number, lightness: number, a: number):
                     : [chroma, 0, second];
     const offset = lightness - chroma / 2;
 
-    return {
-        r: Math.round((r + offset) * 255),
-        g: Math.round((g + offset) * 255),
-        b: Math.round((b + offset) * 255),
-        a,
-    };
+    return { r: r + offset, g: g + offset, b: b + offset, a };
 }
 
 /** The Sass color functions that change one color or mix two (`rgba($c, .5)`, `darken($c, 10%)`, `mix(a, b, 30%)`). */
@@ -992,9 +1024,9 @@ function sassColor(
 ): Rgba | undefined {
     const value = amount(rest[0]);
     const mixWith = (target: Rgba, weight: number): Rgba => ({
-        r: Math.round(color.r * weight + target.r * (1 - weight)),
-        g: Math.round(color.g * weight + target.g * (1 - weight)),
-        b: Math.round(color.b * weight + target.b * (1 - weight)),
+        r: color.r * weight + target.r * (1 - weight),
+        g: color.g * weight + target.g * (1 - weight),
+        b: color.b * weight + target.b * (1 - weight),
         a: color.a * weight + target.a * (1 - weight),
     });
     const [hue, saturation, lightness] = toHsl(color);
@@ -1055,7 +1087,7 @@ function sassColor(
         case "tint-color":
             return value === undefined
                 ? undefined
-                : fromMix(color, { r: 255, g: 255, b: 255, a: 1 }, value);
+                : fromMix(color, { r: 1, g: 1, b: 1, a: 1 }, value);
 
         case "shade-color":
             return value === undefined
@@ -1067,7 +1099,7 @@ function sassColor(
                 ? undefined
                 : value >= 0
                   ? fromMix(color, { r: 0, g: 0, b: 0, a: 1 }, value)
-                  : fromMix(color, { r: 255, g: 255, b: 255, a: 1 }, -value);
+                  : fromMix(color, { r: 1, g: 1, b: 1, a: 1 }, -value);
 
         default:
             return undefined;
@@ -1079,9 +1111,9 @@ function fromMix(color: Rgba, target: Rgba, weight: number): Rgba {
     const w = clamp(weight);
 
     return {
-        r: Math.round(target.r * w + color.r * (1 - w)),
-        g: Math.round(target.g * w + color.g * (1 - w)),
-        b: Math.round(target.b * w + color.b * (1 - w)),
+        r: target.r * w + color.r * (1 - w),
+        g: target.g * w + color.g * (1 - w),
+        b: target.b * w + color.b * (1 - w),
         a: color.a,
     };
 }
@@ -1110,11 +1142,15 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
         }
 
         const fluid = (found: { text: string; via?: Variable } | undefined) => {
-            const clamp =
-                found === undefined ? null : /^clamp\(\s*([^,()]+),/i.exec(found.text.trim());
+            if (found === undefined) {
+                return found;
+            }
 
-            return found === undefined || clamp === null || px(clamp[1]!) === undefined
-                ? found
+            const text = sassColors(found.text, index);
+            const clamp = /^clamp\(\s*([^,()]+),/i.exec(text.trim());
+
+            return clamp === null || px(clamp[1]!) === undefined
+                ? { ...found, text }
                 : { ...found, text: clamp[1]!.trim() };
         };
         const light = fluid(follow(index, variable, "light"));
@@ -1258,6 +1294,29 @@ function useDefaultColors(facts: Facts): void {
     }
 }
 
+/** Sass color functions in a value, over variables or colors, as the colors they come to: `rgba($black, .2)` is `rgba(0, 0, 0, 0.2)`. */
+function sassColors(text: string, index: Map<string, Variable>): string {
+    if (!/[a-z]\(/i.test(text)) {
+        return text;
+    }
+
+    return text.replace(
+        /(?<![\w-])([a-z][a-z-]*)\(((?:[^()]|\([^()]*\))*)\)/gi,
+        (all, fn: string, args: string) => {
+            // Plain CSS `rgba(0, 0, 0, .2)` is a color already.
+            if (!SASS_COLOR.has(fn.toLowerCase()) || parseColor(all) !== undefined) {
+                return all;
+            }
+
+            const color = evalColor(all, "", "light", index);
+
+            return color === undefined || args === ""
+                ? all
+                : `rgba(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)}, ${Math.round(color.a * 100) / 100})`;
+        },
+    );
+}
+
 /** Sizes computed from custom properties (`padding: calc(var(--gap) * 2)`) are uses of the sizes they come to. */
 function resolveDeferred(facts: Facts, prep: Prepared): void {
     const lookup = (name: string, kind: "scss" | "less" | "css") => {
@@ -1271,21 +1330,8 @@ function resolveDeferred(facts: Facts, prep: Prepared): void {
             return evalMath(inner, lookup) ?? all;
         });
 
-        // Sass color functions over variables: `rgba($black, .2)`, `darken($brand, 10%)`.
-        resolved = resolved.replace(
-            /(?<![\w-])([a-z][a-z-]*)\(((?:[^()]|\([^()]*\))*)\)/gi,
-            (all, fn: string) => {
-                if (!SASS_COLOR.has(fn.toLowerCase()) || !/[$@]/.test(all)) {
-                    return all;
-                }
-
-                const color = evalColor(all, "", "light", prep.index);
-
-                return color === undefined
-                    ? all
-                    : `rgba(${color.r}, ${color.g}, ${color.b}, ${Math.round(color.a * 100) / 100})`;
-            },
-        );
+        // Sass color functions over variables: `rgba($black, .2)`, `darken($brand, 10%)`, `tint-color(#c5221f, 88%)`.
+        resolved = sassColors(resolved, prep.index);
 
         // Arithmetic on lengths: `$unit * 2`, `$unit / 2`, `($a + 4px)`.
         resolved = resolved.replace(

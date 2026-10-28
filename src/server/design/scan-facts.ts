@@ -495,7 +495,10 @@ export function ingest(facts: Facts, decl: Decl): void {
     if (
         ((SCALE_PROPS.test(decl.prop) && /calc\(/.test(decl.value) && /var\(/.test(decl.value)) ||
             (SASS_PROPS.test(decl.prop) &&
-                /(?<![\w$@-])[$@][A-Za-z_]/.test(decl.value) &&
+                (/(?<![\w$@-])[$@][A-Za-z_]/.test(decl.value) ||
+                    /(?<![\w-])(?:tint-color|shade-color|shift-color|darken|lighten|desaturate|fade-in|fade-out|transparentize|opacify|adjust-hue|mix)\(/.test(
+                        decl.value,
+                    )) &&
                 !/\$\{/.test(decl.value))) &&
         facts.deferred.length < 1500
     ) {
@@ -1633,8 +1636,12 @@ function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
             continue;
         }
 
-        if (decl.prop.startsWith("$") && /^\(.*\)$/s.test(decl.value)) {
-            sassMapVars(facts, file, decl.prop.slice(1), decl.value, decl.scope);
+        // `map-merge($theme-colors, ("brand": #6f42c1))` adds the entries of its last map.
+        const merged = /^map-merge\(\s*[$\w.-]+\s*,\s*(\(.*\))\s*\)$/s.exec(decl.value);
+        const mapText = merged === null ? decl.value : merged[1]!;
+
+        if (decl.prop.startsWith("$") && /^\(.*\)$/s.test(mapText)) {
+            sassMapVars(facts, file, decl.prop.slice(1), mapText, decl.scope);
 
             continue;
         }
