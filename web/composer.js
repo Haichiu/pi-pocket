@@ -158,6 +158,12 @@ const FROM = /^\[from: [^\]\n]{1,60}\] /;
 
 /** What a waiting message says (its row names who sent it); subagents' reports say whose, as their text is long. */
 function queuedText(item) {
+    if (typeof item.label === "string" && item.label !== "") {
+        return typeof item.summary === "string" && item.summary !== ""
+            ? `${item.label} · ${item.summary}`
+            : item.label;
+    }
+
     const names = queuedReports(item);
 
     if (!names) {

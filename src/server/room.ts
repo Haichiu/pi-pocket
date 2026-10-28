@@ -45,7 +45,7 @@ import {
     WatchDoc,
 } from "./docs.ts";
 import { COMMAND_ENTRY, SHELL_ENTRY } from "./entry-format.ts";
-import { presentationOptions } from "./entry-presentation.ts";
+import { presentationOptions, queuePresentation } from "./entry-presentation.ts";
 import { agentInfo } from "./models.ts";
 import {
     type ClientBlock,
@@ -882,16 +882,32 @@ export class Room {
             }
 
             const submitter = this.#app.attribution.submitterOf(id, this);
+            const presented = queuePresentation(
+                item.entry?.kind,
+                queuedText(item.content),
+                item.entry?.data,
+                this.#app.webs.presentations(),
+                submitter.by !== undefined,
+            );
 
             return {
                 id,
                 mode: item.mode,
-                text: queued.text,
                 ...submitter,
-                // A person's message is not one of reports, whatever it starts with.
-                ...(submitter.by === undefined && queued.reports !== undefined
-                    ? { reports: queued.reports }
-                    : {}),
+                ...(presented === undefined
+                    ? {
+                          text: queued.text,
+                          // A person's message is not one of reports, whatever it starts with.
+                          ...(submitter.by === undefined && queued.reports !== undefined
+                              ? { reports: queued.reports }
+                              : {}),
+                      }
+                    : {
+                          label: presented.label,
+                          ...(presented.summary === undefined
+                              ? {}
+                              : { summary: presented.summary }),
+                      }),
             };
         });
 

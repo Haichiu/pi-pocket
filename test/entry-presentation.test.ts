@@ -1,6 +1,7 @@
 // A module's presentation exists only while that module is on. A failed load leaves the registry empty.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { compilePresentations, queuePresentation } from "../src/server/entry-presentation.ts";
 import { ExtensionWebs } from "../src/server/extension-web.ts";
 
 test("presentEntry is on only while the module is", () => {
@@ -71,5 +72,35 @@ test("another module cannot take the same prefix", () => {
                 userPrefix: "NOTE ",
             }),
         /already matches that userPrefix/,
+    );
+});
+
+test("the queue shows a label instead of the body", () => {
+    const presentations = compilePresentations([
+        {
+            presentations: [{ kind: "x.quiet-input.note", label: "Note", userPrefix: "NOTE " }],
+        },
+    ]);
+
+    assert.deepEqual(
+        queuePresentation(
+            "x.quiet-input.note",
+            "the whole message",
+            { summary: "saved" },
+            presentations,
+            false,
+        ),
+        { label: "Note", summary: "saved" },
+    );
+    assert.equal(
+        queuePresentation("x.quiet-input.other", "the whole message", {}, presentations, false),
+        undefined,
+    );
+    assert.deepEqual(queuePresentation(undefined, "NOTE hello", undefined, presentations, false), {
+        label: "Note",
+    });
+    assert.equal(
+        queuePresentation(undefined, "NOTE hello", undefined, presentations, true),
+        undefined,
     );
 });
