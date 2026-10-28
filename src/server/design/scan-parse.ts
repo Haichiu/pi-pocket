@@ -127,6 +127,10 @@ export const stripComments = (text: string) => text.replace(COMMENTS, "\n");
  */
 export function parseStyles(source: string): Decl[] {
     const text = stripComments(source);
+    // `@custom-media --dark (prefers-color-scheme: dark);` names a query: `@media (--dark)` is the dark mode's.
+    const darkQueries = [
+        ...text.matchAll(/@custom-media\s+(--[\w-]+)\s+[^;{}]*prefers-color-scheme\s*:\s*dark/gi),
+    ].map((match) => match[1]!);
     const decls: Decl[] = [];
     // One entry per open block: its prelude, and the selector it resolves to.
     const stack: { prelude: string; selector: string }[] = [];
@@ -163,7 +167,12 @@ export function parseStyles(source: string): Decl[] {
         const prop = match[1]!;
         const value = match[2]!.replace(/\s*!(?:important|default|global)\s*$/i, "").trim();
         const at = chain().filter((part) => part.startsWith("@"));
-        const dark = at.some((part) => /^@media\b[^{]*prefers-color-scheme\s*:\s*dark/i.test(part));
+        const dark = at.some(
+            (part) =>
+                /^@media\b[^{]*prefers-color-scheme\s*:\s*dark/i.test(part) ||
+                (/^@media\b/i.test(part) &&
+                    darkQueries.some((name) => new RegExp(`\\(\\s*${name}\\s*\\)`).test(part))),
+        );
         const here = selector();
         const theme = at.some((part) => /^@theme\b/i.test(part));
 
@@ -219,7 +228,12 @@ export function parseStyles(source: string): Decl[] {
                 return decls;
             }
 
-            const prelude = buffer.trim().replace(/\s+/g, " ");
+            // Svelte, Vue and CSS Modules wrap selectors: `:global(:root)`, `:global(.dark)`, `:deep(.x)`, `:local(.x)`.
+            const prelude = buffer
+                .trim()
+                .replace(/\s+/g, " ")
+                .replace(/:(?:global|local|deep)\(((?:[^()]|\([^()]*\))*)\)/g, "$1")
+                .replace(/^:global\s+/, "");
 
             buffer = "";
 
@@ -736,7 +750,11 @@ export function colorsIn(value: string, named = false): FoundColor[] {
 
 /** A length in pixels, with its authored text: `1.5rem` is 24px at a 16px root. */
 export function px(text: string): number | undefined {
-    const match = /^(-?(?:\d+\.?\d*|\.\d+))(px|rem|em|pt)?$/i.exec(text.trim());
+    // `clamp(1rem, 0.9rem + 1vw, 1.5rem)` is a fluid size: its smallest value is the step.
+    const clamp = /^clamp\(\s*([^,()]+),/i.exec(text.trim());
+    const match = /^(-?(?:\d+\.?\d*|\.\d+))(px|rem|em|pt)?$/i.exec(
+        (clamp === null ? text : clamp[1]!).trim(),
+    );
 
     if (match === null) {
         return undefined;

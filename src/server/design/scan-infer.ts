@@ -403,7 +403,11 @@ const FONT_WORDS =
     /sans-serif|serif|monospace|system-ui|ui-sans-serif|ui-monospace|ui-serif|cursive/i;
 
 /** What a variable holds, from where it is set, its value, and then its name. */
-function categorize(variable: Variable, text: string): Category | undefined {
+function categorize(
+    variable: Variable,
+    text: string,
+    layouts?: Facts["varLayout"],
+): Category | undefined {
     if (variable.hint !== undefined) {
         return variable.hint;
     }
@@ -486,6 +490,31 @@ function categorize(variable: Variable, text: string): Category | undefined {
 
         if (/font-size|^text-|-text-|^fs-|^type-|(?:^|-)step-\d/.test(name)) {
             return px(text) !== undefined && px(text)! >= 8 && px(text)! <= 160 ? "text" : "size";
+        }
+
+        // A length with a neutral name (`--size-4`) is what the properties that take it say it is.
+        // The numbered family decides (`--size-1` to `--size-8`), since not every step is used.
+        const stem = (each: string) => each.replace(/[-_]?\d+$/, "");
+        const layout = { space: 0, text: 0, radius: 0, box: 0 };
+
+        for (const [each, counts] of layouts ?? []) {
+            if (
+                each === variable.name ||
+                (/\d$/.test(variable.name) && stem(each) === stem(variable.name))
+            ) {
+                layout.space += counts.space;
+                layout.text += counts.text;
+                layout.radius += counts.radius;
+                layout.box += counts.box;
+            }
+        }
+
+        {
+            const most = Math.max(layout.space, layout.text, layout.radius, layout.box);
+
+            if (most > 0 && layout.box < most) {
+                return layout.space === most ? "space" : layout.radius === most ? "radius" : "text";
+            }
         }
 
         return "size";
@@ -1080,8 +1109,17 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
             continue;
         }
 
-        const light = follow(index, variable, "light");
-        const dark = variable.dark === undefined ? undefined : follow(index, variable, "dark");
+        const fluid = (found: { text: string; via?: Variable } | undefined) => {
+            const clamp =
+                found === undefined ? null : /^clamp\(\s*([^,()]+),/i.exec(found.text.trim());
+
+            return found === undefined || clamp === null || px(clamp[1]!) === undefined
+                ? found
+                : { ...found, text: clamp[1]!.trim() };
+        };
+        const light = fluid(follow(index, variable, "light"));
+        const dark =
+            variable.dark === undefined ? undefined : fluid(follow(index, variable, "dark"));
         const sample = light?.text ?? dark?.text;
 
         if (
@@ -1091,7 +1129,7 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
             continue;
         }
 
-        const category = categorize(variable, sample);
+        const category = categorize(variable, sample, facts.varLayout);
 
         if (category === undefined) {
             continue;

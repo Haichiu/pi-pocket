@@ -137,6 +137,8 @@ export interface Facts {
     varUse: Map<string, number>;
     /** How each custom property is used as a color: `background: var(--ink)` is a background use of `--ink`. */
     varKinds: Map<string, Kinds>;
+    /** What each length variable is used for: spacing, type size, radius, or the size of a box. */
+    varLayout: Map<string, { space: number; text: number; radius: number; box: number }>;
     classUse: Map<string, number>;
     fonts: Map<string, FontFact>;
     sizes: Map<number, SizeFact>;
@@ -175,6 +177,7 @@ export function newFacts(): Facts {
         darkColors: new Map(),
         varUse: new Map(),
         varKinds: new Map(),
+        varLayout: new Map(),
         classUse: new Map(),
         fonts: new Map(),
         sizes: new Map(),
@@ -458,6 +461,35 @@ const SCALE_PROPS =
 
 /** Counts a declaration (not a custom property) in all the tallies. */
 export function ingest(facts: Facts, decl: Decl): void {
+    // A length variable shows what it is for by the property that takes it: `padding: var(--size-4)` is spacing.
+    if (decl.value.includes("var(")) {
+        const group = SPACING_PROPS.test(decl.prop)
+            ? "space"
+            : decl.prop === "font-size"
+              ? "text"
+              : /^border(?:-\w+)*-radius$/.test(decl.prop)
+                ? "radius"
+                : /^(?:width|height|min-width|min-height|max-width|max-height|inline-size|block-size|flex-basis)$/.test(
+                        decl.prop,
+                    )
+                  ? "box"
+                  : undefined;
+
+        if (group !== undefined) {
+            for (const match of decl.value.matchAll(/var\(\s*--([\w-]+)/g)) {
+                const layout = facts.varLayout.get(match[1]!) ?? {
+                    space: 0,
+                    text: 0,
+                    radius: 0,
+                    box: 0,
+                };
+
+                layout[group] += 1;
+                facts.varLayout.set(match[1]!, layout);
+            }
+        }
+    }
+
     // A size computed from custom properties (or from Sass variables: `$unit * 2`, `rgba($black, .2)`) is resolved once
     // the scan knows the variables.
     if (

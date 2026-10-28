@@ -346,6 +346,8 @@ export function nameScore(role: RoleName, segs: string[]): number {
 
             if (
                 state ||
+                // `text-2`, `ink-3`: the second and third text colors are the quieter ones.
+                (ink && segs.some((seg) => /^[2-4]$/.test(seg))) ||
                 has(
                     segs,
                     w(
