@@ -475,8 +475,12 @@ export function createModel(system, edits = new Map()) {
     }
 
     let named;
+    let byVar;
 
     const model = {
+        /** The token that has the custom property `--name`. */
+        byVar: (name) =>
+            (byVar ??= new Map(system.tokens.map((token) => [token.cssVar, token]))).get(name),
         /** The color tokens that play each role (`roles`), found once for this model. */
         roles: () => (named ??= roles(model)),
         system,
@@ -587,9 +591,16 @@ export function createModel(system, edits = new Map()) {
     return model;
 }
 
-/** Whether a color token is for text: a segment of its name says so. */
+/**
+ * Whether a color token is body text that sits on the page: its group says text, and its own name says the plain kinds
+ * (`primary`, `muted`, `link`). One that is `inverse`, `faint`, `disabled`, or `on-accent` sits on another ground, which only
+ * its declared pair can say: nothing is worked out for it.
+ */
 const isText = (token) =>
-    token.path.some((part) => /^(text|fg|foreground|content|ink|label)$/i.test(part));
+    token.path
+        .slice(0, -1)
+        .some((part) => /^(text|fg|foreground|content|ink|label)$/i.test(part)) &&
+    /^(primary|secondary|tertiary|muted|default|body|strong|link)$/i.test(token.path.at(-1) ?? "");
 
 /** The words that name each role: the group a token is in (`text`), and its own name (`primary`), best first. */
 const ROLES = {
@@ -953,3 +964,90 @@ export function shadowOf(value) {
 
 /** How many things the unsaved edits change in `system` (a step that puts a value back changes nothing). */
 export const unsavedCount = (system, history) => (system ? changeOf(system, history).count : 0);
+
+// ─── A style made of parts that link to other tokens ──────────────────────────
+
+const VAR = /var\((--[A-Za-z0-9_-]{1,78})\)/g;
+
+/** `text` (CSS) with each `var(--name)` of a token put as what the token is now in `mode`, and so on in turn. */
+export function literalOf(model, mode, text, depth = 0) {
+    return depth > 6
+        ? text
+        : text.replace(VAR, (whole, name) => {
+              const token = model.byVar(name);
+              const css = token ? safeCss(model.value(token.name, mode).css) : "";
+
+              return css === "" ? whole : literalOf(model, mode, css, depth + 1);
+          });
+}
+
+/** The custom properties that `text` uses, set to what they are now in `mode` (a style text), and those they use in turn. */
+export function scopeStyle(model, mode, text, limit = 40) {
+    const declared = new Map();
+    const queue = [text];
+
+    while (queue.length > 0 && declared.size < limit) {
+        for (const [, name] of queue.pop().matchAll(VAR)) {
+            const token = declared.has(name) ? undefined : model.byVar(name);
+            let css = token ? safeCss(model.value(token.name, mode).css) : "";
+
+            if (css !== "") {
+                css = token.type === "fontFamily" ? fontStack(css) : css;
+                declared.set(name, css);
+                queue.push(css);
+            }
+        }
+    }
+
+    return [...declared].map(([name, css]) => `${name}:${css}`).join(";");
+}
+
+const TYPE_PARTS = ["font-family", "font-size", "font-weight", "line-height", "letter-spacing"];
+
+/**
+ * The style of a typography token in `mode`. The engine gives its members as CSS that links to the tokens they come from
+ * (`font-size: var(--font-size-base)`): the style sets those properties to what they are now, so an edit to the size
+ * token moves the specimen. Without them, the style is drawn from the resolved value.
+ */
+export function typographyStyleOf(model, mode, now) {
+    const parts = isObject(now.parts) ? now.parts : undefined;
+
+    if (parts === undefined) {
+        return typographyStyle(now.value);
+    }
+
+    const text = TYPE_PARTS.map((name) => parts[name]).filter((part) => typeof part === "string");
+    const rules = TYPE_PARTS.flatMap((name) => {
+        const css = typeof parts[name] === "string" ? safeCss(parts[name]) : "";
+
+        return css === "" ? [] : [`${name}:${name === "font-family" ? fontStack(css) : css}`];
+    });
+
+    return [scopeStyle(model, mode, text.join(" ")), ...rules].filter(Boolean).join(";");
+}
+
+/** The line under a typography token's name, from what its parts are now: `20px / 1.15 · 600 · Geist`. */
+export function typographyMeta(model, mode, now) {
+    const parts = isObject(now.parts) ? now.parts : undefined;
+    const part = (name) =>
+        typeof parts?.[name] === "string" ? literalOf(model, mode, parts[name]) : undefined;
+
+    if (parts === undefined) {
+        return undefined;
+    }
+
+    const size = part("font-size");
+    const height = part("line-height");
+    const family = part("font-family")
+        ?.split(",")[0]
+        ?.trim()
+        .replace(/^["']|["']$/g, "");
+
+    return [
+        [size, height === undefined ? "" : `/ ${height}`].filter(Boolean).join(" "),
+        part("font-weight"),
+        family,
+    ]
+        .filter((each) => each !== undefined && each !== "")
+        .join(" · ");
+}

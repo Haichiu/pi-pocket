@@ -39,7 +39,8 @@ export function createSystemView(env, canvas, sections, widgets) {
         const current =
             s.sysMode === "both" ? "both" : modes.includes(s.sysMode) ? s.sysMode : modes[0];
 
-        if (modes.length > 3) {
+        // Many modes, or on a narrow bar a mode with no icon (its name is long): one choice, as a list.
+        if (modes.length > 3 || (narrow && modes.some((mode) => !MODE_ICONS[mode]))) {
             return html`<select
                 class="dsy-modeselect"
                 aria-label="Mode"
@@ -47,7 +48,7 @@ export function createSystemView(env, canvas, sections, widgets) {
                 onChange=${(event) => env.setSysMode(event.currentTarget.value)}
             >
                 ${modes.map((mode) => html`<option value=${mode}>${modeTitle(mode)}</option>`)}
-                <option value="both">Side by side</option>
+                <option value="both">${modes.length === 2 ? "Both" : "All"}, side by side</option>
             </select>`;
         }
 
@@ -470,47 +471,72 @@ export function createSystemView(env, canvas, sections, widgets) {
     // ─── Under the bar ───────────────────────────────────────────────────────
 
     /** What the validator found: errors stop a save, warnings do not. A tap on one with a token goes to the token. */
-    function Problems({ problems }) {
+    function Problems({ problems, has, narrow }) {
+        const errors = problems.filter((problem) => problem.level === "error").length;
+        // Errors stay open where there is room; on a phone, and for warnings, it is one line with a count until a tap.
+        const [open, setOpen] = useState(errors > 0 && !narrow);
         const [all, setAll] = useState(false);
 
         if (problems.length === 0) {
             return null;
         }
 
-        const errors = problems.filter((problem) => problem.level === "error").length;
         const list = all ? problems : problems.slice(0, 3);
+        const title =
+            errors > 0
+                ? `${errors} error${errors === 1 ? "" : "s"}`
+                : `${problems.length} warning${problems.length === 1 ? "" : "s"}`;
+        const more =
+            errors > 0 && problems.length > errors ? `and ${problems.length - errors} more` : "";
 
-        return html`<div class=${`dsy-problems ${errors > 0 ? "error" : "warn"}`} role="status">
-            <div class="dsy-problems-head">
+        return html`<div
+            class=${`dsy-problems ${errors > 0 ? "error" : "warn"} ${open ? "open" : ""}`}
+            role="status"
+        >
+            <button
+                type="button"
+                class="dsy-problems-head"
+                aria-expanded=${open}
+                onClick=${() => setOpen(!open)}
+            >
                 <${Ico} name="alert" size=${15} />
-                <strong
-                    >${errors > 0 ? `${errors} error${errors === 1 ? "" : "s"}` : `${problems.length} warning${problems.length === 1 ? "" : "s"}`}</strong
-                >
-                ${errors > 0 && problems.length > errors && html`<span class="muted">and ${problems.length - errors} more</span>`}
-            </div>
-            <ul>
-                ${list.map(
-                    (problem, index) =>
-                        html`<li key=${index} class=${problem.level}>
-                            ${
-                                problem.token
-                                    ? html`<button
-                                          type="button"
-                                          class="dsy-chip"
-                                          onClick=${() => env.openToken(problem.token)}
-                                      >
-                                          ${problem.token}
-                                      </button>`
-                                    : problem.file &&
-                                      html`<span class="dsy-chip-static mono"
-                                          >${problem.file}</span
-                                      >`
-                            }
-                            <span>${problem.message}</span>
-                        </li>`,
-                )}
-            </ul>
+                <strong>${title}</strong>
+                ${more && html`<span class="muted">${more}</span>`}
+                <span class="grow"></span>
+                <span class="muted dsy-problems-hint">${open ? "Hide" : "Show"}</span>
+                <${Ico} name="down" size=${14} />
+            </button>
             ${
+                open &&
+                html`<ul>
+                    ${list.map(
+                        (problem, index) =>
+                            html`<li key=${index} class=${problem.level}>
+                                ${
+                                    problem.token && has(problem.token)
+                                        ? html`<button
+                                              type="button"
+                                              class="dsy-chip"
+                                              onClick=${() => env.openToken(problem.token)}
+                                          >
+                                              ${problem.token}
+                                          </button>`
+                                        : problem.token
+                                          ? html`<span class="dsy-chip-static mono"
+                                                >${problem.token}</span
+                                            >`
+                                          : problem.file &&
+                                            html`<span class="dsy-chip-static mono"
+                                                >${problem.file}</span
+                                            >`
+                                }
+                                <span>${problem.message}</span>
+                            </li>`,
+                    )}
+                </ul>`
+            }
+            ${
+                open &&
                 problems.length > 3 &&
                 html`<button type="button" class="dsn-link" onClick=${() => setAll(!all)}>
                     ${all ? "Show fewer" : `Show all ${problems.length}`}
@@ -894,7 +920,11 @@ export function createSystemView(env, canvas, sections, widgets) {
                         }
                     </div>`
                 }
-                <${Problems} problems=${data.problems} />
+                <${Problems}
+                    problems=${data.problems}
+                    has=${(name) => model.has(name)}
+                    narrow=${narrow}
+                />
                 ${!canEdit && html`<p class="dsy-readonly muted small"><${Ico} name="eye" size=${13} /> You can look at the system here. Only people who can steer the session change it.</p>`}
                 <${Section} ctx=${ctx} />`;
         }

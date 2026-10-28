@@ -5,7 +5,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DesignSystem } from "../../../src/server/design/system-types.ts";
-import { BenchBrowser, serveFiles, typeOf, type FileEntry } from "./chromium.ts";
+import { BenchBrowser, serveFiles, typeOf, type BenchPage, type FileEntry } from "./chromium.ts";
 import type { Modules } from "./modules.ts";
 import { contrastPairs, impliedPairs } from "./system.ts";
 
@@ -87,7 +87,10 @@ export function contrastPhase(
 export interface DocsShot {
     viewport: string;
     scheme: "light" | "dark";
+    /** The first tile: the first screen. */
     file?: string;
+    /** Every tile, in page order: `docs-<viewport>-<scheme>-<NN>-<section>.png`, each at most 2,000 px high, at scale 1. */
+    tiles?: string[];
     height?: number;
     /** Wider than the viewport: a horizontal scroll. */
     overflowX?: boolean;
@@ -124,6 +127,58 @@ const VIEWPORTS = [
     { name: "mobile", width: 390, height: 844 },
     { name: "desktop", width: 1440, height: 900 },
 ] as const;
+
+/** The tallest tile. Judges read images up to 2,000 × 2,000 px. */
+export const TILE_HEIGHT = 2000;
+const MAX_TILES = 80;
+
+/**
+ * The rectangles to photograph: the first screen, then each top-level section of the page (the `section` elements
+ * of `main`, else every `section` with an id, else the parents of the `h2` headings), cut into parts of at most 2,000 px.
+ */
+export async function tileRects(
+    page: BenchPage,
+    viewport: { width: number; height: number },
+): Promise<{ name: string; y: number; height: number }[]> {
+    const page_ = await page.evaluate<{
+        total: number;
+        sections: { name: string; y: number; height: number }[];
+    }>(`(() => {
+        const top = (el) => el.getBoundingClientRect().top + window.scrollY;
+        let nodes = Array.from(document.querySelectorAll('main > section, [role=main] > section'));
+        if (nodes.length === 0) nodes = Array.from(document.querySelectorAll('section[id]')).filter((el) => !el.parentElement.closest('section'));
+        if (nodes.length === 0) nodes = Array.from(document.querySelectorAll('h2')).map((h) => h.closest('section, article') ?? h.parentElement);
+        const seen = new Set();
+        const sections = nodes.filter((el) => el && !seen.has(el) && seen.add(el)).map((el, index) => {
+            const heading = el.querySelector('h1,h2,h3,[role=heading]')?.textContent ?? '';
+            const label = el.id || heading || 'section-' + (index + 1);
+            const rect = el.getBoundingClientRect();
+            return { name: label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'section', y: Math.max(0, Math.floor(top(el))), height: Math.ceil(rect.height) };
+        }).filter((item) => item.height > 8);
+        return { total: Math.ceil(document.documentElement.scrollHeight), sections };
+    })()`);
+    const out: { name: string; y: number; height: number }[] = [
+        { name: "first-screen", y: 0, height: Math.min(viewport.height, TILE_HEIGHT, page_.total) },
+    ];
+    const sections =
+        page_.sections.length > 0 ? page_.sections : [{ name: "page", y: 0, height: page_.total }];
+
+    for (const section of sections) {
+        const parts = Math.max(1, Math.ceil(section.height / TILE_HEIGHT));
+
+        for (let part = 0; part < parts && out.length < MAX_TILES; part++) {
+            const y = section.y + part * TILE_HEIGHT;
+
+            out.push({
+                name: parts === 1 ? section.name : `${section.name}-part-${part + 1}`,
+                y,
+                height: Math.min(TILE_HEIGHT, section.y + section.height - y, page_.total - y),
+            });
+        }
+    }
+
+    return out.filter((tile) => tile.height > 0);
+}
 
 export async function docsPhase(
     modules: Modules,
@@ -229,11 +284,23 @@ export async function docsPhase(
                         `document.documentElement.scrollHeight`,
                     );
 
+                    // The whole page is taken only to tell light from dark; the files are tiles (below).
                     const png = await page.screenshot(true);
-                    const file = `docs-${viewport.name}-${scheme}.png`;
+                    const prefix = `docs-${viewport.name}-${scheme}`;
 
-                    writeFileSync(join(shots, file), png);
-                    shot.file = join("docs", file);
+                    shot.tiles = [];
+
+                    for (const tile of await tileRects(page, viewport)) {
+                        const name = `${prefix}-${String(shot.tiles.length).padStart(2, "0")}-${tile.name}.png`;
+
+                        writeFileSync(
+                            join(shots, name),
+                            await page.clip(0, tile.y, viewport.width, tile.height),
+                        );
+                        shot.tiles.push(join("docs", name));
+                    }
+
+                    shot.file = shot.tiles[0];
                     hashes.set(
                         `${viewport.name}-${scheme}`,
                         `${png.length}:${png.subarray(0, 4096).toString("base64").slice(0, 64)}:${png.subarray(png.length >> 1, (png.length >> 1) + 512).toString("base64")}`,

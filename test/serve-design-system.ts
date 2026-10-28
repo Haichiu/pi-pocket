@@ -2,12 +2,15 @@
  * A throwaway Pi Pocket for looking at the System view by hand: `test/serve.ts` with a session that has designs
  * (`design-fixtures.ts`) and a design system in its folder (`design-system-fixtures.ts`).
  *
- *   node test/serve-design-system.ts [port] [host] [--no-system]     (defaults: 8913 and 127.0.0.13)
+ *   node test/serve-design-system.ts [port] [host] [--no-system | --flagship]     (defaults: 8913 and 127.0.0.13)
+ *
+ * `--flagship` puts Pi Pocket's own design system (`test/fixtures/design-system/flagship`) in the folder instead of "Harbor".
  *
  * Ctrl+C, or the kill it prints, stops it and deletes its data.
  */
 // helpers.ts first: it points Pi's folder at a temporary one before anything from src/ loads.
 import { cleanUp, newSession, openApp, root, say, scriptedModel, work } from "./helpers.ts";
+import { cpSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { APP_ROOT } from "../src/server/config.ts";
@@ -31,7 +34,11 @@ await new Promise<void>((resolve) => server.listen(port, host, resolve));
 
 const session = await newSession(app);
 
-if (!process.argv.includes("--no-system")) {
+if (process.argv.includes("--flagship")) {
+    cpSync(new URL("./fixtures/design-system/flagship/.pi", import.meta.url), join(work, ".pi"), {
+        recursive: true,
+    });
+} else if (!process.argv.includes("--no-system")) {
     writeSystemFixture(work);
 }
 

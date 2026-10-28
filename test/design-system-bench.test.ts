@@ -963,6 +963,27 @@ test(
             assert.equal(report.lint!.seeded!.expected, 30);
             assert.equal(report.docs!.shots.length, 4);
             assert.ok(report.docs!.shots.every((shot) => shot.file !== undefined));
+
+            // Tiles: the first screen, then each section; none taller than 2,000 px; the phone at scale 1.
+            for (const shot of report.docs!.shots) {
+                const tiles = shot.tiles!;
+
+                assert.ok(tiles.length >= 8, `${shot.viewport} ${shot.scheme}`);
+                assert.match(
+                    tiles[0]!,
+                    new RegExp(`docs-${shot.viewport}-${shot.scheme}-00-first-screen\\.png$`),
+                );
+                assert.ok(tiles.some((tile) => /-\d\d-components\.png$/.test(tile)));
+
+                for (const tile of tiles) {
+                    const header = readFileSync(join(report.bench.out, tile)).subarray(16, 24);
+                    const [width, height] = [header.readUInt32BE(0), header.readUInt32BE(4)];
+
+                    assert.ok(height > 0 && height <= 2000, tile);
+                    assert.equal(width, shot.viewport === "mobile" ? 390 : 1440, tile);
+                }
+            }
+
             assert.ok(report.format!.systems.length >= 7);
         } finally {
             await chromium.close();

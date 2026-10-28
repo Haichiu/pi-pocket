@@ -6,7 +6,7 @@ import { findBrowser } from "../src/server/browser/discovery.ts";
 import {
     colorCss,
     colorDistance,
-    contrastRatio,
+    contrastOf,
     dimensionCss,
     familyList,
     formatColor,
@@ -40,9 +40,9 @@ test("colors: distance is perceptual, contrast follows WCAG, and values print as
         "blue and red are far apart",
     );
     assert.ok(colorDistance([0, 0, 0, 1], [0, 0, 0, 0.5]) >= 50, "alpha counts");
-    assert.equal(contrastRatio([0, 0, 0], [255, 255, 255]), 21);
-    assert.equal(contrastRatio([255, 255, 255], [255, 255, 255]), 1);
-    assert.ok(Math.abs(contrastRatio([119, 119, 119], [255, 255, 255]) - 4.48) < 0.01);
+    assert.equal(contrastOf([0, 0, 0], [255, 255, 255]), 21);
+    assert.equal(contrastOf([255, 255, 255], [255, 255, 255]), 1);
+    assert.ok(Math.abs(contrastOf([119, 119, 119], [255, 255, 255]) - 4.48) < 0.01);
     assert.equal(formatColor([122, 162, 247, 1]), "#7aa2f7");
     assert.equal(formatColor([255, 255, 255, 0.1]), "rgb(255 255 255 / 0.1)");
 });
@@ -52,7 +52,7 @@ test("token values turn into CSS the browser can resolve", () => {
     assert.equal(colorCss("{color.blue}"), undefined, "an unresolved reference is not a color");
     assert.equal(
         colorCss({ colorSpace: "srgb", components: [0.5, 0.25, 1], alpha: 0.5 }),
-        "color(srgb 0.5 0.25 1 / 0.5)",
+        "rgb(128 64 255 / 0.5)",
     );
     assert.equal(
         colorCss({ colorSpace: "oklch", components: [0.7, 0.1, 250] }),
@@ -130,7 +130,7 @@ test("a token set holds one mode of the system, and modes pick by color scheme",
     );
     const next = tokenSet(system, "light");
 
-    assert.equal(next.colors.find((item) => item.name === "color.alias")!.css, "color(srgb 1 0 0)");
+    assert.equal(next.colors.find((item) => item.name === "color.alias")!.css, "#ff0000");
     assert.equal(
         next.lengths.some((item) => item.name === "button.padding"),
         false,
@@ -214,15 +214,25 @@ test(
     async () => {
         const report = await check(
             page(
-                ".ok{background:#fff;padding:16px;margin:0 auto;max-width:300px;border-radius:8px;color:#1c1e26}" +
-                    ".pill{border-radius:999px;padding:8px 16px;background:#f6f7fb}.round{width:40px;height:40px;border-radius:50%;background:#3b6cf6}",
-                `<section class="ok" data-pid="ok-card"><h2 style="margin:0 0 8px;font-size:24px">Title</h2><p style="margin:0;color:#5a5f73;font-size:14px">Body</p><span class="pill">Pill</span><div class="round"></div></section>` +
-                    `<p data-pid="off-color" style="margin:0;color:#7ba3f8;background:#fff">Close to the accent</p>` +
+                ".ok{background:var(--color-bg-surface);padding:var(--space-4);margin:0 auto;max-width:300px;border-radius:var(--radius-md);color:var(--color-text-primary)}" +
+                    ".pill{border-radius:999px;padding:var(--space-2) var(--space-4);background:var(--color-bg-page)}.round{width:40px;height:40px;border-radius:50%;background:var(--color-accent-default)}",
+                `<section class="ok" data-pid="ok-card"><h2 data-pid="ok-title" style="margin:0 0 var(--space-2);font-size:var(--font-size-lg)">Title</h2><p style="margin:0;color:var(--color-text-muted);font-size:var(--font-size-sm)">Body</p><span class="pill">Pill</span><div class="round"></div></section>` +
+                    `<p data-pid="off-color" style="margin:0;color:#7ba3f8;background:var(--color-bg-surface)">Close to the accent</p>` +
                     `<p data-pid="off-font" style="margin:0;font-family:Georgia,serif">Serif</p>` +
                     `<p data-pid="off-mono" style="margin:0;font-family:Menlo,monospace">Mono</p>` +
-                    `<p data-pid="off-size" style="margin:0;font-size:15px;padding:14px;border-radius:12px;background:#fff">Sizes</p>`,
+                    `<p data-pid="off-size" style="margin:0;font-size:15px;padding:14px;border-radius:12px;background:var(--color-bg-surface)">Sizes</p>` +
+                    // A literal that equals a token still does not follow the system: a warning, with the token to use.
+                    `<p data-pid="literal" style="margin:0;color:#5a5f73;padding:16px;font-family:system-ui,sans-serif;background:var(--color-bg-surface)">Hard-coded</p>`,
             ),
         );
+        const hard = report.findings.filter((item) => item.pid === "literal");
+
+        assert.deepEqual(hard.map((item) => [item.rule, item.level, item.suggestion]).sort(), [
+            ["off-system-color", "warning", "var(--color-text-muted)"],
+            ["off-system-font", "warning", "var(--font-body)"],
+            ["off-system-size", "warning", "var(--space-4)"],
+        ]);
+        assert.match(hard[0]!.message, /written as a literal/);
 
         const color = onPid(report, "off-system-color", "off-color")!;
 
@@ -281,15 +291,19 @@ test(
 test("the same value on many elements is one finding with a count", browser, async () => {
     const items = Array.from(
         { length: 5 },
-        (_, index) =>
-            `<p data-pid="p${index}" style="margin:0;color:#7ba3f8;background:#fff">x</p>`,
+        () => `<p style="margin:0;color:#7ba3f8;background:var(--color-bg-surface)">x</p>`,
     );
-    const report = await check(page("", items.join("")));
+    const report = await check(
+        page(
+            "",
+            `<div data-pid="scope">${items.join("")}</div><div data-pid="other"><p style="margin:0;color:#7ba3f8;background:var(--color-bg-surface)">y</p></div>`,
+        ),
+    );
     const found = ofRule(report, "off-system-color").filter((item) => item.value === "#7ba3f8");
 
-    assert.equal(found.length, 1);
-    assert.match(found[0]!.message, /text on 5 elements/);
-    assert.equal(found[0]!.pid, "p0");
+    // One finding for each data-pid scope: Pi and people can name the element, and a long list stays short.
+    assert.deepEqual(found.map((item) => item.pid).sort(), ["other", "scope"]);
+    assert.match(found.find((item) => item.pid === "scope")!.message, /text on 5 elements/);
 });
 
 test(
@@ -309,8 +323,8 @@ test(
                     `<div style="background:#1c1e26"><div style="background:rgba(255,255,255,0.1)"><p class="t" data-pid="low-alpha" style="color:#444a5a">Alpha layer</p></div></div>` +
                     // A translucent text color mixes with its background: 40% black on white is light grey.
                     `<p class="t" data-pid="low-text-alpha" style="color:rgba(0,0,0,0.45);background:#fff">Alpha text</p>` +
-                    // Opacity lowers the contrast of everything inside.
-                    `<div style="opacity:0.4"><p class="t" data-pid="low-opacity" style="color:#1c1e26;background:#fff">Faded</p></div>` +
+                    // Partial opacity makes the result depend on the state the page is caught in: not judged.
+                    `<div style="opacity:0.4"><p class="t" data-pid="ok-opacity" style="color:#1c1e26;background:#fff">Faded</p></div>` +
                     // Large text needs 3:1 only: #777 on white is 4.48:1 (fails 4.5, passes 3), #aaa is 2.3:1.
                     `<p class="t" data-pid="ok-large" style="font-size:24px;color:#8a8a8a;background:#fff">Large</p><p class="t" data-pid="low-large" style="font-size:24px;color:#aaa;background:#fff">Large low</p>` +
                     `<p class="t" data-pid="low-bold" style="font-size:19px;font-weight:700;color:#a0a0a0;background:#fff">Bold low</p><p class="t" data-pid="ok-bold" style="font-size:19px;font-weight:700;color:#8a8a8a;background:#fff">Bold</p>` +
@@ -331,18 +345,56 @@ test(
             "low-alpha",
             "low-bold",
             "low-large",
-            "low-opacity",
             "low-parent",
             "low-text-alpha",
         ]);
         const low = onPid(report, "contrast", "low")!;
 
         assert.equal(low.level, "error");
-        assert.equal(low.value, "2.84:1");
-        assert.match(low.message, /#999999 on #ffffff is 2\.84:1; text needs 4\.5:1/);
+        assert.equal(low.value, "2.66:1");
+        assert.match(low.message, /#999999 on #f6f7fb is 2\.66:1; text needs 4\.5:1/);
         assert.match(onPid(report, "contrast", "low-large")!.message, /large text needs 3:1/);
     },
 );
+
+test("contrast is judged only where the background is certain", browser, async () => {
+    const gif = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
+    const css =
+        ".t{margin:0;padding:8px}" +
+        ".night{background:#10141c;color:#e8ecf2;padding:16px}.night .card{background:#fff;color:#1c1e26;padding:16px}" +
+        ".scope{--ink:#e8ecf2;--paper:#171c24;background:var(--paper);color:var(--ink)}" +
+        ".glass{background:rgba(255,255,255,.08)}" +
+        ".hero{position:relative;background:#eee;color:#fff;padding:16px}.hero::before{content:'';position:absolute;inset:0;background:rgba(0,0,0,.6)}.hero>*{position:relative}" +
+        ".box{position:relative;height:60px;background:#fff}.box img{position:absolute;inset:0;width:100%;height:60px}" +
+        ".btn{border:0;padding:12px;background:#1f5fd6;color:#fff;font:inherit}.ghost{background:transparent;color:#1f5fd6;border:1px solid #1f5fd6}" +
+        ".sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.sr2{position:absolute;clip-path:inset(50%);height:20px}" +
+        ".over{position:absolute;left:0;top:0;width:100%;height:40px;background:#000}" +
+        "input::placeholder{color:#bbb}";
+    const body =
+        // Judged: certain backgrounds.
+        `<section class="night" data-pid="night"><p class="t" data-pid="ok-on-night">Light on dark</p><p class="t" data-pid="low-on-night" style="color:#2b3140">Dark on dark</p><div class="card"><p class="t" data-pid="ok-card">Card text</p><p class="t" data-pid="low-card" style="color:#ddd">Pale on the card</p></div></section>` +
+        `<section class="scope" data-pid="scope"><p class="t" data-pid="ok-scope">Scoped variables</p></section>` +
+        `<section class="night"><div class="glass" data-pid="glass"><p class="t" data-pid="ok-glass">Glass over dark</p></div></section>` +
+        `<button class="btn" data-pid="ok-btn">Primary</button><button class="btn ghost" data-pid="ok-ghost">Ghost</button>` +
+        `<input data-pid="ok-placeholder" placeholder="Email" style="padding:8px">` +
+        // Not judged: the background cannot be known.
+        `<section class="hero" data-pid="hero"><p class="t" data-pid="ok-hero">Over an overlay drawn by ::before</p></section>` +
+        `<div class="box" data-pid="box"><img alt="" src="${gif}"><p class="t" data-pid="ok-image" style="position:absolute;margin:0;color:#ccc">Over an image</p></div>` +
+        `<div data-pid="grad" style="background:linear-gradient(#fff,#eee)"><p class="t" data-pid="ok-grad" style="color:#ccc">Over a gradient</p></div>` +
+        `<div data-pid="blur" style="backdrop-filter:blur(4px);background:rgba(255,255,255,.2)"><p class="t" data-pid="ok-blur" style="color:#fff">Backdrop blur</p></div>` +
+        `<div data-pid="blend" style="mix-blend-mode:multiply"><p class="t" data-pid="ok-blend" style="color:#ddd">Blend</p></div>` +
+        `<div data-pid="faded" style="opacity:0.5"><p class="t" data-pid="ok-faded" style="color:#1c1e26">Faded parent</p></div>` +
+        `<div data-pid="under" style="position:relative;height:40px"><p class="t" data-pid="ok-under" style="margin:0;color:#fff">Under a panel</p><div class="over"></div></div>` +
+        `<span class="sr" data-pid="ok-sr">hidden</span><span class="sr2" data-pid="ok-sr2" style="color:#fff">hidden too</span>`;
+    const report = await check(page(css, body), { viewport: "desktop" }, null);
+
+    assert.deepEqual(
+        ofRule(report, "contrast")
+            .map((item) => item.pid)
+            .sort(),
+        ["low-card", "low-on-night"],
+    );
+});
 
 test("a contrast finding names the system color that passes", browser, async () => {
     const report = await check(
@@ -376,49 +428,44 @@ test("a form field's edge needs 3:1 against what it sits on (a warning)", browse
     assert.equal(onPid(report, "contrast", "ok-bare"), undefined);
 });
 
-test(
-    "tap targets: under 24 px fail when crowded, under 44 px warn on a phone",
-    browser,
-    async () => {
-        const css =
-            "a,button{display:inline-block;margin:0;padding:0;color:#1c1e26}" +
-            ".gap{margin-right:40px}";
-        const body =
-            // Two 16 px links side by side: their 24 px circles meet.
-            `<div data-pid="crowded"><a href="#" style="width:16px;height:16px;background:#ccc"></a><a href="#" style="width:16px;height:16px;background:#ccc"></a></div>` +
-            // One 16 px link far from the others: the spacing exception holds.
-            `<div data-pid="ok-spaced" style="margin-top:80px"><a class="gap" href="#" style="width:16px;height:16px;background:#ccc"></a></div>` +
-            // A link inside a sentence is exempt.
-            `<p data-pid="ok-inline" style="margin-top:80px">Read the <a href="#" style="display:inline">full story</a> today.</p>` +
-            // 36 px: warns on a phone.
-            `<button data-pid="warn" style="margin-top:80px;width:120px;height:36px">Small</button>` +
-            `<button data-pid="ok-big" style="margin-top:80px;width:120px;height:48px">Big</button>` +
-            // A checkbox with a big label is a big target.
-            `<label data-pid="ok-label" style="display:block;margin-top:80px;height:48px"><input type="checkbox"> Gift</label>` +
-            `<input data-pid="bare-checkbox" type="checkbox" style="margin-top:80px;display:block">`;
-        const phone = await check(page(css, body), {}, null);
-        const crowded = onPid(phone, "tap-target", "crowded")!;
+test("tap targets: under 24 px is an error, under 44 px a warning", browser, async () => {
+    const css =
+        "a,button{display:inline-block;margin:0;padding:0;color:#1c1e26}" +
+        ".gap{margin-right:40px}";
+    const body =
+        // Under 24 px is an error, alone or crowded.
+        `<div data-pid="crowded"><a href="#" style="width:16px;height:16px;background:#ccc"></a><a href="#" style="width:16px;height:16px;background:#ccc"></a></div>` +
+        `<div data-pid="alone" style="margin-top:80px"><a class="gap" href="#" style="width:16px;height:16px;background:#ccc"></a></div>` +
+        // A link inside a sentence is exempt.
+        `<p data-pid="ok-inline" style="margin-top:80px">Read the <a href="#" style="display:inline">full story</a> today.</p>` +
+        // 36 px: warns on a phone.
+        `<button data-pid="warn" style="margin-top:80px;width:120px;height:36px">Small</button>` +
+        `<button data-pid="ok-big" style="margin-top:80px;width:120px;height:48px">Big</button>` +
+        // A checkbox with a big label is a big target.
+        `<label data-pid="ok-label" style="display:block;margin-top:80px;height:48px"><input type="checkbox"> Gift</label>` +
+        `<input data-pid="bare-checkbox" type="checkbox" style="margin-top:80px;display:block">`;
+    const phone = await check(page(css, body), {}, null);
+    const crowded = onPid(phone, "tap-target", "crowded")!;
 
-        assert.equal(crowded.level, "error");
-        assert.equal(crowded.value, "16×16px");
-        assert.match(crowded.message, /\(and 1 more element\)/, "equal targets are one finding");
-        assert.equal(onPid(phone, "tap-target", "ok-spaced"), undefined);
-        assert.equal(onPid(phone, "tap-target", "ok-inline"), undefined);
-        assert.equal(onPid(phone, "tap-target", "warn")!.level, "warning");
-        assert.equal(onPid(phone, "tap-target", "ok-big"), undefined);
-        assert.equal(onPid(phone, "tap-target", "ok-label"), undefined);
-        assert.equal(
-            onPid(phone, "tap-target", "bare-checkbox"),
-            undefined,
-            "a native checkbox is the browser's",
-        );
-        // On a desktop viewport the 44 px advice is dropped; the 24 px floor stays.
-        const desktop = await check(page(css, body), { viewport: "desktop" }, null);
+    assert.equal(crowded.level, "error");
+    assert.equal(crowded.value, "16×16px");
+    assert.match(crowded.message, /\(and 1 more element\)/, "equal targets are one finding");
+    assert.equal(onPid(phone, "tap-target", "alone")!.level, "error");
+    assert.equal(onPid(phone, "tap-target", "ok-inline"), undefined);
+    assert.equal(onPid(phone, "tap-target", "warn")!.level, "warning");
+    assert.equal(onPid(phone, "tap-target", "ok-big"), undefined);
+    assert.equal(onPid(phone, "tap-target", "ok-label"), undefined);
+    assert.equal(
+        onPid(phone, "tap-target", "bare-checkbox"),
+        undefined,
+        "a native checkbox is the browser's",
+    );
+    // The same sizes at a desktop viewport: the rule is about the target, not the screen.
+    const desktop = await check(page(css, body), { viewport: "desktop" }, null);
 
-        assert.equal(onPid(desktop, "tap-target", "warn"), undefined);
-        assert.equal(onPid(desktop, "tap-target", "crowded")!.level, "error");
-    },
-);
+    assert.equal(onPid(desktop, "tap-target", "warn")!.level, "warning");
+    assert.equal(onPid(desktop, "tap-target", "crowded")!.level, "error");
+});
 
 test("overflow: a page that scrolls sideways, or hides what does not fit", browser, async () => {
     const wide = await check(
@@ -569,15 +616,24 @@ test(
         assert.equal(pid[0]!.level, "warning");
         assert.match(pid[0]!.message, /2 elements.*<h1>.*<button>/);
         const tagged = await check(
+            page(
+                "",
+                `<main data-pid="main"><h1 data-pid="h1">Hi</h1><button data-pid="go">Go</button></main>`,
+            ),
+            {},
+            null,
+        );
+        const parent = await check(
             page("", `<main data-pid="main"><h1>Hi</h1><button>Go</button></main>`),
             {},
             null,
         );
 
-        assert.equal(
-            ofRule(tagged, "missing-pid").length,
-            0,
-            "a parent's data-pid covers its children",
+        assert.equal(ofRule(tagged, "missing-pid").length, 0);
+        assert.match(
+            ofRule(parent, "missing-pid")[0]!.message,
+            /2 elements.*<h1>.*<button>/,
+            "a control needs a data-pid of its own: a parent's does not name it",
         );
         assert.equal(ofRule(tagged, "missing-viewport").length, 0);
         const deck = await check(
@@ -623,22 +679,34 @@ test(
 );
 
 test("a dark color scheme compares with the dark mode of the system", browser, async () => {
-    const content = page(
-        "@media (prefers-color-scheme: dark){body{background:#101218;color:#e6e8f0}}",
-        `<p data-pid="text" style="margin:0;padding:8px;color:#e6e8f0;background:#101218">Dark text</p>`,
-    );
-    const light = await check(content, { colorScheme: "light" });
-    const dark = await check(content, { colorScheme: "dark" });
+    // The page's variables flip in dark (`prefers-color-scheme`), and so does the mode that it is checked against.
+    const linked = page("", `<p data-pid="text" style="margin:0;padding:var(--space-2)">Text</p>`);
+    const light = await check(linked, { colorScheme: "light" });
+    const dark = await check(linked, { colorScheme: "dark" });
 
     assert.equal(dark.colorScheme, "dark");
-    assert.ok(onPid(light, "off-system-color", "text"), "dark values are off the light mode");
-    assert.equal(onPid(dark, "off-system-color", "text"), undefined, "and on the dark mode");
-    assert.equal(ofRule(dark, "contrast").length, 0);
-    // An explicit mode wins over the scheme.
-    const forced = await check(content, { colorScheme: "dark", mode: "light" });
+    assert.deepEqual(light.findings, []);
+    assert.deepEqual(
+        dark.findings,
+        [],
+        "var() follows the mode, so a page of variables is on both",
+    );
+    // A literal of the dark mode's value is off the light mode (an error) and hard-coded in the dark one (a warning).
+    const hard = page(
+        "",
+        `<p data-pid="text" style="margin:0;color:#e6e8f0;background:#101218">Dark text</p>`,
+    );
+    const inLight = await check(hard, { colorScheme: "light" });
+    const inDark = await check(hard, { colorScheme: "dark" });
 
-    assert.ok(onPid(forced, "off-system-color", "text"));
-    await assert.rejects(check(content, { mode: "sepia" }), /no mode "sepia"/);
+    assert.equal(onPid(inLight, "off-system-color", "text")!.level, "error");
+    assert.equal(onPid(inDark, "off-system-color", "text")!.level, "warning");
+    assert.match(onPid(inDark, "off-system-color", "text")!.message, /written as a literal/);
+    // An explicit mode wins over the scheme.
+    const forced = await check(hard, { colorScheme: "dark", mode: "light" });
+
+    assert.equal(onPid(forced, "off-system-color", "text")!.level, "error");
+    await assert.rejects(check(hard, { mode: "sepia" }), /no mode "sepia"/);
 });
 
 test(
@@ -738,10 +806,10 @@ test("a page cannot change the objects the check uses", browser, async () => {
 test("a page made only of system values has no findings at all", browser, async () => {
     const report = await check(
         page(
-            "main{padding:16px;display:grid;gap:8px;max-width:420px;margin:0 auto}h1{margin:0;font-size:24px}p{margin:0;font-size:14px;color:#5a5f73}" +
-                "a.btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 24px;border-radius:8px;background:#3b6cf6;color:#fff;text-decoration:none}" +
-                "a.btn:focus-visible{outline:2px solid #1c1e26;outline-offset:2px}",
-            `<main data-pid="main"><h1>Welcome</h1><p>Small batches, roasted weekly.</p><a class="btn" href="#">Start</a><img alt="" width="8" height="8" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></main>`,
+            "main{padding:var(--space-4);display:grid;gap:var(--space-2);max-width:420px;margin:0 auto}h1{margin:0;font-size:var(--font-size-lg)}p{margin:0;font-size:var(--font-size-sm);color:var(--color-text-muted)}" +
+                "a.btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 var(--space-6);border-radius:var(--radius-md);background:var(--color-accent-default);color:var(--color-accent-fg);text-decoration:none}" +
+                "a.btn:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px}",
+            `<main data-pid="main"><h1 data-pid="title">Welcome</h1><p>Small batches, roasted weekly.</p><a class="btn" href="#" data-pid="start">Start</a><img alt="" width="8" height="8" data-pid="dot" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></main>`,
         ),
     );
 

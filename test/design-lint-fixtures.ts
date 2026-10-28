@@ -1,4 +1,5 @@
 // A small design system and a helper to check a page against it, for the design check tests.
+import { dimensionCss } from "../src/server/design/lint-color.ts";
 import { createPublicFetch } from "../src/server/public-fetch.ts";
 import type { PocketHost } from "../src/server/host.ts";
 import type { DesignBundle } from "../src/server/design/bundle.ts";
@@ -78,9 +79,32 @@ export function bundleOf(content: string, assets: DesignBundle["assets"] = []): 
 const head =
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
 
-/** A page: the head with a viewport meta, the style, and the body. */
+/** The test system as CSS variables, light and dark, as a tokens.css would give them. */
+export function tokensCss(system: DesignSystem = testSystem()): string {
+    const lines = (mode: string) =>
+        system.tokens
+            .map((item) => {
+                const value = item.modes[mode]!.value;
+                const css =
+                    typeof value === "string"
+                        ? value
+                        : Array.isArray(value)
+                          ? value.join(", ")
+                          : dimensionCss(value);
+
+                return `${item.cssVar}:${css};`;
+            })
+            .join("");
+
+    return `:root{${lines("light")}}@media (prefers-color-scheme: dark){:root{${lines("dark")}}}`;
+}
+
+/**
+ * A page: the head with a viewport meta and the system's variables, the style, and the body. The body's own look uses
+ * the variables, so a page made of `var()`s alone is on the system.
+ */
 export const page = (style: string, body: string) =>
-    `${head}<style>body{margin:0;font:16px/1.5 system-ui,sans-serif;color:#1c1e26;background:#f6f7fb}${style}</style></head><body>${body}</body></html>`;
+    `${head}<style>${tokensCss()}body{margin:0;font-family:var(--font-body);font-size:var(--font-size-md);line-height:1.5;color:var(--color-text-primary);background:var(--color-bg-page)}${style}</style></head><body>${body}</body></html>`;
 
 /** Check a page at a phone size against the test system (`null`: no system). */
 export function check(

@@ -1,8 +1,25 @@
 // The Check dock: a design checked against the design system (and the page's own basics: contrast, tap targets, overflow,
 // alt text, headings). The server renders the page and walks it; this lists what it found, pins each finding to its element
 // on the canvas, and puts one message with all of them in the message box for Pi.
+import { exportViewport, sizeOf } from "./devices.js";
 import { checkMessage } from "./messages.js";
+import { resolveDevice } from "./state.js";
 import { checkKey } from "./system-data.js";
+
+/**
+ * The options of a check as they are now: what the person chose, else what the canvas shows. `dark` is whether the app
+ * is in a dark scheme (the page in the canvas follows it); `seen` is the scheme of the canvas, `scheme` the one checked.
+ */
+export function checkOptions(s, dark) {
+    const device = resolveDevice(s.device, s.width);
+    const seen = dark ? "dark" : "light";
+
+    return {
+        scheme: s.checkWith.scheme ?? seen,
+        size: s.checkWith.size ?? exportViewport(device, sizeOf(device, s.custom)),
+        seen,
+    };
+}
 
 /** What each rule is called, and in what order the groups of findings go. */
 export const RULES = {
@@ -94,7 +111,7 @@ export function createCheck(env, DockHead) {
     }
 
     function CheckDock({ s, design, shown, canEdit }) {
-        const options = s.checkWith;
+        const options = checkOptions(s, env.darkTheme());
         const key = checkKey(design.id, shown, options.scheme, options.size);
         const entry = s.checks[key];
         const report = entry?.report;
@@ -117,7 +134,12 @@ export function createCheck(env, DockHead) {
         }, []);
 
         const run = () =>
-            void systemData.check({ artifact: design.id, version: shown, ...options });
+            void systemData.check({
+                artifact: design.id,
+                version: shown,
+                scheme: options.scheme,
+                size: options.size,
+            });
 
         const send = () => {
             env.sendToBox(
@@ -141,7 +163,7 @@ export function createCheck(env, DockHead) {
                     <${Segmented}
                         label="Color scheme"
                         value=${options.scheme}
-                        onChange=${(scheme) => store.set({ checkWith: { ...options, scheme } })}
+                        onChange=${(scheme) => store.set({ checkWith: { ...s.checkWith, scheme } })}
                         options=${[
                             { value: "light", label: "Light", icon: "sun" },
                             { value: "dark", label: "Dark", icon: "moon" },
@@ -150,7 +172,7 @@ export function createCheck(env, DockHead) {
                     <${Segmented}
                         label="Size"
                         value=${options.size}
-                        onChange=${(size) => store.set({ checkWith: { ...options, size } })}
+                        onChange=${(size) => store.set({ checkWith: { ...s.checkWith, size } })}
                         options=${[
                             { value: "mobile", label: "Phone", icon: "phone" },
                             { value: "tablet", label: "Tablet", icon: "tablet" },
@@ -158,6 +180,12 @@ export function createCheck(env, DockHead) {
                         ]}
                     />
                 </div>
+                ${
+                    options.scheme !== options.seen &&
+                    html`<p class="dsn-note muted small">
+                        ${`The canvas shows this page in ${options.seen} mode. The pins are for the ${options.scheme} check, so some sit on colors you cannot see here.`}
+                    </p>`
+                }
                 ${
                     entry === undefined &&
                     html`<div class="dsn-empty">

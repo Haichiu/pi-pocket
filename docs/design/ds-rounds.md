@@ -22,6 +22,36 @@ Bench (`node test/design-system-bench/run.ts`): overall **0.926**. Scan 0.869 (c
 
 **Held-out set** (B, outside the repo; 3 scan projects, 4 lint designs; `--reference` scores 1.0): the round 1 code scores **0.853** (scan **0.544**, format 0.987, lint 0.734, contrast 1, docs 1). The scan's round 1 rules do not generalize (roles P 0.46 R 0.44, dark roles R 0.11; a dark theme object read as the default). The contrast false positives are general (8 of 11 on clean designs). T and V got general causes, not held-out details.
 
+### Round 1 complete (U merged, ed6b2e3)
+
+U's stand-ins replaced by the real engines. Full suite: 1155 of 1162 pass; 6 failures are U's tests meeting the real engines, 1 is V's render-queue timing test (sent back to U and V). Bench: overall 0.926 (unchanged). Held-out, `--no-browser`: scan 0.544, lint 0.734 (format and docs read low only because `--no-browser` skips their browser checks; run the held-out set with the browser from now on).
+
+Hands-on findings for U: the Check dock checks Light while the canvas shows Dark; section tabs overflow at about 650 px; the warnings box fills a third of a phone screen.
+
+### Round 2: V merged
+
+V's lint fixes (root cause: the DOM walk skipped `<body>`, so text was judged on white; findings now one per `data-pid` scope; tap targets per the plan; authored literals read). Bench lint 0.772 → **1.0**. Held-out lint 0.734 → **1.0** (precision 1, recall 1, 0 findings on clean designs): the fix generalizes. V's duplicate color math now imports T's `color.ts`.
+
+### Judges after round 2 (tree at about ab20007; scan fix not merged)
+
+| Line | Judge A (sonnet-5-5) | Judge B (glm-5.3-flash) | Score |
+|---|---|---|---|
+| 1 Token model | 8 | 9 | **8** |
+| 2 Import (scan) | 4 | 4 | **4** |
+| 3 Enforcement | 7 | 9 | **7** |
+| 4 Accessibility | 7 | 9 | **7** |
+| 5 Agent experience | 7 | 8 | **7** |
+| 6 People experience | 6 | 7 | **6** |
+| 7 Documentation output | 8 | 8 | **8** |
+| 8 Code handoff | 6 | 8 | **6** |
+| 9 Engineering | 6 | 6 | **6** |
+
+Shared top items: the scan does not generalize; Check checks Light while the canvas shows Dark (and has no high-contrast choice); phone layout (tabs, warnings box, Check dock); Colors opens on primitives; `tailwind.css` doubles every variable and `tokens.css` adds a `--dim-*` layer; docs copy errors; `features.md` and `map.md` out of date; the suite was red at the time of judging.
+
+Check-in (T's working tree, round 2 scan, not merged): bench scan 0.995, held-out scan **0.795** (from 0.544). The gap shows some bench fitting; T got four general causes (scales only as literals or SCSS/JS, SCSS dark forms, too many colors in a dark-first project, one role).
+
+Round 3 assignments: U (people experience), G (docs page, flagship naming, guide), V (role-aware suggestions, 15+ real pages, stable ids), T (scan, then handoff outputs), integrator (docs).
+
 Round 2 started at once on the bench's weakest phases: V on lint, T on scan, B on a held-out set outside the repo (`/mnt/games/Development/ds-holdout/`, never shown to T or V).
 
 Baseline (0.27.0-beta.1, before round 1): no token model, no compile, no lint, no System view, no docs page. Scan read 16 files of this repo and returned one flat list of 60 variables in walk order. Every rubric line is at 0 to 2.

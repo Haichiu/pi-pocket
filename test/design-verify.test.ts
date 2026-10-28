@@ -101,14 +101,34 @@ test("slots: a wait is bounded in time", async () => {
     held();
 });
 
-test("five renders at once all finish, two at a time", browser, async () => {
+test("five renders at once all finish, and never more than two run together", browser, async () => {
+    // Timing does not decide this: the first two renders wait for each other inside their callbacks (so two really are
+    // running at once, or the test fails after the wait), and no render may see a third.
     let running = 0;
     let most = 0;
+
+    let meet: () => void = () => {};
+
+    const together = new Promise<void>((resolve) => {
+        meet = resolve;
+    });
     const results = await Promise.all(
         [1, 2, 3, 4, 5].map((id) =>
             withRender(bundleOf("<h1>x</h1>"), host, undefined, async (view) => {
                 running++;
                 most = Math.max(most, running);
+
+                if (running === 2) {
+                    meet();
+                }
+
+                if (id <= 2) {
+                    await Promise.race([
+                        together,
+                        new Promise((resolve) => setTimeout(resolve, 30_000)),
+                    ]);
+                }
+
                 await view.load(viewportOf("mobile"));
                 running--;
 
@@ -118,7 +138,7 @@ test("five renders at once all finish, two at a time", browser, async () => {
     );
 
     assert.deepEqual(results, [1, 2, 3, 4, 5]);
-    assert.equal(most, 2);
+    assert.equal(most, 2, "two ran at once, and a third never did");
 });
 
 test("tweaks and actions from a tool are validated and bounded", () => {
@@ -261,8 +281,8 @@ before(async () => {
         id: "dark",
         title: "Dark",
         content: page(
-            "p{color:#7ba3f8}@media (prefers-color-scheme: dark){body{background:#101218}p{color:#e6e8f0}}",
-            `<p data-pid="t" style="margin:0;padding:8px">Text</p>`,
+            "",
+            `<p data-pid="t" style="margin:0;padding:var(--space-2);color:#e6e8f0;background:var(--color-bg-page)">Text</p>`,
         ),
     });
 });
@@ -367,8 +387,12 @@ test(
 
         assert.match(light, /light; system "Test system", mode light/);
         assert.match(dark, /dark; system "Test system", mode dark/);
-        assert.doesNotMatch(dark, /off-system-color/, "dark values are on the dark mode");
-        assert.match(light, /off-system-color/, "and off the light one");
+        assert.doesNotMatch(
+            dark,
+            /- error off-system-color/,
+            "the dark value is a system color in dark",
+        );
+        assert.match(light, /- error off-system-color/, "and not one in light");
         // Another page of the bundle.
         const about = textOf(
             await call(preview(), { id: "lint", viewports: ["mobile"], page: "about.html" }),

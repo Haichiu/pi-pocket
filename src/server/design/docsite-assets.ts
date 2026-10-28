@@ -413,11 +413,75 @@ h4 {
     margin-top: 28px;
 }
 
-.strip i {
-    width: 34px;
+.sw {
+    display: grid;
+    gap: 5px;
+    justify-items: center;
+    width: 64px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--dd-muted);
+}
+
+.sw i {
+    width: 100%;
     height: 34px;
     border-radius: 9px;
     box-shadow: inset 0 0 0 1px rgb(128 128 128 / 0.28);
+    transition: transform 120ms;
+}
+
+.sw:hover i,
+.sw:focus-visible i {
+    transform: translateY(-2px);
+}
+
+.sw span {
+    max-width: 100%;
+    font: 10.5px/1.2 var(--dd-mono);
+    overflow-wrap: anywhere;
+    text-align: center;
+}
+
+.copy-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-top: 4px;
+}
+
+.mini {
+    min-height: 26px;
+    padding: 0 9px;
+    border: 1px solid var(--dd-line);
+    border-radius: 6px;
+    background: var(--dd-sunken);
+    color: var(--dd-muted);
+    font: 600 11.5px var(--dd-sans);
+}
+
+.mini:hover {
+    border-color: var(--dd-accent);
+    color: var(--dd-accent);
+}
+
+.mini.flash {
+    border-color: var(--dd-ok);
+    background: var(--dd-ok-soft);
+    color: var(--dd-ok);
+}
+
+.modesel {
+    display: none;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--dd-line-strong);
+    border-radius: 10px;
+    background: var(--dd-panel);
+    color: var(--dd-text);
+    font: inherit;
+    font-size: 16px;
 }
 
 .stats {
@@ -1408,14 +1472,30 @@ pre.snip {
         padding: 0 10px;
     }
 
-    .topbar.many .brand-name {
+    .seg {
         display: none;
     }
 
-    .seg {
-        max-width: 100%;
-        overflow-x: auto;
-        scrollbar-width: none;
+    .modesel {
+        display: block;
+    }
+
+    .brand-name {
+        max-width: 38vw;
+    }
+
+    .tiles {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .tile {
+        padding: 12px;
+    }
+
+    .tile span {
+        font-size: 12px;
+        line-height: 1.35;
     }
 
     .seg button {
@@ -1595,6 +1675,8 @@ export const DOC_JS = `
         $$(".seg button").forEach(function (button) {
             button.setAttribute("aria-pressed", String(button.getAttribute("data-mode") === mode));
         });
+        var picker = $(".modesel");
+        if (picker) { picker.value = mode; }
         frames.forEach(function (frame) { syncFrame(frame); });
     }
     $$(".seg button").forEach(function (button) {
@@ -1602,6 +1684,13 @@ export const DOC_JS = `
             setMode(button.getAttribute("data-mode"), button.getAttribute("data-theme"));
         });
     });
+    var select = $(".modesel");
+    if (select) {
+        select.addEventListener("change", function () {
+            var option = select.options[select.selectedIndex];
+            setMode(option.value, option.getAttribute("data-theme"));
+        });
+    }
     var startMode = root.getAttribute("data-mode");
 
     // A component frame is sandboxed: it has no access to this page, and this page none to it. Each side talks by

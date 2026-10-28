@@ -267,7 +267,10 @@ test("contrast comes from the token's pair, or is worked out for text, and it mo
     assert.equal(primary.auto, false);
     assert.equal(primary.pass, true);
     assert.equal(primary.level, "AAA");
-    assert.equal(model.contrastOf("color.text.disabled", "light").pass, false);
+    // A quieter pair (3:1) that it reaches: for large text and parts of a control.
+    assert.equal(model.contrastOf("color.text.disabled", "light").min, 3);
+    assert.equal(model.contrastOf("color.text.disabled", "light").pass, true);
+    assert.equal(model.contrastOf("color.text.disabled", "light").level, "AA large");
     // A pair written as a reference reads the same.
     const braced = {
         ...system,
@@ -600,4 +603,74 @@ test("a font family the app has shows in it, and a typography value becomes safe
         ]),
         "inset 0px 1px 2px 0px rgb(0 0 0)",
     );
+});
+
+test("a typography style is drawn from the tokens its parts link to, so an edit to one moves it", () => {
+    const body = system.tokens.find((token) => token.name === "type.body")!;
+
+    // The engine says which token each part comes from.
+    assert.equal(body.modes.light!.parts!["font-size"], "var(--font-size-base)");
+
+    const saved = sys.createModel(system);
+    const edited = sys.createModel(
+        system,
+        sys.tokenEdits(
+            sys.push(
+                sys.emptyHistory(),
+                sys.tokenEdit("light", "font.size.base", { value: { value: 20, unit: "px" } }),
+            ),
+        ),
+    );
+    const now = (model: { value: (name: string, mode: string) => unknown }) =>
+        model.value("type.body", "light");
+
+    assert.match(sys.typographyStyleOf(saved, "light", now(saved)), /--font-size-base:16px/);
+    assert.match(
+        sys.typographyStyleOf(saved, "light", now(saved)),
+        /font-size:var\(--font-size-base\)/,
+    );
+    assert.match(sys.typographyStyleOf(edited, "light", now(edited)), /--font-size-base:20px/);
+    // The family of the app's own shows in its font, and the properties of a type are the style's alone.
+    assert.match(
+        sys.typographyStyleOf(saved, "light", now(saved)),
+        /--font-family-sans:"Pocket Sans", Geist/,
+    );
+    assert.equal(sys.typographyMeta(saved, "light", now(saved)), "16px / 1.5 · 400 · Geist");
+    assert.equal(sys.typographyMeta(edited, "light", now(edited)), "20px / 1.5 · 400 · Geist");
+    // A value that is not a style gives nothing, and one with no parts is drawn from its value.
+    assert.equal(sys.typographyStyleOf(saved, "light", { value: "x" }), "");
+    assert.match(
+        sys.typographyStyleOf(saved, "light", { value: { fontSize: "12px" } }),
+        /font-size:12px/,
+    );
+    assert.equal(sys.literalOf(edited, "light", "var(--font-size-base)/1"), "20px/1");
+    assert.equal(sys.scopeStyle(saved, "light", "var(--nothing)"), "");
+});
+
+test("a text color with no pair is checked against the page only when it is plain text, and the engine's declared pairs are the rest", () => {
+    // Without its declared pair, `text.secondary` is plain text on the page: worked out, and marked as such.
+    const bare = {
+        ...system,
+        tokens: system.tokens.map((token) => {
+            const { contrast: _, ...rest } = token;
+
+            return rest as typeof token;
+        }),
+    };
+    const model = sys.createModel(bare);
+    const plain = model.contrastOf("color.text.secondary", "light");
+
+    assert.equal(plain.auto, true);
+    assert.equal(plain.on, "color.bg.canvas");
+    assert.equal(plain.min, 4.5);
+
+    // Text on another ground, or that is quiet on purpose, is not worked out against the page: it would only mislead.
+    for (const name of [
+        "color.text.inverse",
+        "color.text.disabled",
+        "color.accent.default",
+        "color.bg.surface",
+    ]) {
+        assert.equal(model.contrastOf(name, "light"), null, name);
+    }
 });

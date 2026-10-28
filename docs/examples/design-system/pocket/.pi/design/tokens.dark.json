@@ -21,10 +21,10 @@
                 "$value": "{color.neutral.900}"
             },
             "hover": {
-                "$value": "{color.alpha.light.7}"
+                "$value": "{color.alpha.light.faint}"
             },
             "pressed": {
-                "$value": "{color.alpha.light.17}"
+                "$value": "{color.alpha.light.medium}"
             },
             "scrim": {
                 "$value": "{color.alpha.scrim-dark}"
@@ -40,7 +40,7 @@
             "muted": {
                 "$value": "{color.neutral.500}"
             },
-            "faint": {
+            "disabled": {
                 "$value": "{color.neutral.600}"
             },
             "inverse": {
@@ -49,10 +49,10 @@
         },
         "border": {
             "subtle": {
-                "$value": "{color.alpha.light.10}"
+                "$value": "{color.alpha.light.soft}"
             },
             "default": {
-                "$value": "{color.alpha.light.17}"
+                "$value": "{color.alpha.light.medium}"
             },
             "focus": {
                 "$value": "{color.blue.300}"

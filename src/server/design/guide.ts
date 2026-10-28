@@ -71,7 +71,7 @@ Work with feedback and hand off:
 /** What to do in a project with no design system: the end of the section when nothing was found. */
 const WITHOUT = `${GUIDE}
 
-The project has no design system yet. When the person points at a codebase, call design_system with action "scan" for a structured draft, then action "init" with fromScan true and changes [{ token, value }] that correct the roles it guessed (it refuses to replace a system unless replace is true). With only brand files or a description, call "init" with tokens (a DTCG object) and, for dark, modes. Add components with action "component" and rules with "guidelines" only when the person asks. Until there is a system, choose one accent, one neutral ramp, and the scales above, and keep them as custom properties on :root.`;
+The project has no design system yet. When the person points at a codebase, make one in three calls: design_system action "scan" (a structured draft; nothing is saved), then action "init" with fromScan true and changes [{ token, value }] for every role the scan guessed or marks uncertain (it refuses to replace a system unless replace is true), then action "validate" and fix what it lists. With only brand files or a description, call "init" with tokens (a DTCG object) and, for dark, modes. Add components with action "component" and rules with "guidelines" only when the person asks. Until there is a system, choose one accent, one neutral ramp, and the scales above, and keep them as custom properties on :root.`;
 
 /** How to use a system: said once, before the system's own text. */
 const USE = `The project has a design system, so a design is on-system or it is wrong:

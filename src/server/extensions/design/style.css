@@ -1375,6 +1375,8 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
 
 .dsy-modeselect {
     flex: none;
+    width: auto;
+    max-width: 150px;
     height: 34px;
     padding: 0 8px;
     border: 1px solid var(--dsn-hair);
@@ -2843,6 +2845,29 @@ button.dsy-chip:disabled {
     display: flex;
     align-items: center;
     gap: 8px;
+    width: 100%;
+    min-height: 28px;
+    text-align: left;
+}
+
+.dsy-problems-hint {
+    font-size: 12px;
+}
+
+.dsy-problems-head > svg:last-child {
+    flex: none;
+    color: var(--muted);
+    transition: transform 160ms var(--ease-out, ease);
+}
+
+.dsy-problems.open .dsy-problems-head > svg:last-child {
+    transform: rotate(180deg);
+}
+
+/* Folded, a problem box is one line: on a phone it must not take a third of the screen before the first token. */
+.dsy-problems:not(.open) {
+    padding-top: 6px;
+    padding-bottom: 6px;
 }
 
 .dsy-problems.error .dsy-problems-head {
@@ -3233,4 +3258,33 @@ button.dsy-chip:disabled {
 /* A row with a play button has room for its name when the chevron goes: the whole row opens it. */
 .dsn[data-size="narrow"] .dsy-row:has(.dsy-play) .dsy-row-open {
     display: none;
+}
+
+/* A panel of middling width (the chat beside it): the sections wrap under each other, and only the one in use shows its
+   count, so that every section is in view. A narrow one scrolls, with the section in use brought to the middle. */
+.dsn[data-size="medium"] .dsy-tabs {
+    flex-wrap: wrap;
+    overflow: visible;
+    row-gap: 2px;
+}
+
+.dsn[data-size="medium"] .dsy-tabs .dsn-tab:not(.on) .dsn-count {
+    display: none;
+}
+
+.dsn[data-size="medium"] .dsy-tabs-end {
+    margin-left: auto;
+}
+
+/* ... and a little closer together, so that nine of them very likely fit in one row. */
+.dsn[data-size="medium"] .dsy-tabs {
+    gap: 0;
+}
+
+.dsn[data-size="medium"] .dsy-tabs .dsn-tab {
+    padding: 0 6px;
+}
+
+.dsn[data-size="medium"] .dsy-tabs .icon-button {
+    width: 30px;
 }

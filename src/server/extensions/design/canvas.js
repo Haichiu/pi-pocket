@@ -2,7 +2,7 @@
 // fit, with the page's side of Design mode (inspect, edit text, tweaks, pins, slides) spoken through the bridge.
 import { useArtifactBridge } from "/artifact-bridge.js";
 import { percent, scaleOf, stepZoom } from "./devices.js";
-import { pinsOfReport } from "./check.js";
+import { checkOptions, pinsOfReport } from "./check.js";
 import { pinsOf } from "./comments.js";
 import { addEdit } from "./edits.js";
 import { checkKey } from "./system-data.js";
@@ -115,13 +115,11 @@ export function createCanvas(env) {
         const notes = s.notes[design.id];
         const comments = notes?.comments ?? [];
         const checking = s.dock === "check";
+        const check = checkOptions(s, env.darkTheme());
         const pins = s.mode === "comment" || s.dock === "comments" ? pinsOf(comments, version) : [];
         // The pins of a page check are its findings'; those of comments, the open comments'.
         const targets = checking
-            ? pinsOfReport(
-                  s.checks[checkKey(design.id, version, s.checkWith.scheme, s.checkWith.size)]
-                      ?.report,
-              )
+            ? pinsOfReport(s.checks[checkKey(design.id, version, check.scheme, check.size)]?.report)
             : pins.map((comment, index) => ({
                   ...(comment.target.pid ? { pid: comment.target.pid } : {}),
                   selector: comment.target.selector,

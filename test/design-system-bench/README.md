@@ -164,7 +164,7 @@ screenshotted full page at 390×844 and 1440×900 with `prefers-color-scheme` li
 0 or 1, with the share of the seven expected sections (colors, type, spacing, radii, shadows, motion, components) that have a
 heading counting as three more: it rendered in all four; no script error; **self-contained** (no request left the
 server, no 404); no horizontal scroll at 390; dark differs from light; it has a `nav`; it is substantial (over 1,500
-characters, taller than 1,800 px); it names at least five tokens. The PNGs are for the judges: the bench cannot judge beauty.
+characters, taller than 1,800 px); it names at least five tokens. The PNGs are for the judges: the bench cannot judge beauty. They are **tiles**, `docs/docs-<viewport>-<scheme>-<NN>-<section>.png`: the first screen, then each top-level section of the page (the `section` elements of `main`, else sections with an id, else the parents of the `h2` headings), cut into parts of at most 2,000 px (`-part-N`), at scale 1 (390 px wide on the phone). Judges read images up to 2,000 × 2,000 px.
 
 ## Why it is hard to game
 
