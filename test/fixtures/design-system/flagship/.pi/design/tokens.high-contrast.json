@@ -21,10 +21,10 @@
                 "$value": "{color.neutral.950}"
             },
             "hover": {
-                "$value": "{color.alpha.light.10}"
+                "$value": "{color.alpha.light.soft}"
             },
             "pressed": {
-                "$value": "{color.alpha.light.17}"
+                "$value": "{color.alpha.light.medium}"
             },
             "scrim": {
                 "$value": "{color.alpha.scrim-dark}"
@@ -40,7 +40,7 @@
             "muted": {
                 "$value": "{color.neutral.350}"
             },
-            "faint": {
+            "disabled": {
                 "$value": "{color.neutral.550}"
             },
             "inverse": {
@@ -49,7 +49,7 @@
         },
         "border": {
             "subtle": {
-                "$value": "{color.alpha.light.17}"
+                "$value": "{color.alpha.light.medium}"
             },
             "default": {
                 "$value": "{color.neutral.550}"

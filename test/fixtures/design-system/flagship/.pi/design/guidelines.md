@@ -14,7 +14,7 @@ Pi Pocket looks like a tiling window manager that learned to be gentle: soft til
 
 - Use roles, never primitives. Write `var(--color-text-muted)`, not `var(--color-neutral-500)`. The role changes with the mode, and the primitive does not.
 - Pick the ground first, then the text that fits it: `color.text.*` is checked at 4.5:1 or more on `color.bg.base`, `surface`, `raised`, and `sunken` in every mode.
-- `color.text.faint` is for placeholders and disabled text only. It is below 4.5:1 on purpose.
+- `color.text.disabled` is for disabled controls only. WCAG exempts it from contrast, so it is below 4.5:1 on purpose. A placeholder uses `color.text.muted`.
 - Status colors come in three parts: `default` for text and icons, `soft` for the wash behind, and `line` for the border. Never put `default` text on another status wash.
 - A fill needs its own text color: `color.accent.fill` goes with `color.accent.on-fill`, and `color.danger.fill` with `color.danger.on-fill`.
 - Do not add a color. Ask for a role first. A new role gets a name, a light value, a dark value, and a contrast pair.
@@ -41,7 +41,7 @@ Pi Pocket looks like a tiling window manager that learned to be gentle: soft til
 
 ## Motion
 
-- Use `motion.transition.hover` (140 ms) for color changes, `motion.transition.enter` (410 ms) for arrivals, and `motion.transition.exit` (150 ms) for departures. Things leave faster than they arrive.
+- Use `motion.transition.hover` (150 ms) for color changes, `motion.transition.enter` (420 ms) for arrivals, and `motion.transition.exit` (150 ms) for departures. Things leave faster than they arrive.
 - Move one property at a time where you can: color, opacity, or transform. Never animate layout.
 - Respect `prefers-reduced-motion: reduce`. Replace movement with a fade or with nothing. A spinner may stop and show a static mark.
 - The spring in Fluid motion is a `linear()` easing that a token cannot hold. It lives in the app's stylesheet only; designs use `motion.ease.standard`.
