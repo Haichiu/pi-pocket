@@ -14,6 +14,7 @@
 import { parseColor, toOklch, type Rgba } from "./color.ts";
 import { isObject, type Obj } from "./scan-import-convert.ts";
 import { entryOf } from "./scan-color-base.ts";
+import { stackOf } from "./scan-facts-use.ts";
 import { family, paletteName } from "./scan-color-palette.ts";
 import type { RoleName } from "./scan-color-base.ts";
 import type { Inferred } from "./scan-scales.ts";
@@ -470,7 +471,13 @@ export function materialTokens(input: MaterialInput): MaterialResult | undefined
     const base = roles.get(defaultMode)!;
     const flat = new Map<string, string>();
 
-    for (const [name, value] of base) {
+    // Without a `background` role (a hand-made export), the surface is the page too.
+    const withPage = (scheme: Map<string, string>) =>
+        !scheme.has("background") && scheme.has("surface")
+            ? new Map([...scheme, ["background", scheme.get("surface")!]])
+            : scheme;
+
+    for (const [name, value] of withPage(base)) {
         const made = token(name, value, palettes.size === 0);
 
         if (made !== undefined) {
@@ -488,10 +495,10 @@ export function materialTokens(input: MaterialInput): MaterialResult | undefined
         };
         let changed = 0;
 
-        for (const [name, value] of roles.get(mode)!) {
+        for (const [name, value] of withPage(roles.get(mode)!)) {
             const made = token(name, value, false);
 
-            if (made === undefined || !base.has(name)) {
+            if (made === undefined || !withPage(base).has(name)) {
                 continue;
             }
 
@@ -552,7 +559,7 @@ export function materialTokens(input: MaterialInput): MaterialResult | undefined
 
     for (const [name, value] of fonts) {
         put(tree, ["font", name], {
-            $value: value.replace(/^["']|["']$/g, ""),
+            $value: stackOf(value) ?? value,
             $type: "fontFamily",
         });
     }
@@ -595,7 +602,10 @@ export function applyMaterial(result: Inferred, material: MaterialResult): Infer
     }
 
     for (const [group, node] of Object.entries(material.default)) {
-        tokens[group] = node;
+        tokens[group] =
+            group === "color"
+                ? mergeColors(tokens.color, node as Obj, material)
+                : { ...((tokens[group] as Obj | undefined) ?? {}), ...(node as Obj) };
     }
 
     for (const [mode, tree] of Object.entries(material.modes)) {
@@ -654,4 +664,69 @@ export function applyMaterial(result: Inferred, material: MaterialResult): Infer
     result.sources.push(...material.notes);
 
     return result;
+}
+
+/** The hex of every color that Material 3 gives: its palette steps and its roles that are not a reference. */
+function hexesOf(tree: unknown, into = new Set<string>()): Set<string> {
+    if (!isObject(tree)) {
+        return into;
+    }
+
+    if (typeof tree.$value === "string") {
+        const color = parseColor(tree.$value);
+
+        if (color !== undefined) {
+            into.add(hexOf(color));
+        }
+
+        return into;
+    }
+
+    Object.values(tree).forEach((child) => hexesOf(child, into));
+
+    return into;
+}
+
+/**
+ * The scan's colors and Material 3's: the groups that Material 3 defines (`bg`, `text`, `accent`, the palettes) are its
+ * own, and a color of the project that Material 3 also has is not listed twice. What the project uses besides (a literal
+ * in its own styles, a status color) stays.
+ */
+function mergeColors(scan: unknown, material: Obj, all: MaterialResult): Obj {
+    const known = hexesOf(material);
+
+    for (const tree of Object.values(all.modes)) {
+        hexesOf(tree, known);
+    }
+
+    const prune = (node: unknown): unknown => {
+        if (!isObject(node)) {
+            return node;
+        }
+
+        if ("$value" in node) {
+            const color = typeof node.$value === "string" ? parseColor(node.$value) : undefined;
+
+            return color !== undefined && known.has(hexOf(color)) ? undefined : node;
+        }
+
+        const out: Obj = {};
+
+        for (const [key, child] of Object.entries(node)) {
+            const kept = key.startsWith("$") ? child : prune(child);
+
+            if (kept !== undefined && !(isObject(kept) && Object.keys(kept).length === 0)) {
+                out[key] = kept;
+            }
+        }
+
+        return out;
+    };
+    const rest = (isObject(scan) ? (prune(scan) as Obj) : {}) as Obj;
+
+    for (const group of Object.keys(material)) {
+        delete rest[group];
+    }
+
+    return { ...rest, ...material };
 }
