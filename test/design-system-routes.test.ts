@@ -310,6 +310,15 @@ test("guidelines are saved as text, with no control characters, and modes are ad
     );
     assert.ok(existsSync(file("tokens.high-contrast.json")));
 
+    // A mode is added or removed, never rewritten, and the default is the tokens file: it stays.
+    const before = readFileSync(file("tokens.dark.json"), "utf8");
+
+    assert.equal((await call("owner", "system", { modes: { dark: {} } })).status, 400);
+    assert.equal((await call("owner", "system", { modes: { light: null } })).status, 400);
+    assert.equal((await call("owner", "system", { modes: { nothere: null } })).status, 400);
+    assert.equal(readFileSync(file("tokens.dark.json"), "utf8"), before);
+    assert.ok(existsSync(file("tokens.json")));
+
     const removed = await call("owner", "system", { modes: { "high-contrast": null } });
 
     assert.equal(removed.data.ok, true);

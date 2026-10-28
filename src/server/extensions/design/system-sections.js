@@ -10,7 +10,6 @@ import {
     matches,
     millisecondsOf,
     pixelsOf,
-    roles,
     safeCss,
     shadowOf,
     showValue,
@@ -161,7 +160,7 @@ export function createSystemSections(env, widgets) {
 
     /** The system's look in one small card for each mode: a page, a card on it, text, an accent, the statuses. */
     function Overview({ ctx }) {
-        const found = roles(ctx.model);
+        const found = ctx.model.roles();
 
         if (found.canvas === undefined || found.surface === undefined || found.text === undefined) {
             return null;
@@ -549,7 +548,7 @@ export function createSystemSections(env, widgets) {
 
     function Shadows({ ctx }) {
         const groups = groupsFor(ctx, "shadows");
-        const found = roles(ctx.model);
+        const found = ctx.model.roles();
 
         if (groups.length === 0) {
             return html`<${Empty}
@@ -764,7 +763,7 @@ export function createSystemSections(env, widgets) {
     /** One component in one mode: its states in a frame with no scripts and no network. The frame grows to fit them. */
     function Specimen({ ctx, component, mode }) {
         const frame = useRef(null);
-        const found = roles(ctx.model);
+        const found = ctx.model.roles();
         const color = (role, fallback) =>
             (found[role] ? swatchCss(ctx.model.value(found[role], mode).value) : "") || fallback;
         const dark = /dark/i.test(mode);

@@ -474,7 +474,11 @@ export function createModel(system, edits = new Map()) {
         return saved;
     }
 
+    let named;
+
     const model = {
+        /** The color tokens that play each role (`roles`), found once for this model. */
+        roles: () => (named ??= roles(model)),
         system,
         defaultMode,
         modes: system.modes,
@@ -555,7 +559,7 @@ export function createModel(system, edits = new Map()) {
             let auto = false;
 
             if (pair === undefined) {
-                const ground = isText(token) ? roles(model).canvas : undefined;
+                const ground = isText(token) ? model.roles().canvas : undefined;
 
                 if (ground === undefined || ground === name) {
                     return null;

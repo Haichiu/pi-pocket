@@ -2,7 +2,9 @@
  * Design: a canvas beside the chat for interactive designs. It shows an HTML artifact in a frame at phone, tablet, and
  * desktop sizes, keeps its versions to compare and go back to, holds shared comments pinned to elements, edit and tweak
  * modes, a grid for variations, and a present mode for decks, and hands each change to Pi as a message for the person to
- * send. The agent's side (tools, prompt guide, export) is in `../design/`; this module is the workspace.
+ * send. The agent's side (tools, prompt guide, export) is in `../design/`; this module is the workspace. The System view
+ * (the project's design system: read, edit, check a design against it, publish, export) has its routes in
+ * `design/system-routes.ts`.
  */
 import { randomUUID } from "node:crypto";
 import { defineExtension } from "@earendil-works/pi-durable";

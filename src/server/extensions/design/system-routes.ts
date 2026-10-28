@@ -334,6 +334,11 @@ export function cleanReport(report: CheckReport): CheckReport {
 /** Whether the old Markdown design system is there: a plain file, never a link. */
 function legacySize(cwd: string): number | null {
     try {
+        // Neither the folder nor the file is a link.
+        if (!lstatSync(join(cwd, ".pi")).isDirectory()) {
+            return null;
+        }
+
         const info = lstatSync(join(cwd, ".pi", "design-system.md"));
 
         return info.isFile() ? info.size : null;
@@ -424,6 +429,25 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                         409,
                         "The design system changed since you opened it. Load it again; your edits stay.",
                     );
+                }
+
+                // A mode is added or removed here, never rewritten: `{}` for a mode that is there would empty its file, and the
+                // default mode is the tokens file itself.
+                for (const [mode, body] of Object.entries(change.modes ?? {})) {
+                    if (body === null && !current.modes.includes(mode)) {
+                        throw web.error(400, "There is no such mode.");
+                    }
+
+                    if (body === null && mode === current.modes[0]) {
+                        throw web.error(
+                            400,
+                            "The default mode is the tokens file: it cannot be removed.",
+                        );
+                    }
+
+                    if (body !== null && current.modes.includes(mode)) {
+                        throw web.error(400, "There is a mode by that name.");
+                    }
                 }
 
                 try {
