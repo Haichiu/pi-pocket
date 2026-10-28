@@ -1090,3 +1090,132 @@ test(
         );
     },
 );
+
+test(
+    "motion: a long transition or a loop with no prefers-reduced-motion rule is a warning, with the rule in the message",
+    browser,
+    async () => {
+        const slow = ".slow{transition:transform .8s ease}.fast{transition:opacity .2s}";
+        const body = `<div class="slow" data-pid="slow">a</div><div class="fast" data-pid="fast">b</div>`;
+        const flagged = await check(page(slow, body), {}, null);
+        const finding = ofRule(flagged, "reduced-motion");
+
+        assert.equal(finding.length, 1, "one finding for the page");
+        assert.equal(finding[0]!.level, "warning");
+        assert.equal(finding[0]!.pid, "slow");
+        assert.equal(finding[0]!.value, "800ms");
+        assert.match(
+            finding[0]!.message,
+            /1 element use a transition or an animation longer than 500 ms, or one that repeats forever \(the longest is 800 ms\)/,
+        );
+        assert.match(
+            finding[0]!.message,
+            /no `@media \(prefers-reduced-motion: reduce\)` rule\. Add `@media \(prefers-reduced-motion: reduce\) \{ \*, \*::before, \*::after \{ animation-duration: 0\.01ms !important/,
+        );
+        // Under 500 ms, none, or `transition-property: none`: nothing to reduce.
+        const quiet = await check(
+            page(
+                ".a{transition:opacity .5s}.b{transition:none}.c{transition:all 2s;transition-property:none}.d{animation:none}",
+                `<div class="a">a</div><div class="b">b</div><div class="c">c</div><div class="d">d</div>`,
+            ),
+            {},
+            null,
+        );
+
+        assert.equal(ofRule(quiet, "reduced-motion").length, 0);
+        // A loop is motion at any speed; a spinner that turns once is not a loop.
+        const spin =
+            ".spin{animation:turn 1s linear infinite}.once{animation:turn 300ms 1}@keyframes turn{to{transform:rotate(1turn)}}";
+        const loop = await check(
+            page(spin, `<div class="spin" data-pid="spin">s</div><div class="once">o</div>`),
+            {},
+            null,
+        );
+
+        assert.equal(ofRule(loop, "reduced-motion")[0]!.pid, "spin");
+
+        // Any prefers-reduced-motion rule in the page's CSS, whatever it says, ends the finding: the page has thought of it.
+        for (const media of ["reduce", "no-preference"]) {
+            const covered = await check(
+                page(
+                    `${slow}@media (prefers-reduced-motion: ${media}){.slow{transition-duration:.01ms}}`,
+                    body,
+                ),
+                {},
+                null,
+            );
+
+            assert.equal(ofRule(covered, "reduced-motion").length, 0, media);
+        }
+
+        // The check does not leave its own calm style behind: the transition is still there after it.
+        const again = await check(page(slow, body), {}, null);
+
+        assert.equal(ofRule(again, "reduced-motion").length, 1);
+    },
+);
+
+test(
+    "non-text contrast: focus rings and icon-only controls need 3:1, judged only when every color fails",
+    browser,
+    async () => {
+        const css =
+            "body{margin:0;background:var(--color-bg-surface)}button{min-height:48px;min-width:48px;margin:8px;padding:0 12px;border:1px solid var(--color-text-primary);background:var(--color-bg-surface);color:var(--color-text-primary);font:inherit}" +
+            ".pale:focus-visible{outline:2px solid #dddddd;outline-offset:2px}.good:focus-visible{outline:2px solid var(--color-accent-default);outline-offset:2px}" +
+            ".shadow{outline:none}.shadow:focus-visible{box-shadow:0 0 0 3px #e5e5e5}.double{outline:none}.double:focus-visible{box-shadow:0 0 0 2px #fff,0 0 0 4px #1d4ed8}" +
+            ".rest{outline:none;box-shadow:0 0 0 1px #e5e5e5}.rest:focus-visible{background:#1d4ed8;color:#fff}" +
+            ".dark{background:#10141c;padding:8px}.dark button{background:#10141c;color:#fff}.dark .low:focus-visible{outline:2px solid #1b2230;outline-offset:2px}";
+        const icon = (id: string, shapes: string, extra = "") =>
+            `<button data-pid="${id}" aria-label="${id}" ${extra}><svg width="20" height="20" viewBox="0 0 20 20">${shapes}</svg></button>`;
+        const body =
+            `<button class="pale" data-pid="pale">Pale ring</button><button class="good" data-pid="good">Good ring</button>` +
+            `<button class="shadow" data-pid="shadow">Pale shadow</button><button class="double" data-pid="double">Double ring</button>` +
+            `<button class="rest" data-pid="rest">Ring at rest</button><div class="dark"><button class="low" data-pid="low">Low on dark</button></div>` +
+            icon("i-pale", '<path d="M2 2L18 18" stroke="#dddddd" stroke-width="2"/>') +
+            icon("i-dark", '<path d="M2 5H18" stroke="#333333" stroke-width="2"/>') +
+            icon(
+                "i-mixed",
+                '<circle cx="10" cy="10" r="9" fill="#eeeeee"/><path d="M5 10H15" stroke="#222222" stroke-width="2"/>',
+            ) +
+            icon("i-gradient", '<path d="M2 2h16v16H2z" fill="url(#g)"/>') +
+            `<button data-pid="i-text" class="x"><svg width="20" height="20"><path d="M2 2L18 18" stroke="#dddddd" stroke-width="2"/></svg> Label</button>`;
+        const report = await check(page(css, body), { viewport: "desktop" });
+        const found = (pid: string) =>
+            report.findings.find((item) => item.rule === "contrast" && item.pid === pid);
+
+        assert.match(
+            found("pale")!.message,
+            /^The focus ring of a <button> is 1\.3\d:1 against what is around it; WCAG 1\.4\.11 needs 3:1\./,
+        );
+        assert.equal(found("pale")!.level, "warning");
+        assert.match(
+            found("pale")!.message,
+            /Set `outline-color: var\(--color-[a-z-]+\)` \(#[0-9a-f]{6}, \d\.\d\d:1\) instead of #dddddd\./,
+        );
+        assert.ok(found("shadow"), "a pale spread shadow is a ring too");
+        assert.ok(found("low"), "on a dark ground");
+        assert.equal(found("good"), undefined);
+        assert.equal(found("double"), undefined, "a double ring passes by its dark ring");
+        assert.equal(
+            found("rest"),
+            undefined,
+            "a shadow that is there at rest is not the focus ring",
+        );
+        assert.match(
+            found("i-pale")!.message,
+            /^The icon in a <button> is 1\.3\d:1 against what it sits on; WCAG 1\.4\.11 needs 3:1\./,
+        );
+        assert.equal(found("i-dark"), undefined);
+        assert.equal(
+            found("i-mixed"),
+            undefined,
+            "one color of the icon reads: judged by the best",
+        );
+        assert.equal(found("i-gradient"), undefined, "a paint that cannot be read is not judged");
+        assert.equal(
+            found("i-text"),
+            undefined,
+            "a control with a text label is not judged by its icon",
+        );
+    },
+);

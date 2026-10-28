@@ -80,6 +80,7 @@ export const RULES = {
     "missing-viewport": "Viewport",
     "missing-pid": "Missing data-pid",
     "focus-visible": "Focus style",
+    "reduced-motion": "Reduced motion",
 };
 
 /** The pins of a report: a finding that names an element (a `data-pid` or a selector), numbered by its place in the list. */

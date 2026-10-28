@@ -18,6 +18,7 @@ import {
     lintPhase,
     LINT_SYSTEM,
     lintSystem,
+    lintSystemFor,
     loadLintCases,
     type LintPhase,
 } from "./lib/phase-lint.ts";
@@ -314,6 +315,7 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
                     label === "flagship" && primary !== undefined
                         ? { system: primary, css: flagshipCss(flagship, primary) }
                         : undefined,
+                    options.lint === undefined ? undefined : lintSystemFor(resolve(options.lint)),
                 ),
             );
 

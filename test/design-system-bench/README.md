@@ -115,7 +115,7 @@ except the rates; the system's score is their mean.
 
 ## 3. Lint
 
-`lint/designs/<name>/index.html` and `expected-findings.json`. The designs link `ds/tokens.css`, served from
+`lint/designs/<name>/index.html` and `expected-findings.json`. With `--lint <dir>`, the folder may hold `system.json`, `{ "project": "docs/examples/design-system/pocket" }` (relative to the repository, or absolute): its designs are then written for that project, read by the bench's own reader, with a `tokens.css` that the bench compiles. The designs link `ds/tokens.css`, served from
 `lint/system/golden/tokens.css`: the bench's own compile of its own system (`lint/system/.pi/design/`), so the lint score
 does not depend on the tokens engine. (`lint/system/make-golden.ts` rewrites it; the test checks it is current.)
 `checkDesign(bundle, system, options, host, signal)` is called once for each color scheme in the file: the options
