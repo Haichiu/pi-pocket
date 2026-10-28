@@ -350,6 +350,8 @@ const PIXEL_KEYS = new Set([
 /** Style objects in JavaScript: `{ backgroundColor: "#fff", padding: 8 }` as inline declarations. */
 export function objectStyles(source: string): Decl[] {
     const decls: Decl[] = [];
+    // Material UI's `sx` takes numbers as steps of the theme (`p: 2` is two spacings), not as pixels.
+    const themed = /\bsx\s*=\s*\{/.test(source);
 
     for (const match of source.matchAll(STYLE_KEYS)) {
         if (decls.length >= 5000) {
@@ -357,6 +359,11 @@ export function objectStyles(source: string): Decl[] {
         }
 
         const key = match[1]!;
+
+        if (match[3] === undefined && themed && PIXEL_KEYS.has(key)) {
+            continue;
+        }
+
         const value = match[3] ?? (PIXEL_KEYS.has(key) ? `${match[4]!}px` : match[4]!);
 
         decls.push({

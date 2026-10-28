@@ -344,28 +344,13 @@ export function sizeScale(
     const sizes = [...facts.sizes].filter(([size]) => size >= 9 && size <= 96);
 
     // Tailwind's own sizes, named as Tailwind names them: the ones a project uses and does not define itself.
-    if (facts.tailwind && facts.classText.size >= 2 && (explicit.has("text") || sizes.length < 3)) {
+    if (facts.tailwind && facts.classText.size >= 1 && (explicit.has("text") || sizes.length < 3)) {
         for (const [name] of topBy([...facts.classText], ([, count]) => count, 9)) {
             if (TAILWIND_TEXT[name] !== undefined && !book.has(["text", name])) {
                 book.add(["text", name], { $value: TAILWIND_TEXT[name], $type: "dimension" });
                 explicit.add("text");
             }
         }
-    }
-
-    if (explicit.has("text")) {
-        result.typeScale = {
-            sizes: [...book.tokens.values()]
-                .filter((entry) => entry.path[0] === "text")
-                .sort((a, b) => (px(String(a.node.$value)) ?? 0) - (px(String(b.node.$value)) ?? 0))
-                .map((entry) => `${entry.path[1]} ${String(entry.node.$value)}`),
-        };
-
-        return;
-    }
-
-    if (sizes.length === 0) {
-        return;
     }
 
     // Sizes a pixel apart are one size (11px and 12px): the one used more stands for both.
@@ -383,6 +368,39 @@ export function sizeScale(
             near[1].body += fact.body;
             near[1].heading += fact.heading;
         }
+    }
+
+    if (explicit.has("text")) {
+        // The project names some sizes; the others it uses join them, named by their size (`text.40` is 40px).
+        const named = [...book.tokens.values()]
+            .filter((entry) => entry.path[0] === "text")
+            .map((entry) => px(String(entry.node.$value)) ?? -99);
+
+        for (const [size, fact] of topBy(merged, ([, each]) => each.count + each.body * 2, 8)) {
+            const path = ["text", String(rounded(size)).replace(".", "-")];
+
+            if (named.every((value) => Math.abs(value - size) > 1) && !book.has(path)) {
+                const form = [...fact.forms].sort((a, b) => b[1] - a[1])[0]?.[0] ?? `${size}px`;
+
+                book.add(path, {
+                    $value: /^-?[\d.]+(?:px|rem)$/.test(form) ? form : `${rounded(size)}px`,
+                    $type: "dimension",
+                });
+            }
+        }
+
+        result.typeScale = {
+            sizes: [...book.tokens.values()]
+                .filter((entry) => entry.path[0] === "text")
+                .sort((a, b) => (px(String(a.node.$value)) ?? 0) - (px(String(b.node.$value)) ?? 0))
+                .map((entry) => `${entry.path[1]} ${String(entry.node.$value)}`),
+        };
+
+        return;
+    }
+
+    if (sizes.length === 0) {
+        return;
     }
 
     // The sizes used most, in order of size.
@@ -508,22 +526,11 @@ export function spacingScale(
     explicit: Set<Category>,
     result: Inferred,
 ): void {
-    if (explicit.has("space")) {
-        const steps = [...book.tokens.values()]
+    const named = () =>
+        [...book.tokens.values()]
             .filter((entry) => entry.path[0] === "space")
             .map((entry) => px(String(entry.node.$value)))
-            .filter((value): value is number => value !== undefined)
-            .sort((a, b) => a - b);
-
-        result.spacing = {
-            base: steps.length > 0 ? steps.find((value) => value > 0) : undefined,
-            steps: [...new Set(steps.filter((step) => step > 0))],
-            off: [],
-        };
-
-        return;
-    }
-
+            .filter((value): value is number => value !== undefined && value > 0);
     const counts = new Map(facts.spacing);
 
     // Tailwind classes are steps of 4px; they count only for a project that uses Tailwind.
@@ -536,6 +543,10 @@ export function spacingScale(
     const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
 
     if (total === 0) {
+        const steps = [...new Set(named())].sort((a, b) => a - b);
+
+        result.spacing = { base: steps[0], steps, off: [] };
+
         return;
     }
 
@@ -568,17 +579,28 @@ export function spacingScale(
         ([, count]) => count,
         12,
     ).sort((a, b) => a[0] - b[0]);
-    const off = kept.filter(([size]) => size % 4 !== 0).map(([size]) => size);
+    // A project that names some of its spacing keeps those names; the other values it uses join them.
+    const own = explicit.has("space") ? named() : [];
+    const fresh = kept.filter(([size]) =>
+        own.every((value) => Math.abs(value - size) > 1 || size < 4),
+    );
 
-    for (const [size] of kept) {
+    for (const [size] of fresh) {
         // Named in steps of 4px, as Tailwind does: 16px is `space.4`, 2px is `space.0-5`, 10px is `space.2-5`.
-        book.add(["space", String(rounded(size / 4)).replace(".", "-")], {
-            $value: `${rounded(size)}px`,
-            $type: "dimension",
-        });
+        const path = ["space", String(rounded(size / 4)).replace(".", "-")];
+
+        if (!book.has(path)) {
+            book.add(path, { $value: `${rounded(size)}px`, $type: "dimension" });
+        }
     }
 
-    result.spacing = { base, steps: kept.map(([size]) => size), off: off.slice(0, 6) };
+    const steps = [...new Set(named().map((value) => rounded(value)))].sort((a, b) => a - b);
+
+    result.spacing = {
+        base: explicit.has("space") ? steps[0] : base,
+        steps,
+        off: steps.filter((size) => size % 4 !== 0).slice(0, 6),
+    };
 }
 
 export function radiusScale(
@@ -746,14 +768,6 @@ export function shadowScale(
     explicit: Set<Category>,
     result: Inferred,
 ): void {
-    if (explicit.has("shadow")) {
-        result.shadows = [...book.tokens.values()].filter(
-            (entry) => entry.path[0] === "shadow",
-        ).length;
-
-        return;
-    }
-
     // Shadows that differ by a pixel or two (`0 2px 4px` and `0 2px 5px`) are one: the more used stands for both.
     const clusters: { text: string; value: unknown; count: number }[] = [];
 
@@ -777,7 +791,16 @@ export function shadowScale(
     const rings: typeof clusters = [];
     const lifts: typeof clusters = [];
 
-    for (const cluster of topBy(clusters, (each) => each.count, 8)) {
+    // A project that names some of its shadows keeps them; the others it uses join them.
+    const own = [...book.tokens.values()]
+        .filter((entry) => entry.path[0] === "shadow")
+        .map((entry) => entry.node.$value);
+
+    for (const cluster of topBy(
+        clusters.filter((each) => !own.some((value) => sameShadow(value, each.value))),
+        (each) => each.count,
+        8,
+    )) {
         const layers = (Array.isArray(cluster.value) ? cluster.value : [cluster.value]) as Obj[];
         const inset = layers.every((layer) => layer.inset === true);
         const ring = layers.every(
@@ -799,12 +822,16 @@ export function shadowScale(
         4: ["sm", "md", "lg", "xl"],
     };
 
-    lifts.forEach((entry, at) =>
-        book.add(["shadow", (names[lifts.length] ?? ladder)[at]!], {
-            $value: entry.value,
-            $type: "shadow",
-        }),
-    );
+    const free = (name: string) => !book.has(["shadow", name]);
+
+    lifts.forEach((entry, at) => {
+        const wanted = (names[lifts.length] ?? ladder)[at]!;
+        // A name the project already gave to another shadow is not taken: the next free step of the ladder is.
+        const name = free(wanted) ? wanted : (ladder.find(free) ?? `extra-${at + 1}`);
+
+        book.add(["shadow", name], { $value: entry.value, $type: "shadow" });
+    });
+
     const seen = new Map<string, number>();
 
     for (const entry of rings) {
@@ -813,13 +840,15 @@ export function shadowScale(
         const count = (seen.get(kind) ?? 0) + 1;
 
         seen.set(kind, count);
-        book.add(["shadow", count === 1 ? kind : `${kind}-${count}`], {
-            $value: entry.value,
-            $type: "shadow",
-        });
+
+        const name = count === 1 ? kind : `${kind}-${count}`;
+
+        if (free(name)) {
+            book.add(["shadow", name], { $value: entry.value, $type: "shadow" });
+        }
     }
 
-    result.shadows = lifts.length + rings.length;
+    result.shadows = [...book.tokens.values()].filter((entry) => entry.path[0] === "shadow").length;
 }
 
 export function motionScale(

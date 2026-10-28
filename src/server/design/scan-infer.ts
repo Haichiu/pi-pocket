@@ -12,14 +12,25 @@ import {
     type RoleName,
     ROLE_PATHS,
     chooseRoles,
-    distance,
     entryOf,
+    merge as mergeFact,
     mergeColors,
     nameScore,
+    nearColors,
     paletteName,
     words,
 } from "./scan-colors.ts";
-import { type Category, type Facts, type VarFact, namespaceOf, stackOf } from "./scan-facts.ts";
+import {
+    type Category,
+    type Facts,
+    type Kinds,
+    type VarFact,
+    colorFact,
+    ingest,
+    namespaceOf,
+    stackOf,
+} from "./scan-facts.ts";
+import { TAILWIND_3_COLORS, TAILWIND_4_COLORS } from "./scan-tailwind.ts";
 import {
     Book,
     type Draft,
@@ -157,9 +168,14 @@ function follow(
         return undefined;
     }
 
-    // SCSS and Less arithmetic: `$space-1 * 3`.
-    if (/[$@][A-Za-z_]/.test(text) && /[*/+()]|\s-\s/.test(text)) {
-        const math = evalMath(text, (name, kind) => {
+    // SCSS and Less arithmetic (`$space-1 * 3`), and CSS `calc()` over custom properties (`calc(var(--radius) - 2px)`).
+    const calc = /^calc\((.*)\)$/s.exec(text.trim());
+
+    if (
+        (/[$@][A-Za-z_]/.test(text) && /[*/+()]|\s-\s/.test(text)) ||
+        (calc !== null && /var\(/.test(text))
+    ) {
+        const math = evalMath(calc === null ? text : calc[1]!, (name, kind) => {
             const target = index.get(`${kind}:${name}`);
 
             return target === undefined ? undefined : follow(index, target, scope)?.text;
@@ -176,9 +192,9 @@ function follow(
 /** `$a * 3`, `($a + 4px) / 2`: arithmetic on lengths, with variables looked up by `value`. Undefined if it cannot. */
 function evalMath(
     text: string,
-    value: (name: string, kind: "scss" | "less") => string | undefined,
+    value: (name: string, kind: "scss" | "less" | "css") => string | undefined,
 ): string | undefined {
-    const tokens = text.match(/\$[\w-]+|@[\w-]+|\d*\.?\d+[a-z%]*|[()+*/-]/g);
+    const tokens = text.match(/var\(\s*--[\w-]+\s*\)|\$[\w-]+|@[\w-]+|\d*\.?\d+[a-z%]*|[()+*/-]/g);
     let at = 0;
 
     if (tokens === null || tokens.join("").length < text.replace(/\s/g, "").length) {
@@ -191,9 +207,11 @@ function evalMath(
     }
 
     const operand = (token: string): Quantity | undefined => {
-        const source = /^[$@]/.test(token)
-            ? value(token.slice(1), token[0] === "$" ? "scss" : "less")
-            : token;
+        const source = token.startsWith("var(")
+            ? value(/--([\w-]+)/.exec(token)![1]!, "css")
+            : /^[$@]/.test(token)
+              ? value(token.slice(1), token[0] === "$" ? "scss" : "less")
+              : token;
         const match = source === undefined ? null : /^(-?\d*\.?\d+)([a-z%]*)$/.exec(source.trim());
 
         return match === null ? undefined : { n: Number(match[1]), unit: match[2]! };
@@ -246,7 +264,23 @@ function evalMath(
 
         while (left !== undefined && (tokens[at] === "+" || tokens[at] === "-")) {
             const op = tokens[at++];
-            const right = product();
+            let right = product();
+
+            // rem and em are 16px when a sum mixes them with pixels (`0.5rem - 2px`).
+            if (right !== undefined && left.unit !== right.unit) {
+                const pixels = (quantity: Quantity): Quantity =>
+                    quantity.unit === "rem" || quantity.unit === "em"
+                        ? { n: quantity.n * 16, unit: "px" }
+                        : quantity;
+
+                if (
+                    ["px", "rem", "em"].includes(left.unit) &&
+                    ["px", "rem", "em"].includes(right.unit)
+                ) {
+                    left = pixels(left);
+                    right = pixels(right);
+                }
+            }
 
             if (
                 right === undefined ||
@@ -324,7 +358,11 @@ function categorize(variable: Variable, text: string): Category | undefined {
         return "ease";
     }
 
-    if (FONT_WORDS.test(text) || (/font|family|typeface/.test(name) && /[,"']/.test(text))) {
+    // A path or an address is not a font stack, whatever the variable is called (`--fa-font-path: "../fonts"`).
+    if (
+        !/[/\\]|\.(?:woff2?|ttf|otf|eot)\b|^url\(|^https?:/i.test(text) &&
+        (FONT_WORDS.test(text) || (/font|family|typeface/.test(name) && /[,"']/.test(text)))
+    ) {
         return "font";
     }
 
@@ -437,9 +475,18 @@ const ROLE_WORDS = new Set(
 );
 
 /** The token path of a project variable: its group, and its name without the group's own prefix. */
+function nameOf(variable: Variable, category: Category): string {
+    // `borderRadius` and `border-radius` are one name.
+    const stripped = variable.name
+        .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+        .toLowerCase()
+        .replace(PREFIX[category], "");
+
+    return slug(stripped.replace(/\.+/g, "-"));
+}
+
 function pathOf(variable: Variable, category: Category): string[] {
-    const stripped = variable.name.replace(PREFIX[category], "");
-    const name = slug(stripped.replace(/\.+/g, "-"));
+    const name = nameOf(variable, category);
     const [first, ...tail] = name.split("-");
 
     // `--accent-hover` is `color.accent.hover`, beside `color.accent.default`; `--primary` is `color.primary.default`.
@@ -651,6 +698,7 @@ interface Classified {
 }
 
 interface Prepared {
+    index: Map<string, Variable>;
     classified: Classified[];
     /** The other mode: `dark` in most projects, `light` in a dark-first one. */
     alt: "dark" | "light";
@@ -796,7 +844,7 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
         classified.push(entry);
     }
 
-    return { classified, alt };
+    return { index, classified, alt };
 }
 
 /** Whether the project's page background (in the default scope) is dark. */
@@ -818,6 +866,60 @@ function pageIsDark(prep: Prepared): boolean {
     }
 
     return best !== undefined && luminance(best.color) < 0.2;
+}
+
+/**
+ * The colors that Tailwind's utility classes name without the project defining them (`bg-slate-200`, `text-white`) are
+ * uses of those colors. A name the project defines itself (its own `blue-500`) is its own, not the default.
+ */
+function useDefaultColors(facts: Facts): void {
+    if (!facts.tailwind || facts.classColors.size === 0) {
+        return;
+    }
+
+    const table = facts.tailwindVersion === 4 ? TAILWIND_4_COLORS : TAILWIND_3_COLORS;
+    const own = new Set(facts.vars.map((variable) => variable.name.replace(/^color-/, "")));
+
+    for (const [name, kinds] of facts.classColors) {
+        const color = own.has(name) ? undefined : parseColor(table.get(name) ?? "");
+
+        if (color === undefined) {
+            continue;
+        }
+
+        const fact = colorFact(facts.colors, toHex(color), table.get(name)!);
+
+        for (const kind of Object.keys(kinds) as (keyof Kinds)[]) {
+            fact[kind] += kinds[kind];
+        }
+    }
+}
+
+/** Sizes computed from custom properties (`padding: calc(var(--gap) * 2)`) are uses of the sizes they come to. */
+function resolveDeferred(facts: Facts, prep: Prepared): void {
+    for (const { prop, value, selector } of facts.deferred.splice(0)) {
+        const resolved = value.replace(/calc\(((?:[^()]|\([^()]*\))*)\)/g, (all, inner: string) => {
+            const math = evalMath(inner, (name, kind) => {
+                const target = prep.index.get(`${kind}:${name}`);
+
+                return target === undefined ? undefined : follow(prep.index, target, "light")?.text;
+            });
+
+            return math ?? all;
+        });
+
+        if (!/calc\(|var\(/.test(resolved)) {
+            ingest(facts, {
+                prop,
+                value: resolved,
+                selector,
+                at: [],
+                scope: "default",
+                theme: false,
+                inline: false,
+            });
+        }
+    }
 }
 
 /** Runs the scan's inference. `folder` names the system. */
@@ -868,6 +970,8 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     const { classified, alt } = prep;
 
+    resolveDeferred(facts, prep);
+
     result.modes =
         alt === "dark" ? { default: "light", alt: "dark" } : { default: "dark", alt: "light" };
     const book = new Book();
@@ -897,14 +1001,25 @@ export function infer(facts: Facts, folder: string): Inferred {
 
         return hex === undefined ? [] : [{ hex, text: entry.darkColor! }];
     });
+
+    useDefaultColors(facts);
+
     const lightColors = mergeColors(lightDefined, facts.colors);
     const darkColors = mergeColors(darkDefined, alt === "dark" ? facts.darkColors : new Map());
     const namedLight = colorVars.flatMap((entry) => {
         const hex = hexOf(entry.lightColor);
+        const kinds = facts.varKinds.get(entry.variable.name);
 
         return hex === undefined
             ? []
-            : [{ name: entry.variable.name, hex, uses: uses(entry.variable) }];
+            : [
+                  {
+                      name: entry.variable.name,
+                      hex,
+                      uses: uses(entry.variable),
+                      ...(kinds === undefined ? {} : { kinds }),
+                  },
+              ];
     });
     const namedDark = colorVars.flatMap((entry) => {
         const hex = hexOf(entry.darkColor);
@@ -915,7 +1030,24 @@ export function infer(facts: Facts, folder: string): Inferred {
     });
 
     for (const each of namedLight) {
-        lightColors.get(each.hex)?.names.push({ name: each.name, uses: each.uses });
+        const entry = lightColors.get(each.hex);
+
+        entry?.names.push({ name: each.name, uses: each.uses });
+
+        // What the variables that hold a color are used for is a use of the color.
+        if (entry !== undefined && each.kinds !== undefined) {
+            entry.fact = mergeFact(
+                entry.fact,
+                { ...each.kinds, hex: each.hex, forms: new Map(), order: 0 },
+                each.hex,
+            );
+            entry.uses +=
+                each.kinds.bg +
+                each.kinds.text +
+                each.kinds.border +
+                each.kinds.fill +
+                each.kinds.other;
+        }
     }
 
     const lightRoles = chooseRoles(lightColors, namedLight);
@@ -949,6 +1081,28 @@ export function infer(facts: Facts, folder: string): Inferred {
                     score: choice.score,
                 };
             }
+        }
+    }
+
+    // A role that the way its color is used decided may be held by a variable that has a dark value: that is its dark.
+    for (const [role, choice] of Object.entries(lightRoles) as [RoleName, RoleChoice][]) {
+        if (choice.basis !== "use") {
+            continue;
+        }
+
+        const holder = colorVars
+            .filter((entry) => hexOf(entry.lightColor) === choice.hex)
+            .sort((a, b) => uses(b.variable) - uses(a.variable))[0];
+        const dark = hexOf(holder?.darkColor);
+
+        if (holder !== undefined && dark !== undefined && dark !== choice.hex) {
+            darkRoles[role] = {
+                role,
+                hex: dark,
+                basis: "name",
+                source: holder.variable.name,
+                score: choice.score,
+            };
         }
     }
 
@@ -1045,6 +1199,8 @@ export function infer(facts: Facts, folder: string): Inferred {
     // Roles.
     const roleVars = new Set<string>();
     const pendingDark: { path: string[]; hex: string }[] = [];
+    // The light color each color token holds, so that two files that name one token agree on which color it is.
+    const lightHexOf = new Map<string, string>();
     const lightAlias = (hex: string) => `{${palette(hex, asValue(hex, lightColors)).join(".")}}`;
 
     for (const role of Object.keys(ROLE_PATHS) as RoleName[]) {
@@ -1065,6 +1221,7 @@ export function infer(facts: Facts, folder: string): Inferred {
         }
 
         book.add(path, node);
+        lightHexOf.set(path.join("."), light.hex);
 
         if (source !== undefined) {
             aliasOf.set(vkey(source.variable), path);
@@ -1152,7 +1309,7 @@ export function infer(facts: Facts, folder: string): Inferred {
                 !hexPath.has(entry.hex) &&
                 entry.rgba.a > 0.05 &&
                 entry.uses >= 1 &&
-                known.every((other) => distance(other, entry) > 0.01),
+                known.every((other) => !nearColors(other, entry)),
         ),
         (entry) => entry.uses,
         16,
@@ -1182,7 +1339,12 @@ export function infer(facts: Facts, folder: string): Inferred {
             // The same name from another file (a stylesheet variable and a theme object): it may know the dark value.
             const darkHex = hexOf(entry.darkColor);
 
-            if (darkHex !== undefined && darkHex !== hex && !book.dark.has(path.join("."))) {
+            if (
+                darkHex !== undefined &&
+                darkHex !== hex &&
+                lightHexOf.get(path.join(".")) === hex &&
+                !book.dark.has(path.join("."))
+            ) {
                 pendingDark.push({ path, hex: darkHex });
             }
 
@@ -1193,6 +1355,7 @@ export function infer(facts: Facts, folder: string): Inferred {
         const primitive = target ?? palette(hex, asValue(hex, lightColors));
 
         book.add(path, { $value: `{${primitive.join(".")}}`, $type: "color" });
+        lightHexOf.set(path.join("."), hex);
         aliasOf.set(vkey(entry.variable), path);
 
         const darkHex = hexOf(entry.darkColor);
@@ -1204,8 +1367,15 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     // The other mode's colors: a palette color the light mode already has is referenced; any other is written as it is,
     // in the mode's file, so the default mode holds only the colors it uses.
+    const changes = new Set([
+        ...book.dark.keys(),
+        ...pendingDark.map((each) => each.path.join(".")),
+    ]);
+
     for (const { path, hex } of pendingDark) {
-        const known = hexPath.get(hex);
+        // A color of the light palette that is itself different in the dark is no stand-in for this one.
+        const found = hexPath.get(hex);
+        const known = found !== undefined && !changes.has(found.join(".")) ? found : undefined;
 
         book.addDark(path, {
             $value: known === undefined ? asValue(hex, darkColors) : `{${known.join(".")}}`,
@@ -1216,13 +1386,23 @@ export function infer(facts: Facts, folder: string): Inferred {
     // 4. The other categories: the project's own variables first.
     const explicit = new Set<Category>();
 
-    for (const entry of classified) {
+    // A bare `--radius` has no name of its own: it takes the fallback after the variables that are named (`--radius-md`).
+    const named = [
+        ...classified.filter((entry) => nameOf(entry.variable, entry.category) !== ""),
+        ...classified.filter((entry) => nameOf(entry.variable, entry.category) === ""),
+    ];
+
+    for (const entry of named) {
         if (entry.category === "color" || entry.light === undefined) {
             continue;
         }
 
         const node = nodeFor(entry.category, entry.light);
-        const path = pathOf(entry.variable, entry.category);
+        let path = pathOf(entry.variable, entry.category);
+
+        if (nameOf(entry.variable, entry.category) === "" && book.has(path)) {
+            path = [path[0]!, "base"];
+        }
 
         if (node === undefined || book.has(path)) {
             continue;
@@ -1251,6 +1431,7 @@ export function infer(facts: Facts, folder: string): Inferred {
     shadowScale(facts, book, explicit, result);
     motionScale(facts, book, explicit, result);
     breakpointScale(facts, book, explicit, result);
+    dedupeScales(book);
 
     // 6. Assemble, add the contrast pairs, and keep only what the engine accepts.
     const renamed = new Map<string, string>();
@@ -1279,6 +1460,38 @@ export function infer(facts: Facts, folder: string): Inferred {
     };
 
     return validate(result);
+}
+
+/**
+ * Two names for one size (`radius.lg` and `radius.base`, both 8px) are one step of the scale: the plainer name stays, and
+ * the `base` that only names where a scale starts goes.
+ */
+function dedupeScales(book: Book): void {
+    for (const group of ["text", "space", "radius", "breakpoint"]) {
+        const seen = new Map<number, string>();
+
+        for (const [key, entry] of [...book.tokens]) {
+            const size = entry.path[0] === group ? px(String(entry.node.$value)) : undefined;
+
+            if (size === undefined || size === 0) {
+                continue;
+            }
+
+            const known = seen.get(size);
+
+            if (known === undefined) {
+                seen.set(size, key);
+
+                continue;
+            }
+
+            const drop = book.tokens.get(known)!.path.at(-1) === "base" ? known : key;
+
+            book.tokens.delete(drop);
+            book.dark.delete(drop);
+            seen.set(size, drop === known ? key : known);
+        }
+    }
 }
 
 /** The color as `#hex` or a function, trimmed, for a token's value. */
