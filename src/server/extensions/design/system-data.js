@@ -236,6 +236,36 @@ export function createSystemData(pocket, store, data) {
             }
         },
 
+        /**
+         * One tap: a new version of the design with each exact match (a literal that is a token's value) written as `var(--token)`.
+         * Resolves to `{ version, fixed }` for the new version, or null (the server's words are in a notice).
+         */
+        async fix({ artifact, version, mode, scheme, size }) {
+            const conversation = conversationOf();
+
+            try {
+                const made = await pocket.api(`c/${conversation}/system/fix`, {
+                    id: artifact,
+                    version,
+                    colorScheme: scheme,
+                    ...(mode === undefined ? {} : { mode }),
+                    viewport: size,
+                    key: crypto.randomUUID(),
+                });
+
+                pocket.notify(
+                    "info",
+                    `Fixed ${made.fixed} exact match${made.fixed === 1 ? "" : "es"}: version ${made.version}.`,
+                );
+
+                return current(conversation) ? made : null;
+            } catch (error) {
+                fail(error);
+
+                return null;
+            }
+        },
+
         /** Publish the documentation page as a design. Resolves to `{ id, version }`, or null. */
         async publishDocs() {
             const conversation = conversationOf();

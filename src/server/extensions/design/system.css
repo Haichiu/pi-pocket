@@ -1279,20 +1279,27 @@
     text-align: center;
 }
 
-.dsy-space {
-    display: inline-flex;
-    align-items: center;
-    width: 112px;
-    height: 40px;
+/* A spacing step is a tile: its bar at its own scale (the widest step fills the tile), its name, and its value. */
+.dsy-tiles[data-size="space"] {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
 }
 
-.dsn[data-size="narrow"] .dsy-space {
-    width: 70px;
+.dsy-tiles[data-size="space"] .dsy-card-tile {
+    align-items: flex-start;
+    text-align: left;
+}
+
+.dsy-space {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 28px;
+    padding: 0 2px;
 }
 
 .dsy-space i {
     display: block;
-    height: 16px;
+    height: 14px;
     border-radius: 4px;
     background: color-mix(in srgb, var(--accent) 75%, transparent);
 }
@@ -2080,4 +2087,78 @@
     align-items: center;
     gap: 6px;
     font-size: 12.5px;
+}
+
+/* The save bar keeps its place at the foot of the view while there are edits: the count, undo and redo, give up, and save. */
+.dsy-column > .dsy-savebar {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+}
+
+.dsy-bar-history {
+    display: inline-flex;
+    gap: 2px;
+}
+
+.dsy-bar-history .icon-button {
+    width: 34px;
+    height: 34px;
+}
+
+/* More than four modes: one button that shows the mode in view and opens the list. */
+.dsy-modemenu {
+    display: inline-flex;
+    flex: none;
+}
+
+.dsy-modemenu-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 10px;
+    border-radius: 8px;
+    background: var(--dsn-fill);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.dsy-modemenu .dsn-menu-item.on {
+    background: var(--dsn-accent-soft);
+}
+
+/* A bar of sections that goes on says so with a mark at the edge that has more, as well as the fade. */
+.dsy-tabbar {
+    position: relative;
+}
+
+.dsy-tabbar:has(.dsy-tabs[data-less="left"])::before,
+.dsy-tabs[data-more="right"] + .dsy-tabs-end::before {
+    position: absolute;
+    top: 0;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 34px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 20px;
+    line-height: 1;
+    pointer-events: none;
+}
+
+.dsy-tabs[data-more="right"] + .dsy-tabs-end {
+    position: relative;
+}
+
+.dsy-tabs[data-more="right"] + .dsy-tabs-end::before {
+    content: "\203A";
+    right: 100%;
+}
+
+.dsy-tabbar:has(.dsy-tabs[data-less="left"])::before {
+    content: "\2039";
+    left: 0;
 }

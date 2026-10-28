@@ -203,6 +203,36 @@ export function createCheck(env, DockHead) {
             }
         }, []);
 
+        // The findings that one tap can fix: a value that is exactly a token's (`fixable`, from the server).
+        const exact = findings.filter(({ finding }) => finding.fixable === true).length;
+        const [fixing, setFixing] = useState(false);
+
+        // A new version with each of them written as the token, then the check of that version.
+        const fix = async () => {
+            setFixing(true);
+
+            const made = await systemData.fix({
+                artifact: design.id,
+                version: shown,
+                mode: options.named ? options.mode : undefined,
+                scheme: options.scheme,
+                size: options.size,
+            });
+
+            setFixing(false);
+
+            if (made) {
+                env.showVersion(null);
+                void systemData.check({
+                    artifact: design.id,
+                    version: made.version,
+                    mode: options.named ? options.mode : undefined,
+                    scheme: options.scheme,
+                    size: options.size,
+                });
+            }
+        };
+
         const run = (now = options) =>
             void systemData.check({
                 artifact: design.id,
@@ -265,9 +295,7 @@ export function createCheck(env, DockHead) {
                 </div>
                 <div class="dsy-check-options">
                     ${
-                        options.modes.length > 3 ||
-                        (env.sizeClass(s) === "narrow" &&
-                            options.modes.some((mode) => !MODE_ICONS[mode]))
+                        options.modes.length > 4
                             ? html`<select
                                   class="dsy-modeselect dsy-check-mode"
                                   aria-label="Mode"
@@ -285,12 +313,13 @@ export function createCheck(env, DockHead) {
                             : html`<${Segmented}
                                   label="Mode"
                                   value=${options.mode}
+                                  iconOnly=${env.sizeClass(s) === "narrow"}
                                   onChange=${(mode) =>
                                       store.set({ checkWith: { ...s.checkWith, mode } })}
                                   options=${options.modes.map((mode) => ({
                                       value: mode,
                                       label: titleOf(mode),
-                                      icon: MODE_ICONS[mode],
+                                      icon: MODE_ICONS[mode] ?? "contrast",
                                   }))}
                               />`
                     }
@@ -376,6 +405,24 @@ export function createCheck(env, DockHead) {
                                 There is no design system, so only the page's own checks ran. With
                                 one, colors, fonts, and sizes that are not its tokens are found too.
                             </p>`
+                        }
+                        ${
+                            canEdit &&
+                            exact > 0 &&
+                            html`<div class="dsy-fixbar">
+                                <span class="muted small"
+                                    >${`${exact === 1 ? "One finding is" : `${exact} findings are`} a value that is exactly a token's: it can be the token itself.`}</span
+                                >
+                                <button
+                                    type="button"
+                                    class="button small"
+                                    disabled=${fixing || running}
+                                    onClick=${fix}
+                                >
+                                    <${Ico} name="sparkle" size=${14} />
+                                    ${fixing ? "Fixing…" : `Fix ${exact} exact match${exact === 1 ? "" : "es"}`}
+                                </button>
+                            </div>`
                         }
                         ${
                             findings.length === 0 &&

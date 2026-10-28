@@ -625,8 +625,11 @@ export function createDocks(env) {
         check: "Check",
     };
 
-    /** How high a sheet stands on a phone, as a share of the room under the bars: low, middle, high. */
-    const SHEET_SNAPS = [34, 62, 90];
+    /**
+     * How high a sheet stands on a phone, as a share of the room under the bars: low, middle, high. The middle one, where it
+     * starts, leaves the page 46 percent of the room (at least 40), so that it is not a speck.
+     */
+    const SHEET_SNAPS = [24, 54, 88];
 
     /**
      * The handle of a bottom sheet: drag it to the height you want (it settles on the nearest of three), tap it to go to

@@ -36,34 +36,72 @@ export function createSystemView(env, canvas, sections, widgets) {
 
     /** Which mode is in view: each mode, and the modes side by side. */
     function ModeSwitch({ s, modes, narrow }) {
+        const [menu, setMenu] = useState(false);
+
         if (modes.length < 2) {
             return null;
         }
 
         const current =
             s.sysMode === "both" ? "both" : modes.includes(s.sysMode) ? s.sysMode : modes[0];
-
-        // Many modes, or on a narrow bar a mode with no icon (its name is long): one choice, as a list.
-        if (modes.length > 3 || (narrow && modes.some((mode) => !MODE_ICONS[mode]))) {
-            return html`<select
-                class="dsy-modeselect"
-                aria-label="Mode"
-                value=${current}
-                onChange=${(event) => env.setSysMode(event.currentTarget.value)}
-            >
-                ${modes.map((mode) => html`<option value=${mode}>${modeTitle(mode)}</option>`)}
-                <option value="both">${modes.length === 2 ? "Both" : "All"} modes</option>
-            </select>`;
-        }
-
         const options = [
             ...modes.map((mode) => ({
                 value: mode,
                 label: modeTitle(mode),
-                icon: MODE_ICONS[mode],
+                icon: MODE_ICONS[mode] ?? "contrast",
             })),
             { value: "both", label: modes.length === 2 ? "Both" : "All", icon: "compare" },
         ];
+
+        // Up to four modes: a segmented control, a button each (an icon on a phone, the name too where there is room).
+        // More than that: one button that shows the mode in view and opens the list.
+        if (modes.length > 4) {
+            const shown = options.find((option) => option.value === current) ?? options[0];
+
+            return html`<span class="dsy-modemenu">
+                <button
+                    type="button"
+                    class="dsy-modemenu-button"
+                    aria-haspopup="dialog"
+                    aria-expanded=${menu}
+                    aria-label=${`Mode: ${shown.label}`}
+                    onClick=${() => setMenu(!menu)}
+                >
+                    <${Ico} name=${shown.icon} size=${15} />
+                    <span>${shown.label}</span>
+                    <${Ico} name="down" size=${14} />
+                </button>
+                ${
+                    menu &&
+                    html`<${Popover}
+                        label="Mode"
+                        align="end"
+                        sheet=${narrow}
+                        onClose=${() => setMenu(false)}
+                    >
+                        <div class="dsn-menu" role="group" aria-label="Mode">
+                            ${options.map(
+                                (option) =>
+                                    html`<button
+                                        type="button"
+                                        key=${option.value}
+                                        class=${`dsn-menu-item ${current === option.value ? "on" : ""}`}
+                                        aria-pressed=${current === option.value}
+                                        onClick=${() => {
+                                            setMenu(false);
+                                            env.setSysMode(option.value);
+                                        }}
+                                    >
+                                        <${Ico} name=${option.icon} size=${16} />
+                                        <span class="grow">${option.label}</span>
+                                        ${current === option.value && html`<${Ico} name="check" size=${15} />`}
+                                    </button>`,
+                            )}
+                        </div>
+                    <//>`
+                }
+            </span>`;
+        }
 
         return html`<div class="dsn-seg dsy-modes" role="group" aria-label="Mode">
             ${options.map(
@@ -77,8 +115,8 @@ export function createSystemView(env, canvas, sections, widgets) {
                         aria-label=${option.label}
                         onClick=${() => env.setSysMode(option.value)}
                     >
-                        ${option.icon && html`<${Ico} name=${option.icon} size=${15} />`}
-                        ${(!narrow || !option.icon) && html`<span>${option.label}</span>`}
+                        <${Ico} name=${option.icon} size=${15} />
+                        ${!narrow && html`<span>${option.label}</span>`}
                     </button>`,
             )}
         </div>`;
@@ -282,7 +320,7 @@ export function createSystemView(env, canvas, sections, widgets) {
     function SectionTabs({ s, data, split, hasDesign }) {
         const unsaved = unsavedCount(data, s.history);
         const bar = useRef(null);
-        // What a tab counts is the documentation page's rule (`sectionCounts`): every token of the section, whatever its tier.
+        // What a tab counts is what its section shows open (`sectionCounts`): the roles of Colors; a folded group has its own count.
         const counts = useMemo(() => sectionCounts(data?.tokens ?? []), [data]);
         const present = useMemo(
             () => new Set((data?.tokens ?? []).map((token) => sectionOf(token))),
@@ -379,12 +417,14 @@ export function createSystemView(env, canvas, sections, widgets) {
                     const count =
                         section.id === "components"
                             ? (data?.components.length ?? 0)
-                            : (counts[section.id] ?? 0);
+                            : (counts[section.id]?.open ?? 0);
+                    const more = counts[section.id]?.folded ?? 0;
 
                     return html`<button
                         type="button"
                         role="tab"
                         id=${`dsy-tab-${section.id}`}
+                        title=${more > 0 ? `${count} shown open, and ${more} more in folded groups` : undefined}
                         key=${section.id}
                         class=${`dsn-tab ${current === section.id ? "on" : ""}`}
                         aria-selected=${current === section.id}
@@ -701,6 +741,31 @@ export function createSystemView(env, canvas, sections, widgets) {
                         : html`<span class="dsy-count-note"
                               ><i></i>${count} unsaved change${count === 1 ? "" : "s"}</span
                           >`
+                }
+                ${
+                    (s.history.past.length > 0 || s.history.future.length > 0) &&
+                    html`<span class="dsy-bar-history" role="group" aria-label="Undo and redo">
+                        <button
+                            type="button"
+                            class="icon-button"
+                            title="Undo"
+                            aria-label="Undo"
+                            disabled=${s.history.past.length === 0 || status === "saving"}
+                            onClick=${() => env.undo()}
+                        >
+                            <${Ico} name="undo" size=${16} />
+                        </button>
+                        <button
+                            type="button"
+                            class="icon-button"
+                            title="Redo"
+                            aria-label="Redo"
+                            disabled=${s.history.future.length === 0 || status === "saving"}
+                            onClick=${() => env.redo()}
+                        >
+                            <${Ico} name="redo" size=${16} />
+                        </button>
+                    </span>`
                 }
                 <span class="grow"></span>
                 ${
