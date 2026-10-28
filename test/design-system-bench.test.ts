@@ -1579,7 +1579,7 @@ test(
             <style>*{margin:0;padding:0}body{background:var(--color-bg-default)}.hero{padding:var(--space-8);background:var(--color-accent-default)}
             .hero button{min-height:var(--size-tap);padding:0 var(--space-4);border:0;border-radius:var(--radius-md);background:var(--color-bg-surface);color:var(--color-text-primary);font:inherit}
             .hero button:focus-visible{outline:var(--size-ring) solid ${ring};outline-offset:var(--space-1)}</style>
-            <div class="hero" data-pid="hero"><button type="button" data-pid="cta">Go</button></div>`;
+            <main data-pid="main"><div class="hero" data-pid="hero"><button type="button" data-pid="cta">Go</button></div></main>`;
         const css = readFileSync(join(LINT_SYSTEM, "golden", "tokens.css"));
         const system = systemFromFlat(readFlat(join(LINT_SYSTEM, ".pi", "design")), "Bench");
         const chromium = (await BenchBrowser.launch())!;
@@ -1629,7 +1629,7 @@ test(
             <label for="a" data-pid="al">Name</label> <input id="a" class="s" data-pid="a"> <button class="s" data-pid="b">Go</button> <a href="#" data-pid="k">Link</a>
             <hr data-pid="r"><table data-pid="tb"><tbody data-pid="tbb"><tr data-pid="tr"><td data-pid="td">1</td></tr></tbody></table>`;
         const page = (lang: string, extra: string) =>
-            `<!doctype html><html${lang}><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="ds/tokens.css"></head><body data-pid="page">${body}${extra}</body></html>`;
+            `<!doctype html><html${lang}><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="ds/tokens.css"></head><body data-pid="page"><main data-pid="main">${body}${extra}</main></body></html>`;
         const chromium = (await BenchBrowser.launch())!;
         const check = (content: string) =>
             referenceCheck(
@@ -1657,11 +1657,11 @@ test(
             );
 
             assert.deepEqual(bad.findings.map((item) => [item.rule, item.pid ?? ""]).sort(), [
-                ["missing-label", "e"],
-                ["missing-label", "ic"],
-                ["missing-label", "im"],
-                ["missing-label", "ph"],
-                ["missing-label", "sel"],
+                ["accessible-name", "ic"],
+                ["accessible-name", "im"],
+                ["form-label", "e"],
+                ["form-label", "ph"],
+                ["form-label", "sel"],
                 ["missing-lang", ""],
             ]);
         } finally {
