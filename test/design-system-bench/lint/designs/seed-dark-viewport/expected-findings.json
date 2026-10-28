@@ -1,0 +1,31 @@
+{
+    "design": "seed-dark-viewport",
+    "viewport": [1280, 800],
+    "colorSchemes": ["dark"],
+    "findings": [
+        {
+            "rule": "missing-viewport"
+        },
+        {
+            "rule": "off-system-color",
+            "pid": "title",
+            "value": "#151a22"
+        },
+        {
+            "rule": "contrast",
+            "pid": "title",
+            "level": "error"
+        },
+        {
+            "rule": "off-system-color",
+            "pid": "panel",
+            "value": "#ffffff"
+        },
+        {
+            "rule": "contrast",
+            "pid": "panel-text",
+            "level": "error"
+        }
+    ],
+    "description": "No viewport meta, and two literal colors that are fine in light but fail in dark (checked in dark)."
+}

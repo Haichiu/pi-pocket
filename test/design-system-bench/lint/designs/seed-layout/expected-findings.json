@@ -1,0 +1,15 @@
+{
+    "design": "seed-layout",
+    "viewport": [390, 844],
+    "colorSchemes": ["light"],
+    "findings": [
+        {
+            "rule": "overflow"
+        },
+        {
+            "rule": "missing-pid",
+            "level": "warning"
+        }
+    ],
+    "description": "A 600 px block on a 390 px page (horizontal scroll), and one button without a data-pid."
+}
