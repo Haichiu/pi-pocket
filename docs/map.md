@@ -149,6 +149,7 @@ The agent's side of Design mode. `extensions/design.ts` installs it (see Extensi
 | `design/files.ts`  | Where an export may be written: inside the session folder, never through a link, replaced atomically                                                                                                                |
 | `design/pptx.ts`   | The PPTX writer: one image for each slide, at the deck's slide size (16:9 by default), with the slide's text as speaker notes, through `zip.ts`                                                                     |
 | `design/system.ts` | `design_system`: the project's `.pi/design-system.md`, bounded, read and written without following links                                                                                                            |
+| `design/scan.ts`   | `design_system` scan: a bounded walk that follows no link, the token draft, and `checkTokensBlock`                                                                                                                  |
 | `design/guide.ts`  | The prompt section: how to make designs, and the design system as fenced, untrusted data                                                                                                                            |
 
 ### Elsewhere

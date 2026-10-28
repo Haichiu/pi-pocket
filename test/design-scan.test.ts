@@ -41,8 +41,8 @@ b{color:#f50;border-radius:8px;font-family:Inter,  sans-serif}`,
 
     assert.deepEqual(scan.files, ["src/app.css"]);
     assert.deepEqual(scan.variables, { "--brand": "#FF5500", "--gap": "8px" });
-    // #FF5500 and #ff5500 differ only in case, so they merge to a count of 2.
-    assert.deepEqual(scan.colors[0], { value: "#ff5500", count: 2 });
+    // #FF5500, #ff5500 (case) and #f50 (short form) are one color: count 3 — and the variable's value counts too.
+    assert.deepEqual(scan.colors[0], { value: "#ff5500", count: 3 });
     assert.ok(!scan.colors.some((c) => c.value === "#123456"));
     assert.deepEqual(scan.fonts, [{ value: "Inter, sans-serif", count: 2 }]);
     assert.deepEqual(scan.radii, [{ value: "8px", count: 2 }]);
@@ -53,8 +53,65 @@ test("a 5-digit hex is not a color", () => {
 
     assert.deepEqual(
         scanTokens(dir).colors.map((c) => c.value),
-        ["#abcd"],
+        ["#aabbccdd"],
     );
+});
+
+test("entities, links, ids, and selectors are not colors", () => {
+    const dir = project({
+        "a.html": `<a href="#add">x</a><p>&#123;</p><svg><use href="#fab"/></svg>
+<style>#bad { color: #0a0a0a }  .x{fill:url(#cab)}</style>`,
+    });
+
+    assert.deepEqual(
+        scanTokens(dir).colors.map((c) => c.value),
+        ["#0a0a0a"],
+    );
+});
+
+test("a hostile file of dashes scans in linear time", () => {
+    const dir = project({ "a.css": "-".repeat(LIMITS.fileBytes) });
+    const started = Date.now();
+
+    scanTokens(dir);
+    // Before the fix, 40 KB of dashes took 9 s; the limit here is generous for a slow machine.
+    assert.ok(Date.now() - started < 2000);
+});
+
+test("a file past the byte limit is read only to the limit", () => {
+    const dir = project({
+        "a.css": `a{color:#111}${" ".repeat(LIMITS.fileBytes)}b{color:#222}`,
+    });
+
+    assert.deepEqual(
+        scanTokens(dir).colors.map((c) => c.value),
+        ["#111111"],
+    );
+});
+
+test("a tree without style files stops at the entry limit", () => {
+    const files: Record<string, string> = {};
+
+    for (let i = 0; i < LIMITS.entries + 5; i++) {
+        files[`x${i}.bin`] = "";
+    }
+
+    const scan = scanTokens(project(files));
+
+    assert.deepEqual(scan.files, []);
+    assert.equal(scan.partial, true);
+});
+
+test("scanRoot: a missing path, a folder named ..x, and a deep tree", () => {
+    const dir = project({ "..x/a.css": "a{color:#111}" });
+
+    assert.throws(() => scanRoot(dir, "nope"), /does not exist/);
+    assert.doesNotThrow(() => scanRoot(dir, "..x"));
+
+    const deep = project({ "a/b/c/d/e/f/g/h/i.css": "a{color:#111}" });
+
+    assert.deepEqual(scanTokens(deep).files, []);
+    assert.equal(scanTokens(deep).partial, true);
 });
 
 test("scan never follows a symlink out of the folder", () => {
@@ -93,6 +150,8 @@ test("checkTokensBlock: none is false, broken or non-object throws", () => {
     assert.equal(checkTokensBlock("# just words"), false);
     assert.throws(() => checkTokensBlock("```json\n{oops}\n```"), /not valid JSON/);
     assert.throws(() => checkTokensBlock("```json\n[1]\n```"), /JSON object/);
+    // An empty block is not an object either.
+    assert.throws(() => checkTokensBlock("```json\n```"), /not valid JSON/);
 });
 
 test("the tool: scan returns a draft and writes nothing; write refuses broken tokens", async () => {
@@ -107,7 +166,11 @@ test("the tool: scan returns a draft and writes nothing; write refuses broken to
     const text = async (call: ReturnType<typeof run>) =>
         ((await call).output as { text: string }[])[0]!.text;
 
-    assert.match(await text(run({ action: "scan" })), /#abc/);
+    const scanned = await text(run({ action: "scan" }));
+
+    assert.match(scanned, /#aabbcc/);
+    assert.match(scanned, /^<scan_data>/);
+    assert.match(scanned, /untrusted project data/);
     assert.match(await text(run({ action: "read" })), /no .*design-system\.md/);
     await assert.rejects(run({ action: "write", content: "```json\n{bad\n```" }), /not valid JSON/);
     assert.match(await text(run({ action: "write", content: "# plain" })), /no fenced JSON/);
