@@ -109,3 +109,9 @@ Other changes:
 
 - The code block's inner `pre` and `code` took the browser's `monospace`: the component CSS now sets `font: inherit` on them, so they use `font.family.mono`.
 - The hint of a hovered menu row in dark was 4.48:1 on the alpha hover overlay (an overlay has no opaque ground, so no pair could be declared on it). `menu.row-hover` now points at `color.bg.selected`, the opaque ground that `color.text.muted` already declares its pair on (4.5:1 in every mode, checked by the validator and the tests). `test/design-lint-pages.test.ts` now expects no `monospace` finding and no contrast finding in light and dark.
+
+## Round 4
+
+- **Exempt pair.** The flagship's `color.text.disabled` declares `contrast: { on: "{color.bg.surface}", min: 4.5, exempt: "disabled" }`. The engine notes it (`DesignSystem.notes`, one `info`) and `problems` stays empty. The tests skip an exempt pair in the "passes in every mode" checks and assert that it is exactly this one.
+- **Docs page.** The contrast table shows an exempt pair with the ratio in every mode and an "exempt (disabled)" label (a failing ratio is not a failure there; a passing one, such as high contrast, shows its level), and it is counted in neither number of "60 of 60". A color card says "exempt (disabled); would need 4.5:1 on …". `DesignSystem.notes` show in a small "N notes from the validator" area under the problems. A token with several pairs (`contrasts`) gets a row for each.
+- **Use in code.** Three "use it" blocks: CSS (link `tokens.css`, `var()`, `data-theme`), Tailwind v4 (`@import "tailwindcss"; @import "./tailwind.css";` and a utility), and JSON (Style Dictionary config over a `tokens.<mode>.resolved.json`, and Tokens Studio's load). Under them, the generated files as folds: `tokens.css`, `tailwind.css`, `components.css`, the compact `tokens.resolved.json`, and a `tokens.<mode>.resolved.json` for each mode (the first 6 KB of each, with the size). The page is 968 KB for the flagship.

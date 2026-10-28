@@ -389,7 +389,18 @@ test("the flagship's contrast pairs pass in every mode, and the page says so", (
     const system = flagship();
     let checked = 0;
 
-    for (const named of system.tokens.filter((item) => item.contrast !== undefined)) {
+    // An exempt pair (disabled text) may be below its minimum: it is shown with its reason, not as a failure.
+    const exempt = system.tokens.filter((item) => item.contrast?.exempt !== undefined);
+
+    assert.deepEqual(
+        exempt.map((item) => item.name),
+        ["color.text.disabled"],
+    );
+    assert.equal(system.notes?.length, 1, "the system notes the exempt pair");
+
+    for (const named of system.tokens.filter(
+        (item) => item.contrast !== undefined && item.contrast.exempt === undefined,
+    )) {
         const on = system.tokens.find(
             (item) => item.name === named.contrast!.on.replace(/[{}]/g, ""),
         );
@@ -682,4 +693,47 @@ test("the page's sentences have the right number and article", () => {
         text(renderSystemDoc(flagship()).html),
         /All 20 contrast checks meet their minimum|All \d+ contrast checks meet their minimum/,
     );
+});
+
+test("an exempt pair is labelled and not a failure; notes have an area; the code section shows how to use each output", () => {
+    const { html } = renderSystemDoc(flagship());
+
+    // The contrast table: the label, with the ratio, in every mode; and the counts leave the exempt pair out.
+    assert.match(html, /<td class="num">exempt \(disabled\)<\/td>/);
+    assert.equal(
+        (html.match(/<span class="pill">exempt \(disabled\)<\/span>/g) ?? []).length >= 3,
+        true,
+    );
+    assert.match(html, /All 60 contrast checks meet their minimum/);
+    assert.doesNotMatch(html, /Fails/);
+    assert.match(html, /exempt \(disabled\); would need 4\.5:1 on color\.bg\.surface/);
+
+    // Notes are apart from problems.
+    assert.match(html, /<details class="notes"><summary>1 note from the validator<\/summary>/);
+    assert.match(html, /the pair is exempt \(disabled\)/);
+    assert.doesNotMatch(html, /from the validator<\/summary><ul><li><strong>Warning/);
+
+    // Use it: CSS, Tailwind v4, and JSON, and the generated files.
+    assert.match(html, /<h4>CSS<\/h4>/);
+    assert.match(html, /<h4>Tailwind v4<\/h4>/);
+    assert.match(html, /<h4>JSON<\/h4>/);
+    assert.ok(
+        html.includes("@import &quot;tailwindcss&quot;;\n@import &quot;./tailwind.css&quot;;"),
+    );
+    assert.ok(html.includes("&lt;link rel=&quot;stylesheet&quot; href=&quot;tokens.css&quot;&gt;"));
+    assert.ok(html.includes("var(--color-"));
+    assert.match(html, /Style Dictionary/);
+    assert.match(html, /Tokens Studio/);
+
+    for (const file of [
+        "tokens.css",
+        "tailwind.css",
+        "components.css",
+        "tokens.resolved.json",
+        "tokens.light.resolved.json",
+        "tokens.dark.resolved.json",
+        "tokens.high-contrast.resolved.json",
+    ]) {
+        assert.ok(html.includes(`<summary>${file}<`), file);
+    }
 });
