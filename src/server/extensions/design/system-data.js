@@ -1,8 +1,10 @@
 // What the System view asks of the server, and keeps in the store: the design system, a save of the person's edits, a
 // check of a design against it, the documentation page, and the files for code.
 import { downloadFile } from "./data.js";
-import { changeOf } from "./system.js";
-import { emptyHistory } from "./system.js";
+import { changeNow } from "./unsaved.js";
+
+/** No edits (as `emptyHistory` in `system.js`, which loads with the System view). */
+const emptyHistory = () => ({ past: [], future: [] });
 
 /** The key a check is kept under: the design's version, and the mode of the system and the size it ran at. */
 export const checkKey = (artifact, version, mode, size) => `${artifact}@${version}:${mode}:${size}`;
@@ -99,7 +101,7 @@ export function createSystemData(pocket, store, data) {
                 return false;
             }
 
-            const { set, guidelines, count } = changeOf(system, state.history);
+            const { set, remove, guidelines, count } = changeNow(system, state.history);
 
             if (count === 0) {
                 store.set({ history: emptyHistory() });
@@ -112,6 +114,7 @@ export function createSystemData(pocket, store, data) {
             try {
                 const result = await pocket.api(`c/${conversation}/system`, {
                     ...(set.length > 0 ? { set } : {}),
+                    ...(remove === undefined ? {} : { remove }),
                     ...(guidelines === undefined ? {} : { guidelines }),
                     baseRevision: system.revision,
                 });

@@ -697,7 +697,7 @@ test("a text color with no pair is checked against the page only when it is plai
     const bare = {
         ...system,
         tokens: system.tokens.map((token) => {
-            const { contrast: _, ...rest } = token;
+            const { contrast: _, contrasts: __, ...rest } = token;
 
             return rest as typeof token;
         }),
@@ -718,4 +718,167 @@ test("a text color with no pair is checked against the page only when it is plai
     ]) {
         assert.equal(model.contrastOf(name, "light"), null, name);
     }
+});
+
+test("a mode's token is its own or the default's: the engine says which, an edit can give it back, and a save removes it", () => {
+    const model = sys.createModel(system);
+
+    // The default mode sets every token. Dark's file sets some (`overrides`) and takes the rest.
+    assert.equal(model.overridden("color.bg.canvas", "light"), true);
+    assert.equal(model.overridden("color.bg.canvas", "dark"), true);
+    assert.equal(model.overridden("color.border.focus", "dark"), false, "the file does not set it");
+    assert.equal(model.savedOverride("color.border.focus", "dark"), false);
+
+    // Giving back what the file sets: the value is the default's, and a save removes the token from the file.
+    const history = sys.push(
+        sys.emptyHistory(),
+        sys.inheritEdit("dark", "color.bg.canvas"),
+        1,
+        false,
+    );
+    const after = sys.createModel(system, sys.tokenEdits(history));
+
+    assert.equal(after.overridden("color.bg.canvas", "dark"), false);
+    assert.equal(
+        after.value("color.bg.canvas", "dark").value,
+        after.value("color.bg.canvas", "light").value,
+    );
+    assert.equal(after.value("color.bg.canvas", "dark").alias, "color.gray.50");
+    assert.deepEqual(sys.changeOf(system, history), {
+        set: [],
+        remove: [{ mode: "dark", token: "color.bg.canvas" }],
+        count: 1,
+    });
+
+    // Giving back what the file does not set, or in the default mode, changes nothing.
+    for (const [mode, token] of [
+        ["dark", "color.border.focus"],
+        ["light", "color.bg.canvas"],
+    ]) {
+        assert.equal(
+            sys.changeOf(
+                system,
+                sys.push(sys.emptyHistory(), sys.inheritEdit(mode, token), 1, false),
+            ).count,
+            0,
+            `${mode} ${token}`,
+        );
+    }
+
+    // A token that dark takes from light follows an edit of light's; one that dark sets itself does not.
+    const edited = sys.createModel(
+        system,
+        sys.tokenEdits(
+            sys.push(
+                sys.push(
+                    sys.emptyHistory(),
+                    sys.tokenEdit("light", "color.border.focus", { value: "#ff0000" }),
+                    1,
+                    false,
+                ),
+                sys.tokenEdit("light", "color.bg.canvas", { value: "#00ff00" }),
+                2,
+                false,
+            ),
+        ),
+    );
+
+    assert.equal(edited.value("color.border.focus", "dark").value, "#ff0000");
+    assert.notEqual(edited.value("color.bg.canvas", "dark").value, "#00ff00");
+
+    // An edit that sets a value of its own makes the token the mode's own.
+    const own = sys.createModel(
+        system,
+        sys.tokenEdits(
+            sys.push(
+                sys.emptyHistory(),
+                sys.tokenEdit("dark", "color.border.focus", { value: "#123456" }),
+                1,
+                false,
+            ),
+        ),
+    );
+
+    assert.equal(own.overridden("color.border.focus", "dark"), true);
+});
+
+test("a shadow is read as parts that keep their links, and an edit to one part is a value that a save writes as the file has it", () => {
+    const model = sys.createModel(system);
+    const { layers } = model.shadowRaw("shadow.lg", "light");
+
+    // The file's `{space.4}` and `{color.scrim.40}` are there as links; a value of its own stays a value.
+    assert.equal(layers.length, 1);
+    assert.equal(layers[0].offsetY, "{space.4}");
+    assert.equal(layers[0].blur, "{space.12}");
+    assert.equal(layers[0].color, "{color.scrim.40}");
+    assert.equal(sys.linkOf(layers[0].offsetY), "space.4");
+    assert.equal(sys.linkOf(layers[0].offsetX), null);
+    assert.equal(sys.amountOf(layers[0].spread)?.n, -12);
+
+    // A link to another size, and a color of its own: the value follows the token, the CSS keeps `var()`.
+    const next = sys.withPart(sys.withPart(layers, 0, "blur", "{space.8}"), 0, "color", "#112233");
+    const history = sys.push(
+        sys.emptyHistory(),
+        sys.tokenEdit("light", "shadow.lg", { value: sys.shadowValue(next) }),
+        1,
+        false,
+    );
+    const edited = sys.createModel(system, sys.tokenEdits(history));
+    const now = edited.value("shadow.lg", "light");
+
+    assert.equal(now.edited, true);
+    assert.equal(now.value[0].blur.value, 32, "space.8 is 32px");
+    assert.equal(now.value[0].color, "#112233");
+    assert.match(now.css, /^0px var\(--space-4\) var\(--space-8\) -12px /);
+    assert.match(sys.shadowOf(now.value), /^0px 16px 32px -12px /);
+    // The edit reads back as the same parts, and a save sends the DTCG value with its links.
+    assert.equal(edited.shadowRaw("shadow.lg", "light").layers[0].blur, "{space.8}");
+    assert.deepEqual(sys.changeOf(system, history).set, [
+        {
+            mode: "light",
+            token: "shadow.lg",
+            value: { ...layers[0], blur: "{space.8}", color: "#112233" },
+        },
+    ]);
+    // Dark takes the shadow from light (its file does not set it): it follows.
+    assert.match(edited.value("shadow.lg", "dark").css, /var\(--space-8\)/);
+
+    // A layer more or less is a list; one layer is the object. A part can be inset.
+    const two = sys.shadowValue([layers[0], { ...layers[0], inset: true }]);
+
+    assert.equal(Array.isArray(two), true);
+    assert.equal(sys.shadowValue([layers[0]]), layers[0]);
+    assert.equal(sys.withPart(layers, 0, "inset", true)[0].inset, true);
+    assert.equal(
+        "inset" in sys.withPart(sys.withPart(layers, 0, "inset", true), 0, "inset", false)[0],
+        false,
+    );
+});
+
+test("a color lists all its contrast pairs, and a pair that is exempt is a note and not a failure", () => {
+    const model = sys.createModel(system);
+    const link = model.contrastsOf("color.text.link", "light");
+
+    assert.deepEqual(
+        link.map((each: { on: string }) => each.on),
+        ["color.bg.surface", "color.bg.canvas"],
+    );
+    assert.ok(link.every((each: { pass: boolean }) => each.pass));
+    assert.equal(
+        model.contrastOf("color.text.link", "light").on,
+        "color.bg.surface",
+        "the first pair is the badge",
+    );
+
+    const hint = model.contrastsOf("color.text.placeholder", "light");
+
+    assert.equal(hint.length, 1);
+    assert.equal(hint[0].pass, false);
+    assert.equal(hint[0].exempt, "decorative");
+    // The system says so too: a note that needs no action, and no warning.
+    assert.ok(system.notes?.some((each) => each.token === "color.text.placeholder"));
+    assert.equal(
+        system.problems.some((each) => each.token === "color.text.placeholder"),
+        false,
+    );
 });

@@ -338,7 +338,24 @@ export function cssOf(type, value) {
     }
 }
 
-/** The types that an editor can write whole: the others (a shadow, a typography style) are edited with Pi. */
+/** The value to write for a shadow's layers: one layer as an object, several as a list. */
+export const shadowValue = (layers) => (layers.length === 1 ? layers[0] : layers);
+
+/** The layers with one member of one layer changed (a value, or a link written `{name}`), or the layer's `inset`. */
+export const withPart = (layers, at, key, member) =>
+    layers.map((layer, index) => {
+        if (index !== at) {
+            return layer;
+        }
+
+        const { inset: _, ...rest } = layer;
+
+        return key === "inset"
+            ? { ...rest, ...(member === true ? { inset: true } : {}) }
+            : { ...layer, [key]: member };
+    });
+
+/** The types that an editor can write whole: the others (a typography style) are edited with Pi. A shadow is edited by parts. */
 export const EDITABLE = new Set([
     "color",
     "dimension",
@@ -347,6 +364,7 @@ export const EDITABLE = new Set([
     "fontWeight",
     "fontFamily",
     "cubicBezier",
+    "shadow",
 ]);
 
 /**
@@ -483,6 +501,10 @@ export function showValue(token, mode) {
 const keyOf = (mode, token) => `${mode}\u0000${token}`;
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
+/** The name a member links to (`{space.2}` → `space.2`), or null for a value of its own. */
+export const linkOf = (member) =>
+    typeof member === "string" && /^\{[^{}]+\}$/.test(member) ? member.slice(1, -1) : null;
+
 /** The raw value of a token in a mode, as it is saved: a reference or the value. */
 const rawOf = (value) =>
     value.alias === undefined ? { value: value.value } : { alias: value.alias };
@@ -503,9 +525,52 @@ export function createModel(system, edits = new Map()) {
         return token?.modes[mode] ? rawOf(token.modes[mode]) : undefined;
     };
 
-    /** Whether a mode takes the default's value for a token, as far as the saved values can tell. */
-    const inherits = (name, mode) =>
-        mode !== defaultMode && same(savedRaw(name, mode), savedRaw(name, defaultMode));
+    /** The tokens each mode's file sets itself, as the engine says (`overrides`), by mode. */
+    const ownSets = new Map();
+
+    const ownSet = (mode) => {
+        if (!ownSets.has(mode)) {
+            const list = system.overrides?.[mode];
+
+            ownSets.set(mode, Array.isArray(list) ? new Set(list) : null);
+        }
+
+        return ownSets.get(mode);
+    };
+
+    /**
+     * Whether a mode takes the default's value for a token, as saved: its file does not set the token (`overrides`), or, with
+     * no `overrides` to say, as far as the saved values can tell.
+     */
+    const inherits = (name, mode) => {
+        if (mode === defaultMode) {
+            return false;
+        }
+
+        const set = ownSet(mode);
+
+        return set === null
+            ? same(savedRaw(name, mode), savedRaw(name, defaultMode))
+            : !set.has(name);
+    };
+
+    /**
+     * The edit that is in force for a token in a mode: its own, or (a mode that takes the default's value) the default's.
+     * One that gives the value back is the default's saved value (`{ saved }`), or its edit.
+     */
+    const editFor = (name, mode) => {
+        const own = edits.get(keyOf(mode, name));
+
+        if (own?.inherit === true) {
+            return (
+                edits.get(keyOf(defaultMode, name)) ?? {
+                    saved: tokens.get(name)?.modes[defaultMode],
+                }
+            );
+        }
+
+        return own ?? (inherits(name, mode) ? edits.get(keyOf(defaultMode, name)) : undefined);
+    };
 
     function resolve(name, mode, trail) {
         const token = tokens.get(name);
@@ -519,10 +584,17 @@ export function createModel(system, edits = new Map()) {
             return { value: null, css: "", error: `A loop: ${[...trail, name].join(" → ")}.` };
         }
 
-        const own = edits.get(keyOf(mode, name));
         // A mode that takes the default's value follows an edit of the default.
-        const edit =
-            own ?? (inherits(name, mode) ? edits.get(keyOf(defaultMode, name)) : undefined);
+        let edit = editFor(name, mode);
+
+        if (edit?.saved !== undefined) {
+            // The value that the default mode has, saved: a link is followed in this mode, a value is the same value.
+            if (edit.saved.alias === undefined) {
+                return { ...edit.saved, edited: true };
+            }
+
+            edit = { alias: edit.saved.alias };
+        }
 
         if (edit?.alias !== undefined) {
             const target = resolve(edit.alias, mode, [...trail, name]);
@@ -534,6 +606,10 @@ export function createModel(system, edits = new Map()) {
                 edited: true,
                 ...(target.error ? { error: target.error } : {}),
             };
+        }
+
+        if (edit !== undefined && token.type === "shadow") {
+            return { ...shadowFrom(edit.value, mode, trail), edited: true };
         }
 
         if (edit !== undefined) {
@@ -560,6 +636,54 @@ export function createModel(system, edits = new Map()) {
         return saved;
     }
 
+    /**
+     * A shadow written as parts that may link to other tokens (`{ color: "{color.shadow}", blur: "{space.2}", … }`, one layer
+     * or a list), as it is in a mode: the layers with every link followed, and the `box-shadow` that keeps the links as
+     * `var()`.
+     */
+    function shadowFrom(raw, mode, trail) {
+        const value = [];
+        const css = [];
+
+        for (const layer of Array.isArray(raw) ? raw : [raw]) {
+            if (!isObject(layer)) {
+                continue;
+            }
+
+            const out = {};
+            const bits = [];
+
+            for (const key of ["offsetX", "offsetY", "blur", "spread", "color"]) {
+                const member = layer[key] ?? (key === "color" ? "#00000000" : "0px");
+                const link = linkOf(member);
+                const target = link === null ? null : tokens.get(link);
+
+                if (target === undefined) {
+                    out[key] = key === "color" ? "#00000000" : "0px";
+                    bits.push(key === "color" ? "transparent" : "0px");
+                } else if (target !== null) {
+                    out[key] = resolve(link, mode, trail).value;
+                    bits.push(`var(${target.cssVar})`);
+                } else {
+                    out[key] = member;
+                    bits.push(
+                        (key === "color" ? swatchCss(member) : cssOf("dimension", member)) ||
+                            (key === "color" ? "transparent" : "0px"),
+                    );
+                }
+            }
+
+            if (layer.inset === true) {
+                out.inset = true;
+            }
+
+            value.push(out);
+            css.push(`${layer.inset === true ? "inset " : ""}${bits.join(" ")}`);
+        }
+
+        return { value, css: css.join(", ") };
+    }
+
     let named;
     let byVar;
 
@@ -576,6 +700,63 @@ export function createModel(system, edits = new Map()) {
         token: (name) => tokens.get(name),
         has: (name) => tokens.has(name),
         raw: savedRaw,
+        /** Whether the mode's file sets the token itself, as saved (the default mode's file sets every token). */
+        savedOverride: (name, mode) => mode === defaultMode || !inherits(name, mode),
+        /** Whether the token is the mode's own now, with the edits: not the default's value taken as it is. */
+        overridden(name, mode) {
+            const own = edits.get(keyOf(mode, name));
+
+            if (mode === defaultMode) {
+                return true;
+            }
+
+            return own === undefined ? !inherits(name, mode) : own.inherit !== true;
+        },
+        /**
+         * A shadow as parts a person can change, in a mode: `{ layers, links }`, each layer `{ offsetX, offsetY, blur, spread,
+         * color, inset }` with a member that links to another token written `{name}`, as in the file. It is read from the edit
+         * if there is one, else from the saved parts (`parts`, which name the tokens a member links to). A shadow that is a
+         * link to another shadow has that one's parts.
+         */
+        shadowRaw(name, mode) {
+            const owner = model.chain(name, mode).at(-1) ?? name;
+            const token = tokens.get(owner);
+            const edit = editFor(owner, mode);
+
+            if (edit?.value !== undefined) {
+                const list = Array.isArray(edit.value) ? edit.value : [edit.value];
+
+                return { layers: list.filter(isObject).map((layer) => ({ ...layer })) };
+            }
+
+            const saved = edit?.saved ?? token?.modes[mode];
+            const resolved = Array.isArray(saved?.value) ? saved.value : [saved?.value];
+            const many = resolved.length > 1;
+
+            return {
+                layers: resolved.filter(isObject).map((layer, at) => {
+                    const prefix = many ? `layer-${at + 1}-` : "";
+
+                    const member = (part, key, fallback) => {
+                        const found = /^var\((--[A-Za-z0-9_-]+)\)$/.exec(
+                            saved.parts?.[prefix + part] ?? "",
+                        );
+                        const target = found === null ? undefined : model.byVar(found[1]);
+
+                        return target === undefined ? (layer[key] ?? fallback) : `{${target.name}}`;
+                    };
+
+                    return {
+                        offsetX: member("offset-x", "offsetX", "0px"),
+                        offsetY: member("offset-y", "offsetY", "0px"),
+                        blur: member("blur", "blur", "0px"),
+                        spread: member("spread", "spread", "0px"),
+                        color: member("color", "color", "#00000000"),
+                        ...(layer.inset === true ? { inset: true } : {}),
+                    };
+                }),
+            };
+        },
         /** What a token has in a mode now. */
         value(name, mode) {
             const key = keyOf(mode, name);
@@ -637,40 +818,57 @@ export function createModel(system, edits = new Map()) {
                 (each) => each.alias !== undefined && model.reaches(each.alias, to, seen),
             );
         },
-        /** The contrast of a text color on its pair, in a mode: declared by the token, or worked out for text roles. */
-        contrastOf(name, mode) {
+        /**
+         * The pairs of a color token: those it declares (up to four), or, for body text, its page. Each `{ on, min, exempt?,
+         * auto }`; one that is `auto` is not declared.
+         */
+        pairsOf(name) {
             const token = tokens.get(name);
 
             if (token?.type !== "color") {
-                return null;
+                return [];
             }
 
             // The pair names its ground as a token's name, or as a reference to it (`{color.bg.surface}`).
-            let pair =
-                token.contrast === undefined
-                    ? undefined
-                    : { ...token.contrast, on: String(token.contrast.on).replace(/^\{|\}$/g, "") };
-            let auto = false;
+            const declared = (
+                token.contrasts ?? (token.contrast === undefined ? [] : [token.contrast])
+            ).map((pair) => ({
+                on: String(pair.on).replace(/^\{|\}$/g, ""),
+                min: pair.min,
+                ...(pair.exempt === undefined ? {} : { exempt: pair.exempt }),
+                auto: false,
+            }));
 
-            if (pair === undefined) {
-                const ground = isText(token) ? model.roles().canvas : undefined;
-
-                if (ground === undefined || ground === name) {
-                    return null;
-                }
-
-                pair = { on: ground, min: 4.5 };
-                auto = true;
+            if (declared.length > 0) {
+                return declared;
             }
 
+            const ground = isText(token) ? model.roles().canvas : undefined;
+
+            return ground === undefined || ground === name
+                ? []
+                : [{ on: ground, min: 4.5, auto: true }];
+        },
+        /** The contrast of a token on one pair, in a mode: the ratio and the level it reaches, or null when a color is not one. */
+        gradeOf(name, mode, pair) {
             const ink = parseColor(model.value(name, mode).value);
             const ground = tokens.has(pair.on)
                 ? parseColor(model.value(pair.on, mode).value)
                 : null;
 
-            return ink && ground
-                ? { ...grade(contrast(ink, ground), pair.min), on: pair.on, auto }
-                : null;
+            return ink && ground ? { ...grade(contrast(ink, ground), pair.min), ...pair } : null;
+        },
+        /** The contrast of a token on each of its pairs, in a mode. */
+        contrastsOf: (name, mode) =>
+            model
+                .pairsOf(name)
+                .map((pair) => model.gradeOf(name, mode, pair))
+                .filter(Boolean),
+        /** The contrast of a text color on its first pair, in a mode: declared by the token, or worked out for text roles. */
+        contrastOf(name, mode) {
+            const pair = model.pairsOf(name)[0];
+
+            return pair === undefined ? null : model.gradeOf(name, mode, pair);
         },
     };
 
@@ -797,8 +995,11 @@ const COALESCE_MS = 1200;
 /** The key of an edit: a token in a mode, or the guidelines. */
 export const editKey = (op) => (op.kind === "guidelines" ? GUIDELINES : keyOf(op.mode, op.token));
 
-/** A token edit: `raw` is `{ alias }` or `{ value }`. */
+/** A token edit: `raw` is `{ alias }` or `{ value }`, or `{ inherit: true }`: the mode's file does not set the token. */
 export const tokenEdit = (mode, token, raw) => ({ kind: "token", mode, token, raw });
+
+/** Give a mode's token back to the default mode: the file stops setting it (a removal, not a copy of the value). */
+export const inheritEdit = (mode, token) => tokenEdit(mode, token, { inherit: true });
 
 export const guidelinesEdit = (text) => ({ kind: "guidelines", text });
 
@@ -867,11 +1068,13 @@ export function tokenEdits(history) {
 
 /**
  * The change to save, and how many things it changes. An edit that puts back what is saved changes nothing, and is left out.
- * `set` is in the order the edits were made.
+ * `set` is in the order the edits were made. `remove` is what a mode's file stops setting (`inheritEdit`): only a token that
+ * the file sets now.
  */
 export function changeOf(system, history) {
     const model = createModel(system);
     const set = [];
+    const remove = [];
     let guidelines;
 
     for (const [, op] of editsOf(history)) {
@@ -883,8 +1086,17 @@ export function changeOf(system, history) {
             continue;
         }
 
+        if (op.raw.inherit === true) {
+            if (op.mode !== model.defaultMode && model.savedOverride(op.token, op.mode)) {
+                remove.push({ mode: op.mode, token: op.token });
+            }
+
+            continue;
+        }
+
         const saved = model.raw(op.token, op.mode);
 
+        // (a value that a mode only has by taking the default's is not set again to the same value: that would be a copy)
         if (saved !== undefined && same(saved, op.raw)) {
             continue;
         }
@@ -898,8 +1110,9 @@ export function changeOf(system, history) {
 
     return {
         set,
+        ...(remove.length === 0 ? {} : { remove }),
         ...(guidelines === undefined ? {} : { guidelines }),
-        count: set.length + (guidelines === undefined ? 0 : 1),
+        count: set.length + remove.length + (guidelines === undefined ? 0 : 1),
     };
 }
 

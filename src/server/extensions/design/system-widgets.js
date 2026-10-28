@@ -1,7 +1,16 @@
 // The small parts of the System view: a swatch, a token's name that copies, a contrast badge, number and color fields, the
 // alias picker, and the editor of one token. They draw what `system.js` computes; they keep no state of the system's own.
 import { parseColor, ratioText, swatchCss, toHex, toOklchText, toRgbText } from "./color.js";
-import { amountOf, EDITABLE, readInput, showValue, writeAmount } from "./system.js";
+import {
+    amountOf,
+    EDITABLE,
+    linkOf,
+    readInput,
+    shadowValue,
+    showValue,
+    withPart,
+    writeAmount,
+} from "./system.js";
 
 /** Put `text` on the clipboard: the async API where the page may use it, else a hidden field and a copy command. */
 export async function copyText(text) {
@@ -26,9 +35,18 @@ export async function copyText(text) {
     }
 }
 
-/** The word for a contrast: its level when it passes, else how far it gets. */
+/**
+ * The word for a contrast: its level when it passes, else how far it gets. A pair that is exempt (a disabled or decorative
+ * color) is not a failure: it says so.
+ */
 export const verdictOf = (info) =>
-    info.pass ? info.level : info.level === "AA large" ? "Large only" : "Fail";
+    info.pass
+        ? info.level
+        : info.exempt
+          ? "Exempt"
+          : info.level === "AA large"
+            ? "Large only"
+            : "Fail";
 
 /** The title-cased name of a mode (`high-contrast` → `High contrast`). */
 export const modeTitle = (mode) =>
@@ -99,10 +117,12 @@ export function createSystemWidgets(env) {
         }
 
         const verdict = verdictOf(info);
+        const exempt = !info.pass && info.exempt !== undefined;
+        const kind = info.pass ? (info.level === "AAA" ? "aaa" : "aa") : exempt ? "exempt" : "fail";
 
         return html`<span
-            class=${`dsy-badge ${info.pass ? (info.level === "AAA" ? "aaa" : "aa") : "fail"} ${info.auto ? "auto" : ""}`}
-            title=${`${mode ? `${modeTitle(mode)}: ` : ""}${ratioText(info.ratio)} on ${info.on}. It needs ${info.min}:1.${info.auto ? " Checked against the page background: this color has no pair of its own." : ""}`}
+            class=${`dsy-badge ${kind} ${info.auto ? "auto" : ""}`}
+            title=${`${mode ? `${modeTitle(mode)}: ` : ""}${ratioText(info.ratio)} on ${info.on}. It needs ${info.min}:1.${exempt ? ` The pair is exempt (${info.exempt}): that is not a failure.` : ""}${info.auto ? " Checked against the page background: this color has no pair of its own." : ""}`}
         >
             ${modes > 1 && html`<span class="dsy-badge-mode">${modeTitle(mode).slice(0, 1)}</span>`}
             <span class="dsy-badge-ratio">${ratioText(info.ratio)}</span>
@@ -342,13 +362,17 @@ export function createSystemWidgets(env) {
     }
 
     /** The tokens an alias may point to: those of the same type that do not lead back. Searchable, in a card over the view. */
-    function AliasPicker({ model, token, mode, onPick, onClose, narrow }) {
+    function AliasPicker({ model, token, mode, part, current, onPick, onClose, narrow }) {
         const [query, setQuery] = useState("");
         const words = query.trim().toLowerCase();
-        const targets = model
-            .targets(token.name)
-            .filter((each) => words === "" || each.name.toLowerCase().includes(words));
-        const current = model.value(token.name, mode).alias;
+        // A part of a shadow links to a token of its own kind (a size, a color); a token links to one that does not lead back.
+        const kind = part ? part.type : token.type;
+        const targets = (
+            part
+                ? model.tokens.filter((each) => each.type === part.type && each.name !== token.name)
+                : model.targets(token.name)
+        ).filter((each) => words === "" || each.name.toLowerCase().includes(words));
+        const linked = part ? current : model.value(token.name, mode).alias;
 
         return html`<${Popover}
             label="Link to a token"
@@ -359,7 +383,7 @@ export function createSystemWidgets(env) {
             <input
                 class="dsn-search"
                 type="search"
-                placeholder=${`Find a ${token.type} token`}
+                placeholder=${`Find a ${kind} token`}
                 value=${query}
                 autofocus
                 onInput=${(event) => setQuery(event.currentTarget.value)}
@@ -371,7 +395,7 @@ export function createSystemWidgets(env) {
                     return html`<li key=${each.name}>
                         <button
                             type="button"
-                            class=${`dsn-list-item ${each.name === current ? "on" : ""}`}
+                            class=${`dsn-list-item ${each.name === linked ? "on" : ""}`}
                             onClick=${() => onPick(each.name)}
                         >
                             ${
@@ -387,7 +411,7 @@ export function createSystemWidgets(env) {
                                     >${each.tier}${each.description ? ` · ${each.description}` : ""}</span
                                 >
                             </span>
-                            ${each.name === current && html`<${Ico} name="check" size=${15} />`}
+                            ${each.name === linked && html`<${Ico} name="check" size=${15} />`}
                         </button>
                     </li>`;
                 })}
@@ -395,6 +419,176 @@ export function createSystemWidgets(env) {
                 ${targets.length > 120 && html`<li class="muted small dsn-empty">Type to narrow ${targets.length} tokens.</li>`}
             </ul>
         <//>`;
+    }
+
+    /** The words and kinds of a shadow layer's members, in the order they are shown. */
+    const SHADOW_PARTS = [
+        ["offsetX", "X offset", "dimension"],
+        ["offsetY", "Y offset", "dimension"],
+        ["blur", "Blur", "dimension"],
+        ["spread", "Spread", "dimension"],
+        ["color", "Color", "color"],
+    ];
+
+    /** One member of a shadow layer: a value of its own in the field of its kind, or a link to a token that holds it. */
+    function PartField({ model, token, mode, layers, at, part, canEdit }) {
+        const [key, name, type] = part;
+        const member = layers[at][key];
+        const link = linkOf(member);
+        const target = link === null ? null : model.token(link);
+        const label = `${token.name} in ${mode}: layer ${at + 1} ${name.toLowerCase()}`;
+        const write = (next) =>
+            env.editToken(token.name, mode, {
+                value: shadowValue(withPart(layers, at, key, next)),
+            });
+        const pick = () => env.pickPart(token.name, mode, { layer: at, key, type });
+
+        if (link !== null) {
+            const now = target ? model.value(link, mode) : null;
+
+            return html`<div class="dsy-part" data-part=${key}>
+                <span class="dsy-part-name">${name}</span>
+                <div class="dsy-part-link">
+                    <${Ico} name="link" size=${13} />
+                    ${
+                        target
+                            ? html`<button
+                                  type="button"
+                                  class="dsy-chip"
+                                  aria-label=${`${label} links to ${link}`}
+                                  onClick=${() => env.openToken(link)}
+                              >
+                                  ${link}
+                              </button>`
+                            : html`<span class="dsy-chip">${link}</span>`
+                    }
+                    ${now && html`<span class="muted small mono">${showValue(target, now)}</span>`}
+                </div>
+                ${
+                    canEdit &&
+                    html`<div class="dsy-part-actions">
+                        <button type="button" class="dsn-link" onClick=${pick}>Change</button>
+                        ${
+                            now &&
+                            html`<button
+                                type="button"
+                                class="dsn-link"
+                                onClick=${() => write(now.value)}
+                            >
+                                Use a value
+                            </button>`
+                        }
+                    </div>`
+                }
+            </div>`;
+        }
+
+        const amount = type === "dimension" ? amountOf(member) : null;
+
+        return html`<div class="dsy-part" data-part=${key}>
+            <span class="dsy-part-name">${name}</span>
+            ${
+                type === "color"
+                    ? html`<${ColorField}
+                          value=${member}
+                          like=${member}
+                          label=${label}
+                          disabled=${!canEdit}
+                          onChange=${write}
+                      />`
+                    : amount
+                      ? html`<${AmountField}
+                            amount=${amount}
+                            units=${UNITS.dimension}
+                            step=${amount.unit === "px" ? 1 : 0.25}
+                            label=${label}
+                            disabled=${!canEdit}
+                            onChange=${(next) => write(writeAmount(next, member))}
+                        />`
+                      : html`<p class="muted small mono">${String(member)}</p>`
+            }
+            ${
+                canEdit &&
+                html`<div class="dsy-part-actions">
+                    <button type="button" class="dsn-link" onClick=${pick}>Link to a token</button>
+                </div>`
+            }
+        </div>`;
+    }
+
+    /**
+     * A shadow by its parts: for each layer its offsets, blur, spread, color and whether it is inset, each a value or a link to
+     * a token, kept as the file has it. A layer is added (a copy of the last) or taken away. A shadow that is a link to another
+     * shadow shows that one's parts, and is changed by linking elsewhere or by using a value.
+     */
+    function ShadowField({ model, token, mode, canEdit }) {
+        const now = model.value(token.name, mode);
+        const { layers } = model.shadowRaw(token.name, mode);
+        // A link to another shadow: its parts are that one's, so they are shown and not changed here.
+        const mine = canEdit && now.alias === undefined;
+        const write = (next) => env.editToken(token.name, mode, { value: shadowValue(next) });
+
+        return html`<div class="dsy-layers" data-layers=${layers.length}>
+            ${layers.map(
+                (layer, at) =>
+                    html`<fieldset class="dsy-layer" key=${at}>
+                        <legend>
+                            Layer ${at + 1}
+                            ${
+                                mine &&
+                                layers.length > 1 &&
+                                html`<button
+                                    type="button"
+                                    class="dsn-link"
+                                    aria-label=${`Remove layer ${at + 1} of ${token.name} in ${mode}`}
+                                    onClick=${() => write(layers.filter((_, index) => index !== at))}
+                                >
+                                    Remove
+                                </button>`
+                            }
+                        </legend>
+                        <div class="dsy-parts">
+                            ${SHADOW_PARTS.map(
+                                (part) =>
+                                    html`<${PartField}
+                                        key=${part[0]}
+                                        model=${model}
+                                        token=${token}
+                                        mode=${mode}
+                                        layers=${layers}
+                                        at=${at}
+                                        part=${part}
+                                        canEdit=${mine}
+                                    />`,
+                            )}
+                        </div>
+                        <label class="dsy-inset">
+                            <input
+                                type="checkbox"
+                                checked=${layer.inset === true}
+                                disabled=${!mine}
+                                aria-label=${`${token.name} in ${mode}: layer ${at + 1} inset`}
+                                onChange=${(event) =>
+                                    write(
+                                        withPart(layers, at, "inset", event.currentTarget.checked),
+                                    )}
+                            />
+                            Inset
+                        </label>
+                    </fieldset>`,
+            )}
+            ${
+                mine &&
+                layers.length < 6 &&
+                html`<button
+                    type="button"
+                    class="dsn-link"
+                    onClick=${() => write([...layers, { ...layers.at(-1) }])}
+                >
+                    Add a layer
+                </button>`
+            }
+        </div>`;
     }
 
     /** The value of one token in one mode, as the field of its kind (or what to do when it has none). */
@@ -406,6 +600,13 @@ export function createSystemWidgets(env) {
         const edit = (value) => env.editToken(token.name, mode, { value });
 
         switch (token.type) {
+            case "shadow":
+                return html`<${ShadowField}
+                    model=${model}
+                    token=${token}
+                    mode=${mode}
+                    canEdit=${canEdit}
+                />`;
             case "color":
                 return html`<${ColorField}
                     value=${now.value}
@@ -474,9 +675,53 @@ export function createSystemWidgets(env) {
         }
     }
 
+    /** Whether a mode takes the token from the default mode (so its file does not set it), with the edits made. */
+    const inherited = (model, token, mode) =>
+        mode !== model.defaultMode && !model.overridden(token.name, mode);
+
+    /** The pairs of a color token, each with its ratio and level; a pair that is exempt says so, and is not a failure. */
+    function ContrastList({ model, token, mode, modes }) {
+        const pairs = model.contrastsOf(token.name, mode);
+
+        if (pairs.length === 0) {
+            return null;
+        }
+
+        return html`<div class="dsy-contrasts" data-pairs=${pairs.length}>
+            <h5>${pairs.length === 1 ? "Contrast" : `Contrast on ${pairs.length} pairs`}</h5>
+            <ul
+                aria-label=${`Contrast of ${token.name}${modes > 1 ? ` in ${modeTitle(mode)}` : ""}`}
+            >
+                ${pairs.map(
+                    (pair) =>
+                        html`<li key=${pair.on}>
+                            <span class="muted small">on</span>
+                            <button
+                                type="button"
+                                class="dsy-chip"
+                                onClick=${() => env.openToken(pair.on)}
+                            >
+                                ${pair.on}
+                            </button>
+                            <${ContrastBadge} info=${pair} mode=${mode} modes=${1} />
+                            ${
+                                pair.exempt &&
+                                html`<span class="dsy-exempt-note">exempt: ${pair.exempt}</span>`
+                            }
+                            ${
+                                pair.auto &&
+                                html`<span class="muted small">checked against the page</span>`
+                            }
+                        </li>`,
+                )}
+            </ul>
+        </div>`;
+    }
+
     /**
      * One token's editor: for each mode in view, its alias (link, change, or use a value), and its value in the field of its
-     * kind. A shadow or a typography style is shown, and changed with Pi: its parts are not separate in the saved value.
+     * kind. A shadow is edited by its parts (each a value or a link); a typography style is shown, and changed with Pi. A mode
+     * other than the default says whether it sets the token or takes the default's, and can give a value back.
      */
     function TokenEditor({ model, token, modes, canEdit, narrow }) {
         const editable = EDITABLE.has(token.type);
@@ -506,6 +751,34 @@ export function createSystemWidgets(env) {
                 return html`<section class="dsy-mode" key=${mode} aria-label=${modeTitle(mode)}>
                     ${modes.length > 1 && html`<h4 class="dsy-mode-name">${modeTitle(mode)}</h4>`}
                     ${now.error && html`<p class="dsy-problem" role="alert">${now.error}</p>`}
+                    ${
+                        mode !== model.defaultMode &&
+                        html`<div class="dsy-inherit" data-inherit=${inherited(model, token, mode)}>
+                            ${
+                                inherited(model, token, mode)
+                                    ? html`<span class="dsy-inherit-tag"
+                                              ><${Ico} name="link" size=${12} />
+                                              ${`Inherited from ${modeTitle(model.defaultMode)}`}</span
+                                          >
+                                          <span class="muted small"
+                                              >${`Change it to give ${modeTitle(mode)} a value of its own.`}</span
+                                          >`
+                                    : html`<span class="dsy-inherit-tag own"
+                                              >${modeTitle(mode)} sets this itself</span
+                                          >
+                                          ${
+                                              canEdit &&
+                                              html`<button
+                                                  type="button"
+                                                  class="dsn-link dsy-match"
+                                                  onClick=${() => env.inheritToken(token.name, mode)}
+                                              >
+                                                  Use ${modeTitle(model.defaultMode)}'s value
+                                              </button>`
+                                          }`
+                            }
+                        </div>`
+                    }
                     ${
                         editable
                             ? html`<${ValueField}
@@ -560,25 +833,26 @@ export function createSystemWidgets(env) {
                             html`<button
                                 type="button"
                                 class="dsn-link"
-                                onClick=${() => env.editToken(token.name, mode, { value: now.value })}
+                                onClick=${() =>
+                                    env.editToken(token.name, mode, {
+                                        value:
+                                            token.type === "shadow"
+                                                ? shadowValue(
+                                                      model.shadowRaw(token.name, mode).layers,
+                                                  )
+                                                : now.value,
+                                    })}
                             >
                                 Use a value
                             </button>`
                         }
                     </div>
-                    ${
-                        canEdit &&
-                        mode !== model.defaultMode &&
-                        JSON.stringify(token.modes[mode]) !==
-                            JSON.stringify(token.modes[model.defaultMode]) &&
-                        html`<button
-                            type="button"
-                            class="dsn-link dsy-match"
-                            onClick=${() => env.matchDefault(token.name, mode)}
-                        >
-                            Match ${modeTitle(model.defaultMode)}
-                        </button>`
-                    }
+                    <${ContrastList}
+                        model=${model}
+                        token=${token}
+                        mode=${mode}
+                        modes=${modes.length}
+                    />
                 </section>`;
             })}
             ${

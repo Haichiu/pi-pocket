@@ -199,6 +199,83 @@ test("a save changes tokens in a mode, writes the files, and answers with the sy
     );
 });
 
+test("a mode gives a token back to the default mode with a removal, and a shadow is saved by its parts with their links", async () => {
+    const before = await read();
+
+    assert.ok(before.system.overrides.dark.includes("color.border.strong"));
+    assert.equal(before.system.overrides.light, undefined, "the default mode sets every token");
+
+    // A removal is for a token that a mode's own file sets. The default mode, a token the mode takes already, and names that are
+    // not there are refused, and nothing changes.
+    for (const remove of [
+        [{ mode: "light", token: "color.border.strong" }],
+        [{ mode: "dark", token: "color.border.focus" }],
+        [{ mode: "dark", token: "color.nothing" }],
+        [{ mode: "sepia", token: "color.border.strong" }],
+        [{ mode: 5, token: "color.border.strong" }],
+        [{ mode: "dark" }],
+    ]) {
+        const refused = await call("owner", "system", { remove });
+
+        assert.equal(refused.status, 400, JSON.stringify(remove));
+    }
+
+    assert.equal(
+        JSON.parse(readFileSync(file("tokens.dark.json"), "utf8")).color.border.strong !==
+            undefined,
+        true,
+    );
+
+    const light = tokenOf(before, "color.border.strong").modes.light;
+    const saved = await call("owner", "system", {
+        remove: [{ mode: "dark", token: "color.border.strong" }],
+        baseRevision: before.system.revision,
+    });
+
+    assert.equal(saved.status, 200);
+    assert.equal(saved.data.ok, true);
+    // Not a copy: the file no longer has the token, the engine says dark takes it, and dark has light's value.
+    assert.equal(
+        JSON.parse(readFileSync(file("tokens.dark.json"), "utf8")).color?.border?.strong,
+        undefined,
+    );
+    assert.equal(saved.data.system.overrides.dark.includes("color.border.strong"), false);
+    assert.deepEqual(tokenOf(saved.data, "color.border.strong").modes.dark.value, light.value);
+
+    // A shadow by its parts: members that link to tokens stay links in the file, and the view gets the parts to edit.
+    const result = await call("owner", "system", {
+        set: [
+            {
+                mode: "light",
+                token: "shadow.lg",
+                value: {
+                    color: "{color.scrim.40}",
+                    offsetX: { value: 0, unit: "px" },
+                    offsetY: "{space.6}",
+                    blur: "{space.12}",
+                    spread: { value: -12, unit: "px" },
+                },
+            },
+        ],
+    });
+
+    assert.equal(result.data.ok, true);
+
+    const lg = JSON.parse(readFileSync(file("tokens.json"), "utf8")).shadow.lg.$value;
+
+    assert.equal(lg.offsetY, "{space.6}");
+    assert.equal(lg.color, "{color.scrim.40}");
+
+    const parts = tokenOf(result.data, "shadow.lg").modes.light.parts;
+
+    assert.equal(parts["offset-y"], "var(--space-6)");
+    assert.equal(parts.color, "var(--color-scrim-40)");
+    assert.match(
+        readFileSync(file("dist", "tokens.css"), "utf8"),
+        /--shadow-lg: 0px var\(--space-6\)/,
+    );
+});
+
 test("a save that the engine refuses answers in words and changes nothing", async () => {
     const before = await read();
     const refused = await call("owner", "system", {
@@ -366,6 +443,19 @@ test("what a browser sends is cut to a change before it goes to the engine", () 
     assert.equal(change.guidelines, "a\nbc");
     assert.deepEqual(change.modes, { fresh: {}, gone: null });
     assert.equal(baseRevision, "abc");
+
+    // A removal has a mode and a token, and nothing else; its limits are the save's.
+    assert.deepEqual(
+        cleanChange(web, {
+            remove: [{ mode: "dark", token: "color.bg.canvas", extra: "left out" }],
+        }).change.remove,
+        [{ mode: "dark", token: "color.bg.canvas" }],
+    );
+    assert.throws(() => cleanChange(web, { remove: [{ mode: "dark", token: "__proto__.x" }] }));
+    assert.throws(() => cleanChange(web, { remove: "all" }));
+    assert.throws(() =>
+        cleanChange(web, { remove: Array(LIMITS.set + 1).fill({ mode: "dark", token: "a" }) }),
+    );
 });
 
 test("a check of a design answers with a report that has a fixed shape, for those who steer", async () => {
