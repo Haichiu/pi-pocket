@@ -22,6 +22,7 @@ import {
 import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
+import { checkTokensBlock, scanReport, scanRoot, scanTokens } from "./scan.ts";
 
 /** The file's path, in the session's working directory. */
 export const SYSTEM_FILE = join(".pi", "design-system.md");
@@ -181,11 +182,21 @@ export function writeDesignSystemText(cwd: string, content: string): number {
 export function designSystemTool(): ToolRegistration {
     return defineTool({
         name: "design_system",
-        description: `The project's design system: ${SYSTEM_FILE} in the session's folder, with the design tokens as a fenced JSON block, then the components and rules for new designs. Use read before you make or change a design; use write (content replaces the file) after you read the codebase or the brand files the person points at.`,
+        description: `The project's design system: ${SYSTEM_FILE} in the session's folder, with the design tokens as a fenced JSON block, then the components and rules for new designs. Use read before you make or change a design. Use scan to draft one from the project's style files (colors, fonts, radii, CSS variables; it saves nothing). Use write (content replaces the file) after you check the draft or read the brand files the person points at; a tokens block that is not valid JSON is refused.`,
         parameters: Type.Object({
-            action: Type.Union([Type.Literal("read"), Type.Literal("write")], {
-                description: "read the file, or write over it",
-            }),
+            action: Type.Union(
+                [Type.Literal("read"), Type.Literal("write"), Type.Literal("scan")],
+                {
+                    description:
+                        "read the file, write over it, or scan the project's styles for a draft",
+                },
+            ),
+            path: Type.Optional(
+                Type.String({
+                    description:
+                        "scan: a folder inside the session's folder to scan (default: the whole folder)",
+                }),
+            ),
             content: Type.Optional(
                 Type.String({
                     description: `write: the new file, up to ${MAX_BYTES} bytes`,
@@ -203,18 +214,26 @@ export function designSystemTool(): ToolRegistration {
                 );
             }
 
+            if (args.action === "scan") {
+                const draft = scanReport(scanTokens(scanRoot(cwd, args.path)));
+
+                return { output: [{ type: "text" as const, text: draft }] };
+            }
+
             if (args.action === "write") {
                 if (args.content === undefined) {
                     throw new Error("write needs the new design system in content.");
                 }
 
+                // A broken tokens block is refused before anything is written.
+                const hasTokens = checkTokensBlock(args.content);
                 const size = writeDesignSystemText(cwd, args.content);
 
                 return {
                     output: [
                         {
                             type: "text" as const,
-                            text: `Wrote ${SYSTEM_FILE} (${size} bytes). The next design request reads it.`,
+                            text: `Wrote ${SYSTEM_FILE} (${size} bytes). The next design request reads it.${hasTokens ? "" : " It has no fenced JSON tokens block; add one so designs can read the tokens."}`,
                         },
                     ],
                 };
