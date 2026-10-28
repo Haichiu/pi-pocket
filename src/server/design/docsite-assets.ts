@@ -825,6 +825,7 @@ td.num {
     background: var(--dd-sunken);
 }
 
+.table-wrap:not(.ref) .tk,
 .matrix .tk {
     white-space: nowrap;
 }
@@ -1251,7 +1252,8 @@ pre.snip {
     position: relative;
     max-height: 420px;
     overflow: auto;
-    padding: 14px 16px;
+    padding: 40px 16px 14px;
+    font-variant-ligatures: none;
     border: 1px solid var(--dd-line);
     border-radius: 10px;
     background: var(--dd-sunken);
@@ -1263,6 +1265,21 @@ pre.snip {
 
 .nojs .tabs {
     display: none;
+}
+
+.uses {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.use {
+    min-width: 0;
+}
+
+.use .snip-wrap {
+    margin-top: 0;
 }
 
 .snip-wrap {
