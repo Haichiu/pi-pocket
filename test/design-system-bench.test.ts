@@ -882,6 +882,7 @@ test("with nothing in the tree every phase scores 0, says why, and nothing throw
     const report = await runBench({
         modules,
         browser: false,
+        flagship: join(BENCH, "no-such-flagship"),
         out: join(BENCH, "..", "..", "node_modules", ".cache", "ds-bench-test"),
         // The tree has a flagship now: point at a folder with none, so the floor stays the floor.
         flagship: join(BENCH, "no-flagship-here"),
@@ -1045,3 +1046,70 @@ test(
         }
     },
 );
+
+test("a dark-first draft is scored by theme: the mode named light is the light theme", () => {
+    const expected: Expected = {
+        name: "dark-first",
+        colors: ["#ffffff", "#111111"],
+        darkColors: ["#000000", "#eeeeee"],
+        roles: {
+            bg: { light: "#ffffff", dark: "#000000" },
+            text: { light: "#111111", dark: "#eeeeee" },
+        },
+        typeScale: [],
+        spacing: [],
+        radii: [],
+        shadows: [],
+        fonts: [],
+        dark: { present: true },
+    };
+    const tree = {
+        color: { $type: "color", bg: { $value: "#000000" }, text: { $value: "#eeeeee" } },
+    };
+    const light = { color: { bg: { $value: "#ffffff" }, text: { $value: "#111111" } } };
+    const score = scoreScan(expected, extract(flatten(tree, { light })));
+
+    assert.equal(score.colors.f1, 1);
+    assert.equal(score.darkColors.f1, 1);
+    assert.equal(score.roles.f1, 1);
+    assert.equal(score.darkRoles.f1, 1);
+    // A role that the scan does not make differ between themes is not a dark role: precision stays at most 1.
+    const flat = extract(flatten(tree, { light: { color: { bg: { $value: "#ffffff" } } } }));
+    const partial = scoreScan(expected, flat);
+
+    assert.ok(
+        partial.darkRoles.precision <= 1 && partial.darkRoles.matched <= partial.darkRoles.actual,
+    );
+    assert.equal(partial.darkRoles.matched, 1, "only bg differs between the themes");
+    // The same colors with the files the usual way round score the same.
+    assert.equal(scoreScan(expected, extract(flatten(light, { dark: tree }))).darkRoles.f1, 1);
+});
+
+test("--fixtures and --lint point the runner at other folders", async () => {
+    const report = await runBench({
+        modules: referenceModules(undefined, join(BENCH, "fixtures")),
+        reference: true,
+        browser: false,
+        fixtures: join(BENCH, "fixtures"),
+        lint: join(BENCH, "lint", "designs"),
+        only: ["scan"],
+        out: join(BENCH, "..", "..", "node_modules", ".cache", "ds-bench-roots"),
+    });
+
+    assert.equal(report.scores.scan, 1);
+    assert.equal(
+        spawnSync(
+            "node",
+            [
+                join(BENCH, "run.ts"),
+                "--fixtures",
+                "/no/such/folder",
+                "--only",
+                "scan",
+                "--no-browser",
+            ],
+            { encoding: "utf8" },
+        ).status,
+        2,
+    );
+});

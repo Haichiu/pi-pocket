@@ -14,8 +14,14 @@ import { loadModules, ROOT, type Modules } from "./lib/modules.ts";
 import { referenceModules } from "./lib/reference.ts";
 import { contrastPhase, docsPhase, type ContrastPhase, type DocsPhase } from "./lib/phase-docs.ts";
 import { formatPhase, isFolder, type FormatPhase, type SystemSource } from "./lib/phase-format.ts";
-import { lintPhase, LINT_SYSTEM, lintSystem, type LintPhase } from "./lib/phase-lint.ts";
-import { BENCH, scanPhase, type ScanPhase } from "./lib/phase-scan.ts";
+import {
+    lintPhase,
+    LINT_SYSTEM,
+    lintSystem,
+    loadLintCases,
+    type LintPhase,
+} from "./lib/phase-lint.ts";
+import { BENCH, loadFixtures, scanPhase, type ScanPhase } from "./lib/phase-scan.ts";
 import { COLOR_TOLERANCE, SCAN_CATEGORIES, SIZE_TOLERANCE } from "./lib/score.ts";
 import { readFlat, systemFromFlat } from "./lib/system.ts";
 
@@ -38,6 +44,10 @@ export interface BenchOptions {
     reference?: boolean;
     /** A flagship folder, instead of looking in FLAGSHIP_CANDIDATES. */
     flagship?: string;
+    /** A folder of fixture projects (each with `expected.json`), instead of `fixtures/`. */
+    fixtures?: string;
+    /** A folder of lint designs (each a folder with `index.html` and `expected-findings.json`), instead of `lint/designs/`. */
+    lint?: string;
     log?: (text: string) => void;
 }
 
@@ -134,7 +144,12 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
               });
     const modules =
         options.modules ??
-        (options.reference === true ? referenceModules(browser) : await loadModules());
+        (options.reference === true
+            ? referenceModules(
+                  browser,
+                  options.fixtures === undefined ? undefined : resolve(options.fixtures),
+              )
+            : await loadModules());
 
     notes.push(...modules.notes);
     // The ceiling run has no flagship of its own: the bench's system stands in, so every phase can reach 1.
@@ -208,7 +223,15 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
         let drafts = new Map<string, import("./lib/modules.ts").Draft>();
 
         if (only.includes("scan") || only.includes("format")) {
-            const scan = await guard("scan", () => scanPhase(modules, out));
+            const scan = await guard("scan", () =>
+                scanPhase(
+                    modules,
+                    out,
+                    options.fixtures === undefined
+                        ? undefined
+                        : loadFixtures(resolve(options.fixtures)),
+                ),
+            );
 
             if (scan !== undefined) {
                 drafts = scan.drafts;
@@ -287,7 +310,7 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
                 lintPhase(
                     modules,
                     out,
-                    undefined,
+                    options.lint === undefined ? undefined : loadLintCases(resolve(options.lint)),
                     label === "flagship" && primary !== undefined
                         ? { system: primary, css: flagshipCss(flagship, primary) }
                         : undefined,
@@ -390,6 +413,10 @@ function parseArgs(argv: string[]): BenchOptions & { help: boolean } {
             options.only = (argv[++index] ?? "").split(",").filter(Boolean) as Phase[];
         } else if (arg === "--flagship") {
             options.flagship = argv[++index];
+        } else if (arg === "--fixtures") {
+            options.fixtures = argv[++index];
+        } else if (arg === "--lint") {
+            options.lint = argv[++index];
         } else if (arg === "--no-browser") {
             options.browser = false;
         } else if (arg === "--reference") {
@@ -407,8 +434,14 @@ function parseArgs(argv: string[]): BenchOptions & { help: boolean } {
         }
     }
 
-    if (options.flagship !== undefined && !isFolder(resolve(options.flagship))) {
-        throw new Error(`--flagship ${options.flagship} is not a folder.`);
+    for (const [flag, folder] of [
+        ["--flagship", options.flagship],
+        ["--fixtures", options.fixtures],
+        ["--lint", options.lint],
+    ] as const) {
+        if (folder !== undefined && !isFolder(resolve(folder))) {
+            throw new Error(`${flag} ${folder} is not a folder.`);
+        }
     }
 
     return options;
@@ -420,7 +453,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
 
         if (options.help) {
             console.error(
-                "node test/design-system-bench/run.ts [--out dir] [--only scan,format,lint,contrast,docs] [--flagship dir] [--no-browser] [--reference]",
+                "node test/design-system-bench/run.ts [--out dir] [--only scan,format,lint,contrast,docs] [--flagship dir] [--no-browser] [--reference] [--fixtures dir] [--lint dir]",
             );
         } else {
             const report = await runBench({

@@ -11,6 +11,7 @@ node test/design-system-bench/run.ts --out dir --only scan,lint
 node test/design-system-bench/run.ts --reference           # the ceiling: every contract from the bench's own reference code
 node test/design-system-bench/run.ts --no-browser          # skip the CSS check and the docs page
 node test/design-system-bench/run.ts --flagship <dir>      # a flagship in another place
+node test/design-system-bench/run.ts --fixtures <dir> --lint <dir>   # other fixture projects (each with expected.json) and lint designs (each a folder with index.html and expected-findings.json)
 ```
 
 `--reference` must print 1 for every phase. If it does not, the bench is wrong, not a stream. A run with nothing in the tree
@@ -48,8 +49,7 @@ reports a trap loses precision.
 | `scss-ts`     | SCSS variables (one computed) and a TypeScript theme with light and dark and an object spread            |
 | `messy`       | One page, inline styles, two stylesheets, many near-duplicate colors, mixed units, a small dark query    |
 
-**What the bench reads from a draft.** A draft is DTCG: `tokens.json` and one file for each mode (the first mode other
-than the default whose name has `dark` or `night`, else the only other mode, is the dark mode). The bench's own reader
+**What the bench reads from a draft.** A draft is DTCG: `tokens.json` and one file for each mode (a mode whose name has `dark` or `night` is the dark theme, and the default is light; a mode named `light` or `day` is the light theme, and the default is dark, as in a dark-first project; with no names and two modes, the second is dark; `expected.json` always describes the light and the dark theme, not the files). The bench's own reader
 resolves references, `$type` inheritance and mode overrides. The scan may return the draft as `{ tokens, modes }`,
 `{ tokens, dark }`, `{ files: { "tokens.json": …, "tokens.dark.json": … } }` or as JSON text, from any of the functions in
 `SCAN_NAMES` in `lib/modules.ts` (called with the folder). Until one exists, the 0.26 scan (`scanTokens`) is scored as a

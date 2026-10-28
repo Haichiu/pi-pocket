@@ -345,7 +345,10 @@ code{font-size:12px;overflow-wrap:anywhere}</style></head><body>
 }
 
 /** Every contract, implemented by the reference. `browser` is needed by the linter only. */
-export function referenceModules(browser: BenchBrowser | undefined): Modules {
+export function referenceModules(
+    browser: BenchBrowser | undefined,
+    fixturesRoot = join(BENCH, "fixtures"),
+): Modules {
     return {
         load: referenceLoad,
         compile: (system) => system.compiled,
@@ -363,7 +366,7 @@ export function referenceModules(browser: BenchBrowser | undefined): Modules {
             run: (dir: string) =>
                 draftFromExpected(
                     JSON.parse(
-                        read(join(BENCH, "fixtures", basename(dir), "expected.json")),
+                        read(join(fixturesRoot, basename(dir), "expected.json")),
                     ) as Expected,
                 ),
         },
