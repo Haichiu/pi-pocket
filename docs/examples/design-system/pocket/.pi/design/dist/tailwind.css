@@ -45,6 +45,7 @@
     --color-neutral-0: #ffffff;
     --color-neutral-50: #f4f5f9;
     --color-neutral-100: #e1e2e7;
+    --color-neutral-150: #dcdee6; /* A half step, kept on purpose: the light mode's sunken well must be a … */
     --color-neutral-200: #d0d5e3;
     --color-neutral-300: #c0caf5;
     --color-neutral-400: #a9b1d6;
@@ -243,12 +244,12 @@
     /* === Semantic roles === */
 
     /* color.bg */
-    --color-canvas: var(--color-neutral-100); /* The desk behind everything. */
+    --color-canvas: var(--color-neutral-100); /* The desk behind everything. In high contrast, canvas, base, and sunke… */
     --color-bg: var(--color-neutral-50); /* The app's ground. */
     --color-surface: var(--color-neutral-0); /* Cards and panels on the ground. */
-    --color-raised: var(--color-neutral-0); /* Controls and anything lifted off a surface. */
-    --color-selected: var(--color-neutral-100); /* A selected row or segment. */
-    --color-sunken: var(--color-neutral-100); /* Inset areas: code blocks and wells. */
+    --color-raised: var(--color-neutral-0); /* Controls and anything lifted off a surface. In light mode it is the s… */
+    --color-selected: var(--color-blue-100); /* A selected row or segment: an accent tint in light mode, a lifted gra… */
+    --color-sunken: var(--color-neutral-150); /* Inset areas: code blocks and wells. A shade darker than the canvas in… */
     --color-hover: var(--color-alpha-dark-faint); /* Overlay on a hovered row or button. */
     --color-pressed: var(--color-alpha-dark-medium); /* Overlay on a pressed row or button. */
     --color-scrim: var(--color-alpha-scrim-light); /* The dim layer behind a sheet. */
@@ -305,7 +306,7 @@
     --color-spark: var(--color-magenta-700); /* Loaders and thoughts. */
 
     /* color.code */
-    --color-code-bg: var(--color-neutral-100); /* The ground of code. */
+    --color-code-bg: var(--color-sunken); /* The ground of code: the same as the sunken well. */
     --color-code-text: var(--color-neutral-850); /* Code without a color of its own. */
     --color-code-keyword: var(--color-magenta-700); /* Keywords. */
     --color-code-string: var(--color-green-800); /* Strings. */

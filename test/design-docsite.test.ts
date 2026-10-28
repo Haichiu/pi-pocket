@@ -831,7 +831,7 @@ test("an exempt pair is labelled and not a failure; notes have an area; the code
     // The cards show real snippets: a valid Style Dictionary config, and the first lines of the Tokens Studio file.
     const snip = (id: string) =>
         (
-            new RegExp(`<pre class="snip" id="${id}"><code>([\\s\\S]*?)</code></pre>`).exec(
+            new RegExp(`<pre class="snip" id="${id}"[^>]*><code>([\\s\\S]*?)</code></pre>`).exec(
                 html,
             )?.[1] ?? ""
         )
@@ -1394,6 +1394,151 @@ test(
                 total,
             );
             assert.ok(((await page.evaluate(visible)) as number) >= 6);
+        });
+    },
+);
+
+test("the code panels name their language, take their own height, and take their colors from the system's code tokens", () => {
+    const { html } = renderSystemDoc(flagship());
+    const uses = html.slice(html.indexOf('<div class="uses">'), html.indexOf("<h3>The files</h3>"));
+
+    for (const [id, lang] of [
+        ["code-use-css", "web"],
+        ["code-use-tailwind", "web"],
+        ["code-use-json", "json"],
+        ["code-use-studio", "json"],
+    ]) {
+        assert.match(uses, new RegExp(`<pre class="snip" id="${id}" data-lang="${lang}">`));
+    }
+
+    // The colors are the system's own, as page variables on the code section.
+    assert.match(html, /<div class="sx" style="--sx-bg:var\(--color-code-bg/);
+    assert.match(html, /--sx-k:var\(--color-code-keyword/);
+    assert.match(html, /--sx-s:var\(--color-code-string/);
+    // The cards do not stretch to one height, and the Tokens Studio snippet is indented by two spaces at each level.
+    assert.match(html, /\.uses \{[^}]*align-items: start/);
+    assert.doesNotMatch(html, /\.use \.snip-wrap \{[^}]*flex: 1/);
+    const studio = /id="code-use-studio"[^>]*><code>([^<]*)<\/code>/
+        .exec(html)![1]!
+        .replaceAll("&quot;", '"')
+        .replaceAll("&amp;", "&");
+
+    assert.deepEqual(
+        studio.split("\n").filter((line) => /^( +)\S/.test(line) && !/^( {2})*\S/.test(line)),
+        [],
+        "every indent is a whole number of two-space levels",
+    );
+    assert.ok(JSON.parse(studio).$themes.length > 0);
+    // A system with no code tokens sets no color of its own: the CSS falls back to the page's.
+    const bare = flagship();
+
+    bare.tokens = bare.tokens.filter((item) => !item.name.startsWith("color.code."));
+    assert.doesNotMatch(renderSystemDoc(bare).html, /--sx-k:/);
+});
+
+test("a value that is the same in every mode is one cell across the mode columns; a shadow shows its layers", () => {
+    const system = flagship();
+    const { html } = renderSystemDoc(system);
+    const modes = system.modes.length;
+    const table = html.slice(html.indexOf('<div class="table-wrap ref">'));
+    const same = [...table.matchAll(/<td data-label="Every mode"[^>]*colspan="(\d+)"/g)];
+
+    // Every primitive that does not change with the mode (most of the palette) has one cell.
+    assert.ok(same.length > 100, `${same.length} one-cell rows`);
+    assert.ok(same.every((match) => match[1] === String(modes)));
+    // A token that differs between modes keeps a column for each (bg.base is one color in each mode).
+    const row =
+        /<tr data-s><td data-label="Token"><span class=""><button class="tk">color\.bg\.base<\/button>([\s\S]*?)<\/tr>/.exec(
+            table,
+        )![1]!;
+
+    assert.equal((row.match(/<td /g) ?? []).length, 1 + modes);
+    assert.doesNotMatch(row, /Every mode/);
+
+    // A shadow shows x, y, blur, spread, and a color swatch with its opacity, not a raw eight-digit hex.
+    assert.match(html, /<span class="sh-row sh-head"><span>x<\/span><span>y<\/span>/);
+    assert.match(html, /<span class="sh-row"><span>0<\/span><span>18<\/span><span>40<\/span>/);
+    assert.match(html, /<i class="mini-sw alpha" style="--c:#28284624"><\/i>#282846 14%/);
+    assert.doesNotMatch(html, /0 18 40 -18 #28284624/);
+});
+
+test(
+    "in Chromium the code panels are colored from their text alone, with no markup made from it",
+    { skip: findBrowser() === undefined ? "No Chromium on this machine." : false },
+    async () => {
+        // The listings carry project text (a token's description is a comment in tokens.css), so it must stay text.
+        const system = flagship();
+        const attack = `</code></pre><img id="hit" src=x onerror="window.__hit=1"><script>window.__hit=2</script>`;
+        const first = system.tokens.find((item) => item.tier === "primitive")!;
+
+        first.description = attack;
+        system.compiled = {
+            ...system.compiled,
+            css: `/* ${attack} */\n:root { --a: "${attack}"; color: #fff }\n${system.compiled.css}`,
+        };
+
+        const bundle: DesignBundle = {
+            meta: { title: "Docs", type: "html", versions: [] },
+            version: 1,
+            content: renderSystemDoc(system).html,
+            assets: [],
+        };
+
+        await withRender(bundle, host, undefined, async (page) => {
+            await page.load({ width: 1280, height: 800 });
+            await page.evaluate("new Promise((resolve) => setTimeout(resolve, 400))");
+
+            assert.deepEqual(page.errors, []);
+            assert.equal(await page.evaluate("window.__hit"), undefined);
+            assert.equal(await page.evaluate("document.querySelectorAll('#hit').length"), 0);
+
+            const report = (await page.evaluate(`(() => {
+                const blocks = [...document.querySelectorAll('pre.snip[data-lang]')];
+                return {
+                    total: blocks.length,
+                    colored: blocks.filter((block) => block.hasAttribute('data-colored')).length,
+                    inner: blocks.reduce((sum, block) => sum + block.querySelectorAll('code *:not(span)').length, 0),
+                    kinds: [...new Set([...document.querySelectorAll('pre.snip span')].map((span) => span.className))].sort(),
+                    hostile: blocks.some((block) => block.textContent.includes('onerror="window.__hit=1"')),
+                    copy: document.getElementById('code-use-studio').textContent.trim().startsWith('{'),
+                };
+            })()`)) as Record<string, unknown>;
+
+            assert.equal(report.total, report.colored);
+            assert.ok((report.total as number) >= 8);
+            assert.equal(report.inner, 0, "only spans, made by the script");
+            assert.equal(report.hostile, true, "the hostile text is shown as text");
+            assert.equal(report.copy, true);
+            assert.deepEqual(report.kinds, [
+                "sx-c",
+                "sx-f",
+                "sx-k",
+                "sx-n",
+                "sx-p",
+                "sx-s",
+                "sx-t",
+            ]);
+
+            // The text of a panel is what the Copy button copies: coloring changes nothing of it.
+            assert.equal(
+                await page.evaluate(`(() => {
+                    const copy = document.querySelector('[data-copy-from="code-use-css"]');
+                    return document.getElementById('code-use-css').textContent.includes('var(--') &&
+                        copy.getAttribute('data-copy-from') === 'code-use-css';
+                })()`),
+                true,
+            );
+            // Every color is a real color, and the panel is its system's code ground.
+            const colors = (await page.evaluate(`(() => {
+                const pre = document.getElementById('code-use-css');
+                const style = (el) => getComputedStyle(el);
+                return {
+                    ground: style(pre).backgroundColor,
+                    keyword: style(pre.querySelector('.sx-t')).color
+                };
+            })()`)) as Record<string, string>;
+
+            assert.notEqual(colors.keyword, colors.ground);
         });
     },
 );

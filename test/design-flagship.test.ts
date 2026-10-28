@@ -303,18 +303,22 @@ test("every numbered color ramp falls in lightness at each step, with regular st
         const numbers = sorted.map((token) => Number(token.path[2]));
 
         if (group === "neutral") {
-            // Steps of 100 up to 700 and of 50 after, plus two half steps that a role needs, each with its reason.
+            // Steps of 100 up to 700 and of 50 after, plus half steps that a role needs, each with its reason.
             const halves = numbers.filter(
                 (n) => n % 100 !== 0 && !(n >= 700 && n % 50 === 0) && n !== 50,
             );
 
-            assert.deepEqual(halves, [550], "one half step outside the dark end");
+            assert.deepEqual(halves, [150, 550], "the half steps outside the dark end");
             assert.match(
                 sorted.find((token) => token.path[2] === "550")!.description ?? "",
                 /half step.*on purpose/i,
             );
             assert.match(
                 sorted.find((token) => token.path[2] === "750")!.description ?? "",
+                /half step.*on purpose/i,
+            );
+            assert.match(
+                sorted.find((token) => token.path[2] === "150")!.description ?? "",
                 /half step.*on purpose/i,
             );
         } else {
@@ -408,4 +412,37 @@ test("space is the scale, size holds sizes, and the corners are one scale with r
     ] as const) {
         assert.match(roles.find((token) => token.path[1] === role)!.description ?? "", note);
     }
+});
+
+test("the grounds are different colors in light and dark; where two share a value, the role says why", () => {
+    const loaded = system();
+    const tokens = byName(loaded.tokens);
+    const value = (name: string, mode: string) =>
+        tokens.get(`color.bg.${name}`)!.modes[mode]!.value;
+
+    for (const mode of ["light", "dark"]) {
+        for (const [first, second] of [
+            ["canvas", "selected"],
+            ["canvas", "sunken"],
+            ["selected", "sunken"],
+            ["base", "sunken"],
+            ["base", "canvas"],
+        ] as const) {
+            assert.notEqual(
+                value(first, mode),
+                value(second, mode),
+                `${first} and ${second} in ${mode}`,
+            );
+        }
+    }
+
+    // A sunken well is darker than the canvas, and a selected row has a blue tint.
+    assert.ok(lightness(value("sunken", "light")) < lightness(value("canvas", "light")));
+    assert.ok(
+        parseColor(value("selected", "light"))!.b > parseColor(value("selected", "light"))!.r,
+    );
+
+    // The two flat cases are named in the descriptions.
+    assert.match(tokens.get("color.bg.raised")!.description ?? "", /same white as surface/);
+    assert.match(tokens.get("color.bg.canvas")!.description ?? "", /high contrast/);
 });

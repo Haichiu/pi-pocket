@@ -45,6 +45,7 @@
     --color-neutral-0: #ffffff;
     --color-neutral-50: #f4f5f9;
     --color-neutral-100: #e1e2e7;
+    --color-neutral-150: #dcdee6; /* A half step, kept on purpose: the light mode's sunken well must be a … */
     --color-neutral-200: #d0d5e3;
     --color-neutral-300: #c0caf5;
     --color-neutral-400: #a9b1d6;
@@ -166,10 +167,8 @@
     --color-alpha-scrim-light: #d0d5e38c; /* Dim layer behind sheets, on light grounds. */
 
     /* font.family */
-    --font-sans:
-        Geist, ui-sans-serif, system-ui, sans-serif; /* Words: messages, labels, headings. */
-    --font-mono:
-        "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; /* Code, paths, branches, numbers, counts, and keys. Ligatures off, as i… */
+    --font-sans: Geist, ui-sans-serif, system-ui, sans-serif; /* Words: messages, labels, headings. */
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; /* Code, paths, branches, numbers, counts, and keys. Ligatures off, as i… */
 
     /* font.weight */
     --font-weight-regular: 400;
@@ -245,12 +244,12 @@
     /* === Semantic roles === */
 
     /* color.bg */
-    --color-canvas: var(--color-neutral-100); /* The desk behind everything. */
+    --color-canvas: var(--color-neutral-100); /* The desk behind everything. In high contrast, canvas, base, and sunke… */
     --color-bg: var(--color-neutral-50); /* The app's ground. */
     --color-surface: var(--color-neutral-0); /* Cards and panels on the ground. */
-    --color-raised: var(--color-neutral-0); /* Controls and anything lifted off a surface. */
-    --color-selected: var(--color-neutral-100); /* A selected row or segment. */
-    --color-sunken: var(--color-neutral-100); /* Inset areas: code blocks and wells. */
+    --color-raised: var(--color-neutral-0); /* Controls and anything lifted off a surface. In light mode it is the s… */
+    --color-selected: var(--color-blue-100); /* A selected row or segment: an accent tint in light mode, a lifted gra… */
+    --color-sunken: var(--color-neutral-150); /* Inset areas: code blocks and wells. A shade darker than the canvas in… */
     --color-hover: var(--color-alpha-dark-faint); /* Overlay on a hovered row or button. */
     --color-pressed: var(--color-alpha-dark-medium); /* Overlay on a pressed row or button. */
     --color-scrim: var(--color-alpha-scrim-light); /* The dim layer behind a sheet. */
@@ -258,20 +257,14 @@
     /* color.text */
     --color-text: var(--color-neutral-850); /* Headings and the words that matter. */
     --color-text-secondary: var(--color-neutral-700); /* Body text. */
-    --color-muted: var(
-        --color-neutral-600
-    ); /* Hints, timestamps, and secondary labels. Reads at 4.5:1 on every grou… */
+    --color-muted: var(--color-neutral-600); /* Hints, timestamps, and secondary labels. Reads at 4.5:1 on every grou… */
     --color-inverse: var(--color-neutral-0); /* Text on a strong, neutral fill. */
-    --color-disabled: var(
-        --color-neutral-500
-    ); /* Disabled controls only. WCAG exempts disabled text from contrast, so … */
+    --color-disabled: var(--color-neutral-500); /* Disabled controls only. WCAG exempts disabled text from contrast, so … */
 
     /* color.border */
     --color-subtle: var(--color-alpha-dark-soft); /* A hairline between tiles and rows. */
     --color-border: var(--color-alpha-dark-medium); /* A visible line: cards and dividers. */
-    --color-strong: var(
-        --color-neutral-550
-    ); /* The edge of a field or a switch track. Reaches 3:1 on every ground. */
+    --color-strong: var(--color-neutral-550); /* The edge of a field or a switch track. Reaches 3:1 on every ground. */
     --color-focus: var(--color-blue-700); /* The keyboard focus ring. */
 
     /* color.accent */
@@ -313,7 +306,7 @@
     --color-spark: var(--color-magenta-700); /* Loaders and thoughts. */
 
     /* color.code */
-    --color-code-bg: var(--color-neutral-100); /* The ground of code. */
+    --color-code-bg: var(--color-sunken); /* The ground of code: the same as the sunken well. */
     --color-code-text: var(--color-neutral-850); /* Code without a color of its own. */
     --color-code-keyword: var(--color-magenta-700); /* Keywords. */
     --color-code-string: var(--color-green-800); /* Strings. */
@@ -342,21 +335,13 @@
     /* radius */
     --radius-mark: var(--radius-scale-xs); /* State squares. */
     --radius-tag: var(--radius-scale-sm); /* Inline code, keys, small tags. */
-    --radius-seg: var(
-        --radius-scale-sm
-    ); /* A segment in its track. The app uses 5 px; here 4 px, on the scale. */
+    --radius-seg: var(--radius-scale-sm); /* A segment in its track. The app uses 5 px; here 4 px, on the scale. */
     --radius-row: var(--radius-scale-md); /* Small buttons and list rows. */
-    --radius-control: var(
-        --radius-scale-md
-    ); /* Icon buttons, fields, segmented tracks. The app uses 7 px; here 6 px,… */
+    --radius-control: var(--radius-scale-md); /* Icon buttons, fields, segmented tracks. The app uses 7 px; here 6 px,… */
     --radius-card: var(--radius-scale-lg); /* Cards and primary buttons. */
-    --radius-window: var(
-        --radius-scale-lg
-    ); /* Windows, approval cards, peek tiles. The app uses 10 px; here 8 px, t… */
+    --radius-window: var(--radius-scale-lg); /* Windows, approval cards, peek tiles. The app uses 10 px; here 8 px, t… */
     --radius-sheet: var(--radius-scale-xl); /* The message box, sheets, the launcher. */
-    --radius-float: var(
-        --radius-scale-xl
-    ); /* Pop-ups and menus. The same step as a sheet; kept apart so that float… */
+    --radius-float: var(--radius-scale-xl); /* Pop-ups and menus. The same step as a sheet; kept apart so that float… */
     --radius-pill: var(--radius-scale-full); /* Pills and avatars. */
 
     /* size.control */
@@ -376,13 +361,10 @@
     --size-avatar: 28px;
 
     /* shadow */
-    --shadow-lift:
-        0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow); /* A soft lift: the message box. */
-    --shadow-float:
-        0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-border); /* What floats over the page: pop-ups, sheets, the launcher. */
+    --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow); /* A soft lift: the message box. */
+    --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-border); /* What floats over the page: pop-ups, sheets, the launcher. */
     --shadow-hairline: 0px 0px 0px 1px var(--color-border); /* A 1 px outline drawn as a shadow, so layout does not move. */
-    --shadow-focus-ring:
-        0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus); /* The keyboard focus ring: a soft halo around a solid line. Keep it vis… */
+    --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus); /* The keyboard focus ring: a soft halo around a solid line. Keep it vis… */
 
     /* type */
     --text-display: var(--text-4xl); /* Page titles and the home screen. */
@@ -677,8 +659,7 @@
     --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow);
     --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-border);
     --shadow-hairline: 0px 0px 0px 1px var(--color-border);
-    --shadow-focus-ring:
-        0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
+    --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
 
     /* === Component tokens === */
 
@@ -863,8 +844,7 @@
     --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow);
     --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-border);
     --shadow-hairline: 0px 0px 0px 1px var(--color-border);
-    --shadow-focus-ring:
-        0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
+    --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
 
     /* === Component tokens === */
 
@@ -1048,13 +1028,10 @@
         --color-shadow: var(--color-alpha-shadow-dark);
 
         /* shadow */
-        --shadow-lift:
-            0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow);
-        --shadow-float:
-            0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-border);
+        --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow);
+        --shadow-float: 0px 24px 60px -16px var(--color-shadow), 0px 0px 0px 1px var(--color-border);
         --shadow-hairline: 0px 0px 0px 1px var(--color-border);
-        --shadow-focus-ring:
-            0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
+        --shadow-focus-ring: 0px 0px 0px 3px var(--color-accent-soft), 0px 0px 0px 1px var(--color-focus);
 
         /* === Component tokens === */
 

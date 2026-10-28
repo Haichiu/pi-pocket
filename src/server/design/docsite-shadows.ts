@@ -3,9 +3,8 @@
  */
 import { escapeHtml as esc } from "./docsite-markdown.ts";
 import {
-    clip,
     varOf,
-    plain,
+    shadowLayers,
     limiter,
     type Ctx,
     valueIn,
@@ -36,7 +35,7 @@ export function shadowSection(ctx: Ctx): { html: string; count: number } | undef
         html: `<p class="intro">Shadows lift a surface off the page. The shadow color follows the mode.</p><div class="shadows">${shadows
             .map(
                 (token) =>
-                    `<div class="shadow-tile" data-q="${esc(`${token.name} ${token.description ?? ""}`.toLowerCase())}" style="box-shadow:${varOf(token, "none")}">${copyName(token)}<span class="desc">${esc(token.description ?? "")}</span><span class="desc mono">${variants(ctx, (mode) => esc(clip(plain("shadow", valueIn(token, mode)?.value), 90)))}</span></div>`,
+                    `<div class="shadow-tile" data-q="${esc(`${token.name} ${token.description ?? ""}`.toLowerCase())}" style="box-shadow:${varOf(token, "none")}">${copyName(token)}<span class="desc">${esc(token.description ?? "")}</span><span class="desc mono layered">${variants(ctx, (mode) => shadowLayers(valueIn(token, mode)?.value))}</span></div>`,
             )
             .join("")}</div>${note()}${moreTokens(ctx, "shadows")}`,
         count: mine.length,

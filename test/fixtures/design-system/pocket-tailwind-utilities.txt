@@ -137,6 +137,7 @@ bg-menu-row-selected
 bg-muted
 bg-neutral-0
 bg-neutral-100
+bg-neutral-150
 bg-neutral-200
 bg-neutral-300
 bg-neutral-400
@@ -352,6 +353,7 @@ border-menu-row-selected
 border-muted
 border-neutral-0
 border-neutral-100
+border-neutral-150
 border-neutral-200
 border-neutral-300
 border-neutral-400
@@ -631,6 +633,7 @@ text-menu-row-selected
 text-muted
 text-neutral-0
 text-neutral-100
+text-neutral-150
 text-neutral-200
 text-neutral-300
 text-neutral-400

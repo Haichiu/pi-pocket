@@ -14,6 +14,11 @@
           "$type": "color",
           "$value": "#e1e2e7"
         },
+        "150": {
+          "$type": "color",
+          "$value": "#dcdee6",
+          "$description": "A half step, kept on purpose: the light mode's sunken well must be a shade darker than the canvas (100) and still hold muted text at 4.5:1, and 200 is too dark for that."
+        },
         "200": {
           "$type": "color",
           "$value": "#d0d5e3"
@@ -441,7 +446,7 @@
         "canvas": {
           "$type": "color",
           "$value": "{color.neutral.100}",
-          "$description": "The desk behind everything."
+          "$description": "The desk behind everything. In high contrast, canvas, base, and sunken are one black: edges separate them, not tints."
         },
         "base": {
           "$type": "color",
@@ -456,17 +461,17 @@
         "raised": {
           "$type": "color",
           "$value": "{color.neutral.0}",
-          "$description": "Controls and anything lifted off a surface."
+          "$description": "Controls and anything lifted off a surface. In light mode it is the same white as surface: the shadow lifts it."
         },
         "selected": {
           "$type": "color",
-          "$value": "{color.neutral.100}",
-          "$description": "A selected row or segment."
+          "$value": "{color.blue.100}",
+          "$description": "A selected row or segment: an accent tint in light mode, a lifted gray in dark and high contrast."
         },
         "sunken": {
           "$type": "color",
-          "$value": "{color.neutral.100}",
-          "$description": "Inset areas: code blocks and wells."
+          "$value": "{color.neutral.150}",
+          "$description": "Inset areas: code blocks and wells. A shade darker than the canvas in light mode; in high contrast it is the canvas black, and an edge sets it off."
         },
         "hover": {
           "$type": "color",
@@ -498,7 +503,7 @@
         "muted": {
           "$type": "color",
           "$value": "{color.neutral.600}",
-          "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too."
+          "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too. In high contrast it is the same color as secondary, because it needs 7:1 there."
         },
         "inverse": {
           "$type": "color",
@@ -670,8 +675,8 @@
       "code": {
         "bg": {
           "$type": "color",
-          "$value": "{color.neutral.100}",
-          "$description": "The ground of code."
+          "$value": "{color.bg.sunken}",
+          "$description": "The ground of code: the same as the sunken well."
         },
         "text": {
           "$type": "color",
@@ -1968,6 +1973,11 @@
           "$type": "color",
           "$value": "#e1e2e7"
         },
+        "150": {
+          "$type": "color",
+          "$value": "#dcdee6",
+          "$description": "A half step, kept on purpose: the light mode's sunken well must be a shade darker than the canvas (100) and still hold muted text at 4.5:1, and 200 is too dark for that."
+        },
         "200": {
           "$type": "color",
           "$value": "#d0d5e3"
@@ -2395,7 +2405,7 @@
         "canvas": {
           "$type": "color",
           "$value": "{color.neutral.950}",
-          "$description": "The desk behind everything."
+          "$description": "The desk behind everything. In high contrast, canvas, base, and sunken are one black: edges separate them, not tints."
         },
         "base": {
           "$type": "color",
@@ -2410,17 +2420,17 @@
         "raised": {
           "$type": "color",
           "$value": "{color.neutral.750}",
-          "$description": "Controls and anything lifted off a surface."
+          "$description": "Controls and anything lifted off a surface. In light mode it is the same white as surface: the shadow lifts it."
         },
         "selected": {
           "$type": "color",
           "$value": "{color.neutral.700}",
-          "$description": "A selected row or segment."
+          "$description": "A selected row or segment: an accent tint in light mode, a lifted gray in dark and high contrast."
         },
         "sunken": {
           "$type": "color",
           "$value": "{color.neutral.900}",
-          "$description": "Inset areas: code blocks and wells."
+          "$description": "Inset areas: code blocks and wells. A shade darker than the canvas in light mode; in high contrast it is the canvas black, and an edge sets it off."
         },
         "hover": {
           "$type": "color",
@@ -2452,7 +2462,7 @@
         "muted": {
           "$type": "color",
           "$value": "{color.neutral.500}",
-          "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too."
+          "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too. In high contrast it is the same color as secondary, because it needs 7:1 there."
         },
         "inverse": {
           "$type": "color",
@@ -2625,7 +2635,7 @@
         "bg": {
           "$type": "color",
           "$value": "{color.neutral.900}",
-          "$description": "The ground of code."
+          "$description": "The ground of code: the same as the sunken well."
         },
         "text": {
           "$type": "color",
@@ -3922,6 +3932,11 @@
           "$type": "color",
           "$value": "#e1e2e7"
         },
+        "150": {
+          "$type": "color",
+          "$value": "#dcdee6",
+          "$description": "A half step, kept on purpose: the light mode's sunken well must be a shade darker than the canvas (100) and still hold muted text at 4.5:1, and 200 is too dark for that."
+        },
         "200": {
           "$type": "color",
           "$value": "#d0d5e3"
@@ -4349,7 +4364,7 @@
         "canvas": {
           "$type": "color",
           "$value": "{color.neutral.950}",
-          "$description": "The desk behind everything."
+          "$description": "The desk behind everything. In high contrast, canvas, base, and sunken are one black: edges separate them, not tints."
         },
         "base": {
           "$type": "color",
@@ -4364,17 +4379,17 @@
         "raised": {
           "$type": "color",
           "$value": "{color.neutral.850}",
-          "$description": "Controls and anything lifted off a surface."
+          "$description": "Controls and anything lifted off a surface. In light mode it is the same white as surface: the shadow lifts it."
         },
         "selected": {
           "$type": "color",
           "$value": "{color.neutral.800}",
-          "$description": "A selected row or segment."
+          "$description": "A selected row or segment: an accent tint in light mode, a lifted gray in dark and high contrast."
         },
         "sunken": {
           "$type": "color",
           "$value": "{color.neutral.950}",
-          "$description": "Inset areas: code blocks and wells."
+          "$description": "Inset areas: code blocks and wells. A shade darker than the canvas in light mode; in high contrast it is the canvas black, and an edge sets it off."
         },
         "hover": {
           "$type": "color",
@@ -4406,7 +4421,7 @@
         "muted": {
           "$type": "color",
           "$value": "{color.neutral.300}",
-          "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too."
+          "$description": "Hints, timestamps, and secondary labels. Reads at 4.5:1 on every ground, a selected row too. In high contrast it is the same color as secondary, because it needs 7:1 there."
         },
         "inverse": {
           "$type": "color",
@@ -4579,7 +4594,7 @@
         "bg": {
           "$type": "color",
           "$value": "{color.neutral.950}",
-          "$description": "The ground of code."
+          "$description": "The ground of code: the same as the sunken well."
         },
         "text": {
           "$type": "color",

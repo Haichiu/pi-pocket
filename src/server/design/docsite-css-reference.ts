@@ -77,6 +77,93 @@ export const CSS_REFERENCE = `/* ── Guidelines (rendered Markdown) ───
     margin: 0 6px 4px 0;
 }
 
+/* On a wide screen a name and its variable fit on one line, and the type and tier on another. */
+@media (min-width: 641px) {
+    .ref td:first-child {
+        min-width: 380px;
+    }
+
+    .ref td:nth-child(2) {
+        white-space: nowrap;
+    }
+}
+
+/* The layers of a shadow: a small table, one row for each layer. */
+.sh-layers {
+    display: grid;
+    gap: 3px;
+    font: 500 11.5px var(--dd-mono);
+}
+
+.sh-row {
+    display: grid;
+    grid-template-columns: repeat(4, 3.3em) minmax(0, 1fr);
+    align-items: center;
+    column-gap: 4px;
+}
+
+.sh-row > span:not(.lc) {
+    text-align: right;
+}
+
+.sh-head {
+    color: var(--dd-faint);
+    font: 600 11px var(--dd-sans);
+}
+
+.sh-head span:last-child {
+    text-align: left;
+    padding-left: 10px;
+}
+
+.sh-row .lc {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-left: 10px;
+    white-space: nowrap;
+}
+
+.sh-row .lc .mini-sw {
+    margin-right: 0;
+}
+
+.mini-sw.alpha {
+    background:
+        linear-gradient(var(--c), var(--c)),
+        repeating-conic-gradient(#b9bccb 0 25%, #fff 0 50%) 0 0 / 8px 8px;
+}
+
+/* A value that is the same in every mode is one cell across the mode columns, said once. */
+.ref td.same {
+    text-align: left;
+}
+
+.ref .sv {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* The words "in every mode" and a rule that runs to the end of the mode columns, so the empty columns read as covered. */
+.ref .all {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 10px;
+    color: var(--dd-faint);
+    font: 500 11px var(--dd-sans);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.ref .all::after {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--dd-line-strong), transparent);
+    content: "";
+}
+
 .empty {
     margin-top: 32px;
     padding: 28px;
@@ -209,29 +296,57 @@ tr.more button {
     font-weight: 600;
 }
 
-/* The "use it" cards in a row are as tall as the tallest; their code scrolls, with the scroll bar in view. */
+/* The "use it" cards take the height of their code, each its own: a short snippet has no dead area under it. */
 .uses {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
-    align-items: stretch;
-}
-
-.use {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-}
-
-.use .snip-wrap {
-    display: flex;
-    flex: 1;
+    align-items: start;
 }
 
 .use pre.snip {
-    flex: 1;
     max-height: none;
     min-width: 0;
     overflow: auto;
     white-space: pre;
+}
+
+/* The copy button sits in the corner, so the code starts near the top and keeps clear of the button on the right. */
+.sx pre.snip {
+    padding: 14px 76px 14px 16px;
+}
+
+/* Code color. The classes come from the page script's tokenizer; the colors are the system's own code tokens (set on
+   .sx by the page, so they follow the mode), and the page's own colors when the system has none. */
+.sx pre.snip {
+    background: var(--sx-bg, var(--dd-sunken));
+    color: var(--sx-text, var(--dd-text));
+}
+
+.sx-c {
+    color: var(--sx-c, var(--dd-muted));
+}
+
+.sx-s {
+    color: var(--sx-s, var(--dd-ok));
+}
+
+.sx-n {
+    color: var(--sx-n, var(--dd-warn));
+}
+
+.sx-k {
+    color: var(--sx-k, var(--dd-accent));
+}
+
+.sx-f {
+    color: var(--sx-f, var(--dd-accent));
+}
+
+.sx-p {
+    color: var(--sx-p, var(--dd-warn));
+}
+
+.sx-t {
+    color: var(--sx-t, var(--dd-bad));
 }
 
 /* A block that scrolls shows its scroll bar, in every browser: the default ones hide until touched. */

@@ -11,6 +11,7 @@ import {
     type Ctx,
     valueIn,
     findToken,
+    varOf,
     BASE_GROUNDS,
     tableRows,
 } from "./docsite-core.ts";
@@ -76,7 +77,7 @@ export function notesHtml(ctx: Ctx): string {
 }
 
 /** The most of a generated file that the page prints: the files are large, and the page is one file too. */
-const FILE_PREVIEW = 4_000;
+const FILE_PREVIEW = 3_000;
 
 /**
  * A short, real piece of `tokens.studio.json`: the first mode's set with one token, the first theme, and the order of
@@ -99,7 +100,7 @@ function studioSnippet(ctx: Ctx, sample: ResolvedToken | undefined): string {
         return JSON.stringify(
             { [first]: {}, $themes: [], $metadata: { tokenSetOrder: ctx.modes } },
             null,
-            4,
+            2,
         );
     }
 
@@ -124,13 +125,13 @@ function studioSnippet(ctx: Ctx, sample: ResolvedToken | undefined): string {
             $metadata: file.$metadata,
         },
         null,
-        4,
+        2,
     );
 }
 
 /** A snippet in a box with a Copy button; the text is project data, so it is escaped. */
-export function snippet(id: string, text: string): string {
-    return `<div class="snip-wrap"><button class="copy" type="button" data-copy-from="${esc(id)}" data-copy="">Copy</button><pre class="snip" id="${esc(id)}"><code>${esc(text)}</code></pre></div>`;
+export function snippet(id: string, text: string, lang = ""): string {
+    return `<div class="snip-wrap"><button class="copy" type="button" data-copy-from="${esc(id)}" data-copy="">Copy</button><pre class="snip" id="${esc(id)}"${lang === "" ? "" : ` data-lang="${esc(lang)}"`}><code>${esc(text)}</code></pre></div>`;
 }
 
 /** What the generated files are and how to use each: CSS, Tailwind v4, and JSON for Style Dictionary or Tokens Studio. */
@@ -183,7 +184,7 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
             },
         },
         null,
-        4,
+        2,
     );
     // Tokens Studio: the first entry of the generated file, so that what a person sees is what the file holds.
     const studio = studioSnippet(ctx, sample);
@@ -225,16 +226,36 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
             text: compiled.json,
         },
     ].filter((file) => file.text.trim() !== "");
-    const use = (title: string, note: string, id: string, text: string) =>
-        `<div class="use"><h4>${esc(title)}</h4><p class="sub">${note}</p>${snippet(id, text)}</div>`;
+    const use = (title: string, note: string, id: string, text: string, lang: string) =>
+        `<div class="use"><h4>${esc(title)}</h4><p class="sub">${note}</p>${snippet(id, text, lang)}</div>`;
+
+    // The colors of the code come from the system's own code tokens, so that they follow the mode and sit on the ground
+    // that the system made for code. Each is left out when the system has no such token (the CSS has a fallback).
+    const syntax = (
+        [
+            ["bg", ["color.code.bg"]],
+            ["text", ["color.code.text"]],
+            ["c", ["color.code.comment", "color.text.muted"]],
+            ["s", ["color.code.string"]],
+            ["n", ["color.code.number"]],
+            ["k", ["color.code.keyword"]],
+            ["f", ["color.code.function"]],
+            ["p", ["color.code.type", "color.code.property"]],
+            ["t", ["color.code.tag"]],
+        ] as [string, string[]][]
+    )
+        .map(([key, names]) => [key, findToken(ctx, names)] as const)
+        .filter(([, token]) => token !== undefined && token.type === "color")
+        .map(([key, token]) => `--sx-${key}:${varOf(token!)}`)
+        .join(";");
 
     return {
-        html: `<p class="intro">The files that the system generates in <code>.pi/design/dist/</code> (<code>components.css</code> holds the CSS of every component, which each component above shows). Read tokens as variables, classes, or JSON. Never copy a value by hand.</p><div class="uses">${use("CSS", "Link tokens.css, then read a token with var(). Set data-theme for a mode.", "code-use-css", css)}${use("Tailwind v4", `Import Tailwind, then tailwind.css. Each token is a variable, so the utilities follow it.${compiled.names === undefined || compiled.names.trim() === "" ? "" : ' <a href="#code-names">names.md</a> lists every name and utility.'}`, "code-use-tailwind", tailwind)}${use("JSON (DTCG)", `Style Dictionary reads the file for each mode as it is. For DTCG 2025.10 objects and not strings (<code>"#7aa2f7"</code>, <code>"16px"</code>), set <code>"format": "2025.10"</code> in the <code>com.pi-pocket</code> extension of tokens.json.`, "code-use-json", json)}${use("Tokens Studio", "In Tokens Studio open Tools, Load from file or URL, and pick tokens.studio.json. Each mode is a token set, and each theme turns its set on.", "code-use-studio", studio)}</div><h3>The files</h3>${files
+        html: `<div class="sx"${syntax === "" ? "" : ` style="${esc(syntax)}"`}><p class="intro">The files that the system generates in <code>.pi/design/dist/</code> (<code>components.css</code> holds the CSS of every component, which each component above shows). Read tokens as variables, classes, or JSON. Never copy a value by hand.</p><div class="uses">${use("CSS", "Link tokens.css, then read a token with var(). Set data-theme for a mode.", "code-use-css", css, "web")}${use("Tailwind v4", `Import Tailwind, then tailwind.css. Each token is a variable, so the utilities follow it.${compiled.names === undefined || compiled.names.trim() === "" ? "" : ' <a href="#code-names">names.md</a> lists every name and utility.'}`, "code-use-tailwind", tailwind, "web")}${use("JSON (DTCG)", `Style Dictionary reads the file for each mode as it is. For DTCG 2025.10 objects and not strings (<code>"#7aa2f7"</code>, <code>"16px"</code>), set <code>"format": "2025.10"</code> in the <code>com.pi-pocket</code> extension of tokens.json.`, "code-use-json", json, "json")}${use("Tokens Studio", "In Tokens Studio open Tools, Load from file or URL, and pick tokens.studio.json. Each mode is a token set, and each theme turns its set on.", "code-use-studio", studio, "json")}</div><h3>The files</h3>${files
             .map(
                 (file) =>
-                    `<details class="code"><summary>${esc(file.title)}<span class="desc" style="margin-left:10px;font-weight:400">${esc(file.note)}</span></summary><div class="code-body">${file.text.length > FILE_PREVIEW ? `<p class="sub">The first ${FILE_PREVIEW / 1000} KB of ${Math.round(file.text.length / 1024)} KB. The whole file is in <code>.pi/design/dist/</code>, and in the zip that the System view exports.</p>` : ""}${snippet(file.id, clip(file.text, FILE_PREVIEW))}</div></details>`,
+                    `<details class="code"><summary>${esc(file.title)}<span class="desc" style="margin-left:10px;font-weight:400">${esc(file.note)}</span></summary><div class="code-body">${file.text.length > FILE_PREVIEW ? `<p class="sub">The first ${FILE_PREVIEW / 1000} KB of ${Math.round(file.text.length / 1024)} KB. The whole file is in <code>.pi/design/dist/</code>, and in the zip that the System view exports.</p>` : ""}${snippet(file.id, clip(file.text, FILE_PREVIEW), file.title.endsWith(".css") ? "css" : file.title.endsWith(".json") ? "json" : "")}</div></details>`,
             )
-            .join("")}`,
+            .join("")}</div>`,
         count: files.length,
     };
 }

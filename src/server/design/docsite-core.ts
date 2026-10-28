@@ -161,6 +161,36 @@ export function shadowText(value: unknown): string {
         .join(", ");
 }
 
+/** An offset, blur, or spread as the number of a column (`18`); a unit other than px stays (`1.5rem`). */
+function layerNumber(value: unknown): string {
+    const text = dimText(value) ?? "0";
+
+    return text.replace(/^(-?\d*\.?\d+)px$/, "$1").replace(/^-/, "\u2212");
+}
+
+/**
+ * The layers of a shadow as a small table: x, y, blur, and spread in px, then the color with a swatch of its own
+ * (over a checkerboard, as most shadow colors are not opaque) and its opacity. Not a layer object: the value as text.
+ */
+export function shadowLayers(value: unknown): string {
+    const layers = (Array.isArray(value) ? value : [value]).slice(0, 8);
+
+    if (layers.length === 0 || !layers.every(isObject)) {
+        return esc(clip(shadowText(value), 160));
+    }
+
+    return `<span class="sh-layers"><span class="sh-row sh-head"><span>x</span><span>y</span><span>blur</span><span>spread</span><span>color</span></span>${layers
+        .map((layer) => {
+            const color = parseColor(layer.color);
+            const hex = color === undefined ? undefined : toHex({ ...color, a: 1 });
+            const alpha =
+                color === undefined || color.a >= 1 ? "" : ` ${Math.round(color.a * 100)}%`;
+
+            return `<span class="sh-row">${[layer.offsetX, layer.offsetY, layer.blur, layer.spread].map((part) => `<span>${esc(layerNumber(part))}</span>`).join("")}<span class="lc">${color === undefined ? esc(String(layer.color)) : `<i class="mini-sw alpha" style="--c:${esc(toHex(color))}"></i>${esc(hex!)}${alpha}`}${layer.inset === true ? ' <em class="pill">inset</em>' : ""}</span></span>`;
+        })
+        .join("")}</span>`;
+}
+
 /** A resolved value as short, readable text. */
 export function plain(type: TokenType, value: unknown): string {
     switch (type) {
@@ -553,12 +583,37 @@ export function anchor(id: string, label: string): string {
 }
 
 /** A token's value in one mode, as the cell of a column: a color has its own swatch (not the page's variable, which is for one mode). */
-function modeCell(ctx: Ctx, token: ResolvedToken, mode: string): string {
+function modeCell(ctx: Ctx, token: ResolvedToken, mode: string, across = 1): string {
     const value = valueIn(token, mode)?.value;
-    const text = esc(clip(plain(token.type, value), 160));
+    const text =
+        token.type === "shadow" ? shadowLayers(value) : esc(clip(plain(token.type, value), 160));
     const hex = token.type === "color" ? colorValueText(value) : undefined;
 
-    return `<td data-label="${esc(modeLabel(mode))}" class="num wrap">${hex === undefined ? "" : `<i class="mini-sw" style="background:${esc(hex)}"></i>`}${text}</td>`;
+    const body = `${hex === undefined ? "" : `<i class="mini-sw" style="background:${esc(hex)}"></i>`}${text}`;
+
+    return across > 1
+        ? `<td data-label="Every mode" class="num wrap same" colspan="${across}"><div class="sv"><span>${body}</span><span class="all">in every mode</span></div></td>`
+        : `<td data-label="${esc(modeLabel(mode))}" class="num wrap">${body}</td>`;
+}
+
+/**
+ * The cell of a value that is the same in every mode: one cell across the mode columns, with the value once. It is
+ * `undefined` when the modes differ (or there is one mode, where a column is already one value).
+ */
+function sameCell(ctx: Ctx, token: ResolvedToken): string | undefined {
+    if (ctx.modes.length < 2) {
+        return undefined;
+    }
+
+    const texts = ctx.modes.map((mode) => {
+        const value = valueIn(token, mode)?.value;
+
+        return `${token.type === "color" ? (colorValueText(value) ?? "") : ""}|${plain(token.type, value)}`;
+    });
+
+    return texts.every((text) => text === texts[0])
+        ? modeCell(ctx, token, ctx.modes[0]!, ctx.modes.length)
+        : undefined;
 }
 
 /**
@@ -573,7 +628,7 @@ export function tableRows(ctx: Ctx, tokens: ResolvedToken[], columns = false): s
                     ? ""
                     : ` <span class="pill warn">Deprecated${typeof token.deprecated === "string" ? `: ${esc(clip(token.deprecated, 80))}` : ""}</span>`;
 
-            return `<tr data-q="${esc(`${token.name} ${token.cssVar} ${token.type} ${token.tier} ${token.description ?? ""}`.toLowerCase())}"><td data-label="Token"><span class="${deprecated === "" ? "" : "dep"}">${copyName(token)}</span>${token.cssVar === `--${token.path.join("-")}` ? "" : `<button class="tk">${esc(token.cssVar)}</button>`}${deprecated}${token.description === undefined ? "" : `<div class="desc">${esc(token.description)}</div>`}</td><td data-label="Type"><span>${esc(token.type)}</span> <span class="pill">${esc(token.tier)}</span></td>${columns ? ctx.modes.map((mode) => modeCell(ctx, token, mode)).join("") : `<td data-label="Value" class="num wrap">${valueCell(ctx, token)}</td>`}</tr>`;
+            return `<tr data-q="${esc(`${token.name} ${token.cssVar} ${token.type} ${token.tier} ${token.description ?? ""}`.toLowerCase())}"><td data-label="Token"><span class="${deprecated === "" ? "" : "dep"}">${copyName(token)}</span>${token.cssVar === `--${token.path.join("-")}` ? "" : `<button class="tk">${esc(token.cssVar)}</button>`}${deprecated}${token.description === undefined ? "" : `<div class="desc">${esc(token.description)}</div>`}</td><td data-label="Type"><span>${esc(token.type)}</span> <span class="pill">${esc(token.tier)}</span></td>${columns ? (sameCell(ctx, token) ?? ctx.modes.map((mode) => modeCell(ctx, token, mode)).join("")) : `<td data-label="Value" class="num wrap">${valueCell(ctx, token)}</td>`}</tr>`;
         })
         .join("");
 }
