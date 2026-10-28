@@ -38,6 +38,9 @@ export interface ColorEntry {
     l: number;
     c: number;
     h: number;
+    /** The Oklab a and b, kept so that a distance costs no trigonometry. */
+    la: number;
+    lb: number;
     /** Literal uses in declarations, all kinds. */
     uses: number;
     /** Uses by kind and the page-root evidence (see `ColorFact`). */
@@ -56,23 +59,26 @@ export const entryOf = (hex: string, text = hex): ColorEntry | undefined => {
     }
 
     const { l, c, h } = toOklch(rgba);
+    const rad = (h * Math.PI) / 180;
 
-    return { hex, rgba, l, c, h, uses: 0, fact: undefined, names: [], text };
+    return {
+        hex,
+        rgba,
+        l,
+        c,
+        h,
+        la: c * Math.cos(rad),
+        lb: c * Math.sin(rad),
+        uses: 0,
+        fact: undefined,
+        names: [],
+        text,
+    };
 };
 
 /** The distance of two colors in Oklab (about 0.02 is just visible). */
-export function distance(a: ColorEntry | Rgba, b: ColorEntry | Rgba): number {
-    const lab = (color: ColorEntry | Rgba) => {
-        const { l, c, h } = "hex" in color ? color : { ...toOklch(color) };
-        const rad = (h * Math.PI) / 180;
-
-        return [l, c * Math.cos(rad), c * Math.sin(rad)] as const;
-    };
-
-    const [l1, a1, b1] = lab(a);
-    const [l2, a2, b2] = lab(b);
-
-    return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
+export function distance(a: ColorEntry, b: ColorEntry): number {
+    return Math.hypot(a.l - b.l, a.la - b.la, a.lb - b.lb);
 }
 
 export const totalUses = (fact: ColorFact | undefined) =>
@@ -83,6 +89,9 @@ export const totalUses = (fact: ColorFact | undefined) =>
  * they are never merged with each other), and merges what is left of near-identical uses (`#3b82f6`, `#3b83f6`).
  * Returns the colors by hex.
  */
+/** Colors kept from uses, and from variables. */
+const MAX_COLORS = 300;
+
 export function mergeColors(
     defined: { hex: string; text: string }[],
     uses: Map<string, ColorFact>,
@@ -90,7 +99,7 @@ export function mergeColors(
 ): Map<string, ColorEntry> {
     const out = new Map<string, ColorEntry>();
 
-    for (const color of defined) {
+    for (const color of defined.slice(0, MAX_COLORS * 2)) {
         if (!out.has(color.hex)) {
             const entry = entryOf(color.hex, color.text);
 
@@ -100,11 +109,14 @@ export function mergeColors(
         }
     }
 
-    const defs = [...out.values()];
-    const rest = [...uses.values()].sort(
-        (a, b) => totalUses(b) - totalUses(a) || a.order - b.order || a.hex.localeCompare(b.hex),
-    );
-    const free: ColorEntry[] = [];
+    // The colors that are used most: a draft needs the palette, not every shade a file ever wrote.
+    const rest = [...uses.values()]
+        .sort(
+            (a, b) =>
+                totalUses(b) - totalUses(a) || a.order - b.order || a.hex.localeCompare(b.hex),
+        )
+        .slice(0, MAX_COLORS);
+    const pool = [...out.values()];
 
     for (const fact of rest) {
         const entry = entryOf(
@@ -119,10 +131,10 @@ export function mergeColors(
         // Near a defined color, or near a more used one, or its own color.
         const target =
             out.get(fact.hex) ??
-            [...defs, ...free].find((other) =>
-                other.rgba.a === entry.rgba.a || Math.abs(other.rgba.a - entry.rgba.a) < 0.05
-                    ? distance(other, entry) < threshold
-                    : false,
+            pool.find(
+                (other) =>
+                    Math.abs(other.rgba.a - entry.rgba.a) < 0.05 &&
+                    distance(other, entry) < threshold,
             );
 
         if (target !== undefined) {
@@ -131,7 +143,7 @@ export function mergeColors(
         } else {
             entry.uses = totalUses(fact);
             entry.fact = merge(undefined, fact, entry.hex);
-            free.push(entry);
+            pool.push(entry);
             out.set(entry.hex, entry);
         }
     }
@@ -622,10 +634,13 @@ export function nameScore(role: RoleName, segs: string[]): number {
             }
 
             const variant = has(segs, VARIANT);
+            // In a scale the middle step is the color itself.
+            const middle = segs.includes("500") ? 6 : segs.includes("600") ? 3 : 0;
 
             return (
                 best +
-                30 -
+                30 +
+                middle -
                 (variant ? 40 : 0) +
                 (subset(segs, [
                     "accent",

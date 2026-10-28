@@ -276,7 +276,7 @@ export function pageStyles(source: string): { blocks: string[]; inline: Decl[] }
 export function templateStyles(source: string): string[] {
     const found: string[] = [];
     const head =
-        /(?:\bcss|\bstyled(?:\.[a-z][\w]*|\([^)\n]{1,60}\))(?:\.attrs\([^)\n]{0,200}\))?|\bcreateGlobalStyle|\binjectGlobal|\bkeyframes)\s*`/g;
+        /(?<![\w$.])(?:css|styled(?:\.[a-z][\w]*|\([^)\n]{1,60}\))(?:\.attrs\([^)\n]{0,200}\))?|createGlobalStyle|injectGlobal|keyframes)\s*`/g;
 
     for (const match of source.matchAll(head)) {
         if (found.length >= 400) {
@@ -291,9 +291,13 @@ export function templateStyles(source: string): string[] {
         }
 
         // `${…}` holds code: a value we cannot know.
-        found.push(
-            source.slice(start, Math.min(end, start + 20_000)).replace(/\$\{[^}]*\}/g, "var(--js)"),
-        );
+        const block = source
+            .slice(start, Math.min(end, start + 20_000))
+            .replace(/\$\{[^}]*\}/g, "var(--js)");
+
+        if (block.trim() !== "") {
+            found.push(block);
+        }
     }
 
     return found;
@@ -393,31 +397,44 @@ export function readLiteral(text: string, start: number): Literal | undefined {
         }
 
         let out = "";
+        // A template literal with `${…}` is a value we cannot know; it is still read to its end.
+        let dynamic = false;
+        let braces = 0;
 
         at += 1;
 
-        while (at < text.length && text[at] !== quote) {
-            if (text[at] === "\\") {
-                out += text[at + 1] ?? "";
+        while (at < text.length && (text[at] !== quote || braces > 0)) {
+            const char = text[at]!;
+
+            if (char === "\\") {
+                out += out.length < 2000 ? (text[at + 1] ?? "") : "";
                 at += 2;
-            } else {
-                // A template literal with `${…}` is a value we cannot know.
-                if (quote === "`" && text[at] === "$" && text[at + 1] === "{") {
-                    return undefined;
-                }
 
-                out += text[at];
-                at += 1;
+                continue;
             }
 
-            if (out.length > 2000) {
-                break;
+            if (quote === "`" && char === "$" && text[at + 1] === "{") {
+                dynamic = true;
+                braces += 1;
+                at += 2;
+
+                continue;
             }
+
+            if (braces > 0 && char === "}") {
+                braces -= 1;
+            } else if (braces > 0 && char === "{") {
+                braces += 1;
+            } else if (out.length < 2000 && braces === 0) {
+                out += char;
+            }
+
+            at += 1;
         }
 
         at += 1;
 
-        return out;
+        return dynamic ? undefined : out;
     };
 
     // Skips an expression we cannot read, to the next comma or closing bracket at its own level.
@@ -428,13 +445,7 @@ export function readLiteral(text: string, start: number): Literal | undefined {
             const char = text[at]!;
 
             if (char === '"' || char === "'" || char === "`") {
-                const before = at;
-
                 string();
-
-                if (at <= before) {
-                    at = before + 1;
-                }
 
                 continue;
             }
@@ -559,7 +570,13 @@ export function readLiteral(text: string, start: number): Literal | undefined {
             return out;
         }
 
+        const before = at;
         const quoted = string();
+
+        if (quoted === undefined && at > before) {
+            // A template with code in it: skip to the end of the value.
+            return skipValue();
+        }
 
         if (quoted !== undefined) {
             // `"a" + b` and the like are not literals.

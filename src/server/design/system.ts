@@ -381,7 +381,7 @@ export function designSystemTool(): ToolRegistration {
 
                         const scan = scanTokens(scanRoot(cwd, args.path));
 
-                        if (Object.keys(scan.draft.tokens).length === 0) {
+                        if (Object.keys(scan.draft.tokens).every((key) => key.startsWith("$"))) {
                             throw new Error(
                                 "The scan found no colors, fonts, or sizes to build a system from. Write the tokens yourself: init with tokens.",
                             );

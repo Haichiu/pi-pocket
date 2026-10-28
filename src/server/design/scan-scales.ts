@@ -169,6 +169,44 @@ export const WEIGHT_NAMES: Record<number, string> = {
     800: "extrabold",
     900: "black",
 };
+/** Tailwind's own sizes, for the utility classes (`text-sm`, `rounded-lg`) that a project uses without defining them. */
+const TAILWIND_TEXT: Record<string, string> = {
+    xs: "0.75rem",
+    sm: "0.875rem",
+    base: "1rem",
+    lg: "1.125rem",
+    xl: "1.25rem",
+    "2xl": "1.5rem",
+    "3xl": "1.875rem",
+    "4xl": "2.25rem",
+    "5xl": "3rem",
+    "6xl": "3.75rem",
+    "7xl": "4.5rem",
+    "8xl": "6rem",
+    "9xl": "8rem",
+};
+const TAILWIND_RADIUS: Record<string, string> = {
+    xs: "0.125rem",
+    sm: "0.25rem",
+    md: "0.375rem",
+    lg: "0.5rem",
+    xl: "0.75rem",
+    "2xl": "1rem",
+    "3xl": "1.5rem",
+    full: "9999px",
+};
+const TAILWIND_WEIGHT: Record<string, [string, number]> = {
+    thin: ["thin", 100],
+    extralight: ["extralight", 200],
+    light: ["light", 300],
+    normal: ["regular", 400],
+    medium: ["medium", 500],
+    semibold: ["semibold", 600],
+    bold: ["bold", 700],
+    extrabold: ["extrabold", 800],
+    black: ["black", 900],
+};
+
 export const SIZE_BELOW = ["sm", "xs", "2xs"];
 export const SIZE_ABOVE = ["lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl"];
 
@@ -300,17 +338,28 @@ export function sizeScale(
     explicit: Set<Category>,
     result: Inferred,
 ): void {
-    const named = [...book.tokens.values()].filter((entry) => entry.path[0] === "text");
+    const sizes = [...facts.sizes].filter(([size]) => size >= 9 && size <= 96);
+
+    // Tailwind's own sizes, named as Tailwind names them: the ones a project uses and does not define itself.
+    if (facts.tailwind && facts.classText.size >= 2 && (explicit.has("text") || sizes.length < 3)) {
+        for (const [name] of topBy([...facts.classText], ([, count]) => count, 9)) {
+            if (TAILWIND_TEXT[name] !== undefined && !book.has(["text", name])) {
+                book.add(["text", name], { $value: TAILWIND_TEXT[name], $type: "dimension" });
+                explicit.add("text");
+            }
+        }
+    }
 
     if (explicit.has("text")) {
         result.typeScale = {
-            sizes: named.map((entry) => `${entry.path[1]}: ${String(entry.node.$value)}`),
+            sizes: [...book.tokens.values()]
+                .filter((entry) => entry.path[0] === "text")
+                .sort((a, b) => (px(String(a.node.$value)) ?? 0) - (px(String(b.node.$value)) ?? 0))
+                .map((entry) => `${entry.path[1]} ${String(entry.node.$value)}`),
         };
 
         return;
     }
-
-    const sizes = [...facts.sizes].filter(([size]) => size >= 9 && size <= 96);
 
     if (sizes.length === 0) {
         return;
@@ -377,7 +426,19 @@ export function sizeScale(
 
 export function detailScales(facts: Facts, book: Book, explicit: Set<Category>): void {
     if (!explicit.has("weight")) {
-        const used = topBy([...facts.weights], ([, count]) => count, 5).sort((a, b) => a[0] - b[0]);
+        const counts = new Map(facts.weights);
+
+        if (facts.tailwind) {
+            for (const [name, count] of facts.classWeight) {
+                const weight = TAILWIND_WEIGHT[name]?.[1];
+
+                if (weight !== undefined) {
+                    counts.set(weight, (counts.get(weight) ?? 0) + count);
+                }
+            }
+        }
+
+        const used = topBy([...counts], ([, count]) => count, 5).sort((a, b) => a[0] - b[0]);
 
         if (used.length >= 2) {
             for (const [weight] of used) {
@@ -497,6 +558,22 @@ export function radiusScale(
     explicit: Set<Category>,
     result: Inferred,
 ): void {
+    // Tailwind's `rounded-lg` and the like: the names a project uses and does not define itself.
+    if (
+        facts.tailwind &&
+        facts.classRadius.size > 0 &&
+        (explicit.has("radius") || facts.radii.size === 0)
+    ) {
+        for (const [name] of topBy([...facts.classRadius], ([, count]) => count, 6)) {
+            const value = TAILWIND_RADIUS[name];
+
+            if (value !== undefined && !book.has(["radius", name])) {
+                book.add(["radius", name], { $value: value, $type: "dimension" });
+                explicit.add("radius");
+            }
+        }
+    }
+
     if (explicit.has("radius")) {
         result.radii = [...book.tokens.values()]
             .filter((entry) => entry.path[0] === "radius")

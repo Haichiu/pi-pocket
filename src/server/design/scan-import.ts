@@ -101,7 +101,10 @@ function convert(node: Obj, inherited: string | undefined): Obj | undefined {
             : undefined);
     let out: unknown = value;
 
-    if (type === undefined) {
+    // A reference takes its type from the token it points at, and a mode file leaves the type to the default mode.
+    const reference = typeof value === "string" && /^\{[^{}]+\}$/.test(value.trim());
+
+    if (type === undefined && !reference) {
         return undefined;
     }
 
@@ -121,7 +124,7 @@ function convert(node: Obj, inherited: string | undefined): Obj | undefined {
         out = Array.isArray(out) ? out.map(shadowLayer) : shadowLayer(out);
     }
 
-    const token: Obj = { $value: out, $type: type };
+    const token: Obj = type === undefined ? { $value: out } : { $value: out, $type: type };
     const description = node.$description ?? node.description ?? node.comment;
 
     if (typeof description === "string" && description !== "") {

@@ -116,6 +116,10 @@ export interface Facts {
     breakpoints: Map<number, number>;
     /** Spacing from Tailwind classes (`p-4` is 16px): used only when the project uses Tailwind. */
     classSpacing: Map<number, number>;
+    /** Tailwind utility classes by size name: `text-sm` → `sm`, `rounded-lg` → `lg`, `font-bold` → `bold`. */
+    classText: Map<string, number>;
+    classRadius: Map<string, number>;
+    classWeight: Map<string, number>;
     /** Scopes that set custom properties but are neither the root nor dark mode, by selector. */
     scoped: Map<string, number>;
     /** Tokens already written in a DTCG, Style Dictionary, or Tokens Studio file. */
@@ -145,6 +149,9 @@ export function newFacts(): Facts {
         easings: new Map(),
         breakpoints: new Map(),
         classSpacing: new Map(),
+        classText: new Map(),
+        classRadius: new Map(),
+        classWeight: new Map(),
         scoped: new Map(),
         imported: { default: {}, dark: {}, count: 0, files: [] },
     };
@@ -671,6 +678,10 @@ function themeVars(facts: Facts, file: string, text: string): void {
 
 const CLASS_USE =
     /(?<![\w-])(?:bg|text|border|ring|fill|stroke|outline|from|to|via|divide|decoration|accent|caret|placeholder|shadow)-([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?:\/\d+)?(?![\w-])/g;
+const TEXT_CLASS = /(?<![\w-])text-(xs|sm|base|lg|xl|[2-9]xl)(?![\w-])/g;
+const ROUNDED_CLASS = /(?<![\w-])rounded(?:-(none|xs|sm|md|lg|xl|2xl|3xl|full))?(?![\w-])/g;
+const WEIGHT_CLASS =
+    /(?<![\w-])font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)(?![\w-])/g;
 const SPACING_CLASS =
     /(?<![\w-])(?:p|px|py|pt|pr|pb|pl|ps|pe|m|mx|my|mt|mr|mb|ml|ms|me|gap|gap-x|gap-y|space-x|space-y)-(\d+(?:\.\d+)?)(?![\w-])/g;
 
@@ -838,6 +849,22 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
 
             // Tailwind's step is a multiple of 0.25rem (4px).
             bump(facts.classSpacing, Number(match[1]) * 4);
+        }
+
+        for (const [pattern, map] of [
+            [TEXT_CLASS, facts.classText],
+            [ROUNDED_CLASS, facts.classRadius],
+            [WEIGHT_CLASS, facts.classWeight],
+        ] as const) {
+            seen = 0;
+
+            for (const match of text.matchAll(pattern)) {
+                if (++seen > 8000) {
+                    break;
+                }
+
+                bump(map, match[1] ?? "default");
+            }
         }
     }
 }

@@ -92,16 +92,11 @@ function variables(facts: Facts): Variable[] {
 
 /** A variable's value with its references followed. `via` is the variable it points at first. */
 function follow(
-    all: Variable[],
+    index: Map<string, Variable>,
     start: Variable,
     scope: "light" | "dark",
 ): { text: string; via?: Variable } | undefined {
-    const find = (name: string, kind: Variable["kind"]) =>
-        all.find(
-            (variable) =>
-                variable.name === name &&
-                (variable.kind === kind || (kind === "css" && variable.kind === "css")),
-        );
+    const find = (name: string, kind: Variable["kind"]) => index.get(`${kind}:${name}`);
     let current = start;
     let text = (
         scope === "dark" ? (current.dark ?? current.light) : (current.light ?? current.dark)
@@ -547,6 +542,17 @@ export function infer(facts: Facts, folder: string): Inferred {
     }
 
     const all = variables(facts);
+    const index = new Map<string, Variable>();
+
+    for (const variable of all) {
+        if (variable.kind !== "js") {
+            index.set(
+                `${variable.kind === "theme" ? "css" : variable.kind}:${variable.name}`,
+                variable,
+            );
+        }
+    }
+
     const book = new Book();
     const aliasOf = new Map<string, string[]>();
     const uses = (variable: Variable) =>
@@ -574,8 +580,8 @@ export function infer(facts: Facts, folder: string): Inferred {
             continue;
         }
 
-        const light = follow(all, variable, "light");
-        const dark = variable.dark === undefined ? undefined : follow(all, variable, "dark");
+        const light = follow(index, variable, "light");
+        const dark = variable.dark === undefined ? undefined : follow(index, variable, "dark");
         const sample = light?.text ?? dark?.text;
 
         if (
@@ -643,22 +649,26 @@ export function infer(facts: Facts, folder: string): Inferred {
     });
     const lightColors = mergeColors(lightDefined, facts.colors);
     const darkColors = mergeColors(darkDefined, facts.darkColors);
-    const named = (scope: "light" | "dark") =>
-        colorVars.flatMap((entry) => {
-            const hex = hexOf(scope === "light" ? entry.lightColor : entry.darkColor);
+    const namedLight = colorVars.flatMap((entry) => {
+        const hex = hexOf(entry.lightColor);
 
-            return hex === undefined
-                ? []
-                : [{ name: entry.variable.name, hex, uses: uses(entry.variable) }];
-        });
+        return hex === undefined
+            ? []
+            : [{ name: entry.variable.name, hex, uses: uses(entry.variable) }];
+    });
+    const namedDark = colorVars.flatMap((entry) => {
+        const hex = hexOf(entry.darkColor);
 
-    for (const entry of lightColors.values()) {
-        entry.names = named("light")
-            .filter((each) => each.hex === entry.hex)
-            .map((each) => ({ name: each.name, uses: each.uses }));
+        return hex === undefined
+            ? []
+            : [{ name: entry.variable.name, hex, uses: uses(entry.variable) }];
+    });
+
+    for (const each of namedLight) {
+        lightColors.get(each.hex)?.names.push({ name: each.name, uses: each.uses });
     }
 
-    const lightRoles = chooseRoles(lightColors, named("light"));
+    const lightRoles = chooseRoles(lightColors, namedLight);
 
     // A project with one background color, called a surface, has no other page color: the surface is the page too.
     if (lightRoles.background === undefined && lightRoles.surface?.basis === "name") {
@@ -672,7 +682,7 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     // Names paired with the light roles first: the same variable's dark value is the dark role.
     const darkRoles: Partial<Record<RoleName, RoleChoice>> = result.hasDark
-        ? chooseRoles(darkColors, named("dark"))
+        ? chooseRoles(darkColors, namedDark)
         : {};
 
     for (const [role, choice] of Object.entries(lightRoles) as [RoleName, RoleChoice][]) {
@@ -761,7 +771,7 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     for (const [family, list] of scales) {
         if (
-            list.length < 3 &&
+            list.length < 2 &&
             ![
                 "gray",
                 "grey",
