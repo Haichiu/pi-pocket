@@ -124,17 +124,17 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
         .replace('<main data-pid="page">', "<div>")
         .replace("</main>", "</div>");
     const report = await check(bare, { viewport: "desktop" }, null);
-    // One rule, `missing-label`: a field (or a widget that stands in for one), a link, a button, a tab, or a switch with no
-    // name. A placeholder is not a name: n2 has only that.
-    const labels = ofRule(report, "missing-label");
-    const field = (item: { message: string }) => item.message.includes("has no label");
-    const named = (item: { message: string }) => item.message.includes("has no accessible name");
+    // `form-label` for a field (or a widget that stands in for one), `accessible-name` for a link, a button, a tab, or a
+    // switch. A placeholder is not a name: n2 has only that.
+    const fields = ofRule(report, "form-label");
+    const names = ofRule(report, "accessible-name");
     const pidsOf = (list: { pid?: string }[]) => list.map((item) => item.pid).sort();
 
-    assert.deepEqual(pidsOf(labels.filter(field)), ["n1", "n10", "n2", "n6", "n8", "w1", "w2"]);
-    assert.deepEqual(pidsOf(labels.filter(named)), ["a1", "b1", "b7", "t1"]);
-    assert.ok(labels.every((item) => item.level === "error"));
-    const message = (pid: string) => labels.find((item) => item.pid === pid)!.message;
+    assert.deepEqual(pidsOf(fields), ["n1", "n10", "n2", "n6", "n8", "w1", "w2"]);
+    assert.deepEqual(pidsOf(names), ["a1", "b1", "b7", "t1"]);
+    assert.ok([...fields, ...names].every((item) => item.level === "error"));
+    const message = (pid: string) =>
+        [...fields, ...names].find((item) => item.pid === pid)!.message;
 
     assert.match(
         message("n1"),
@@ -169,7 +169,7 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
 
     assert.equal(ofRule(fine, "missing-lang").length, 0);
     assert.equal(ofRule(fine, "missing-main").length, 0);
-    assert.equal(ofRule(fine, "missing-label").length, 11);
+    assert.equal(ofRule(fine, "form-label").length + ofRule(fine, "accessible-name").length, 11);
     // `role=main` counts, and a deck needs no main.
     const role = await check(
         bare.replace("<div>", '<div role="main">'),
