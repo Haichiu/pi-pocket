@@ -28,6 +28,7 @@
     --color-warning-default: var(--color-amber-700);
     --color-success-default: var(--color-green-700);
     --color-focus-ring: var(--color-blue-500);
+    --color-focus-ring-on-accent: var(--color-text-inverse);
     --space-0: 0px;
     --space-1: 4px;
     --space-2: 8px;

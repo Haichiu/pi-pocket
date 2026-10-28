@@ -1523,3 +1523,51 @@ test("the reference engine applies the same rule: it reads `exempt` from the fil
         rmSync(folder, { recursive: true, force: true });
     }
 });
+
+test(
+    "a focus ring in the accent color on an accent ground is a finding (WCAG 1.4.11); the inverse ring is not",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        const { BenchBrowser } = await import("./design-system-bench/lib/chromium.ts");
+        const { referenceCheck } = await import("./design-system-bench/lib/reference-lint.ts");
+        const page = (
+            ring: string,
+        ) => `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="ds/tokens.css">
+            <style>*{margin:0;padding:0}body{background:var(--color-bg-default)}.hero{padding:var(--space-8);background:var(--color-accent-default)}
+            .hero button{min-height:var(--size-tap);padding:0 var(--space-4);border:0;border-radius:var(--radius-md);background:var(--color-bg-surface);color:var(--color-text-primary);font:inherit}
+            .hero button:focus-visible{outline:var(--size-ring) solid ${ring};outline-offset:var(--space-1)}</style>
+            <div class="hero" data-pid="hero"><button type="button" data-pid="cta">Go</button></div>`;
+        const css = readFileSync(join(LINT_SYSTEM, "golden", "tokens.css"));
+        const system = systemFromFlat(readFlat(join(LINT_SYSTEM, ".pi", "design")), "Bench");
+        const chromium = (await BenchBrowser.launch())!;
+
+        try {
+            for (const scheme of ["light", "dark"] as const) {
+                const check = (ring: string) =>
+                    referenceCheck(
+                        chromium,
+                        {
+                            content: page(ring),
+                            assets: [{ name: "ds/tokens.css", type: "text/css", bytes: css }],
+                        },
+                        system,
+                        {
+                            viewport: { width: 800, height: 600 },
+                            colorScheme: scheme,
+                        },
+                    );
+                const bad = await check("var(--color-focus-ring)");
+                const good = await check("var(--color-focus-ring-on-accent)");
+
+                assert.deepEqual(
+                    bad.findings.map((item) => [item.rule, item.pid, item.value]),
+                    [["contrast", "cta", "1.00:1"]],
+                    scheme,
+                );
+                assert.deepEqual(good.findings, [], scheme);
+            }
+        } finally {
+            await chromium.close();
+        }
+    },
+);
