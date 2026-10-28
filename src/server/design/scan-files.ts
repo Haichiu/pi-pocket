@@ -46,7 +46,7 @@ const DOT_STYLE_FOLDERS = new Set([".storybook", ".vitepress", ".vuepress", ".do
 const STYLE =
     /\.(?:css|scss|sass|less|styl|stylus|pcss|postcss|html?|vue|svelte|astro|mdx|tsx|jsx|ts|js|mjs|cjs|mts|cts)$/i;
 const TOKEN_JSON =
-    /(?:^|\/)(?:[^/]*tokens?[^/]*|theme[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$/i;
+    /(?:^|\/)(?:[^/]*tokens?[^/]*|theme[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
 
 export const LIMITS = {
     /** Files read. */
@@ -94,6 +94,11 @@ export function priority(rel: string): number {
         score += 8;
     }
 
+    // Tokens Studio writes `$themes.json` and `$metadata.json` beside a file for each token set.
+    if (/(?:^|\/)\$(?:themes|metadata)\.json$/.test(rel)) {
+        score += 30;
+    }
+
     if (
         /\.min\.|(?:^|\/)(?:vendor|third[-_]?party|generated|__generated__)\/|\.d\.ts$/.test(
             rel.toLowerCase(),
@@ -132,6 +137,38 @@ function wanted(rel: string, name: string): boolean {
     }
 
     return !name.endsWith(".d.ts");
+}
+
+/** The `.json` files under a Tokens Studio folder (three levels, a bounded number), added to `found`. */
+function studioSets(root: string, dir: string, depth: number, found: string[]): void {
+    let entries;
+
+    try {
+        entries = readdirSync(join(root, dir), { withFileTypes: true }).sort((a, b) =>
+            a.name.localeCompare(b.name),
+        );
+    } catch {
+        return;
+    }
+
+    for (const entry of entries) {
+        const rel = dir === "" ? entry.name : `${dir}/${entry.name}`;
+
+        if (found.length >= LIMITS.candidates) {
+            return;
+        }
+
+        if (
+            entry.isDirectory() &&
+            depth < 3 &&
+            !SKIP.has(entry.name) &&
+            !entry.name.startsWith(".")
+        ) {
+            studioSets(root, rel, depth + 1, found);
+        } else if (entry.isFile() && entry.name.endsWith(".json") && !found.includes(rel)) {
+            found.push(rel);
+        }
+    }
 }
 
 /** The files to read under `root`, best first, and whether a limit left some out. */
@@ -181,6 +218,16 @@ export function collectFiles(root: string): { files: string[]; partial: boolean 
     };
 
     walk(root, 0);
+
+    // The sets of a Tokens Studio folder have names of their own (`global.json`, `brand/acme.json`): the files beside
+    // `$themes.json` or `$metadata.json` are read too.
+    for (const dir of new Set(
+        found
+            .filter((rel) => /(?:^|\/)\$(?:themes|metadata)\.json$/.test(rel))
+            .map((rel) => rel.slice(0, Math.max(0, rel.lastIndexOf("/")))),
+    )) {
+        studioSets(root, dir, 0, found);
+    }
 
     const ranked = found
         .map((rel) => ({ rel, score: priority(rel) }))

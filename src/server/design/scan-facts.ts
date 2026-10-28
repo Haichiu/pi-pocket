@@ -208,7 +208,17 @@ export function newFacts(): Facts {
         classRadius: new Map(),
         classWeight: new Map(),
         scoped: new Map(),
-        imported: { default: {}, dark: {}, count: 0, files: [] },
+        imported: {
+            default: {},
+            dark: {},
+            extra: {},
+            count: 0,
+            files: [],
+            studio: false,
+            pending: [],
+            notes: [],
+            done: false,
+        },
     };
 }
 

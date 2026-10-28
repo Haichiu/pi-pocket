@@ -250,7 +250,11 @@ export function scanReport(scan: TokenScan, path?: string): string {
     );
 
     if (inferred.imported > 0) {
-        lines.push(inferred.notes[0] ?? `Used ${inferred.imported} tokens from token files.`);
+        lines.push(
+            ...(inferred.notes.length > 0
+                ? inferred.notes
+                : [`Used ${inferred.imported} tokens from token files.`]),
+        );
     }
 
     if (empty) {

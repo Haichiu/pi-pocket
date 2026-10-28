@@ -19,6 +19,7 @@ import {
     sizeScale,
     spacingScale,
 } from "./scan-scales.ts";
+import { finishImports } from "./scan-import.ts";
 import { buildSystem } from "./tokens-model.ts";
 import { chooseColorRoles, type InferContext } from "./scan-roles.ts";
 import { paletteTokens } from "./scan-palette.ts";
@@ -51,18 +52,23 @@ export function infer(facts: Facts, folder: string): Inferred {
     const meta = { $extensions: { "com.pi-pocket": { name: folder } } };
 
     // A project that already keeps tokens in a token file: use them.
-    if (facts.imported.count >= 8) {
+    finishImports(facts.imported);
+
+    if (facts.imported.count >= 8 || (facts.imported.studio && facts.imported.count > 0)) {
         result.imported = facts.imported.count;
         result.draft = {
             tokens: { ...meta, ...(facts.imported.default as Obj) },
-            modes:
-                Object.keys(facts.imported.dark).length > 0
+            modes: {
+                ...(Object.keys(facts.imported.dark).length > 0
                     ? { dark: facts.imported.dark as Obj }
-                    : {},
+                    : {}),
+                ...(facts.imported.extra as Record<string, Obj>),
+            },
         };
         result.hasDark = Object.keys(facts.imported.dark).length > 0;
         result.notes.push(
             `Used the ${facts.imported.count} tokens from ${facts.imported.files.join(", ")} as they are; styles were not guessed.`,
+            ...facts.imported.notes,
         );
 
         return validate(result);
