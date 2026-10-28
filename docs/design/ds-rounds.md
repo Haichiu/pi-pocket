@@ -22,6 +22,12 @@ Bench (`node test/design-system-bench/run.ts`): overall **0.926**. Scan 0.869 (c
 
 **Held-out set** (B, outside the repo; 3 scan projects, 4 lint designs; `--reference` scores 1.0): the round 1 code scores **0.853** (scan **0.544**, format 0.987, lint 0.734, contrast 1, docs 1). The scan's round 1 rules do not generalize (roles P 0.46 R 0.44, dark roles R 0.11; a dark theme object read as the default). The contrast false positives are general (8 of 11 on clean designs). T and V got general causes, not held-out details.
 
+### Round 1 complete (U merged, ed6b2e3)
+
+U's stand-ins replaced by the real engines. Full suite: 1155 of 1162 pass; 6 failures are U's tests meeting the real engines, 1 is V's render-queue timing test (sent back to U and V). Bench: overall 0.926 (unchanged). Held-out, `--no-browser`: scan 0.544, lint 0.734 (format and docs read low only because `--no-browser` skips their browser checks; run the held-out set with the browser from now on).
+
+Hands-on findings for U: the Check dock checks Light while the canvas shows Dark; section tabs overflow at about 650 px; the warnings box fills a third of a phone screen.
+
 Round 2 started at once on the bench's weakest phases: V on lint, T on scan, B on a held-out set outside the repo (`/mnt/games/Development/ds-holdout/`, never shown to T or V).
 
 Baseline (0.27.0-beta.1, before round 1): no token model, no compile, no lint, no System view, no docs page. Scan read 16 files of this repo and returned one flat list of 60 variables in walk order. Every rubric line is at 0 to 2.
