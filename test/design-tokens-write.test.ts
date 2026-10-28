@@ -124,6 +124,8 @@ test("no folder: undefined; a write makes the folder, the files, and dist", () =
         "dist/components.css",
         "dist/tailwind.css",
         "dist/tokens.css",
+        "dist/tokens.dark.resolved.json",
+        "dist/tokens.light.resolved.json",
         "dist/tokens.resolved.json",
         "guidelines.md",
         "tokens.dark.json",
@@ -137,6 +139,11 @@ test("no folder: undefined; a write makes the folder, the files, and dist", () =
     assert.equal(read(dir, "dist", "tokens.css"), system.compiled.css);
     assert.equal(read(dir, "dist", "tailwind.css"), system.compiled.tailwind);
     assert.equal(read(dir, "dist", "tokens.resolved.json"), system.compiled.json);
+    assert.equal(
+        read(dir, "dist", "tokens.dark.resolved.json"),
+        system.compiled.modes!.dark,
+        "a DTCG file for each mode",
+    );
     assert.equal(read(dir, "dist", "components.css"), system.compiled.components);
 });
 
@@ -184,6 +191,8 @@ test("a write leaves files with the same bytes alone, and changes only the files
                 "dist/tokens.css",
                 "dist/tailwind.css",
                 "dist/tokens.resolved.json",
+                "dist/tokens.light.resolved.json",
+                "dist/tokens.dark.resolved.json",
             ].includes(name),
             `${name} ${changed ? "was" : "was not"} rewritten`,
         );
@@ -565,7 +574,7 @@ test("tokens.css with one mode has no media query; with a dark default it follow
     assert.match(system.compiled.css, /@media \(prefers-color-scheme: light\)/);
 });
 
-test("tailwind.css: a v4 theme with namespaces, aliases for our names, mode blocks, and the dark variant", () => {
+test("tailwind.css: a v4 theme with one variable for each token, mode blocks, and the dark variant", () => {
     const { compiled } = writeDesignSystem(project(), {
         tokens: tokens(),
         modes: { dark: dark() },
@@ -573,9 +582,16 @@ test("tailwind.css: a v4 theme with namespaces, aliases for our names, mode bloc
     const css = compiled.tailwind;
 
     assert.match(css, /@import "tailwindcss";/);
+    assert.match(css, /@custom-variant dark \{/);
     assert.match(
         css,
-        /@custom-variant dark \(&:where\(\[data-theme="dark"\], \[data-theme="dark"\] \*\)\);/,
+        /&:where\(\[data-theme="dark"\], \[data-theme="dark"\] \*\) \{\n {8}@slot;/,
+        "[data-theme] when it is set",
+    );
+    assert.match(
+        css,
+        /@media \(prefers-color-scheme: dark\) \{\n {8}&:where\(:not\(\[data-theme\]\):not\(\[data-theme\] \*\)\) \{\n {12}@slot;/,
+        "the system's dark setting when no data-theme is",
     );
     assert.match(css, /@theme static \{/);
     assert.match(
@@ -583,10 +599,11 @@ test("tailwind.css: a v4 theme with namespaces, aliases for our names, mode bloc
         /--color-bg-page: var\(--color-gray-50\);/,
         "color tokens are already in the namespace",
     );
-    assert.match(
-        css,
-        /--spacing-4: 16px;\n {4}--space-4: var\(--spacing-4\);/,
-        "space.4 becomes --spacing-4 and keeps --space-4",
+    assert.match(css, /--spacing-4: 16px;/);
+    assert.doesNotMatch(
+        css.slice(css.indexOf("@theme")),
+        /--space-4\b/,
+        "space.4 is --spacing-4 and nothing else",
     );
     assert.match(css, /--radius-md: 8px;/);
     assert.match(css, /--font-sans: Geist/);
@@ -594,19 +611,34 @@ test("tailwind.css: a v4 theme with namespaces, aliases for our names, mode bloc
     assert.match(css, /--shadow-md: /);
     assert.match(css, /--ease-out: cubic-bezier/);
     assert.match(css, /--leading-tight: 1\.25;/);
+    assert.match(css, /--font-weight-regular: 400;/);
+    assert.doesNotMatch(css.slice(css.indexOf("@theme")), /--weight-regular\b/);
     assert.match(
         css,
-        /--font-weight-regular: 400;\n {4}--weight-regular: var\(--font-weight-regular\);/,
+        /--text-body: var\(--text-base\);/,
+        "a type style is the size, and a reference follows renames",
     );
-    assert.match(css, /--text-body: var\(--type-body-font-size\);/);
-    assert.match(css, /--text-body--line-height: var\(--type-body-line-height\);/);
+    assert.match(css, /--text-body--line-height: var\(--leading-tight\);/);
+    assert.doesNotMatch(
+        css.slice(css.indexOf("@theme")),
+        /--type-body/,
+        "the type style has no second name",
+    );
     assert.match(css, /\[data-theme="dark"\] \{[\s\S]*--color-text-primary: #f1f2f8;/);
     assert.match(css, /@media \(prefers-color-scheme: dark\)/);
-    // The @theme block holds only custom properties.
+
+    // No variable is declared twice in the base block, and no variable points at itself or at a missing one.
     const theme = css.slice(
         css.indexOf("@theme static {"),
         css.indexOf("\n}\n", css.indexOf("@theme static {")),
     );
+    const declared = [...theme.matchAll(/^ {4}(--[\w-]+):/gm)].map((match) => match[1]!);
+
+    assert.equal(new Set(declared).size, declared.length, "one declaration for each variable");
+
+    for (const match of theme.matchAll(/var\((--[\w-]+)\)/g)) {
+        assert.ok(declared.includes(match[1]!), `${match[1]} is declared`);
+    }
 
     assert.ok(
         theme.split("\n").every((line) => line === "" || /^( {4}(--|\/\*)|@theme)/.test(line)),
@@ -614,7 +646,7 @@ test("tailwind.css: a v4 theme with namespaces, aliases for our names, mode bloc
     );
 });
 
-test("tailwind.css: an explicit name wins, and two tokens never share a Tailwind name", () => {
+test("tailwind.css: an explicit name wins, and two tokens never share a variable", () => {
     const { compiled } = writeDesignSystem(project(), {
         tokens: {
             color: {
@@ -623,23 +655,98 @@ test("tailwind.css: an explicit name wins, and two tokens never share a Tailwind
                     $value: "#37f",
                     $extensions: { "com.pi-pocket": { tailwind: "--color-primary" } },
                 },
+                accent: { $value: "{color.brand}" },
             },
             space: { $type: "dimension", 1: { $value: "4px" } },
             spacing: { $type: "dimension", 1: { $value: "5px" } },
         },
     });
 
-    assert.match(
+    assert.match(compiled.tailwind, /--color-primary: #37f;/);
+    assert.doesNotMatch(
         compiled.tailwind,
-        /--color-primary: #37f;\n {4}--color-brand: var\(--color-primary\);/,
+        /--color-brand\b/,
+        "the token has its Tailwind name only",
     );
+    assert.match(compiled.tailwind, /--color-accent: var\(--color-primary\);/, "references follow");
     // `space.1` would be --spacing-1, but `spacing.1` already is that variable: space.1 keeps its own name.
     assert.match(compiled.tailwind, /--space-1: 4px;/);
     assert.match(compiled.tailwind, /--spacing-1: 5px;/);
     assert.equal((compiled.tailwind.match(/--spacing-1:/g) ?? []).length, 1);
 });
 
-test("tokens.resolved.json: every token, every mode", () => {
+test("tailwind.css: tailwindReset clears Tailwind's defaults, and a real Tailwind keeps none of its palette", () => {
+    const tree = (reset: unknown) => ({
+        $extensions: {
+            "com.pi-pocket": {
+                name: "Reset",
+                ...(reset === undefined ? {} : { tailwindReset: reset }),
+            },
+        },
+        color: { $type: "color", brand: { $value: "#37f" } },
+    });
+
+    assert.doesNotMatch(
+        writeDesignSystem(project(), { tokens: tree(undefined) }).compiled.tailwind,
+        /initial;/,
+        "opt in only",
+    );
+    assert.match(
+        writeDesignSystem(project(), { tokens: tree(["color"]) }).compiled.tailwind,
+        /@theme static \{\n {4}--color-\*: initial;\n/,
+    );
+    assert.match(
+        writeDesignSystem(project(), { tokens: tree(true) }).compiled.tailwind,
+        /--color-\*: initial;/,
+        "true is color",
+    );
+    assert.match(
+        writeDesignSystem(project(), { tokens: tree(["spacing", "nothing", "all"]) }).compiled
+            .tailwind,
+        /--spacing-\*: initial;\n {4}--\*: initial;/,
+        "only the namespaces Tailwind has",
+    );
+    assert.deepEqual(
+        writeDesignSystem(project(), { tokens: tree(["color", "color"]) }).tailwindReset,
+        ["color"],
+    );
+});
+
+test("tokens.css: a primitive that is a reference to a primitive holds the value, a role keeps its var()", () => {
+    const { compiled } = writeDesignSystem(project(), {
+        tokens: {
+            dim: { $type: "dimension", 16: { $value: "16px" }, 24: { $value: "24px" } },
+            space: {
+                $type: "dimension",
+                4: { $value: "{dim.16}" },
+                6: { $value: "{dim.24}" },
+                card: { $value: "{dim.16}" },
+            },
+            color: {
+                $type: "color",
+                gray: { 900: { $value: "#1a1b26" } },
+                text: { primary: { $value: "{color.gray.900}" } },
+            },
+        },
+    });
+
+    assert.match(compiled.css, /--dim-16: 16px;/);
+    assert.match(compiled.css, /--space-4: 16px;/, "a step of a scale is a raw value");
+    assert.match(compiled.css, /--space-6: 24px;/);
+    assert.doesNotMatch(
+        compiled.css,
+        /--space-[46]: var\(/,
+        "DevTools shows 16px, not var(--dim-16)",
+    );
+    assert.match(
+        compiled.css,
+        /--space-card: var\(--dim-16\);/,
+        "a role the person wrote as a reference",
+    );
+    assert.match(compiled.css, /--color-text-primary: var\(--color-gray-900\);/);
+});
+
+test("tokens.resolved.json is compact, and tokens.<mode>.resolved.json is DTCG with one $value for each token", () => {
     const { compiled } = writeDesignSystem(project(), {
         tokens: tokens(),
         modes: { dark: dark() },
@@ -656,13 +763,49 @@ test("tokens.resolved.json: every token, every mode", () => {
     assert.equal(entry.type, "color");
     assert.equal(entry.tier, "semantic");
     assert.equal(entry.cssVar, "--color-text-primary");
-    assert.equal(entry.values.light.hex, "#1a1b26");
-    assert.equal(entry.values.dark.hex, "#f1f2f8");
-    assert.equal(entry.values.dark.alias, undefined);
-    assert.equal(entry.values.light.alias, "color.gray.900");
-    assert.ok(entry.values.dark.contrast.ratio > 10);
+    assert.deepEqual(
+        entry.values,
+        { light: "#1a1b26", dark: "#f1f2f8" },
+        "a value for each mode that differs",
+    );
+    assert.deepEqual(
+        entry.alias,
+        { light: "color.gray.900", dark: undefined }.dark === undefined ? entry.alias : {},
+    );
     assert.deepEqual(entry.contrast, { on: "color.bg.page", min: 4.5 });
+    assert.equal(json.tokens["space.4"].value, "16px", "one value when every mode has it");
+    assert.equal(json.tokens["space.4"].values, undefined);
     assert.ok(compiled.json.endsWith("}\n"));
+    assert.ok(
+        compiled.json.length < 8000,
+        `${compiled.json.length} bytes: no value, css, literal, and hex for each mode`,
+    );
+
+    // The DTCG file of a mode.
+    assert.deepEqual(Object.keys(compiled.modes!), ["light", "dark"]);
+
+    const dtcg = JSON.parse(compiled.modes!.dark!);
+
+    assert.equal(dtcg.color.text.primary.$type, "color");
+    assert.equal(dtcg.color.text.primary.$value, "#f1f2f8", "references are followed");
+    assert.equal(dtcg.color.bg.page.$description, "The page");
+    assert.equal(dtcg.space["4"].$value, "16px");
+    assert.deepEqual(dtcg.shadow.md.$value, [
+        { color: "#0004", offsetX: "0", offsetY: "4px", blur: "8px" },
+    ]);
+    assert.equal(JSON.parse(compiled.modes!.light!).color.text.primary.$value, "#1a1b26");
+
+    // Every leaf is a token with $type and $value; nothing else is a token.
+    const leaves = (node: Record<string, unknown>, path: string[] = []): string[] =>
+        Object.entries(node).flatMap(([key, child]) =>
+            key.startsWith("$")
+                ? []
+                : typeof child === "object" && child !== null && "$value" in child
+                  ? [[...path, key].join(".")]
+                  : leaves(child as Record<string, unknown>, [...path, key]),
+        );
+
+    assert.equal(leaves(dtcg).length, Object.keys(json.tokens).length, "one $value for each token");
 });
 
 test("components.css: each specimen's CSS, and a note when there are none", () => {

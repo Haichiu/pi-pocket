@@ -38,8 +38,17 @@ export interface ModeValue {
     /** The referenced token's name when the raw value in this mode is a reference (`color.blue.500`). */
     alias?: string;
     /** The result of the token's contrast pair in this mode (only on a token that declares one). */
-    contrast?: { on: string; ratio: number; min: number; pass: boolean };
+    contrast?: {
+        on: string;
+        ratio: number;
+        min: number;
+        pass: boolean;
+        exempt?: ContrastExemption;
+    };
 }
+
+/** Why a text pair is left out of the contrast check (WCAG exempts disabled controls and decoration). */
+export type ContrastExemption = "disabled" | "decorative";
 
 /** One token, resolved. */
 export interface ResolvedToken {
@@ -57,7 +66,9 @@ export interface ResolvedToken {
     /** The value in each mode, by mode name. Every mode of the system is present. */
     modes: Record<string, ModeValue>;
     /** The contrast this text color must reach against another token, in every mode. The first pair when it declares several. */
-    contrast?: { on: string; min: number };
+    contrast?: { on: string; min: number; exempt?: ContrastExemption };
+    /** Every contrast pair the token declares, in order (`contrast` is the first). */
+    contrasts?: { on: string; min: number; exempt?: ContrastExemption }[];
     /** The Tailwind variable that `$extensions["com.pi-pocket"].tailwind` names for this token (`--color-brand`). */
     tailwind?: string;
 }
@@ -81,12 +92,15 @@ export interface ComponentSpec {
 
 /** A problem that the validator found. An error stops a write; a warning does not. */
 export interface SystemProblem {
-    level: "error" | "warning";
+    /** An error stops a write, a warning does not, and an `info` (in `DesignSystem.notes` only) needs no action. */
+    level: "error" | "warning" | "info";
     /** The file it is in, relative to `.pi/design/` (`tokens.dark.json`, `components/button.html`). */
     file?: string;
     /** The token it is about. */
     token?: string;
     message: string;
+    /** What to do about it, as one sentence, when there is a clear step (`rename space.16 to a role`). */
+    fix?: string;
 }
 
 /** The generated files in `.pi/design/dist/`. */
@@ -99,6 +113,11 @@ export interface CompiledFiles {
     json: string;
     /** `components.css`: the CSS of every component. */
     components: string;
+    /**
+     * `tokens.<mode>.resolved.json`, by mode name: DTCG files with every reference followed, one `$value` for each
+     * token, for tools that read DTCG (Style Dictionary, Tokens Studio).
+     */
+    modes?: Record<string, string>;
 }
 
 /** A project's design system, loaded and checked. */
@@ -111,10 +130,16 @@ export interface DesignSystem {
     /** Whether each mode is light or dark (its `colorScheme`, else its name), for `color-scheme` and the media query. */
     schemes: Record<string, "light" | "dark">;
     tokens: ResolvedToken[];
+    /** The tokens each mode file sets itself (the rest are inherited from the default mode), by mode name. */
+    overrides?: Record<string, string[]>;
+    /** The Tailwind namespaces whose defaults `tailwind.css` clears (`--color-*: initial;`), from `tailwindReset`. */
+    tailwindReset?: string[];
     components: ComponentSpec[];
     /** `guidelines.md`, bounded. Untrusted project text. */
     guidelines: string;
     problems: SystemProblem[];
+    /** Notes that need no action (`level: "info"`): a contrast pair that is exempt. Not counted as problems. */
+    notes?: SystemProblem[];
     compiled: CompiledFiles;
 }
 

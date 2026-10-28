@@ -10,6 +10,7 @@
 import { contrastRatio, parseColor, toHex } from "./color.ts";
 import { parseComponent } from "./components.ts";
 import type {
+    ContrastExemption,
     DesignSystem,
     ModeValue,
     ResolvedToken,
@@ -51,7 +52,13 @@ class Report {
     private keys = new Set<string>();
     private dropped = 0;
 
-    add(level: "error" | "warning", message: string, file?: string, token?: string): void {
+    add(
+        level: SystemProblem["level"],
+        message: string,
+        file?: string,
+        token?: string,
+        fix?: string,
+    ): void {
         const key = `${level}|${file ?? ""}|${token ?? ""}|${message}`;
 
         if (this.keys.has(key)) {
@@ -76,6 +83,10 @@ class Report {
             problem.token = token;
         }
 
+        if (fix !== undefined) {
+            problem.fix = fix;
+        }
+
         this.list.push(problem);
     }
 
@@ -83,8 +94,22 @@ class Report {
         this.add("error", message, file, token);
     }
 
-    warn(message: string, file?: string, token?: string): void {
-        this.add("warning", message, file, token);
+    warn(message: string, file?: string, token?: string, fix?: string): void {
+        this.add("warning", message, file, token, fix);
+    }
+
+    /** A note that needs no action. It is kept apart from the problems, so nothing that counts problems counts it. */
+    notes: SystemProblem[] = [];
+
+    info(message: string, file?: string, token?: string): void {
+        if (this.notes.length < 100) {
+            this.notes.push({
+                level: "info",
+                message,
+                ...(file === undefined ? {} : { file }),
+                ...(token === undefined ? {} : { token }),
+            });
+        }
     }
 
     /** The problems, errors first, with a note when some were left out. */
@@ -396,7 +421,7 @@ export function buildSystem(raw: RawSystem): DesignSystem {
     const report = new Report();
 
     for (const problem of raw.problems) {
-        report.add(problem.level, problem.message, problem.file, problem.token);
+        report.add(problem.level, problem.message, problem.file, problem.token, problem.fix);
     }
 
     const root = isObject(raw.tokens) ? raw.tokens : undefined;
@@ -831,6 +856,58 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         tokens.push(token);
     }
 
+    // A token named for its own value (`space.16` = 16px, `duration.140` = 140ms) is renamed whenever the value changes.
+    const named = new Map<string, string[]>();
+
+    for (const token of tokens) {
+        const step = /^\d+(?:\.\d+)?$/.exec(token.path.at(-1)!);
+        const literal = token.modes[modes[0]!]?.literal ?? "";
+        const amount = (type: string) =>
+            type === "dimension"
+                ? /^(\d*\.?\d+)(px|rem)?$/.exec(literal)
+                : /^(\d*\.?\d+)(ms|s)$/.exec(literal);
+        const found =
+            step === null || (token.type !== "dimension" && token.type !== "duration")
+                ? null
+                : amount(token.type);
+
+        if (found !== null && step !== null && found[1] !== "0") {
+            const number = Number(found[1]);
+            const value =
+                token.type === "dimension"
+                    ? found[2] === "rem"
+                        ? number * 16
+                        : found[2] === "px"
+                          ? number
+                          : undefined
+                    : found[2] === "s"
+                      ? number * 1000
+                      : number;
+
+            if (value !== undefined && value === Number(step[0])) {
+                const group = token.path.slice(0, -1).join(".");
+
+                named.set(group, [...(named.get(group) ?? []), token.name]);
+            }
+        }
+    }
+
+    for (const [group, names] of named) {
+        const first = names[0]!;
+
+        report.warn(
+            `${names.length === 1 ? `"${first}" is` : `${names.length} tokens in "${group}" are`} named for ${names.length === 1 ? "its" : "their"} own value (${names
+                .slice(0, 4)
+                .map((each) => each.split(".").at(-1))
+                .join(
+                    ", ",
+                )}${names.length > 4 ? ", …" : ""}): the name has to change when the value does.`,
+            "tokens.json",
+            first,
+            `Rename ${names.length === 1 ? `"${first}"` : "each"} to a role (for example "${group}.card"), or to a step of a scale ("${group}.4", "${group}.5"), and point the tokens that use ${names.length === 1 ? "it" : "them"} at the new name.`,
+        );
+    }
+
     // Semantic colors should name a primitive, so that a mode can change the palette in one place.
     if (tokens.some((token) => token.type === "color" && token.tier === "primitive")) {
         const raws = tokens.filter(
@@ -860,6 +937,8 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         const spec = defs.get(token.name)!.base.ext.contrast;
         const pairs = (Array.isArray(spec) ? spec : spec === undefined ? [] : [spec]).slice(0, 4);
         const failing: string[] = [];
+        const exempted: string[] = [];
+        let exemptWord = "";
 
         for (const [at, pair] of pairs.entries()) {
             const target =
@@ -868,6 +947,20 @@ export function buildSystem(raw: RawSystem): DesignSystem {
                     : undefined;
             const on = target === undefined ? undefined : byName.get(target);
             const min = isObject(pair) && typeof pair.min === "number" ? pair.min : 4.5;
+            const exempt: ContrastExemption | undefined =
+                isObject(pair) && (pair.exempt === "disabled" || pair.exempt === "decorative")
+                    ? pair.exempt
+                    : undefined;
+
+            if (isObject(pair) && pair.exempt !== undefined && exempt === undefined) {
+                report.error(
+                    `The contrast pair of "${token.name}" has exempt ${JSON.stringify(pair.exempt)}; it must be "disabled" or "decorative".`,
+                    "tokens.json",
+                    token.name,
+                );
+
+                break;
+            }
 
             // The color it sits on failed: that error says why, and this one would only repeat it.
             if (on === undefined && target !== undefined && defs.has(target)) {
@@ -891,9 +984,13 @@ export function buildSystem(raw: RawSystem): DesignSystem {
                 break;
             }
 
+            const entry = { on: on.name, min, ...(exempt === undefined ? {} : { exempt }) };
+
             if (at === 0) {
-                token.contrast = { on: on.name, min };
+                token.contrast = entry;
             }
+
+            (token.contrasts ??= []).push(entry);
 
             for (const mode of modes) {
                 const front = parseColor(token.modes[mode]!.literal ?? "");
@@ -918,13 +1015,15 @@ export function buildSystem(raw: RawSystem): DesignSystem {
                         ratio: Math.floor(ratio * 100) / 100,
                         min,
                         pass,
+                        ...(exempt === undefined ? {} : { exempt }),
                     };
                 }
 
                 if (!pass) {
-                    failing.push(
+                    (exempt === undefined ? failing : exempted).push(
                         `${mode} ${(Math.floor(ratio * 100) / 100).toFixed(2)}:1 on ${on.name} (needs ${min})`,
                     );
+                    exemptWord = exempt ?? exemptWord;
                 }
             }
         }
@@ -932,6 +1031,15 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         if (failing.length > 0) {
             report.warn(
                 `Contrast of "${token.name}" is too low: ${failing.join("; ")}. Make the two colors further apart in lightness.`,
+                "tokens.json",
+                token.name,
+                `Raise the contrast, or declare the pair exempt if it is a disabled or decorative color: "contrast": { "on": …, "min": …, "exempt": "disabled" }.`,
+            );
+        }
+
+        if (exempted.length > 0) {
+            report.info(
+                `Contrast of "${token.name}" is below its minimum (${exempted.join("; ")}), and the pair is exempt (${exemptWord}).`,
                 "tokens.json",
                 token.name,
             );
@@ -965,11 +1073,51 @@ export function buildSystem(raw: RawSystem): DesignSystem {
     }
 
     const guidelines = raw.guidelines;
+    // The tokens each other mode's file sets itself (the rest are inherited from the default mode).
+    const overrides: Record<string, string[]> = {};
+
+    for (const mode of modes.slice(1)) {
+        overrides[mode] = tokens
+            .filter((token) => defs.get(token.name)?.over.has(mode) === true)
+            .map((token) => token.name);
+    }
+
+    // `"tailwindReset": ["color"]` (or `true`, which is color) clears Tailwind's defaults of those namespaces.
+    const resetOf = rootExt.tailwindReset;
+    const tailwindReset = [
+        ...new Set(
+            (resetOf === true
+                ? ["color"]
+                : Array.isArray(resetOf)
+                  ? resetOf
+                  : typeof resetOf === "string"
+                    ? [resetOf]
+                    : []
+            ).filter(
+                (each): each is string =>
+                    typeof each === "string" &&
+                    [
+                        "color",
+                        "font",
+                        "text",
+                        "font-weight",
+                        "spacing",
+                        "radius",
+                        "shadow",
+                        "ease",
+                        "breakpoint",
+                        "all",
+                    ].includes(each),
+            ),
+        ),
+    ];
     const system: Omit<DesignSystem, "compiled" | "problems"> = {
         name,
         modes,
         schemes,
         tokens,
+        overrides,
+        ...(tailwindReset.length === 0 ? {} : { tailwindReset }),
         components,
         guidelines,
     };
@@ -980,5 +1128,10 @@ export function buildSystem(raw: RawSystem): DesignSystem {
 
     const compiled = compileDesignSystem(system);
 
-    return { ...system, problems: report.done(), compiled };
+    return {
+        ...system,
+        problems: report.done(),
+        ...(report.notes.length === 0 ? {} : { notes: report.notes }),
+        compiled,
+    };
 }

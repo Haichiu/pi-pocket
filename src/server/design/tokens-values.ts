@@ -507,8 +507,10 @@ function shadow(raw: unknown, ctx: Ctx): Out | undefined {
     const css: string[] = [];
     const literal: string[] = [];
     const value: unknown[] = [];
+    // The members of each layer as CSS, so that an editor can show and change one (`color`, `offset-x`, …).
+    const members: Record<string, string> = {};
 
-    for (const layer of layers) {
+    for (const [index, layer] of layers.entries()) {
         if (!isObject(layer)) {
             return ctx.error(
                 'A shadow layer is { "color", "offsetX", "offsetY", "blur", "spread" }, or a CSS string such as "0 1px 2px rgb(0 0 0 / 0.2)".',
@@ -535,6 +537,21 @@ function shadow(raw: unknown, ctx: Ctx): Out | undefined {
 
         const used = parts.filter((part): part is Out => part !== undefined);
         const inset = layer.inset === true ? "inset " : "";
+        const key = (name: string) => (layers.length === 1 ? name : `layer-${index + 1}-${name}`);
+
+        members[key("offset-x")] = parts[0]!.css;
+        members[key("offset-y")] = parts[1]!.css;
+        members[key("blur")] = parts[2]!.css;
+
+        if (parts[3] !== undefined) {
+            members[key("spread")] = parts[3].css;
+        }
+
+        members[key("color")] = parts[4]!.css;
+
+        if (layer.inset === true) {
+            members[key("inset")] = "inset";
+        }
 
         css.push(inset + used.map((part) => part.css).join(" "));
         literal.push(inset + used.map((part) => part.literal).join(" "));
@@ -552,6 +569,7 @@ function shadow(raw: unknown, ctx: Ctx): Out | undefined {
         css: css.join(", "),
         literal: literal.join(", "),
         value: Array.isArray(raw) ? value : value[0],
+        parts: members,
     };
 }
 

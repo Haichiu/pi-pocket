@@ -203,6 +203,10 @@ export function merge(into: ColorFact | undefined, more: ColorFact, hex: string)
         fact.forms.set(form, (fact.forms.get(form) ?? 0) + count);
     }
 
+    if (fact.at === undefined && more.at !== undefined) {
+        fact.at = more.at;
+    }
+
     return fact;
 }
 

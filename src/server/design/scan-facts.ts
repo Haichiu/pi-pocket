@@ -58,6 +58,8 @@ export interface VarFact {
     order: number;
     /** The file's rank by priority (0 is read first). The lowest rank wins; in one file the later declaration wins. */
     rank: number;
+    /** The line of the file where the variable is set, when known. */
+    line?: number;
 }
 
 /** How a color is used. */
@@ -80,6 +82,8 @@ export interface ColorFact {
     surface: number;
     /** When it was first seen: the earlier of two equal colors is the one the author wrote first. */
     order: number;
+    /** Where it was first seen, as `file:line`. */
+    at?: string;
 }
 
 /** How a color is used, by kind of property (the counts of a `ColorFact`). */
@@ -125,6 +129,8 @@ export interface Facts {
     tailwind: boolean;
     /** The project has a WordPress `theme.json`: its variables are named `--wp--preset--…`. */
     wordpress?: boolean;
+    /** The file being read, relative to the scanned folder. */
+    file?: string;
     /** The mode that the file being read is named for (`dark.less`), when it is one. */
     fileMode?: Scope;
     /** Declarations that compute a size from custom properties (`calc(var(--gap) * 2)`): the scan resolves them later. */
@@ -244,7 +250,12 @@ const HEADING =
 const BODY = /(?:^|[\s,>+~])(?:body|html|p|:root|\.text|\.body|main)(?![\w-])/i;
 const CODE = /(?:^|[\s,>+~])(?:code|pre|kbd|samp|\.mono|\.code)(?![\w-])/i;
 
-export function colorFact(map: Map<string, ColorFact>, hex: string, text: string): ColorFact {
+export function colorFact(
+    map: Map<string, ColorFact>,
+    hex: string,
+    text: string,
+    at?: string,
+): ColorFact {
     let fact = map.get(hex);
 
     if (fact === undefined) {
@@ -261,6 +272,7 @@ export function colorFact(map: Map<string, ColorFact>, hex: string, text: string
             body: 0,
             surface: 0,
             order: map.size,
+            ...(at === undefined ? {} : { at }),
         };
         map.set(hex, fact);
     }
@@ -301,7 +313,16 @@ function useColors(facts: Facts, decl: Decl, dark: boolean): void {
     };
 
     for (const color of found) {
-        count(colorFact(map, color.hex, color.text));
+        count(
+            colorFact(
+                map,
+                color.hex,
+                color.text,
+                facts.file === undefined || decl.line === undefined
+                    ? undefined
+                    : `${facts.file}:${decl.line}`,
+            ),
+        );
     }
 
     // A rule with one class (`.text-gray-900 { color: #111827 }`, `.dark .text-gray-900 { color: #f9fafb }`) is that
@@ -835,6 +856,13 @@ function typographyVars(facts: Facts, file: string, scope: Scope, block: Literal
     }
 }
 
+/** The line of the first `needle` at or after `from`, when the text has one. */
+function lineFrom(text: string, needle: string, from: number): number | undefined {
+    const at = needle === "" ? -1 : text.indexOf(needle, from);
+
+    return at === -1 ? undefined : 1 + (text.slice(0, at).match(/\n/g)?.length ?? 0);
+}
+
 /** The index after the brace that closes the one at `open`, skipping strings; undefined when it does not close in reach. */
 function braceEnd(text: string, open: number): number | undefined {
     let depth = 0;
@@ -1098,6 +1126,8 @@ function themeVars(facts: Facts, file: string, text: string): void {
 
                 leaf.value = value;
 
+                const line = lineFrom(text, leaf.value, match.index);
+
                 addVar(facts, {
                     name: leaf.path.join("-") || key,
                     value: leaf.value.slice(0, 400),
@@ -1105,6 +1135,7 @@ function themeVars(facts: Facts, file: string, text: string): void {
                     kind: "js",
                     file,
                     hint: category,
+                    ...(line === undefined ? {} : { line }),
                 });
             }
         };
@@ -1766,7 +1797,14 @@ function sassMap(text: string, depth = 0): MapEntry[] | undefined {
  * of modes (`$themes: (light: (bg: #fff), dark: (bg: #000))`) holds the variables of each mode; a map of names that
  * each hold modes (`primary: (light: #fff, dark: #000)`) holds one variable with two values.
  */
-function sassMapVars(facts: Facts, file: string, name: string, text: string, scope: Scope): void {
+function sassMapVars(
+    facts: Facts,
+    file: string,
+    name: string,
+    text: string,
+    scope: Scope,
+    line?: number,
+): void {
     const entries = sassMap(text);
 
     if (entries === undefined) {
@@ -1782,6 +1820,7 @@ function sassMapVars(facts: Facts, file: string, name: string, text: string, sco
             scope: at,
             kind: "scss",
             file,
+            ...(line === undefined ? {} : { line }),
         });
     const modes = entries.filter(
         (entry) => entry.map !== undefined && modeKey(entry.key) !== undefined,
@@ -1855,6 +1894,7 @@ function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
                 scope: decl.scope,
                 kind: decl.theme ? "theme" : "css",
                 file,
+                ...(decl.line === undefined ? {} : { line: decl.line }),
             });
 
             continue;
@@ -1865,7 +1905,7 @@ function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
         const mapText = merged === null ? decl.value : merged[1]!;
 
         if (decl.prop.startsWith("$") && /^\(.*\)$/s.test(mapText)) {
-            sassMapVars(facts, file, decl.prop.slice(1), mapText, decl.scope);
+            sassMapVars(facts, file, decl.prop.slice(1), mapText, decl.scope, decl.line);
 
             continue;
         }
@@ -1877,6 +1917,7 @@ function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
                 scope: decl.scope,
                 kind: decl.prop.startsWith("$") ? "scss" : "less",
                 file,
+                ...(decl.line === undefined ? {} : { line: decl.line }),
             });
 
             continue;
@@ -1902,6 +1943,13 @@ function breakpointsIn(facts: Facts, query: string): void {
     }
 }
 
+/** The line of the file where a block of it starts, or undefined when the block is not a part of the file as it is. */
+function lineOfBlock(raw: string, block: string): number | undefined {
+    const at = raw.indexOf(block);
+
+    return at === -1 ? undefined : 1 + (raw.slice(0, at).match(/\n/g)?.length ?? 0);
+}
+
 /** Reads one file's text into the facts. `extension` is the lower-case ending with its dot. */
 export function ingestFile(facts: Facts, rel: string, extension: string, raw: string): void {
     const text = stripComments(raw);
@@ -1911,6 +1959,7 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
     const mode = named ?? (parts.length > 1 ? modeOf(parts.at(-2)!) : undefined);
 
     facts.fileMode = mode === "dark" || mode === "light" ? mode : undefined;
+    facts.file = rel;
 
     // WordPress names its variables `--wp--preset--color--primary`; the scan reads them as `--color-primary`.
     if (facts.wordpress) {
@@ -1958,7 +2007,7 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
         const { blocks, inline } = pageStyles(raw);
 
         for (const block of blocks) {
-            ingestStyles(facts, rel, parseStyles(block));
+            ingestStyles(facts, rel, parseStyles(block, lineOfBlock(raw, block)));
         }
 
         ingestStyles(facts, rel, inline);
@@ -1972,7 +2021,7 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
         const blocks = templateStyles(raw);
 
         for (const block of blocks) {
-            ingestStyles(facts, rel, parseStyles(block));
+            ingestStyles(facts, rel, parseStyles(block, lineOfBlock(raw, block)));
         }
 
         if (THEMEISH.test(rel) || THEME_CONTENT.test(raw)) {

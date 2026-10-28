@@ -12,7 +12,7 @@ import type { CompiledFiles, DesignSystem, ResolvedToken, TokenTier } from "./sy
 
 export type CompileInput = Pick<
     DesignSystem,
-    "name" | "description" | "modes" | "schemes" | "tokens" | "components"
+    "name" | "description" | "modes" | "schemes" | "tokens" | "components" | "tailwindReset"
 >;
 
 type Decl = [property: string, value: string];
@@ -29,13 +29,59 @@ const TIERS: { tier: TokenTier; title: string }[] = [
     { tier: "component", title: "Component tokens" },
 ];
 
+/**
+ * A primitive (or a step of a scale, `space.4`) is a raw value, so the stylesheet holds the value (`--space-4: 16px`),
+ * also when a person wrote it as a reference to another primitive (`{dim.16}`): DevTools then shows `16px`, not
+ * `var(--dim-16)`. A role or a component token that refers to a token keeps its `var()`: the reference is what a
+ * person wrote, and what a mode changes.
+ */
+function literalPrimitives(system: CompileInput): CompileInput {
+    const byName = new Map(system.tokens.map((token) => [token.name, token]));
+    const composite = new Set(["typography", "shadow", "border", "transition", "gradient"]);
+    const tokens = system.tokens.map((token) => {
+        // A primitive, or a step of a scale (`space.4`, `neutral.500`): both are raw values, whatever the file calls them.
+        const raw =
+            token.tier === "primitive" ||
+            (token.tier !== "component" && /^\d/.test(token.path.at(-1)!));
+
+        if (!raw || composite.has(token.type)) {
+            return token;
+        }
+
+        let changed = false;
+        const modes: ResolvedToken["modes"] = {};
+
+        for (const [mode, value] of Object.entries(token.modes)) {
+            const target = value.alias === undefined ? undefined : byName.get(value.alias);
+
+            if (
+                target?.tier === "primitive" &&
+                value.literal !== undefined &&
+                value.literal !== value.css
+            ) {
+                modes[mode] = { ...value, css: value.literal };
+                changed = true;
+            } else {
+                modes[mode] = value;
+            }
+        }
+
+        return changed ? { ...token, modes } : token;
+    });
+
+    return { ...system, tokens };
+}
+
 /** The declarations of a token in a mode: its variable, and the variables of a typography token's members. */
 function declarations(token: ResolvedToken, mode: string): Decl[] {
     const value = token.modes[mode]!;
     const decls: Decl[] = [[token.cssVar, value.css]];
 
-    for (const [property, css] of Object.entries(value.parts ?? {})) {
-        decls.push([`${token.cssVar}-${property}`, css]);
+    // Only a type style is used by its members (`font-size: var(--type-body-font-size)`); a shadow's are for editors.
+    if (token.type === "typography") {
+        for (const [property, css] of Object.entries(value.parts ?? {})) {
+            decls.push([`${token.cssVar}-${property}`, css]);
+        }
     }
 
     return decls;
@@ -366,68 +412,112 @@ export function scaleOf(token: ResolvedToken): Scale | undefined {
     return prefix === undefined ? undefined : (({ spacing: "space" }[prefix] ?? prefix) as Scale);
 }
 
-/** The Tailwind file's declarations for a token in a mode: Tailwind's name carries the value, ours points at it. */
-function tailwindDecls(token: ResolvedToken, mode: string, taken: Map<string, string>): Decl[] {
-    const value = token.modes[mode]!;
-    const name = taken.get(token.name);
+/**
+ * The one variable each token has in `tailwind.css`: its Tailwind v4 namespace name (`--spacing-4`, `--text-sm`,
+ * `--color-bg-surface`) when one fits and no earlier token has it, else its own (`--button-padding-x`).
+ */
+function tailwindNames(system: CompileInput): Map<string, string> {
+    const names = new Map<string, string>();
+    const claimed = new Set<string>();
+    const wanted = system.tokens.map((token) => ({ token, name: tailwindName(token) }));
 
-    if (token.type === "typography") {
-        const decls = declarations(token, mode);
+    // A token with no namespace keeps its own name; nobody else may take it.
+    for (const { token, name } of wanted) {
+        if (name === undefined) {
+            names.set(token.name, token.cssVar);
+            claimed.add(token.cssVar);
+        }
+    }
 
-        if (name !== undefined) {
-            const parts = value.parts ?? {};
+    // A token whose own variable already is its Tailwind name keeps it.
+    for (const { token, name } of wanted) {
+        if (name !== undefined && name === token.cssVar && !claimed.has(name)) {
+            names.set(token.name, name);
+            claimed.add(name);
+        }
+    }
 
-            decls.push([name, `var(${token.cssVar}-font-size)`]);
-
-            for (const [property, suffix] of [
-                ["line-height", "line-height"],
-                ["font-weight", "font-weight"],
-                ["letter-spacing", "letter-spacing"],
-            ] as const) {
-                if (parts[property] !== undefined) {
-                    decls.push([`${name}--${suffix}`, `var(${token.cssVar}-${property})`]);
-                }
-            }
+    // The first token in file order has a namespace name; a later one with the same name keeps its own.
+    for (const { token, name } of wanted) {
+        if (name === undefined || names.has(token.name)) {
+            continue;
         }
 
-        return decls;
+        if (!claimed.has(name)) {
+            names.set(token.name, name);
+            claimed.add(name);
+        } else {
+            let own = token.cssVar;
+
+            for (let at = 2; claimed.has(own); at++) {
+                own = `${token.cssVar}-${at}`;
+            }
+
+            names.set(token.name, own);
+            claimed.add(own);
+        }
     }
 
-    if (name === undefined || name === token.cssVar) {
-        return declarations(token, mode);
-    }
-
-    return [
-        [name, value.css],
-        [token.cssVar, `var(${name})`],
-    ];
+    return names;
 }
 
 function tailwindCss(system: CompileInput): string {
-    // One Tailwind name for one token: the first token keeps it, and no name another token already has as its own.
-    const taken = new Map<string, string>();
-    const owners = new Set<string>();
-    const own = new Set(system.tokens.map((token) => token.cssVar));
+    const names = tailwindNames(system);
+    const rename = new Map(system.tokens.map((token) => [token.cssVar, names.get(token.name)!]));
+    // A reference points at the variable that the token has in this file.
+    const swap = (css: string) =>
+        css.replace(/var\((--[\w-]+)/g, (all, name: string) =>
+            rename.has(name) ? `var(${rename.get(name)}` : all,
+        );
 
-    for (const token of system.tokens) {
-        const name = tailwindName(token);
+    const decls = (token: ResolvedToken, mode: string): Decl[] => {
+        const value = token.modes[mode]!;
+        const name = names.get(token.name)!;
 
-        if (name !== undefined && !owners.has(name) && (name === token.cssVar || !own.has(name))) {
-            owners.add(name);
-            taken.set(token.name, name);
+        if (token.type !== "typography") {
+            return [[name, swap(value.css)]];
         }
-    }
+
+        const parts = value.parts ?? {};
+
+        // A type style is Tailwind's `--text-*`: the size, with `--line-height`, `--font-weight`, and `--letter-spacing`.
+        if (name.startsWith("--text-") && parts["font-size"] !== undefined) {
+            const out: Decl[] = [[name, swap(parts["font-size"])]];
+
+            for (const property of ["line-height", "font-weight", "letter-spacing"] as const) {
+                if (parts[property] !== undefined) {
+                    out.push([`${name}--${property}`, swap(parts[property])]);
+                }
+            }
+
+            return out;
+        }
+
+        return [
+            [name, swap(value.css)],
+            ...Object.entries(parts).map(([property, css]): Decl => [
+                `${name}-${property}`,
+                swap(css),
+            ]),
+        ];
+    };
 
     const base = system.modes[0]!;
-    const parts = blocks(system, (token, mode) => tailwindDecls(token, mode, taken), true);
+    const parts = blocks(system, decls, true);
     const dark = system.modes.find((mode) => system.schemes[mode] === "dark" && mode !== base);
+    const reset = (system.tailwindReset ?? []).map((namespace) =>
+        namespace === "all" ? "--*: initial;" : `--${namespace}-*: initial;`,
+    );
     const out = [
         header(system, "tailwind.css", [
             "For Tailwind CSS v4. Import it after Tailwind, in your main stylesheet:",
             '    @import "tailwindcss";',
             '    @import "./tailwind.css";',
-            "Tokens in a Tailwind namespace (--color-*, --font-*, --text-*, --spacing-*, --radius-*, --shadow-*, --ease-*) make",
-            "utilities such as bg-bg-surface or rounded-md. Every token keeps its own variable too, so var(--space-4) works.",
+            "Each token has one variable here: in a Tailwind namespace (--color-*, --font-*, --text-*, --spacing-*, --radius-*,",
+            "--shadow-*, --ease-*) when one fits, so that it makes utilities such as bg-bg-surface or rounded-md, else under its",
+            "own name. tokens.css has the tokens under their own names (--space-4); link it too for var(--space-4) and components.",
+            'To clear Tailwind\'s default palette (bg-red-500 and the rest), set "tailwindReset": ["color"] in tokens.json\'s',
+            '$extensions["com.pi-pocket"].',
         ]),
         "",
         `:root,\n[data-theme="${base}"] {`,
@@ -437,11 +527,24 @@ function tailwindCss(system: CompileInput): string {
         ...(dark === undefined
             ? []
             : [
-                  `@custom-variant dark (&:where([data-theme="${dark}"], [data-theme="${dark}"] *));`,
+                  "/* dark: matches [data-theme] when it is set, and the system's dark setting when no data-theme is. */",
+                  "@custom-variant dark {",
+                  `    &:where([data-theme="${dark}"], [data-theme="${dark}"] *) {`,
+                  "        @slot;",
+                  "    }",
+                  "",
+                  "    @media (prefers-color-scheme: dark) {",
+                  "        &:where(:not([data-theme]):not([data-theme] *)) {",
+                  "            @slot;",
+                  "        }",
+                  "    }",
+                  "}",
                   "",
               ]),
         `/* ${comment(base)} values. Other modes override them below. */`,
         "@theme static {",
+        ...reset.map((line) => `    ${line}`),
+        ...(reset.length > 0 ? [""] : []),
         ...parts.base,
         "}",
     ];
@@ -476,10 +579,42 @@ function tailwindCss(system: CompileInput): string {
 
 // --- Resolved JSON and component CSS ------------------------------------------------------------------------------------
 
-function resolvedJson(system: CompileInput): string {
-    const tokens: Record<string, unknown> = {};
+/** Puts `entries` on an object that takes any key (a token named `__proto__` is just a key here). */
+function record(entries: [string, unknown][]): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
 
-    for (const token of system.tokens) {
+    for (const [key, value] of entries) {
+        Object.defineProperty(out, key, {
+            value,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+        });
+    }
+
+    return out;
+}
+
+/** The value of `get` for each mode: one value when every mode has the same, else a map by mode. */
+function perMode<T>(
+    modes: readonly string[],
+    get: (mode: string) => T,
+): { same: T } | { by: Record<string, T> } {
+    const first = get(modes[0]!);
+    const same = modes.every((mode) => JSON.stringify(get(mode)) === JSON.stringify(first));
+
+    return same
+        ? { same: first }
+        : { by: Object.fromEntries(modes.map((mode) => [mode, get(mode)])) };
+}
+
+/**
+ * `tokens.resolved.json`: the tokens with every reference followed, in a compact form. For each token its type, tier,
+ * and variable, and its value as CSS (`value` when every mode has the same, else `values` by mode); `alias` names the
+ * token it refers to; `parts` are a type style's members. For a file that DTCG tools read, see `tokens.<mode>.resolved.json`.
+ */
+function resolvedJson(system: CompileInput): string {
+    const tokens = system.tokens.map((token): [string, unknown] => {
         const entry: Record<string, unknown> = {
             type: token.type,
             tier: token.tier,
@@ -492,14 +627,30 @@ function resolvedJson(system: CompileInput): string {
             }
         }
 
-        entry.values = token.modes;
-        Object.defineProperty(tokens, token.name, {
-            value: entry,
-            enumerable: true,
-            writable: true,
-            configurable: true,
-        });
-    }
+        const value = perMode(
+            system.modes,
+            (mode) => token.modes[mode]!.literal ?? token.modes[mode]!.css,
+        );
+        const alias = perMode(system.modes, (mode) => token.modes[mode]!.alias);
+
+        if ("same" in value) {
+            entry.value = value.same;
+        } else {
+            entry.values = value.by;
+        }
+
+        if ("same" in alias ? alias.same !== undefined : true) {
+            entry.alias = "same" in alias ? alias.same : alias.by;
+        }
+
+        if (token.type === "typography") {
+            const parts = perMode(system.modes, (mode) => token.modes[mode]!.parts);
+
+            entry.parts = "same" in parts ? parts.same : parts.by;
+        }
+
+        return [token.name, entry];
+    });
 
     return `${JSON.stringify(
         {
@@ -508,11 +659,59 @@ function resolvedJson(system: CompileInput): string {
             modes: system.modes,
             defaultMode: system.modes[0],
             schemes: system.schemes,
-            tokens,
+            tokens: record(tokens),
         },
         null,
-        2,
+        1,
     )}\n`;
+}
+
+/**
+ * `tokens.<mode>.resolved.json`: the whole system in one mode as a DTCG file (the Design Tokens Community Group format
+ * that Style Dictionary and Tokens Studio read). Groups nest by path; each token has `$type` and one `$value`, with
+ * every reference followed; `$description` and `$deprecated` stay.
+ */
+function dtcgJson(system: CompileInput, mode: string): string {
+    const root: Record<string, unknown> = {
+        $description: `${system.name}: every token in the ${mode} mode, references followed.`,
+        $extensions: { "com.pi-pocket": { mode, colorScheme: schemeOf(system, mode) } },
+    };
+
+    for (const token of system.tokens) {
+        let group = root;
+
+        for (const key of token.path.slice(0, -1)) {
+            const next = group[key];
+
+            if (typeof next === "object" && next !== null && !("$value" in next)) {
+                group = next as Record<string, unknown>;
+            } else {
+                const made: Record<string, unknown> = {};
+
+                Object.defineProperty(group, key, {
+                    value: made,
+                    enumerable: true,
+                    writable: true,
+                    configurable: true,
+                });
+                group = made;
+            }
+        }
+
+        Object.defineProperty(group, token.path.at(-1)!, {
+            value: {
+                $type: token.type,
+                $value: token.modes[mode]!.value,
+                ...(token.description === undefined ? {} : { $description: token.description }),
+                ...(token.deprecated === undefined ? {} : { $deprecated: token.deprecated }),
+            },
+            enumerable: true,
+            writable: true,
+            configurable: true,
+        });
+    }
+
+    return `${JSON.stringify(root, null, 2)}\n`;
 }
 
 function componentsCss(system: CompileInput): string {
@@ -532,12 +731,15 @@ function componentsCss(system: CompileInput): string {
     return `${head}\n\n${blocks.join("\n\n")}\n`;
 }
 
-/** Compiles a system into the four files of `.pi/design/dist/`. */
-export function compileDesignSystem(system: CompileInput): CompiledFiles {
+/** Compiles a system into the files of `.pi/design/dist/`: four, and a DTCG file for each mode. */
+export function compileDesignSystem(input: CompileInput): CompiledFiles {
+    const system = literalPrimitives(input);
+
     return {
         css: tokensCss(system),
         tailwind: tailwindCss(system),
         json: resolvedJson(system),
         components: componentsCss(system),
+        modes: Object.fromEntries(system.modes.map((mode) => [mode, dtcgJson(system, mode)])),
     };
 }
