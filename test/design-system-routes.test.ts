@@ -106,6 +106,7 @@ test("everyone who sees the session reads the system, and a person invited to on
 
     assert.equal(data.system.name, "Harbor");
     assert.deepEqual(data.system.modes, ["light", "dark"]);
+    assert.deepEqual(data.system.schemes, { light: "light", dark: "dark" });
     assert.ok(data.system.tokens.length > 50);
     assert.deepEqual(data.system.components.map((each: { slug: string }) => each.slug).sort(), [
         "badge",
@@ -149,7 +150,11 @@ test("the revision answers `unchanged`, and a project with no system says what i
 
     const linked = await newSession(app, hidden);
 
-    assert.equal((await read("owner", linked)).system, null);
+    // The engine refuses a linked folder, in words: the route says them, and the view says that it could not read it.
+    const refused = await call("owner", "system", undefined, linked);
+
+    assert.equal(refused.status, 400);
+    assert.match(refused.data.error, /symlink/);
 });
 
 test("a save changes tokens in a mode, writes the files, and answers with the system", async () => {
@@ -207,15 +212,31 @@ test("a save that the engine refuses answers in words and changes nothing", asyn
     assert.ok(Array.isArray(refused.data.problems));
     assert.equal((await read()).system.revision, before.system.revision);
 
-    // A mode that is not there.
-    assert.equal(
-        (
-            await call("owner", "system", {
-                set: [{ mode: "neon", token: "color.accent.default", value: "#fff" }],
-            })
-        ).data.ok,
-        false,
+    // The words are for a person: the engine's own are written for Pi ("call again").
+    assert.doesNotMatch(refused.data.error, /call again/i);
+    assert.match(refused.data.error, /^Not saved: /);
+    assert.ok(refused.data.problems.length > 0);
+    assert.ok(
+        refused.data.problems.every(
+            (each: { message: string; level: string }) => typeof each.message === "string",
+        ),
     );
+
+    // A mode that is not there, and a token that is not there: the engine would make a file and a token of them, and the
+    // view only changes what is there.
+    for (const entry of [
+        { mode: "neon", token: "color.accent.default", value: "#fff" },
+        { mode: "light", token: "no.such.token", value: "#fff" },
+        { mode: "light", token: "color.accent", value: "#fff" },
+    ]) {
+        assert.equal(
+            (await call("owner", "system", { set: [entry] })).status,
+            400,
+            JSON.stringify(entry),
+        );
+    }
+
+    assert.ok(!existsSync(file("tokens.neon.json")));
     assert.equal((await read()).system.revision, before.system.revision);
 });
 

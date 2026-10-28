@@ -5,6 +5,7 @@ import { designsOf, latestOf, siblingsOf } from "./data.js";
 import { clampSize, DEVICES, exportViewport, sizeOf } from "./devices.js";
 import { createDocks } from "./docks.js";
 import { createPicker } from "./picker.js";
+import { checkOptions } from "./check.js";
 import { checkKey } from "./system-data.js";
 import { createSystemSections } from "./system-sections.js";
 import { createSystemView } from "./system-view.js";
@@ -284,8 +285,8 @@ export function createWorkspace(env) {
         const open_ = openOf(s.notes[design.id]?.comments ?? []).length;
         const edits = (s.edits[`${design.id}@${shown}`] ?? []).length;
         const moved = changed(s.knobs, s.tweaks[design.id] ?? {}).length;
-        const report =
-            s.checks[checkKey(design.id, shown, s.checkWith.scheme, s.checkWith.size)]?.report;
+        const check = checkOptions(s, env.darkTheme());
+        const report = s.checks[checkKey(design.id, shown, check.scheme, check.size)]?.report;
         const found = report ? report.summary.errors + report.summary.warnings : 0;
         const tabs = [
             { id: "view", label: "Preview", icon: "eye" },

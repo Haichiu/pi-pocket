@@ -15,6 +15,7 @@ import type {
     CheckRule,
     DesignSystem,
     SystemChange,
+    SystemProblem,
 } from "../../design/system-types.ts";
 import { assetName, assetType } from "../../http/artifact-assets.ts";
 import { zip } from "../../zip.ts";
@@ -241,7 +242,15 @@ export function cleanChange(
 /** A short fingerprint of what the view shows: the tokens, the components, the guidelines. */
 export function revisionOf(system: DesignSystem): string {
     return createHash("sha256")
-        .update(JSON.stringify([system.modes, system.tokens, system.components, system.guidelines]))
+        .update(
+            JSON.stringify([
+                system.modes,
+                system.schemes,
+                system.tokens,
+                system.components,
+                system.guidelines,
+            ]),
+        )
         .digest("hex")
         .slice(0, 16);
 }
@@ -252,6 +261,7 @@ export function viewOf(system: DesignSystem) {
         name: system.name,
         ...(system.description === undefined ? {} : { description: system.description }),
         modes: system.modes,
+        schemes: system.schemes,
         tokens: system.tokens,
         components: system.components,
         guidelines: system.guidelines,
@@ -345,6 +355,36 @@ function legacySize(cwd: string): number | null {
     } catch {
         return null;
     }
+}
+
+/**
+ * What a person is told when the engine refuses a change: the engine's problems in a line (its own message is written for
+ * Pi: it ends with "Fix them and call again"), else its message cut. The problems go along, cut to a fixed shape.
+ */
+export function refusal(error: unknown): { failed: string; problems: SystemProblem[] } {
+    const list = (error as { problems?: unknown } | null)?.problems;
+    const problems: SystemProblem[] = (Array.isArray(list) ? list : [])
+        .slice(0, 20)
+        .filter(
+            (each) => typeof each === "object" && each !== null && typeof each.message === "string",
+        )
+        .map((each) => ({
+            level: each.level === "warning" ? "warning" : "error",
+            message: clip(each.message, 400),
+            ...(typeof each.file === "string" ? { file: clip(each.file, 100) } : {}),
+            ...(typeof each.token === "string" ? { token: clip(each.token, 200) } : {}),
+        }));
+    const failed =
+        problems.length > 0
+            ? `Not saved: ${problems
+                  .slice(0, 3)
+                  .map((each) => each.message.replace(/\s+/g, " ").trim())
+                  .join(" ")}${problems.length > 3 ? ` (and ${problems.length - 3} more)` : ""}`
+            : error instanceof Error
+              ? clip(error.message, 600)
+              : "The save failed.";
+
+    return { failed: failed.slice(0, 900), problems };
 }
 
 export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
@@ -450,18 +490,22 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     }
                 }
 
+                // The view changes tokens that are there, in modes that are there: a name that is not either is a bug of the
+                // caller, and the engine would make a new token or a new mode file of it.
+                for (const entry of change.set ?? []) {
+                    if (!current.modes.includes(entry.mode)) {
+                        throw web.error(400, `There is no mode “${entry.mode}”.`);
+                    }
+
+                    if (!current.tokens.some((token) => token.name === entry.token)) {
+                        throw web.error(400, `There is no token “${entry.token}”.`);
+                    }
+                }
+
                 try {
                     return { saved: await writeDesignSystem(cwd, change) };
                 } catch (error) {
-                    const problems = (error as { problems?: unknown }).problems;
-
-                    return {
-                        failed:
-                            error instanceof Error
-                                ? error.message.slice(0, 600)
-                                : "The save failed.",
-                        problems: Array.isArray(problems) ? problems.slice(0, 20) : [],
-                    };
+                    return refusal(error);
                 }
             });
 

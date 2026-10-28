@@ -21,7 +21,7 @@ Server (`src/server/extensions/design/`, called from `design.ts`):
     - `POST system/check` (steer): `{ id, version?, colorScheme?, viewport? }` → `{ report, id, version }`. The report is cut to a fixed shape (300 findings, text lengths, the 12 rules, numbers finite).
     - `POST system/docs` (steer): `{ key }` → `{ id: "design-system-docs", version }`. Writes a new version of that artifact (HTML, with the page's assets by hash) in one commit; the same key finds its version. Refused (409) while the system has an error.
     - `POST system/export` (steer): writes `exports/<name>-tokens.zip` (`tokens.css`, `tailwind.css`, `tokens.resolved.json`, `components.css`, from the engine's compile) and answers `{ path, relative, name, size }`; the browser downloads it through core's route. Refused (409) while the system has an error.
-- `system-api.ts`: the one import of the engines (see "Stubs").
+- `system-api.ts`: the one import of the engines (see "The engines").
 
 Browser module (`src/server/extensions/design/`):
 
@@ -48,30 +48,38 @@ Also fixed, as asked:
 
 - `test/design-system-parts.test.ts`: color reading and contrast, sections and groups, search, edits through aliases, loops, inherited modes, contrast, roles, typed values, undo and redo and the cap, the change of a save, preview CSS and `safeCss`, specimen pages with hostile markup, font stacks.
 - `test/design-system-routes.test.ts`: access (view, steer, one-session guest), the revision, no system and the old file, a linked folder, saves and their refusals, a stale revision, the shape checks of every field, guidelines and modes, the check and its report cut, publishing (once for each key, assets by hash), the zip and its download, a system with an error.
-- `test/design-system-ui.test.ts` (real Chromium, 23 tests): the picker and every section; copy; live preview through the frame bridge (the page reports its button's color), undo, redo, discard, save; links; modes and side by side; typing checks; sizes, easings, and Ask Pi for a shadow; search; component frames; guidelines; a conflict; a refused save; the check and Send to Pi; publish and export from the menu; modes from the menu; a viewer; no system and the old file; an error in the system; focus mode; a phone (fits, the open design a tap away, the phone's frame, no overflow); `/design-open system` and the launcher; Ctrl+Z, Ctrl+Shift+Z, and Ctrl+S; Discard asking again, and Save saying what it wrote.
+- `test/design-system-ui.test.ts` (real Chromium, 26 tests): the picker and every section; copy; live preview through the frame bridge (the page reports its button's color), undo, redo, discard, save; links; modes and side by side; typing checks; sizes, easings, and Ask Pi for a shadow; search; component frames; guidelines; a conflict; a refused save; the check and Send to Pi; publish and export from the menu; modes from the menu; a viewer; no system and the old file; an error in the system; focus mode; a phone (fits, the open design a tap away, the phone's frame, no overflow); `/design-open system` and the launcher; Ctrl+Z, Ctrl+Shift+Z, and Ctrl+S; Discard asking again, and Save saying what it wrote.
 - `test/design-system-fixtures.ts` (the "Harbor" system and a page that uses it) and `test/serve-design-system.ts`.
-- Run on this branch at the last commit: `npm run check` and `npm run lint` pass, and `npm test` passes 973 of 973 (the three `design-system-*` files hold 54 of them). One flaky test of this stream was found under the load of the whole run and made independent of timing and of order.
+- Run on the merged tree at the last commit: `npm run format` changes nothing, `npm run check` and `npm run lint` pass, and `npm test` passes 1167 of 1167 (the three `design-system-*` files hold 59 of them).
 
-## Stubs, and what to do at the merge
+## Round 2: the integrator's review
 
-`system-api.ts` re-exports four functions from `system-stub.ts`, which is a small stand-in written to the contract signatures: `loadDesignSystem(cwd)`, `writeDesignSystem(cwd, change)`, `checkDesign(bundle, system, options, host, signal)`, `renderSystemDoc(system)`. After the merge, replace the re-export with:
+- **The check's scheme.** The page in the canvas follows the app's dark scheme, so a check that ran in Light put its pins on colors that a person could not see. The check now **defaults to what the canvas shows**: its color scheme (the app's) and the size of its frame (`checkOptions` in `check.js`; the options are `null` until a person picks, and then follow the canvas). If a person picks the other scheme, the dock says that the canvas shows the other one and that the pins are for the checked one. The canvas is not forced into the checked scheme: a design is a page that this view does not control.
+- **The sections at a panel's width.** At about 650 px (the panel beside the chat) the nine sections now fit one row: the counts show only on the section in use, and the tabs are closer; if they still do not fit, they wrap to a second row, so none runs off the edge. A phone scrolls them, with the one in use brought to the middle. A test checks that every section is inside the panel at that width.
+- **The warnings box.** A warning is one line with a count (`⚠ 2 warnings  Show ⌄`) until a tap, at every width; an error is open where there is room, and one line on a phone. A test checks that the first token is in the first screen on a phone.
+- Also: a color that is the same in every mode shown has one swatch, one value, and one badge (the flagship has hundreds); a component lists 8 of its tokens and says how many more; the contrast of a color with no declared pair is worked out only for plain text on the page (`primary`, `secondary`, `muted`, `link`…): `inverse`, `faint`, `disabled` and the like sit on other grounds, which only a declared pair can say (the flagship has several, and the first version marked them as failing); a phone with a system that has custom mode names gets a list of modes in place of the buttons; `--flagship` for `test/serve-design-system.ts` shows Pi Pocket's own system.
 
-```ts
-export { loadDesignSystem, writeDesignSystem } from "../../design/tokens.ts";
-export { checkDesign } from "../../design/lint.ts";
-export { renderSystemDoc } from "../../design/docsite.ts";
-```
+## The engines (round 2: the real ones)
 
-and delete `system-stub.ts`. `CheckOptions` (the stub's type for `checkDesign`'s `options`) is `{ colorScheme?: "light" | "dark"; viewport?: { width; height } }`: use V's type. `test/design-system-parts.test.ts`, `test/design-system-routes.test.ts`, and `test/design-system-ui.test.ts` ask only what the contract says, so they should pass with the real engines, except that the stub's check is a static scan of the page's source (an image with no `alt`, a hex color that is no token, no viewport meta): with V's real check the UI test needs at least one finding on the "Ferry" page (the image without alt, which the real rule `image-alt` also finds).
+`system-api.ts` re-exports `loadDesignSystem` and `writeDesignSystem` (T), `checkDesign` (V), and `renderSystemDoc` (G). The stand-ins are gone. With the real engines six tests of this stream failed. The causes, and what was done:
 
-What the view needs from the engines (the stub does these; the real ones must too):
+1. **A save that must be refused was accepted.** The real `set` makes a mode file for a mode that does not exist, and a token for a name that does not exist (it is how Pi adds them). The view only changes tokens that are there, in modes that are there, so the route now refuses a `set` that names a mode or token the loaded system does not have (400). The route also refuses `{}` for a mode that exists (it would empty its file) and the removal of the default mode. T does not need to change this: it is the route's rule.
+2. **The fixture had two real warnings** (T's checks): `color.bg.overlay` held a raw value (a semantic color), and `color.text.disabled` failed its 4.5:1 pair on purpose. The fixture's tokens are fixed, not the warnings hidden: `overlay` links to a new primitive `color.scrim.40` (the 2025.10 object with an alpha; dark uses `scrim.60`), and `disabled` declares the quieter 3:1 pair that it reaches. The tests that wanted a failing badge now cause one with an edit (the pair falls, the badge says Fail, undo brings it back). The Harbor system loads with no problem.
+3. **`loadDesignSystem` throws for a linked `.pi/design`** (it did not return `undefined`). The route answers 400 with the engine's words, and the view says it could not read it. The test says so.
+4. **The error test.** The engine leaves out a token that failed (`color.accent.hover` with a link to nothing), so it has no row to go to: a problem whose token is not in the system is now a label, not a button. The warning test uses a real warning (too faint in dark) whose token has a row.
+5. **The focus test** failed only because the test before it left the session on a system with no design.
+6. **The messages for a person.** `DesignSystemError.message` is written for Pi ("Fix it and call again"). The route says `Not saved: …` with the problems' own messages (3 at most, then "and N more"), and sends the problems cut to a fixed shape.
 
-- **T**, `writeDesignSystem`: throws an `Error` with the reason in `message` (and, when it has them, `problems: SystemProblem[]`) for a change that is not valid, and writes nothing then. `set` with a mode that is not there, or a reference to a token that is not there, must be refused. It must never write through `__proto__`, `constructor`, or `prototype` (the route also refuses those names). A new mode is added by `modes: { name: {} }` and removed by `null`.
-- **T**, `loadDesignSystem`: `modes[0]` is the default mode (the view never assumes it is called `light`); every token has a value in every mode; an alias's `value` is the resolved value.
-- **T**, a request: the resolved `value` of a **composite** token (a shadow, a typography style) does not say which of its parts refer to other tokens, so the view cannot edit it without turning its references into values, and shows it read-only ("change the tokens it uses, or ask Pi"). A field such as `refs?: Record<string, string>` on `ModeValue` (a path inside the value → the token it refers to) would let the view edit the parts and keep the links, and draw the type specimens of a style from its parts when one is edited. Until then, editing `font.size.base` does not move the specimen of `type.body` in the view (the open design does move, when it uses the variables).
-- **T**, a request: a way to remove a mode's override of one token (the view's "Match Light" writes the default's value as an override instead).
-- **V**, `checkDesign`: findings need `pid` or `selector` for a pin; `suggestion` as `var(--color-…)`; `rect` is not used by the view. A finding with neither is shown without a pin.
-- **G**, `renderSystemDoc`: the assets' names must pass `assetName` (letters, digits, `.`, `_`, `-`, `/`), and the page must link them by relative URL. The route refuses a page over 2 MB or over 200 assets.
+Used from the new engine: `schemes` (a mode's colour scheme: the specimen's page and `color-scheme`), the `parts` of a typography token (`font-size: var(--font-size-base)`): a type style is drawn from them, so an edit to the size token moves the specimen and its line (`20px / 1.5 · 400 · Geist`); a contrast pair's `on` as a bare name; the token left out of a mode that failed.
+
+What T could still change (none of it blocks the view):
+
+- `DesignSystemError` could carry a short `summary` for people next to the message written for Pi.
+- A shadow has no `parts`: its box-shadow is drawn from the resolved value, so an edit to a color that a shadow uses does not move the shadow's tile. `parts` for a shadow (`color`, `offset-x`, … as `var(--…)`) would let it, and let the view edit a shadow's members.
+- Which tokens a mode file overrides (`overrides: string[]` on a mode): the view cannot tell an override from a value that is inherited, so "Match Light" writes the default's value as an override. With it the view could show "inherited" and use `remove` to reset.
+- `ResolvedToken.contrast` is the first pair only; a token with several pairs shows its first.
+
+What V and G need to keep: findings with a `pid` or a `selector` (no pin without one) and `suggestion` as `var(--color-…)`; the docs page's asset names are valid bundle names (the route refuses 200 assets or 2 MB).
 
 ## Differences from the plan, and choices made
 
@@ -92,7 +100,7 @@ What the view needs from the engines (the stub does these; the real ones must to
 
 > **The design system.** The first row of the design picker (or `/design-open system`, or the launcher's "Open the design system") shows the project's design system, `.pi/design/` in the session's folder: **Colors** (an overview of the look in each mode, roles with their alias chains and contrast badges, palettes as ramps), **Type**, **Spacing**, **Radii**, **Shadows**, **Motion** (durations and easings that play), **Components** (every state, in a frame that runs nothing and loads nothing), and **Guidelines** (Markdown). Light and dark show one at a time or side by side. People who steer change a color, a size, a time, a weight, a font, or an easing in place, or link a token to another; the open design shows each change live (it follows the system when it uses its variables), **Undo** and **Redo** step through them, **Discard** gives them up, and **Save** writes the files and the generated CSS with no run of Pi (it refuses a change that the system's checks refuse, and one made on a system that changed meanwhile). Shadows and typography styles are made of parts that link to other tokens: change the tokens they use, or ask Pi. The menu publishes the documentation as a design (`design-system-docs`, a new version each time), exports the generated files as a zip, and adds or removes a mode. A design's **Check** tab renders the page on the server and lists what is not the system's (colors, fonts, sizes), contrast, tap targets, overflow, alt text, and headings, with a pin on each element; **Send to Pi** puts one message with them in the message box. People who only view see everything and change nothing. A project with no `.pi/design/` is told how to get one. **Focus mode** (the button by the menu, where the panel is beside the chat) hides the conversation for wide work. Until a size is chosen, the canvas takes the size of its panel, so a phone gets the phone's frame.
 
-`docs/map.md`: `extensions/design/` gains `system-routes.ts`, `system-api.ts`, `system-stub.ts` (until the engines land), and the browser files above; `test/design-system-*.test.ts`, `test/serve-design-system.ts`.
+`docs/map.md`: `extensions/design/` gains `system-routes.ts`, `system-api.ts`, and the browser files above; `test/design-system-*.test.ts`, `test/serve-design-system.ts`.
 
 `docs/extensions/built-in.md`: the module's routes `system`, `system/check`, `system/docs`, `system/export` and its event `system`.
 
@@ -101,7 +109,7 @@ What the view needs from the engines (the stub does these; the real ones must to
 - Unsaved edits are lost when the tab reloads (they live in the module's store, which survives closing the panel and going to the chat).
 - Nothing creates, renames, deletes, or reorders a token; a mode is added or removed, and tokens already there are changed.
 - Multi-layer shadows, gradients, borders, and transitions are read-only.
-- The type specimens do not move with an edit to their parts (above); the page check does not see unsaved edits.
+- A shadow's tile does not move with an edit to a color it uses (above); the page check does not see unsaved edits.
 - A design shows the edits only when it uses the system's variables. The view says so, but cannot tell whether a given design does.
 - The first 120 tokens of a group are drawn, with "Show more"; there is no virtual list beyond that. Frames of components reload all together when an edit changes the mode's CSS.
 - The contrast of a color with no declared pair is worked out against the page background for text colors only (shown with a dashed badge).

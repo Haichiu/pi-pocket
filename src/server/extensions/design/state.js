@@ -195,7 +195,7 @@ export function systemState() {
         previewVars: {},
         /** Page checks, by `artifact@version:scheme:size`: `{ status, report, error }`. */
         checks: {},
-        /** The options of the next check. */
-        checkWith: { scheme: "light", size: "mobile" },
+        /** The options of the next check: null follows the canvas (its color scheme, and the size it shows the page at). */
+        checkWith: { scheme: null, size: null },
     };
 }

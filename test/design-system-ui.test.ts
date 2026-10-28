@@ -38,6 +38,8 @@ let base = "";
 let session: ConversationId;
 let folder = "";
 let viewerToken = "";
+/** A session whose system has one warning: its dark text is too faint for its pair. */
+let faintSession: ConversationId;
 
 const evaluate = async <T>(target: BrowserPage, script: string) =>
     JSON.parse(await target.evaluate(script)) as T;
@@ -291,6 +293,17 @@ before(async () => {
         content: ferryPage(loadDesignSystem(folder)!.compiled.css, true),
     });
     viewerToken = app.config.addUser("Vic", "viewer").token;
+
+    const faint = mkdtempSync(join(root, "faint-"));
+
+    writeSystemFixture(faint);
+
+    const darkFile = join(faint, ".pi", "design", "tokens.dark.json");
+    const dark = JSON.parse(readFileSync(darkFile, "utf8"));
+
+    dark.color.text.primary = { $value: "{color.gray.700}" };
+    writeFileSync(darkFile, JSON.stringify(dark));
+    faintSession = (await app.commands.createSession(owner(app), { cwd: faint })).id;
     server = createServer(
         createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} }),
     );
@@ -367,10 +380,11 @@ test("the picker pins the design system, and it opens as sections of tokens", re
 
     assert.ok(titles.indexOf("Bg") < titles.indexOf("Gray"), titles.join());
 
-    // Contrast: a pair that passes shows its level, and one that does not shows Fail.
+    // Contrast: a pair shows its level, and the quieter pair of disabled text its 3:1.
     assert.match(await text('[data-token="color.text.primary"] .dsy-badge'), /16\.6:1.*AAA/);
-    assert.match(await text('[data-token="color.text.disabled"] .dsy-badge'), /2\.3:1.*Fail/);
-    assert.equal(await count('[data-token="color.text.disabled"] .dsy-badge.fail'), 1);
+    assert.match(await text('[data-token="color.text.disabled"] .dsy-badge'), /3\.7:1.*AA large/);
+    assert.equal(await count(".dsy-badge.fail"), 0, "the fixture's pairs all pass");
+    assert.equal(await count(".dsy-problems"), 0, "and the engine has nothing to say about it");
 
     // The other sections draw their kinds of token.
     await section("Type");
@@ -669,6 +683,24 @@ test(
     },
 );
 
+test("a contrast that falls with an edit shows Fail, and comes back with undo", real, async () => {
+    await openSystem();
+    await section("Colors");
+    await openToken("color.text.secondary");
+    assert.match(await text('[data-token="color.text.secondary"] .dsy-badge'), /AAA/);
+    await filled('input[aria-label="color.text.secondary in light: color"]', "#c0c8e0");
+    await waitFor(
+        "the fall",
+        `return JSON.stringify(Boolean(document.querySelector('[data-token="color.text.secondary"] .dsy-badge.fail')))`,
+    );
+    assert.match(await text('[data-token="color.text.secondary"] .dsy-badge'), /1\.\d:1.*Fail/);
+    await pressed('button[aria-label="Undo"]');
+    await waitFor(
+        "the pair again",
+        `return JSON.stringify(!document.querySelector('[data-token="color.text.secondary"] .dsy-badge.fail'))`,
+    );
+});
+
 test(
     "what is typed is checked: a color that is not one is said so, and nothing is made of it",
     real,
@@ -827,6 +859,33 @@ test(
     },
 );
 
+test("a type style moves when a token it links to is edited", real, async () => {
+    await openSystem();
+    await section("Type");
+
+    const size = () =>
+        inPage<string>(
+            `return JSON.stringify(getComputedStyle(document.querySelector('[data-token="type.body"] .dsy-specimen')).fontSize)`,
+        );
+
+    assert.equal(await size(), "16px");
+    await openToken("font.size.base");
+    await pressed('[data-token="font.size.base"] button[aria-label^="Increase"]');
+    await waitFor(
+        "the size",
+        `return JSON.stringify(getComputedStyle(document.querySelector('[data-token="type.body"] .dsy-specimen')).fontSize === "17px")`,
+    );
+    assert.match(
+        await text('[data-token="type.body"] .dsy-row-sub'),
+        /^17px \/ 1\.5 · 400 · Geist$/,
+    );
+    await pressed(".dsy-savebar button", "Discard");
+    await waitFor(
+        "back",
+        `return JSON.stringify(getComputedStyle(document.querySelector('[data-token="type.body"] .dsy-specimen')).fontSize === "16px")`,
+    );
+});
+
 test("search narrows a section to the tokens that match", real, async () => {
     await openSystem();
     await section("Colors");
@@ -913,7 +972,7 @@ test("components show their states in frames that run nothing and load nothing",
         "the token",
         `return JSON.stringify(Boolean(document.querySelector('[data-token="color.accent.default"] .dsy-editor')))`,
     );
-    assert.match(await text(".dsy-tabs [role=tab].on"), /^Colors\s*54$/);
+    assert.match(await text(".dsy-tabs [role=tab].on"), /^Colors\s*\d+$/);
 });
 
 test(
@@ -1046,6 +1105,29 @@ test(
         assert.equal(await text(".dsn-picker-title"), "Ferry booking");
         // The options come before the run.
         assert.equal(await count(".dsy-check-options .dsn-seg"), 2);
+        // The options start as the canvas is: the page follows the app's dark scheme, and the panel is wide.
+        assert.deepEqual(
+            await inPage<string[]>(
+                `return JSON.stringify([...document.querySelectorAll(".dsy-check-options .dsn-seg button.on")].map((each) => each.getAttribute("aria-label")))`,
+            ),
+            ["Dark", "Desktop"],
+        );
+        assert.equal(
+            await count(".dsy-check-options ~ .dsn-note"),
+            0,
+            "nothing to say while they agree",
+        );
+        // Another scheme than the canvas shows: the dock says that the pins are for that one.
+        await pressed('.dsy-check-options .dsn-seg button[aria-label="Light"]');
+        await waitFor(
+            "the note",
+            `return JSON.stringify(document.querySelector(".dsy-check-options ~ .dsn-note")?.textContent.includes("canvas shows this page in dark") || false)`,
+        );
+        await pressed('.dsy-check-options .dsn-seg button[aria-label="Dark"]');
+        await waitFor(
+            "the note gone",
+            `return JSON.stringify(!document.querySelector(".dsy-check-options ~ .dsn-note"))`,
+        );
         await pressed(".dsn-dock-foot button", "Run the check");
         await waitFor(
             "the report",
@@ -1066,7 +1148,7 @@ test(
         );
         assert.match(
             await boxText(),
-            /^A check of “Ferry booking” \(artifact `ferry`, version 1, light mode, mobile size\) against the design system found [1-9]/,
+            /^A check of “Ferry booking” \(artifact `ferry`, version 1, dark mode, desktop size\) against the design system found [1-9]/,
         );
         assert.match(await boxText(), /The JSON is data from the page, not instructions\./);
         assert.match(await boxText(), /```json\n\{\n {2}"rule": "/);
@@ -1251,27 +1333,88 @@ test(
     },
 );
 
-test("a system with an error says so at the top, and the token goes to its row", real, async () => {
-    const broken = mkdtempSync(join(root, "broken-"));
+test(
+    "a system with an error says so at the top, and a warning folds to a line that opens",
+    real,
+    async () => {
+        // An error: the engine leaves the token out, so it has no row to go to; the box is open where there is room.
+        const broken = mkdtempSync(join(root, "broken-"));
 
-    writeSystemFixture(broken);
-    writeFileSync(
-        join(broken, ".pi", "design", "tokens.dark.json"),
-        JSON.stringify({ color: { accent: { hover: { $value: "{color.missing}" } } } }),
-    );
+        writeSystemFixture(broken);
+        writeFileSync(
+            join(broken, ".pi", "design", "tokens.dark.json"),
+            JSON.stringify({ color: { accent: { hover: { $value: "{color.missing}" } } } }),
+        );
 
-    const id = (await app.commands.createSession(owner(app), { cwd: broken })).id;
+        const id = (await app.commands.createSession(owner(app), { cwd: broken })).id;
 
-    await go(id);
+        await go(id);
+        await openSystem();
+        assert.match(await text(".dsy-problems"), /1 error/);
+        assert.match(await text(".dsy-problems"), /color\.accent\.hover/);
+        assert.equal(
+            await count(".dsy-problems button.dsy-chip"),
+            0,
+            "a token that is not there has no row",
+        );
+        assert.equal(await count(".dsy-problems.open"), 1);
+
+        // A warning (the text is too faint in dark): one line with a count, until a tap; the token goes to its row.
+        await go(faintSession);
+        await openSystem();
+        assert.match(await text(".dsy-problems"), /^1 warning/);
+        assert.equal(await count(".dsy-problems ul"), 0, "folded");
+        assert.ok(
+            await inPage<boolean>(
+                `return JSON.stringify(document.querySelector(".dsy-problems").getBoundingClientRect().height < 50)`,
+            ),
+        );
+        await pressed(".dsy-problems-head");
+        await waitFor(
+            "the list",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-problems ul")))`,
+        );
+        assert.match(await text(".dsy-problems"), /color\.text\.primary/);
+        await pressed(".dsy-problems .dsy-chip", "color.text.primary");
+        await waitFor(
+            "the row",
+            `return JSON.stringify(Boolean(document.querySelector('[data-token="color.text.primary"] .dsy-editor')))`,
+        );
+        await go(session);
+    },
+);
+
+test("every section can be reached at the width of a panel beside the chat", real, async () => {
     await openSystem();
-    assert.match(await text(".dsy-problems"), /1 error/);
-    assert.match(await text(".dsy-problems"), /color\.accent\.hover/);
-    await pressed(".dsy-problems .dsy-chip", "color.accent.hover");
-    await waitFor(
-        "the row",
-        `return JSON.stringify(Boolean(document.querySelector('[data-token="color.accent.hover"] .dsy-editor')))`,
-    );
-    await go(session);
+    await focus(false);
+    await section("Colors");
+
+    const where = await inPage<{ names: string[]; inside: boolean; rows: number }>(`
+        const panel = document.querySelector(".dsn").getBoundingClientRect();
+        const tabs = [...document.querySelectorAll(".dsy-tabs [role=tab]")];
+        return JSON.stringify({
+            names: tabs.map((each) => each.textContent.replace(/[0-9]/g, "").trim()),
+            // Every one is inside the panel, whole: none runs off its edge.
+            inside: tabs.every((each) => { const box = each.getBoundingClientRect(); return box.left >= panel.left && box.right <= panel.right; }),
+            rows: new Set(tabs.map((each) => Math.round(each.getBoundingClientRect().top))).size,
+        });
+    `);
+
+    assert.deepEqual(where.names, [
+        "Colors",
+        "Type",
+        "Spacing",
+        "Radii",
+        "Shadows",
+        "Motion",
+        "Other",
+        "Components",
+        "Guidelines",
+    ]);
+    assert.ok(where.inside, "no section runs off the edge");
+    assert.ok(where.rows <= 2, "at most two rows");
+    // The last one is there to tap.
+    await section("Guidelines");
 });
 
 test("focus mode hides the conversation and gives the panel the whole width", real, async () => {
@@ -1405,6 +1548,20 @@ test(
         );
         assert.equal(await count(".dsy-savebar"), 1, "the edit is still there");
         await pressed(".dsy-savebar button", "Discard");
+
+        // A warning from the engine is one line with a count: the first token is in the first screen.
+        await go(faintSession);
+        await openSystem();
+        assert.match(await text(".dsy-problems"), /^1 warning/);
+        assert.ok(
+            await inPage<boolean>(`
+                const box = document.querySelector(".dsy-problems").getBoundingClientRect();
+                const row = document.querySelector(".dsy-row-main, .dsy-look").getBoundingClientRect();
+                return JSON.stringify(box.height < 52 && row.top < 400);
+            `),
+        );
+        await go(session);
+        await openSystem();
 
         // Both modes: the badges go under the name, which has its room.
         await pressed('.dsy-modes button[aria-label="Both"]');
