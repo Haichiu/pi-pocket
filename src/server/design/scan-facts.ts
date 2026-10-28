@@ -10,6 +10,7 @@ import {
     UNKNOWN,
     colorsIn,
     commaParts,
+    indentedToBraces,
     isDarkSelector,
     objectStyles,
     pageStyles,
@@ -129,6 +130,8 @@ export interface Facts {
     tailwind: boolean;
     /** The project has a WordPress `theme.json`: its variables are named `--wp--preset--…`. */
     wordpress?: boolean;
+    /** The Sass mixins that hold the dark mode (`@include dark { … }`), from every file. */
+    darkMixins: Set<string>;
     /** The file being read, relative to the scanned folder. */
     file?: string;
     /** The mode that the file being read is named for (`dark.less`), when it is one. */
@@ -194,6 +197,7 @@ export function newFacts(): Facts {
         varLayout: new Map(),
         classUse: new Map(),
         rootClasses: new Set(),
+        darkMixins: new Set(),
         classCount: new Map(),
         classRules: new Map(),
         fonts: new Map(),
@@ -1479,7 +1483,7 @@ const SPACING_CLASS =
 /** The theme-like file names: a JavaScript file with these may hold a design theme. */
 // A script that writes styles: styled-components, Emotion, Stitches, makeStyles, a style prop or an `sx` prop.
 const STYLED =
-    /\bstyled\s*[.(]|\bcss\s*`|createGlobalStyle|keyframes\s*`|makeStyles|createUseStyles|\bsx\s*=|style\s*=\s*\{|\bcva\s*\(|\bglobalStyle\b|StyleSheet\.create|\bstyle\s*:\s*\{/;
+    /\bstyled\s*[.(]|\bcss\s*`|createGlobalStyle|keyframes\s*`|makeStyles|createUseStyles|\bsx\s*=|style\s*=\s*\{|\bcva\s*\(|\bglobalStyle\b|StyleSheet\.create|\bstyle\s*:\s*\{|\bstyles\s*:\s*\[?\s*`/;
 
 // A script that holds a theme whatever its name: `colors: {` / `palette: {` / `themes: {` with a few color values.
 const THEME_CONTENT =
@@ -1910,6 +1914,33 @@ function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
             continue;
         }
 
+        // `$surface: if($theme == dark, #1a1c21, #ffffff)`: a value for each mode.
+        const choice =
+            /^if\(\s*\$[\w-]+\s*==\s*['"]?(dark|night|light|day)['"]?\s*,([\s\S]*)\)$/i.exec(
+                decl.value,
+            );
+        const branches = choice === null ? [] : commaParts(choice[2]!);
+
+        if (decl.prop.startsWith("$") && choice !== null && branches.length === 2) {
+            const dark = /^(?:dark|night)$/i.test(choice[1]!);
+
+            for (const [value, scope] of [
+                [branches[0]!, dark ? "dark" : "light"],
+                [branches[1]!, dark ? "light" : "dark"],
+            ] as const) {
+                addVar(facts, {
+                    name: decl.prop.slice(1),
+                    value: value.trim(),
+                    scope,
+                    kind: "scss",
+                    file,
+                    ...(decl.line === undefined ? {} : { line: decl.line }),
+                });
+            }
+
+            continue;
+        }
+
         if (decl.prop.startsWith("$") || decl.prop.startsWith("@")) {
             addVar(facts, {
                 name: decl.prop.slice(1),
@@ -1997,17 +2028,20 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
         return;
     }
 
-    const isStyle = /^\.(?:css|scss|sass|less|pcss|postcss)$/.test(extension);
+    const isStyle = /^\.(?:css|scss|sass|less|styl|stylus|pcss|postcss)$/.test(extension);
     const isPage = /^\.(?:html|htm|vue|svelte|astro|mdx|php|erb|hbs|njk)$/.test(extension);
     const isScript = /^\.(?:[cm]?[jt]s|[jt]sx)$/.test(extension);
 
     if (isStyle) {
-        ingestStyles(facts, rel, parseStyles(raw));
+        // Indented Sass and Stylus have no braces: they are turned into some first.
+        const source = /^\.(?:sass|styl|stylus)$/.test(extension) ? indentedToBraces(raw) : raw;
+
+        ingestStyles(facts, rel, parseStyles(source, 1, facts.darkMixins));
     } else if (isPage) {
         const { blocks, inline } = pageStyles(raw);
 
         for (const block of blocks) {
-            ingestStyles(facts, rel, parseStyles(block, lineOfBlock(raw, block)));
+            ingestStyles(facts, rel, parseStyles(block, lineOfBlock(raw, block), facts.darkMixins));
         }
 
         ingestStyles(facts, rel, inline);
@@ -2021,7 +2055,7 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
         const blocks = templateStyles(raw);
 
         for (const block of blocks) {
-            ingestStyles(facts, rel, parseStyles(block, lineOfBlock(raw, block)));
+            ingestStyles(facts, rel, parseStyles(block, lineOfBlock(raw, block), facts.darkMixins));
         }
 
         if (THEMEISH.test(rel) || THEME_CONTENT.test(raw)) {

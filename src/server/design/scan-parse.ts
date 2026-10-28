@@ -116,8 +116,136 @@ function varScope(selector: string, dark: boolean): Scope {
     return scopes.includes("dark") ? "dark" : scopes.includes("light") ? "light" : "other";
 }
 
+/** Whether a name is made of mode words for the dark mode (`dark`, `dark-mode`, `on-dark`, `theme-dark`, `night`). */
+function isDarkWords(name: string): boolean {
+    return name
+        .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .some((word) => word === "dark" || word === "night");
+}
+
+/**
+ * `@include dark { … }`, `@include dark-mode { … }`, `@include theme(dark) { … }`, `@include <a mixin that wraps the dark
+ * mode> { … }`, and an `@if $theme == dark { … }` block hold the dark mode's rules.
+ */
+function isDarkInclude(prelude: string, darkMixins: ReadonlySet<string>): boolean {
+    const include = /^@include\s+([\w.-]+)\s*(?:\(([^)]*)\))?/i.exec(prelude);
+
+    if (include !== null) {
+        const name = include[1]!.replace(/^.*\./, "");
+
+        return (
+            darkMixins.has(name) ||
+            isDarkWords(name) ||
+            /(?:^|[\s,(:])['"]?(?:dark|night)['"]?(?:$|[\s,)])/i.test(include[2] ?? "")
+        );
+    }
+
+    return /^@(?:else\s+)?if\b[^{]*(?:==|=)\s*['"]?(?:dark|night)['"]?\s*$/i.test(prelude);
+}
+
+/**
+ * The Sass mixins of a text that hold the dark mode: one that wraps its `@content` in the dark mode
+ * (`@mixin dark { @media (prefers-color-scheme: dark) { @content } }`, `.theme-dark & { @content }`), or one called dark.
+ * `@include dark { … }` is then the dark mode.
+ */
+export function darkMixinsIn(text: string): Set<string> {
+    const darkMixins = new Set<string>();
+
+    for (const match of text.matchAll(/@mixin\s+([\w-]+)\s*(?:\([^)]*\))?\s*\{/g)) {
+        // The mixin's own text: up to the next mixin, and at most 600 characters.
+        const body = text
+            .slice(match.index + match[0].length, match.index + match[0].length + 600)
+            .split("@mixin")[0]!;
+        const wrapper = body.split("@content")[0]!;
+
+        if (
+            isDarkWords(match[1]!) ||
+            (body.includes("@content") &&
+                (/prefers-color-scheme\s*:\s*dark/i.test(wrapper) || isDarkSelector(wrapper)))
+        ) {
+            darkMixins.add(match[1]!);
+        }
+    }
+
+    return darkMixins;
+}
+
 const MAX_DECLS = 30_000;
 const MAX_DEPTH = 24;
+
+/**
+ * Indented Sass (`.sass`) and Stylus (`.styl`) as braces and semicolons, one output line for each input line (so a line
+ * number stays the file's): a line with deeper lines under it opens a block, any other line is a declaration. `$x: 1` and
+ * `x = 1` are variables; `=name` and `+name` are `@mixin` and `@include`; Stylus' `prop value` has no colon.
+ */
+export function indentedToBraces(source: string): string {
+    const lines = source.split("\n").slice(0, 20_000);
+    const indentOf = (line: string) => /^[ \t]*/.exec(line)![0].replace(/\t/g, "    ").length;
+    const blank = (line: string) => line.trim() === "" || /^\s*\/\//.test(line);
+    const stack: number[] = [];
+    const out: string[] = [];
+
+    for (const [at, line] of lines.entries()) {
+        if (blank(line)) {
+            out.push("");
+
+            continue;
+        }
+
+        const indent = indentOf(line);
+        let closing = "";
+
+        while (stack.length > 0 && stack.at(-1)! >= indent) {
+            stack.pop();
+            closing += "} ";
+        }
+
+        const next = lines.slice(at + 1).find((each) => !blank(each));
+        const opens = next !== undefined && indentOf(next) > indent;
+        let text = line.trim().replace(/;\s*$/, "");
+
+        if (opens) {
+            text = text
+                .replace(/^=\s*/, "@mixin ")
+                .replace(/^\+\s*/, "@include ")
+                .replace(/\s+\/\/.*$/, "");
+            out.push(`${closing}${text} {`);
+            stack.push(indent);
+
+            continue;
+        }
+
+        text = text
+            .replace(/\s+\/\/.*$/, "")
+            .replace(/^=\s*/, "@mixin ")
+            .replace(/^\+\s*/, "@include ");
+
+        // `x = 1` (Stylus) is a variable; `:prop value` (indented Sass) and `prop value` (Stylus) are declarations.
+        const variable = /^(\$?[\w-]+)\s*[?:]?=\s*(.+)$/.exec(text);
+        const colonFirst = /^:([\w-]+)\s+(.+)$/.exec(text);
+        const spaced = /^([a-z][a-z-]*)\s+([^:{}][^{}]*)$/.exec(text);
+
+        if (variable !== null) {
+            text = `${variable[1]!.startsWith("$") ? variable[1] : `$${variable[1]}`}: ${variable[2]}`;
+        } else if (colonFirst !== null) {
+            text = `${colonFirst[1]}: ${colonFirst[2]}`;
+        } else if (
+            spaced !== null &&
+            !text.startsWith("@") &&
+            !/^(?:if|else|for|return|unless)\b/.test(text)
+        ) {
+            text = `${spaced[1]}: ${spaced[2]}`;
+        }
+
+        out.push(`${closing}${text};`);
+    }
+
+    out[out.length - 1] = `${out.at(-1) ?? ""}${" }".repeat(stack.length)}`;
+
+    return out.join("\n");
+}
 
 /** Strips comments, keeping line breaks. */
 // A comment keeps its line breaks, so that a line counted after it is the file's line; one line of it is a space.
@@ -129,7 +257,11 @@ export const stripComments = (text: string) =>
  * does not end a declaration), and SCSS `#{…}`. Variables (`$x: 1`, `@x: 1`) come back as declarations with that prop.
  * Statements that are not declarations (`@import "x";`) are skipped.
  */
-export function parseStyles(source: string, firstLine: number | undefined = 1): Decl[] {
+export function parseStyles(
+    source: string,
+    firstLine: number | undefined = 1,
+    known?: ReadonlySet<string>,
+): Decl[] {
     const text = stripComments(source);
     // The line of an index: the number of line breaks before it.
     const breaks: number[] = [];
@@ -161,6 +293,7 @@ export function parseStyles(source: string, firstLine: number | undefined = 1): 
     const darkQueries = [
         ...text.matchAll(/@custom-media\s+(--[\w-]+)\s+[^;{}]*prefers-color-scheme\s*:\s*dark/gi),
     ].map((match) => match[1]!);
+    const darkMixins = new Set([...darkMixinsIn(text), ...(known ?? [])]);
     const decls: Decl[] = [];
     // One entry per open block: its prelude, and the selector it resolves to.
     const stack: { prelude: string; selector: string }[] = [];
@@ -201,7 +334,8 @@ export function parseStyles(source: string, firstLine: number | undefined = 1): 
             (part) =>
                 /^@media\b[^{]*prefers-color-scheme\s*:\s*dark/i.test(part) ||
                 (/^@media\b/i.test(part) &&
-                    darkQueries.some((name) => new RegExp(`\\(\\s*${name}\\s*\\)`).test(part))),
+                    darkQueries.some((name) => new RegExp(`\\(\\s*${name}\\s*\\)`).test(part))) ||
+                isDarkInclude(part, darkMixins),
         );
         const here = selector();
         const theme = at.some((part) => /^@theme\b/i.test(part));
@@ -351,7 +485,7 @@ export function pageStyles(source: string): { blocks: string[]; inline: Decl[] }
 export function templateStyles(source: string): string[] {
     const found: string[] = [];
     const head =
-        /(?<![\w$.])(?:css|styled(?:\.[a-z][\w]*|\([^)\n]{1,60}\))(?:\.attrs\([^)\n]{0,200}\))?|createGlobalStyle|injectGlobal|keyframes)\s*`/g;
+        /(?<![\w$.])(?:css|styled(?:\.[a-z][\w]*|\([^)\n]{1,60}\))(?:\.attrs\([^)\n]{0,200}\))?|createGlobalStyle|injectGlobal|keyframes|styles\s*:\s*\[?)\s*`/g;
 
     for (const match of source.matchAll(head)) {
         if (found.length >= 400) {
@@ -380,7 +514,7 @@ export function templateStyles(source: string): string[] {
 
 /** The CSS properties that a JSX style object or a CSS-in-JS object may set, as camelCase. */
 const STYLE_KEYS =
-    /\b(color|background|backgroundColor|borderColor|border|borderTop|borderBottom|borderLeft|borderRight|outlineColor|outline|fill|stroke|fontFamily|fontSize|fontWeight|lineHeight|letterSpacing|padding|paddingTop|paddingBottom|paddingLeft|paddingRight|margin|marginTop|marginBottom|marginLeft|marginRight|gap|rowGap|columnGap|borderRadius|boxShadow|textShadow|transition|animation)\s*:\s*(?:(["'`])((?:\\.|(?!\2)[^\\\n]){1,200})\2|(-?\d+(?:\.\d+)?)(?![\w.]))/g;
+    /\b(color|background|backgroundColor|borderColor|border|borderTop|borderBottom|borderLeft|borderRight|outlineColor|outline|fill|stroke|fontFamily|fontSize|fontWeight|lineHeight|letterSpacing|padding|paddingTop|paddingBottom|paddingLeft|paddingRight|paddingHorizontal|paddingVertical|margin|marginTop|marginBottom|marginLeft|marginRight|marginHorizontal|marginVertical|gap|rowGap|columnGap|borderRadius|boxShadow|textShadow|transition|animation)\s*:\s*(?:(["'`])((?:\\.|(?!\2)[^\\\n]){1,200})\2|(-?\d+(?:\.\d+)?)(?![\w.]))/g;
 
 const kebab = (key: string) => key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 // A bare number is pixels for these; for the rest it is unitless or not a length.
@@ -391,11 +525,15 @@ const PIXEL_KEYS = new Set([
     "paddingBottom",
     "paddingLeft",
     "paddingRight",
+    "paddingHorizontal",
+    "paddingVertical",
     "margin",
     "marginTop",
     "marginBottom",
     "marginLeft",
     "marginRight",
+    "marginHorizontal",
+    "marginVertical",
     "gap",
     "rowGap",
     "columnGap",
@@ -431,6 +569,36 @@ export function objectStyles(source: string): Decl[] {
             theme: false,
             inline: true,
         });
+    }
+
+    // React Native shadows are four properties, not a `box-shadow`: `shadowOffset`, `shadowRadius`, `shadowOpacity`,
+    // `shadowColor` of one object make one.
+    for (const match of source.matchAll(/\bshadowRadius\s*:\s*(\d+(?:\.\d+)?)/g)) {
+        if (decls.length >= 5000) {
+            break;
+        }
+
+        const around = source.slice(Math.max(0, match.index - 300), match.index + 300);
+        const height = /\bheight\s*:\s*(-?\d+(?:\.\d+)?)/.exec(around)?.[1] ?? "0";
+        const width = /\bwidth\s*:\s*(-?\d+(?:\.\d+)?)/.exec(around)?.[1] ?? "0";
+        const opacity = /\bshadowOpacity\s*:\s*(\d*\.?\d+)/.exec(around)?.[1] ?? "0.25";
+        const color = /\bshadowColor\s*:\s*(["'])(#[0-9a-fA-F]{3,8}|[a-z]+)\1/.exec(around)?.[2];
+        const rgb = color === undefined ? undefined : colorsIn(color, true)[0];
+
+        if (rgb !== undefined) {
+            const hex = rgb.hex.slice(1, 7);
+            const channel = (at: number) => parseInt(hex.slice(at, at + 2), 16);
+
+            decls.push({
+                prop: "box-shadow",
+                value: `${width}px ${height}px ${match[1]}px rgba(${channel(0)}, ${channel(2)}, ${channel(4)}, ${opacity})`,
+                selector: "",
+                at: [],
+                scope: "default",
+                theme: false,
+                inline: true,
+            });
+        }
     }
 
     return decls;

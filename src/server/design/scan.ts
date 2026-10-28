@@ -12,7 +12,7 @@ import { lstatSync, realpathSync } from "node:fs";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
 import { LIMITS, collectFiles, readHead } from "./scan-files.ts";
-import { colorsIn } from "./scan-parse.ts";
+import { colorsIn, darkMixinsIn } from "./scan-parse.ts";
 import { type Facts, ingestFile, newFacts } from "./scan-facts.ts";
 import { type Draft, type Inferred, infer } from "./scan-infer.ts";
 
@@ -95,6 +95,17 @@ export function readFacts(root: string): Facts {
     let bytes = 0;
 
     facts.partial = partial;
+
+    // A mixin that holds the dark mode is defined in one file and included in others: find them all first.
+    for (const rel of files.filter((each) => /\.(?:scss|sass|less)$/i.test(each)).slice(0, 120)) {
+        try {
+            for (const name of darkMixinsIn(readHead(join(root, ...rel.split("/"))))) {
+                facts.darkMixins.add(name);
+            }
+        } catch {
+            // A file that cannot be read is left out here, as below.
+        }
+    }
 
     for (const [rank, rel] of files.entries()) {
         if (bytes >= LIMITS.totalBytes) {
