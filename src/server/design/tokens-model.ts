@@ -1111,6 +1111,25 @@ export function buildSystem(raw: RawSystem): DesignSystem {
             ),
         ),
     ];
+    // `"format": "2025.10"` writes the object forms of the DTCG 2025.10 draft in the per-mode files.
+    const formatOf = rootExt.format;
+    let dtcgFormat: "2021" | "2025.10" | undefined;
+
+    if (formatOf !== undefined) {
+        const text = String(formatOf).trim();
+
+        if (/^2025(?:[.-]10)?$/.test(text)) {
+            dtcgFormat = "2025.10";
+        } else if (/^2021(?:[.-]\d+)?$/.test(text)) {
+            dtcgFormat = "2021";
+        } else {
+            report.warn(
+                `The format "${clip(text, 30)}" in tokens.json is not "2021" or "2025.10"; the default, "2021", is used.`,
+                "tokens.json",
+            );
+        }
+    }
+
     const system: Omit<DesignSystem, "compiled" | "problems"> = {
         name,
         modes,
@@ -1118,6 +1137,7 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         tokens,
         overrides,
         ...(tailwindReset.length === 0 ? {} : { tailwindReset }),
+        ...(dtcgFormat === undefined ? {} : { dtcgFormat }),
         components,
         guidelines,
     };

@@ -303,6 +303,9 @@ export function viewOf(system: DesignSystem) {
             "tokens.css": Buffer.byteLength(system.compiled.css),
             "tailwind.css": Buffer.byteLength(system.compiled.tailwind),
             "tokens.resolved.json": Buffer.byteLength(system.compiled.json),
+            ...(system.compiled.studio === undefined
+                ? {}
+                : { "tokens.studio.json": Buffer.byteLength(system.compiled.studio) }),
             "components.css": Buffer.byteLength(system.compiled.components),
         },
         revision: revisionOf(system),
@@ -807,10 +810,13 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             const files: [string, string][] = [
                 ["tokens.css", system.compiled.css],
                 ["tailwind.css", system.compiled.tailwind],
-                ["tokens.resolved.json", system.compiled.json],
                 ...Object.entries(system.compiled.modes ?? {}).map(
                     ([mode, text]): [string, string] => [`tokens.${mode}.resolved.json`, text],
                 ),
+                ...(system.compiled.studio === undefined
+                    ? []
+                    : ([["tokens.studio.json", system.compiled.studio]] as [string, string][])),
+                ["tokens.resolved.json", system.compiled.json],
                 ["components.css", system.compiled.components],
             ];
 

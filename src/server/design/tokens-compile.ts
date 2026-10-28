@@ -9,10 +9,18 @@
  * is declared, so a nested `[data-theme]` scope must declare it again to see the new `--x`.
  */
 import type { CompiledFiles, DesignSystem, ResolvedToken, TokenTier } from "./system-types.ts";
+import { compactJson, dtcgJson, studioJson } from "./tokens-dtcg.ts";
 
 export type CompileInput = Pick<
     DesignSystem,
-    "name" | "description" | "modes" | "schemes" | "tokens" | "components" | "tailwindReset"
+    | "name"
+    | "description"
+    | "modes"
+    | "schemes"
+    | "tokens"
+    | "components"
+    | "tailwindReset"
+    | "dtcgFormat"
 >;
 
 type Decl = [property: string, value: string];
@@ -691,127 +699,6 @@ function tailwindCss(system: CompileInput): string {
 
 // --- Resolved JSON and component CSS ------------------------------------------------------------------------------------
 
-/** The value of `get` for each mode: one value when every mode has the same, else a map by mode. */
-function perMode<T>(
-    modes: readonly string[],
-    get: (mode: string) => T,
-): { same: T } | { by: Record<string, T> } {
-    const first = get(modes[0]!);
-    const same = modes.every((mode) => JSON.stringify(get(mode)) === JSON.stringify(first));
-
-    return same
-        ? { same: first }
-        : { by: Object.fromEntries(modes.map((mode) => [mode, get(mode)])) };
-}
-
-/**
- * `tokens.resolved.json`: the tokens with every reference followed, in a compact form. For each token its type, tier,
- * and variable, and its value as CSS (`value` when every mode has the same, else `values` by mode); `alias` names the
- * token it refers to; `parts` are a type style's members. For a file that DTCG tools read, see `tokens.<mode>.resolved.json`.
- */
-function resolvedJson(system: CompileInput): string {
-    const tokens = system.tokens.map((token): [string, unknown] => {
-        const entry: Record<string, unknown> = {
-            type: token.type,
-            tier: token.tier,
-            cssVar: token.cssVar,
-        };
-
-        for (const key of ["description", "deprecated", "tailwind", "contrast"] as const) {
-            if (token[key] !== undefined) {
-                entry[key] = token[key];
-            }
-        }
-
-        const value = perMode(
-            system.modes,
-            (mode) => token.modes[mode]!.literal ?? token.modes[mode]!.css,
-        );
-        const alias = perMode(system.modes, (mode) => token.modes[mode]!.alias);
-
-        if ("same" in value) {
-            entry.value = value.same;
-        } else {
-            entry.values = value.by;
-        }
-
-        if ("same" in alias ? alias.same !== undefined : true) {
-            entry.alias = "same" in alias ? alias.same : alias.by;
-        }
-
-        if (token.type === "typography") {
-            const parts = perMode(system.modes, (mode) => token.modes[mode]!.parts);
-
-            entry.parts = "same" in parts ? parts.same : parts.by;
-        }
-
-        return [token.name, entry];
-    });
-
-    // One line for each token, so that the file is short and still diffs well.
-    const head = {
-        name: system.name,
-        ...(system.description === undefined ? {} : { description: system.description }),
-        modes: system.modes,
-        defaultMode: system.modes[0],
-        schemes: system.schemes,
-    };
-
-    return `{\n${Object.entries(head)
-        .map(([key, value]) => ` ${JSON.stringify(key)}: ${JSON.stringify(value)},`)
-        .join(
-            "\n",
-        )}\n "tokens": {\n${tokens.map(([name, entry]) => `  ${JSON.stringify(name)}: ${JSON.stringify(entry)}`).join(",\n")}\n }\n}\n`;
-}
-
-/**
- * `tokens.<mode>.resolved.json`: the whole system in one mode as a DTCG file (the Design Tokens Community Group format
- * that Style Dictionary and Tokens Studio read). Groups nest by path; each token has `$type` and one `$value`, with
- * every reference followed; `$description` and `$deprecated` stay.
- */
-function dtcgJson(system: CompileInput, mode: string): string {
-    const root: Record<string, unknown> = {
-        $description: `${system.name}: every token in the ${mode} mode, references followed.`,
-        $extensions: { "com.pi-pocket": { mode, colorScheme: schemeOf(system, mode) } },
-    };
-
-    for (const token of system.tokens) {
-        let group = root;
-
-        for (const key of token.path.slice(0, -1)) {
-            const next = group[key];
-
-            if (typeof next === "object" && next !== null && !("$value" in next)) {
-                group = next as Record<string, unknown>;
-            } else {
-                const made: Record<string, unknown> = {};
-
-                Object.defineProperty(group, key, {
-                    value: made,
-                    enumerable: true,
-                    writable: true,
-                    configurable: true,
-                });
-                group = made;
-            }
-        }
-
-        Object.defineProperty(group, token.path.at(-1)!, {
-            value: {
-                $type: token.type,
-                $value: token.modes[mode]!.value,
-                ...(token.description === undefined ? {} : { $description: token.description }),
-                ...(token.deprecated === undefined ? {} : { $deprecated: token.deprecated }),
-            },
-            enumerable: true,
-            writable: true,
-            configurable: true,
-        });
-    }
-
-    return `${JSON.stringify(root, null, 2)}\n`;
-}
-
 function componentsCss(system: CompileInput): string {
     const head = header(system, "components.css", [
         'Use it:  <link rel="stylesheet" href="ds/components.css">  then use the markup of a component specimen.',
@@ -829,15 +716,16 @@ function componentsCss(system: CompileInput): string {
     return `${head}\n\n${blocks.join("\n\n")}\n`;
 }
 
-/** Compiles a system into the files of `.pi/design/dist/`: four, and a DTCG file for each mode. */
+/** Compiles a system into the files of `.pi/design/dist/`: four, a DTCG file for each mode, and one for Tokens Studio. */
 export function compileDesignSystem(input: CompileInput): CompiledFiles {
     const system = literalPrimitives(input);
 
     return {
         css: tokensCss(system),
         tailwind: tailwindCss(system),
-        json: resolvedJson(system),
+        json: compactJson(system),
         components: componentsCss(system),
         modes: Object.fromEntries(system.modes.map((mode) => [mode, dtcgJson(system, mode)])),
+        studio: studioJson(system),
     };
 }

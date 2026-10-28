@@ -1580,7 +1580,7 @@ function codeSection(ctx: Ctx): { html: string; count: number } {
         modeFiles[0] === undefined
             ? "tokens.resolved.json"
             : `tokens.${modeFiles[0][0]}.resolved.json`;
-    const json = `// Style Dictionary (v4 reads DTCG as it is)\n{\n    "source": ["${jsonName}"],\n    "platforms": {\n        "css": {\n            "transformGroup": "css",\n            "buildPath": "build/",\n            "files": [{ "destination": "variables.css", "format": "css/variables" }]\n        }\n    }\n}\n\n// Tokens Studio: Tools, Load from file or URL, then pick ${jsonName}.`;
+    const json = `// Style Dictionary (v4 reads DTCG as it is): one file for each mode\n{\n    "source": ["${jsonName}"],\n    "platforms": {\n        "css": {\n            "transformGroup": "css",\n            "buildPath": "build/",\n            "files": [{ "destination": "variables.css", "format": "css/variables" }]\n        }\n    }\n}\n\n// Tokens Studio: one file for all modes.\n// In Tokens Studio, open Tools, then Load from file or URL, and pick tokens.studio.json.\n// Each mode is a token set, and the $themes array has a theme for each mode.\n\n// DTCG 2025.10 objects instead of strings ("#7aa2f7", "16px"): in tokens.json set\n// "$extensions": { "com.pi-pocket": { "format": "2025.10" } } and compile again.`;
     const files = [
         {
             id: "code-css",
@@ -1600,24 +1600,30 @@ function codeSection(ctx: Ctx): { html: string; count: number } {
             note: "The CSS of every component.",
             text: compiled.components,
         },
-        {
-            id: "code-json",
-            title: "tokens.resolved.json",
-            note: "Every token and its value in each mode, compact.",
-            text: compiled.json,
-        },
         ...modeFiles.map(([mode, text], index) => ({
             id: `code-mode-${index}`,
             title: `tokens.${mode}.resolved.json`,
             note: `The ${modeLabel(mode).toLowerCase()} mode as a DTCG file (with $value and $type).`,
             text,
         })),
+        {
+            id: "code-mode-studio",
+            title: "tokens.studio.json",
+            note: "For Tokens Studio: a token set for each mode, and a $themes array.",
+            text: compiled.studio ?? "",
+        },
+        {
+            id: "code-json",
+            title: "tokens.resolved.json",
+            note: "A compact summary for scripts. Prefer the DTCG files above.",
+            text: compiled.json,
+        },
     ].filter((file) => file.text.trim() !== "");
     const use = (title: string, note: string, id: string, text: string) =>
         `<div class="use"><h4>${esc(title)}</h4><p class="sub">${note}</p>${snippet(id, text)}</div>`;
 
     return {
-        html: `<p class="intro">The files that the system generates in <code>.pi/design/dist/</code>. Read tokens as variables, classes, or JSON. Never copy a value by hand.</p><div class="uses">${use("CSS", "Link tokens.css, then read a token with var(). Set data-theme for a mode.", "code-use-css", css)}${use("Tailwind v4", "Import Tailwind, then tailwind.css. Each token is a variable, so the utilities follow it.", "code-use-tailwind", tailwind)}${use("JSON", "For Style Dictionary or Tokens Studio. One DTCG file for each mode, and one compact file for all.", "code-use-json", json)}</div><h3>The files</h3>${files
+        html: `<p class="intro">The files that the system generates in <code>.pi/design/dist/</code>. Read tokens as variables, classes, or JSON. Never copy a value by hand.</p><div class="uses">${use("CSS", "Link tokens.css, then read a token with var(). Set data-theme for a mode.", "code-use-css", css)}${use("Tailwind v4", "Import Tailwind, then tailwind.css. Each token is a variable, so the utilities follow it.", "code-use-tailwind", tailwind)}${use("JSON", "The main output is one DTCG file for each mode (Style Dictionary) and one file for Tokens Studio. The compact file is a summary.", "code-use-json", json)}</div><h3>The files</h3>${files
             .map(
                 (file) =>
                     `<details class="code"><summary>${esc(file.title)}<span class="desc" style="margin-left:10px;font-weight:400">${esc(file.note)}</span></summary><div class="code-body">${file.id.startsWith("code-mode") && file.text.length > 6_000 ? `<p class="sub">The first 6 KB of ${Math.round(file.text.length / 1024)} KB.</p>${snippet(file.id, clip(file.text, 6_000))}` : snippet(file.id, clip(file.text, MAX_CODE))}</div></details>`,
