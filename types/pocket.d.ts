@@ -2575,11 +2575,19 @@ export interface Pocket {
     /**
      * How this browser shows one of this module's inputs (`web.presentEntry` on the server). `kind` is
      * `x.<module>.<name>`. `open` shows the message, `folded` one line, and `hidden` keeps the turn without
-     * the text until Find. The same mode again changes nothing. The choice stays in this browser.
+     * the text until Find. The same mode again changes nothing. The choice stays in this browser, and a person
+     * can change it on any of those rows.
      * @since 0.27.0
      * @experimental
      */
     entryPresentation(kind: string, mode: "open" | "folded" | "hidden"): void;
+    /**
+     * This browser's choice for one of this module's inputs, or undefined when there is none yet (the rows are
+     * folded then). Set a mode only when there is none, so a person's choice stays theirs.
+     * @since 0.27.0
+     * @experimental
+     */
+    entryPresentation(kind: string): "open" | "folded" | "hidden" | undefined;
     /**
      * Calls one of the module's routes: a GET without `body`, a POST with it.
      * @since 0.14.0

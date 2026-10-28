@@ -5,6 +5,8 @@ import { test } from "node:test";
 import * as presented from "../web/entry-presentation.js";
 
 const {
+    choosePresentationMode,
+    modulePresentationMode,
     noteRevealed,
     onPresentationMode,
     onRevealed,
@@ -12,7 +14,10 @@ const {
     presentationDraw,
     presentationLine,
     presentationMode,
+    promptBefore,
+    resendable,
     setPresentationMode,
+    storageChanged,
     wasRevealed,
 } = presented;
 
@@ -78,6 +83,101 @@ test("a module sets only its own kinds, and the same mode again is quiet", () =>
     } finally {
         stop();
     }
+});
+
+test("a module reads its own choice, to set a mode only when the person has none", () => {
+    const storage = memory();
+    const read = (kind: string) => modulePresentationMode(kind, options(storage));
+
+    assert.equal(read("x.quiet-input.note"), undefined);
+    assert.throws(() => read("x.other-input.note"), /x\.quiet-input\.<name>/);
+
+    // The person chose on the row (the app's control, for any module's kind): the module sees it.
+    choosePresentationMode("x.quiet-input.note", "open", storage);
+    assert.equal(read("x.quiet-input.note"), "open");
+    assert.equal(presentationMode("x.quiet-input.note", storage), "open");
+    assert.throws(() => choosePresentationMode("pi.user", "open", storage), /x\.<module>\./);
+});
+
+test("past its limit, this browser forgets the oldest choice, and blocked storage lasts the tab", () => {
+    const storage = memory();
+
+    for (let index = 0; index < 256; index++) {
+        choosePresentationMode(`x.many.k${index}`, "hidden", storage);
+    }
+
+    choosePresentationMode("x.many.newest", "open", storage);
+
+    const kept = JSON.parse(storage.getItem(PRESENTATION_STORAGE_KEY) ?? "{}");
+
+    assert.equal(Object.keys(kept).length, 256);
+    assert.equal(kept["x.many.k0"], undefined, "the oldest choice is forgotten");
+    assert.equal(kept["x.many.newest"], "open");
+
+    // A browser that refuses to store: no throw into the module, and this tab still shows the choice.
+    const refusing = {
+        getItem: () => null,
+        setItem: () => {
+            throw new Error("QuotaExceededError");
+        },
+    };
+
+    choosePresentationMode("x.quiet-input.blocked", "hidden", refusing);
+    assert.equal(presentationMode("x.quiet-input.blocked", refusing), "hidden");
+});
+
+test("another tab's choice reaches this one", () => {
+    const storage = memory();
+    const seen: [string, Mode][] = [];
+    const stop = onPresentationMode((kind: string, mode: Mode) => seen.push([kind, mode]));
+
+    try {
+        const before = JSON.stringify({ "x.quiet-input.tab": "open" });
+
+        storage.setItem(
+            PRESENTATION_STORAGE_KEY,
+            JSON.stringify({ "x.quiet-input.tab": "hidden" }),
+        );
+        storageChanged({ key: PRESENTATION_STORAGE_KEY, oldValue: before }, storage);
+        storageChanged({ key: "something.else", oldValue: null }, storage);
+        assert.deepEqual(seen, [["x.quiet-input.tab", "hidden"]]);
+    } finally {
+        stop();
+    }
+});
+
+test("an input stored as a module's kind is not sent again, nor taken as the prompt before a reply", () => {
+    const person = { id: 1, kind: "user", text: "hello" };
+    const prefixed = {
+        id: 2,
+        kind: "user",
+        text: "NOTE hi",
+        presentation: { entryKind: "x.quiet-input.note", label: "Note", prefixed: true },
+    };
+    const stored = {
+        id: 3,
+        kind: "user",
+        text: "a note",
+        presentation: { entryKind: "x.quiet-input.note", label: "Note" },
+    };
+    const reply = { id: 4, kind: "assistant", blocks: [] };
+    const entries = [person, prefixed, stored, reply];
+    const view = {
+        order: entries.map((entry) => entry.id),
+        entries: new Map(entries.map((entry) => [entry.id, entry])),
+    };
+
+    assert.equal(resendable(person), true);
+    assert.equal(resendable(prefixed), true);
+    assert.equal(resendable(stored), false);
+    assert.equal(resendable(reply), false);
+    assert.equal(
+        promptBefore(4, view)?.id,
+        2,
+        "the reply after a stored note resends the message before it",
+    );
+    view.order = [1, 3, 4];
+    assert.equal(promptBefore(4, view)?.id, 1);
 });
 
 test("Find opens a hidden row and leaves the id marked", () => {

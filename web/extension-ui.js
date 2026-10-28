@@ -18,7 +18,7 @@ import { useBack } from "./back.js";
 import { parseKeys, setBoxKeys } from "./box-keys.js";
 import { describersChanged, setCallDescriber } from "./calls.js";
 import { jumpToEntry } from "./chat.js";
-import { setPresentationMode } from "./entry-presentation.js";
+import { modulePresentationMode, setPresentationMode } from "./entry-presentation.js";
 import { leaveSafeMode, onSafeModeEnd, safeMode } from "./safe-mode.js";
 import {
     api,
@@ -1052,12 +1052,20 @@ function pocketFor(record) {
         },
         /**
          * How this browser shows one of this module's inputs (`web.presentEntry` on the server). `kind` is
-         * `x.<module>.<name>`. `open` is the message, `folded` is one line, and `hidden` keeps the turn and shows
-         * nothing until Find. The same mode again changes nothing.
+         * `x.<module>.<name>`. With a mode, it sets it: `open` is the message, `folded` is one line, and `hidden` keeps
+         * the turn and shows nothing until Find. The same mode again changes nothing. Without one, it returns this
+         * browser's choice, or undefined when there is none yet (the row is folded then).
          */
-        entryPresentation(kind, mode) {
+        entryPresentation(kind, ...mode) {
             tick(record);
-            setPresentationMode(kind, mode, { module: record.module });
+
+            if (mode.length === 0) {
+                return modulePresentationMode(kind, { module: record.module });
+            }
+
+            setPresentationMode(kind, mode[0], { module: record.module });
+
+            return undefined;
         },
         /** Open through the app's normal navigation; the server checks access on connection. */
         openConversation: (id) => {

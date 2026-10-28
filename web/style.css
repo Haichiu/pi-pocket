@@ -1708,12 +1708,54 @@ kbd {
         background-color var(--t-hover) var(--ease-out);
 }
 
-.presented-input.open > .presented-head {
+/* The line that opens it, and beside it the button for its message sheet (Show, Fold, Hide; Copy). */
+.presented-bar {
+    display: flex;
+    align-items: stretch;
+}
+
+.presented-bar > .presented-head {
+    flex: 1;
+    min-width: 0;
+}
+
+.presented-more {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: calc(22px + 18px * var(--space-y));
+    color: var(--faint);
+    transition:
+        color var(--t-hover) var(--ease-out),
+        background-color var(--t-hover) var(--ease-out);
+}
+
+@media (pointer: coarse) {
+    .presented-more {
+        width: max(34px, calc(22px + 18px * var(--space-y)));
+    }
+}
+
+.presented-more:focus-visible {
+    outline-offset: -2px;
+}
+
+.presented-input.open > .presented-bar {
     border-bottom: 1px solid var(--hair);
 }
 
+/* Its chevron turns as other chevrons do (`.open > button > .chev`), one level further in. */
+.presented-input.open > .presented-bar > .presented-head > .chev {
+    transform: rotate(90deg);
+}
+
+.presented-body.tappable {
+    cursor: pointer;
+}
+
 @media (hover: hover) {
-    .presented-head:hover {
+    .presented-head:hover,
+    .presented-more:hover {
         color: var(--text);
         background: var(--hover);
     }
@@ -1736,6 +1778,12 @@ kbd {
 .presented-label {
     color: var(--text);
     font-weight: 600;
+}
+
+/* In a presented input's message sheet: how every input of its kind shows in this browser, between the message and
+ * what can be done with it. */
+.presented-choice {
+    margin: 0 0 12px;
 }
 
 /* In the queue too: the label, then its summary, quieter. */

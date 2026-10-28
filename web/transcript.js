@@ -171,6 +171,51 @@ function EntryImages({ entryId, count, label }) {
     </div>`;
 }
 
+/**
+ * What a message carries besides its words: files sent along by name, attached pictures as thumbnails, other
+ * attachments as chips, and images in the message. `attachments` is the block `splitAttachments` cut off.
+ */
+function MessageExtras({ entry, attachments }) {
+    const files = attachments ? parseAttachments(attachments) : [];
+    const pictures = files.filter((file) => file.path && file.mime.startsWith("image/"));
+    const others = files.filter((file) => !pictures.includes(file));
+
+    return html`
+        ${
+            entry.files?.length > 0 &&
+            html`<div class="attachments">
+                ${entry.files.map(
+                    (path) =>
+                        html`<button
+                            class="chip"
+                            title=${`Sent with the message: ${path}`}
+                            onClick=${() => openFile(path)}
+                        >
+                            📄 ${path.split("/").pop()}
+                        </button>`,
+                )}
+            </div>`
+        }
+        ${
+            pictures.length > 0 &&
+            html`<div class="thumbs">
+                ${pictures.map((file) => html`<${Thumb} src=${fileUrl(file.path)} alt=${file.name} />`)}
+            </div>`
+        }
+        ${
+            others.length > 0 &&
+            html`<div class="attachments">
+                ${others.map((file) => html`<span class="chip">📎 ${file.name}</span>`)}
+            </div>`
+        }
+        ${
+            entry.images > 0 &&
+            !attachments &&
+            html`<${EntryImages} entryId=${entry.id} count=${entry.images} label="Image" />`
+        }
+    `;
+}
+
 function authorName(entryId, view, users) {
     const userId = view.authors?.[entryId];
 
@@ -357,6 +402,9 @@ function PresentedUser({ entry, view, users }) {
     const [text, setText] = useState(entry.text);
     const wantsText = mode === "open" || opened;
 
+    // A new copy of the entry (the module changed, or its full text came): show that one.
+    useEffect(() => setText(entry.text), [entry.text]);
+
     useEffect(
         () =>
             onPresentationMode((changed, next) => {
@@ -396,7 +444,7 @@ function PresentedUser({ entry, view, users }) {
         return () => {
             gone = true;
         };
-    }, [wantsText, entry.id, entry.presentation.clipped]);
+    }, [wantsText, entry.id, entry.text, entry.presentation.clipped]);
 
     const draw = presentationDraw(mode, opened);
     const { label, summary } = entry.presentation;
@@ -427,37 +475,60 @@ function PresentedUser({ entry, view, users }) {
             data-part="presented-input"
             data-state=${openedText ? "open" : undefined}
         >
-            <button
-                class="presented-head"
-                data-part="presented-head"
-                type="button"
-                aria-expanded=${openedText ? "true" : "false"}
-                aria-controls=${openedText ? bodyId : undefined}
-                title=${presentationLine(label, summary)}
-                onClick=${() => {
-                    unrolled.current = openedText ? -Infinity : performance.now();
-                    setOpened(!openedText);
-                }}
-            >
-                <${Icon} name="chevron" size=${14} class="chev" part="presented-chevron" />
-                <span class="presented-line">
-                    <span class="presented-label">${label}</span>
-                    ${summary && html`<span class="presented-summary"> · ${summary}</span>`}
-                </span>
-                ${entry.at && html`<span class="presented-time">${clock(entry.at)}</span>`}
-            </button>
+            <div class="presented-bar">
+                <button
+                    class="presented-head"
+                    data-part="presented-head"
+                    type="button"
+                    aria-expanded=${openedText ? "true" : "false"}
+                    aria-controls=${openedText ? bodyId : undefined}
+                    title=${presentationLine(label, summary)}
+                    onClick=${() => {
+                        unrolled.current = openedText ? -Infinity : performance.now();
+                        setOpened(!openedText);
+                    }}
+                >
+                    <${Icon} name="chevron" size=${14} class="chev" part="presented-chevron" />
+                    <span class="presented-line">
+                        <span class="presented-label">${label}</span>
+                        ${summary && html`<span class="presented-summary"> · ${summary}</span>`}
+                    </span>
+                    ${entry.at && html`<span class="presented-time">${clock(entry.at)}</span>`}
+                </button>
+                <button
+                    class="presented-more"
+                    data-part="presented-more"
+                    type="button"
+                    aria-label=${`${label}: show, fold, or hide, copy, and more`}
+                    title="Show, fold, or hide inputs like this; copy, and more"
+                    onClick=${() => openSheet({ type: "message", entryId: entry.id })}
+                >
+                    <${Icon} name="more" size=${16} />
+                </button>
+            </div>
             ${
                 openedText &&
                 html`<div
-                    class=${`presented-body ${unrolling(unrolled)}`}
+                    class=${`presented-body tappable ${unrolling(unrolled)}`}
                     id=${bodyId}
                     data-part="prompt-text"
+                    onClick=${(event) => openMessage(event, entry.id)}
                 >
-                    <div class="user-text"><${MentionedText} text=${text} /></div>
+                    <${PresentedText} entry=${entry} text=${text} />
                 </div>`
             }
         </div>
     </div>`;
+}
+
+/** A presented input's opened text: its words, then what it carries, as a message shows them. */
+function PresentedText({ entry, text }) {
+    const [written, attachments] = splitAttachments(text);
+
+    return html`
+        ${written && html`<div class="user-text"><${MentionedText} text=${written} /></div>`}
+        <${MessageExtras} entry=${entry} attachments=${attachments} />
+    `;
 }
 
 /** A person's message, including one a module presents when this browser shows it open. */
@@ -526,11 +597,8 @@ function UserMessage({ entry, view, users }) {
             ? /\n<linked-session-message>\n([\s\S]*)\n<\/linked-session-message>$/.exec(sent)?.[1]
             : undefined;
     const body = peerText ?? (scheduled ? sent.slice(SCHEDULED.length) : sent);
-    const files = attachments ? parseAttachments(attachments) : [];
     // `/skill:name request`: the skill by name, and the request.
     const skill = SKILL.exec(body);
-    const pictures = files.filter((file) => file.path && file.mime.startsWith("image/"));
-    const others = files.filter((file) => !pictures.includes(file));
     const name = author ?? (scheduled ? "Pi" : undefined);
     // Your own messages take the accent; someone else's, their color; one from someone the app does not know (a name
     // the message carries, the main agent, Pi's own schedule), a quiet one.
@@ -616,40 +684,7 @@ function UserMessage({ entry, view, users }) {
                         }
                     </div>`
                 }
-                ${
-                    entry.files?.length > 0 &&
-                    html`<div class="attachments">
-                        ${entry.files.map(
-                            (path) =>
-                                html`<button
-                                    class="chip"
-                                    title=${`Sent with the message: ${path}`}
-                                    onClick=${() => openFile(path)}
-                                >
-                                    📄 ${path.split("/").pop()}
-                                </button>`,
-                        )}
-                    </div>`
-                }
-                ${
-                    pictures.length > 0 &&
-                    html`<div class="thumbs">
-                        ${pictures.map(
-                            (file) => html`<${Thumb} src=${fileUrl(file.path)} alt=${file.name} />`,
-                        )}
-                    </div>`
-                }
-                ${
-                    others.length > 0 &&
-                    html`<div class="attachments">
-                        ${others.map((file) => html`<span class="chip">📎 ${file.name}</span>`)}
-                    </div>`
-                }
-                ${
-                    entry.images > 0 &&
-                    !attachments &&
-                    html`<${EntryImages} entryId=${entry.id} count=${entry.images} label="Image" />`
-                }
+                <${MessageExtras} entry=${entry} attachments=${attachments} />
             </div>
         </div>
     </div>`;

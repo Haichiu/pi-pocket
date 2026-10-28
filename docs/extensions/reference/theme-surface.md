@@ -136,6 +136,8 @@ Each is a `data-part` attribute. Some elements have two (`data-part="composer-bu
 | `prompt-text`                                   | What it says (its skill chip, words, and files)                                                               |
 | `presented-input`, `presented-head`             | An extension's input (`web.presentEntry`), folded: its card and the line that opens it (since 0.27.0)         |
 | `presented-chevron`, `presented-tag`            | That line's chevron; the input's label in its head, when shown open (since 0.27.0)                            |
+| `presented-more`                                | The button beside that line that opens its message sheet (since 0.27.0)                                       |
+| `presented-choice`                              | In its message sheet: Show, Fold, and Hide for every input of its kind (since 0.27.0)                         |
 | `reply`                                         | Pi's answer                                                                                                   |
 | `reply-actions`                                 | The row under an answer: react, discuss, pin, copy                                                            |
 | `activity`, `activity-head`, `activity-chevron` | A group of what Pi did, its head (what it did, how long), and the chevron that opens it                       |

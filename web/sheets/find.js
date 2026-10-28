@@ -10,11 +10,17 @@ const HISTORY_PAGE = 400;
 
 const FIND_PAGES = 25;
 
-/** What an entry says, to find text in: messages, Pi's calls' paths and commands, commands people ran, notes. */
-function searchText(entry) {
+/** Presented inputs a view clips, at most this many: Find reads their whole text once each. */
+const FULL_READS = 50;
+
+/**
+ * What an entry says, to find text in: messages, Pi's calls' paths and commands, commands people ran, notes. `whole`
+ * is the full text of a presented input the view clipped, once read.
+ */
+function searchText(entry, whole) {
     switch (entry.kind) {
         case "user":
-            return userSearchText(entry.presentation, writtenText(entry));
+            return userSearchText(entry.presentation, whole ?? writtenText(entry));
         case "assistant":
             return entry.blocks
                 .map((block) =>
@@ -83,6 +89,8 @@ export function FindSheet({ initial }) {
     // History before a compaction or a new context, page by page, oldest first; `done` once all of it (or as much as
     // is searched) is here.
     const [earlier, setEarlier] = useState({ entries: [], done: false, all: true });
+    // The whole text of presented inputs the view clipped, by entry id: the view has only their start and end.
+    const [wholes, setWholes] = useState(() => new Map());
     const box = useRef(null);
 
     useEffect(() => box.current?.focus(), []);
@@ -133,6 +141,35 @@ export function FindSheet({ initial }) {
         };
     }, []);
 
+    const clipped = [...earlier.entries, ...view.order.map((id) => view.entries.get(id))]
+        .filter((entry) => entry?.kind === "user" && entry.presentation?.clipped !== undefined)
+        .slice(-FULL_READS)
+        .map((entry) => entry.id);
+    const clippedKey = clipped.join(",");
+
+    useEffect(() => {
+        let live = true;
+        const missing = clipped.filter((id) => !wholes.has(id));
+
+        (async () => {
+            for (const id of missing) {
+                const full = await actions.fullEntry(id).catch(() => undefined);
+
+                if (!live) {
+                    return;
+                }
+
+                if (full?.kind === "user") {
+                    setWholes((current) => new Map(current).set(id, writtenText(full)));
+                }
+            }
+        })();
+
+        return () => {
+            live = false;
+        };
+    }, [clippedKey]);
+
     /**
      * Jump to a result. One in earlier history first shows that history from a little before it, and the transcript
      * from its first row on: earlier history shows above the rows of now only when they all show.
@@ -164,7 +201,10 @@ export function FindSheet({ initial }) {
         ].filter((entry) => entry && isRow(entry));
 
         for (let index = entries.length - 1; index >= 0 && results.length < 100; index--) {
-            const text = searchText(entries[index]).replace(/\s+/g, " ");
+            const text = searchText(entries[index], wholes.get(entries[index].id)).replace(
+                /\s+/g,
+                " ",
+            );
             const at = text.toLowerCase().indexOf(needle);
 
             if (at === -1) {
