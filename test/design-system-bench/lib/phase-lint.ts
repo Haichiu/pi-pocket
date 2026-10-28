@@ -3,7 +3,7 @@
  * `tokens.css` (so the result does not depend on the tokens engine), and score what it reports.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import type { DesignSystem } from "../../../src/server/design/system-types.ts";
 import { BENCH } from "./phase-scan.ts";
 import {
@@ -12,8 +12,8 @@ import {
     type LintScore,
     scoreLint,
 } from "./lint-score.ts";
-import { withTimeout, type Modules } from "./modules.ts";
-import { readFlat, systemFromFlat } from "./system.ts";
+import { ROOT, withTimeout, type Modules } from "./modules.ts";
+import { goldenCss, readFlat, systemFromFlat } from "./system.ts";
 
 export const LINT_DIR = join(BENCH, "lint");
 export const LINT_SYSTEM = join(LINT_DIR, "system");
@@ -233,13 +233,50 @@ export interface FlagshipStyle {
     css: string;
 }
 
+/** The system that a set of lint designs is written for: the bench's own, or one named in `system.json`. */
+export interface LintSystemChoice {
+    system: DesignSystem;
+    /** The `tokens.css` that the designs link as `ds/tokens.css`. */
+    css: Buffer;
+    source: string;
+}
+
+/**
+ * A lint folder may hold `system.json`, `{ "project": "docs/examples/design-system/pocket" }`: a project (a folder with
+ * `.pi/design/`, relative to the repository or absolute) that its designs are written for. The bench reads it with its own
+ * reader and compiles its own `tokens.css`, so the engine is not involved. Without the file, the bench's own system.
+ */
+export function lintSystemFor(root: string): LintSystemChoice | undefined {
+    const file = join(root, "system.json");
+
+    if (!existsSync(file)) {
+        return undefined;
+    }
+
+    const config = JSON.parse(readFileSync(file, "utf8")) as { project?: unknown };
+
+    if (typeof config.project !== "string") {
+        throw new Error(`${file} needs a "project" folder.`);
+    }
+
+    const project = isAbsolute(config.project) ? config.project : resolve(ROOT, config.project);
+    const flat = readFlat(join(project, ".pi", "design"));
+
+    return {
+        system: systemFromFlat(flat, "Lint system"),
+        css: Buffer.from(goldenCss(flat)),
+        source: `bench reader, ${config.project}`,
+    };
+}
+
 export async function lintPhase(
     modules: Modules,
     outDir: string,
     cases = loadLintCases(),
     flagship?: FlagshipStyle,
+    choice?: LintSystemChoice,
 ): Promise<LintPhase> {
-    const { system, source } = lintSystem(modules);
+    const { system, source } = choice ?? lintSystem(modules);
     const phase: LintPhase = {
         available: modules.check !== undefined,
         systemSource: source,
@@ -263,7 +300,7 @@ export async function lintPhase(
         return phase;
     }
 
-    const tokensCss = readFileSync(join(LINT_SYSTEM, "golden", "tokens.css"));
+    const tokensCss = choice?.css ?? readFileSync(join(LINT_SYSTEM, "golden", "tokens.css"));
     const scored: { expected: ExpectedFinding[]; found: FoundFinding[] }[] = [];
     const state = { shape: 0 };
 
