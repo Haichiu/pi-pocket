@@ -5,7 +5,7 @@
  */
 import { colorsIn, commaParts, parts, px } from "./scan-parse.ts";
 import type { RoleName } from "./scan-colors.ts";
-import type { Category, Facts } from "./scan-facts.ts";
+import type { Category, Facts, SizeFact } from "./scan-facts.ts";
 
 type Obj = Record<string, unknown>;
 
@@ -368,8 +368,25 @@ export function sizeScale(
         return;
     }
 
+    // Sizes a pixel apart are one size (11px and 12px): the one used more stands for both.
+    const merged: [number, SizeFact][] = [];
+
+    for (const [size, fact] of [...sizes].sort(
+        (a, b) => b[1].count + b[1].body * 2 - (a[1].count + a[1].body * 2) || a[0] - b[0],
+    )) {
+        const near = merged.find(([other]) => Math.abs(other - size) <= 1);
+
+        if (near === undefined) {
+            merged.push([size, { ...fact, forms: new Map(fact.forms) }]);
+        } else {
+            near[1].count += fact.count;
+            near[1].body += fact.body;
+            near[1].heading += fact.heading;
+        }
+    }
+
     // The sizes used most, in order of size.
-    let kept = topBy(sizes, ([, fact]) => fact.count + fact.body * 2 + fact.heading, 10).sort(
+    let kept = topBy(merged, ([, fact]) => fact.count + fact.body * 2 + fact.heading, 10).sort(
         (a, b) => a[0] - b[0],
     );
 
@@ -527,32 +544,41 @@ export function spacingScale(
             .filter(([size]) => size % unit === 0)
             .reduce((sum, [, count]) => sum + count, 0) / total;
     const base = share(8) >= 0.85 ? 8 : share(4) >= 0.75 ? 4 : share(2) >= 0.75 ? 2 : 4;
-    // A scale on a 4px grid keeps the multiples of 4 (and 2px); a project without a grid keeps what is even.
-    const unit = share(4) >= 0.5 ? 4 : 2;
-    const grid = [...counts].filter(
-        ([size]) => (size % unit === 0 || size === 2) && size >= 2 && size <= 192,
-    );
-    const kept = topBy(grid, ([, count]) => count, 12).sort((a, b) => a[0] - b[0]);
-    const off = [...counts]
-        .filter(([size]) => !grid.some(([each]) => each === size) && size >= 1 && size <= 64)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 4);
 
-    for (const [size] of kept) {
-        // Named in steps of 4px, as Tailwind does: 16px is `space.4`, 2px is `space.0-5`.
-        const step = size / 4;
-        const name = Number.isInteger(step)
-            ? String(step)
-            : step * 2 === Math.round(step * 2)
-              ? `${Math.floor(step)}-5`
-              : undefined;
+    // Values a pixel apart are one value (15px and 16px; 4px and 5px): the one used more stands for both. Below 4px
+    // every pixel counts.
+    const clusters: [number, number][] = [];
 
-        if (name !== undefined) {
-            book.add(["space", name], { $value: `${size}px`, $type: "dimension" });
+    for (const [size, count] of [...counts]
+        .filter(([size]) => size >= 1 && size <= 192)
+        .sort((a, b) => b[1] - a[1] || a[0] - b[0])) {
+        const near = clusters.find(
+            ([other]) => Math.abs(other - size) <= 1 && Math.min(other, size) >= 4,
+        );
+
+        if (near === undefined) {
+            clusters.push([size, count]);
+        } else {
+            near[1] += count;
         }
     }
 
-    result.spacing = { base, steps: kept.map(([size]) => size), off: off.map(([size]) => size) };
+    const kept = topBy(
+        clusters.filter(([size]) => size >= 2),
+        ([, count]) => count,
+        12,
+    ).sort((a, b) => a[0] - b[0]);
+    const off = kept.filter(([size]) => size % 4 !== 0).map(([size]) => size);
+
+    for (const [size] of kept) {
+        // Named in steps of 4px, as Tailwind does: 16px is `space.4`, 2px is `space.0-5`, 10px is `space.2-5`.
+        book.add(["space", String(rounded(size / 4)).replace(".", "-")], {
+            $value: `${rounded(size)}px`,
+            $type: "dimension",
+        });
+    }
+
+    result.spacing = { base, steps: kept.map(([size]) => size), off: off.slice(0, 6) };
 }
 
 export function radiusScale(
@@ -577,7 +603,62 @@ export function radiusScale(
         }
     }
 
+    // A radius the project uses that its own tokens do not cover (within a pixel) joins them.
+    const has = (key: string) =>
+        [...book.tokens.values()].some(
+            (entry) =>
+                entry.path[0] === "radius" &&
+                (key === "full"
+                    ? (px(String(entry.node.$value)) ?? 0) >= 100
+                    : Math.abs((px(String(entry.node.$value)) ?? -99) - Number(key)) <= 1),
+        );
+
     if (explicit.has("radius")) {
+        const extra: [string, { count: number; text: string }][] = [];
+
+        // Extras a pixel apart are one (3px and 4px).
+        for (const [key, fact] of [...facts.radii]
+            .filter(([each]) => !has(each) && (each === "full" || Number(each) >= 2))
+            .sort((a, b) => b[1].count - a[1].count)) {
+            const near = extra.find(
+                ([other]) =>
+                    other !== "full" &&
+                    key !== "full" &&
+                    Math.abs(Number(other) - Number(key)) <= 1,
+            );
+
+            if (near === undefined) {
+                extra.push([key, { ...fact }]);
+            } else {
+                near[1].count += fact.count;
+            }
+        }
+
+        const taken = new Set(
+            [...book.tokens.values()]
+                .filter((entry) => entry.path[0] === "radius")
+                .map((entry) => entry.path[1]),
+        );
+
+        for (const [key, fact] of extra.slice(0, 6)) {
+            // Named by their size, as spacing is: `radius.4` is 4px.
+            const name = key === "full" ? "full" : key.replace(".", "-");
+
+            if (!taken.has(name)) {
+                book.add(["radius", name], {
+                    $value:
+                        key === "full"
+                            ? /^[\d.]+(?:px|rem|em)$/.test(fact.text)
+                                ? fact.text
+                                : "9999px"
+                            : /^[\d.]+(?:px|rem|em)$/.test(fact.text)
+                              ? fact.text
+                              : `${key}px`,
+                    $type: "dimension",
+                });
+            }
+        }
+
         result.radii = [...book.tokens.values()]
             .filter((entry) => entry.path[0] === "radius")
             .sort((a, b) => (px(String(a.node.$value)) ?? 0) - (px(String(b.node.$value)) ?? 0))
@@ -620,9 +701,43 @@ export function radiusScale(
     });
 
     if (facts.radii.has("full")) {
-        book.add(["radius", "full"], { $value: "9999px", $type: "dimension" });
-        result.radii.push("full 9999px");
+        // The pill value the project wrote (`999px`), as it wrote it.
+        const text = facts.radii.get("full")!.text;
+        const value = /^[\d.]+(?:px|rem|em)$/.test(text) ? text : "9999px";
+
+        book.add(["radius", "full"], { $value: value, $type: "dimension" });
+        result.radii.push(`full ${value}`);
     }
+}
+
+/** Whether two shadows are alike: the same layers, offsets within a pixel, blur within two, and the same color. */
+function sameShadow(a: unknown, b: unknown): boolean {
+    const layers = (value: unknown) => (Array.isArray(value) ? value : [value]) as Obj[];
+    const first = layers(a);
+    const second = layers(b);
+    const length = (value: unknown) => px(String(value ?? "0")) ?? 0;
+
+    const alpha = (value: unknown) => {
+        const color = typeof value === "string" ? colorsIn(value)[0] : undefined;
+
+        return color === undefined ? undefined : color.hex;
+    };
+
+    return (
+        first.length === second.length &&
+        first.every((layer, at) => {
+            const other = second[at]!;
+
+            return (
+                (layer.inset === true) === (other.inset === true) &&
+                Math.abs(length(layer.offsetX) - length(other.offsetX)) <= 1 &&
+                Math.abs(length(layer.offsetY) - length(other.offsetY)) <= 1 &&
+                Math.abs(length(layer.blur) - length(other.blur)) <= 2 &&
+                Math.abs(length(layer.spread) - length(other.spread)) <= 1 &&
+                alpha(layer.color) === alpha(other.color)
+            );
+        })
+    );
 }
 
 export function shadowScale(
@@ -639,22 +754,72 @@ export function shadowScale(
         return;
     }
 
-    const used = topBy([...facts.shadows], ([, count]) => count, 5)
-        .map(([text]) => ({ text, value: shadowValue(text) }))
-        .filter((entry) => typeof entry.value !== "string")
-        .sort((a, b) => elevation(a.value) - elevation(b.value));
-    const ladders: Record<number, string[]> = {
+    // Shadows that differ by a pixel or two (`0 2px 4px` and `0 2px 5px`) are one: the more used stands for both.
+    const clusters: { text: string; value: unknown; count: number }[] = [];
+
+    for (const [text, count] of [...facts.shadows].sort((a, b) => b[1] - a[1])) {
+        const value = shadowValue(text);
+
+        if (typeof value === "string") {
+            continue;
+        }
+
+        const near = clusters.find((other) => sameShadow(other.value, value));
+
+        if (near === undefined) {
+            clusters.push({ text, value, count });
+        } else {
+            near.count += count;
+        }
+    }
+
+    // A ring or an inset line is not a step of elevation: it gets a name of its own.
+    const rings: typeof clusters = [];
+    const lifts: typeof clusters = [];
+
+    for (const cluster of topBy(clusters, (each) => each.count, 8)) {
+        const layers = (Array.isArray(cluster.value) ? cluster.value : [cluster.value]) as Obj[];
+        const inset = layers.every((layer) => layer.inset === true);
+        const ring = layers.every(
+            (layer) =>
+                (px(String(layer.blur ?? "0")) ?? 0) === 0 &&
+                (px(String(layer.offsetY ?? "0")) ?? 0) === 0,
+        );
+
+        (inset || ring ? rings : lifts).push(cluster);
+    }
+
+    lifts.sort((a, b) => elevation(a.value) - elevation(b.value));
+
+    const ladder = ["xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl"];
+    const names: Record<number, string[]> = {
         1: ["md"],
         2: ["sm", "lg"],
         3: ["sm", "md", "lg"],
         4: ["sm", "md", "lg", "xl"],
-        5: ["xs", "sm", "md", "lg", "xl"],
     };
 
-    used.forEach((entry, at) =>
-        book.add(["shadow", ladders[used.length]![at]!], { $value: entry.value, $type: "shadow" }),
+    lifts.forEach((entry, at) =>
+        book.add(["shadow", (names[lifts.length] ?? ladder)[at]!], {
+            $value: entry.value,
+            $type: "shadow",
+        }),
     );
-    result.shadows = used.length;
+    const seen = new Map<string, number>();
+
+    for (const entry of rings) {
+        const layers = (Array.isArray(entry.value) ? entry.value : [entry.value]) as Obj[];
+        const kind = layers.every((layer) => layer.inset === true) ? "inset" : "ring";
+        const count = (seen.get(kind) ?? 0) + 1;
+
+        seen.set(kind, count);
+        book.add(["shadow", count === 1 ? kind : `${kind}-${count}`], {
+            $value: entry.value,
+            $type: "shadow",
+        });
+    }
+
+    result.shadows = lifts.length + rings.length;
 }
 
 export function motionScale(

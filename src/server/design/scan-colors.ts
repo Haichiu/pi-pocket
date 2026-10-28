@@ -166,6 +166,7 @@ function merge(into: ColorFact | undefined, more: ColorFact, hex: string): Color
         other: 0,
         root: 0,
         body: 0,
+        surface: 0,
         order: more.order,
     };
 
@@ -178,6 +179,7 @@ function merge(into: ColorFact | undefined, more: ColorFact, hex: string): Color
         "other",
         "root",
         "body",
+        "surface",
     ] as const) {
         fact[key] += more[key];
     }
@@ -429,8 +431,15 @@ export function nameScore(role: RoleName, segs: string[]): number {
             }
 
             const variant = has(segs, VARIANT);
-            // In a scale the middle step is the color itself.
-            const middle = segs.includes("500") ? 6 : segs.includes("600") ? 3 : 0;
+            // A step of a palette (`brand-500`) is the last choice, after a role name (`primary`); of the steps, the middle.
+            const step = segs.some((seg) => /^\d{2,3}$/.test(seg));
+            const middle = step
+                ? segs.includes("500")
+                    ? -9
+                    : segs.includes("600")
+                      ? -12
+                      : -15
+                : 0;
 
             return (
                 best +
@@ -583,6 +592,16 @@ export function chooseRoles(
             }
 
             if (role === "accent") {
+                // A colored `accent` is the role's own name; a gray one (shadcn's hover surface) is not the brand.
+                if (
+                    segs.includes("accent") &&
+                    !segs.includes("primary") &&
+                    !segs.includes("brand") &&
+                    color.c >= 0.03
+                ) {
+                    score += 10;
+                }
+
                 score += Math.min(60, color.c * 400) - (color.c < 0.03 ? 10 : 0);
             }
 
@@ -680,11 +699,12 @@ export function chooseRoles(
                     distance(color, page) > 0.012 &&
                     distance(color, page) < 0.3,
             ),
-            (color) => color.fact?.bg ?? 0,
+            // A background on a card or a panel counts three times.
+            (color) => (color.fact?.surface ?? 0) * 3 + (color.fact?.bg ?? 0),
         )[0];
 
         if (top !== undefined) {
-            set("surface", top.hex, "use", "second most used background", 35);
+            set("surface", top.hex, "use", "most used background of cards and panels", 35);
         }
     }
 

@@ -74,6 +74,8 @@ export interface ColorFact {
     root: number;
     /** As the text color of the root or of paragraphs. */
     body: number;
+    /** As a background on a card, panel, modal, or the like. */
+    surface: number;
     /** When it was first seen: the earlier of two equal colors is the one the author wrote first. */
     order: number;
 }
@@ -187,6 +189,8 @@ const rootish = (selector: string) =>
         .split(",")
         .map((part) => part.trim())
         .every((part) => ROOTISH.test(part));
+const SURFACE_SELECTOR =
+    /(?:^|[\s,>+~.#:_-])(?:card|panel|surface|modal|dialog|popover|tile|well|sheet|drawer|dropdown|menu|tooltip|toast|box|pop)[\w-]*/i;
 const HEADING =
     /(?:^|[\s,>+~])(?:h[1-6]|\.h[1-6]|\.(?:title|heading|headline|display)[\w-]*)(?![\w-])/i;
 const BODY = /(?:^|[\s,>+~])(?:body|html|p|:root|\.text|\.body|main)(?![\w-])/i;
@@ -207,6 +211,7 @@ function colorFact(map: Map<string, ColorFact>, hex: string, text: string): Colo
             other: 0,
             root: 0,
             body: 0,
+            surface: 0,
             order: map.size,
         };
         map.set(hex, fact);
@@ -238,6 +243,10 @@ function useColors(facts: Facts, decl: Decl, dark: boolean): void {
 
         if (kind === "bg" && rootish(decl.selector)) {
             fact.root += 1;
+        }
+
+        if (kind === "bg" && SURFACE_SELECTOR.test(decl.selector)) {
+            fact.surface += 1;
         }
 
         if (kind === "text" && (rootish(decl.selector) || BODY.test(decl.selector))) {
@@ -332,12 +341,17 @@ function useSpacing(facts: Facts, value: string): void {
     }
 }
 
-const FULL_RADIUS =
-    /^(?:50%|100%|9999?px|99999?px|999rem|9999rem|100vmax|calc\(infinity \* 1px\))$/i;
+const FULL_RADIUS = /^(?:9{3,}px|9{3,}rem|100vmax|calc\(infinity \* 1px\))$/i;
 
 function useRadius(facts: Facts, value: string): void {
     for (const part of value.split("/").flatMap((half) => parts(half))) {
         const text = part.trim();
+
+        // A percentage makes a circle of a square; it is not a size.
+        if (text.endsWith("%")) {
+            continue;
+        }
+
         const full = FULL_RADIUS.test(text);
         const size = full ? undefined : px(text);
 
@@ -631,6 +645,13 @@ function themeVars(facts: Facts, file: string, text: string): void {
         String.raw`(?<![\w$.])(${keys})\s*:\s*(?=[{[])|(?<![\w$.])(?:const|let|var)\s+(${keys})\s*(?::[^=\n]{1,80})?=\s*(?=[{[])`,
         "g",
     );
+    // The object a key sits in: the nearest declaration (`const darkTheme = …`) or `dark: {` before it. A name with
+    // "dark" or "night" in it holds the dark mode's values.
+    const owners = [
+        ...text.matchAll(
+            /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)|(?<![\w$.])((?:dark|night|light|day)[A-Za-z]*)\s*:\s*(?=\{)/gi,
+        ),
+    ].map((owner) => ({ at: owner.index, name: owner[1] ?? owner[2]! }));
     let seen = 0;
 
     for (const match of text.matchAll(heads)) {
@@ -646,6 +667,36 @@ function themeVars(facts: Facts, file: string, text: string): void {
             continue;
         }
 
+        const owner = owners.findLast((each) => each.at < match.index);
+        const scope: Scope =
+            owner !== undefined && /dark|night/i.test(owner.name) ? "dark" : "default";
+
+        // A list of numbers (`space: [0, 4, 8, 16]`, `fontSizes: [12, 14, 16]`) is used like a scale: counted, not named.
+        if (
+            Array.isArray(literal) &&
+            literal.length >= 2 &&
+            literal.every((item) => typeof item === "number")
+        ) {
+            for (const size of literal as number[]) {
+                if (scope === "default" && category === "space" && size > 0) {
+                    bump(facts.spacing, size, 2);
+                } else if (scope === "default" && category === "text" && size >= 8 && size <= 160) {
+                    const fact = facts.sizes.get(size) ?? {
+                        count: 0,
+                        body: 0,
+                        heading: 0,
+                        forms: new Map(),
+                    };
+
+                    fact.count += 2;
+                    bump(fact.forms, `${size}px`);
+                    facts.sizes.set(size, fact);
+                }
+            }
+
+            continue;
+        }
+
         const found: { path: string[]; value: string }[] = [];
 
         leaves(literal, [], found, category);
@@ -658,7 +709,7 @@ function themeVars(facts: Facts, file: string, text: string): void {
             addVar(facts, {
                 name: leaf.path.join("-") || key,
                 value: leaf.value.slice(0, 400),
-                scope: "default",
+                scope,
                 kind: "js",
                 file,
                 hint: category,
@@ -815,15 +866,44 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
             ingestStyles(facts, rel, parseStyles(block));
         }
 
-        ingestStyles(facts, rel, objectStyles(raw));
-
         if (THEMEISH.test(rel)) {
+            // A theme object holds values, not styles in use: `border: "#2d3640"` there is a token, not a border.
             themeVars(facts, rel, raw);
+        } else {
+            ingestStyles(facts, rel, objectStyles(raw));
         }
     }
 
     if (isPage || isScript) {
         let seen = 0;
+
+        // Tailwind's arbitrary values: `bg-[#fff4d6]`, `text-[rgb(0,0,0)]`.
+        for (const match of text.matchAll(
+            /(?<![\w-])(bg|text|border|fill|stroke|ring|outline|from|to|via)-\[(#[0-9a-fA-F]{3,8}|(?:rgba?|hsla?|oklch|oklab)\([^\])]*\))\]/g,
+        )) {
+            if (++seen > 2000) {
+                break;
+            }
+
+            const kind =
+                (
+                    {
+                        bg: "bg",
+                        text: "text",
+                        fill: "fill",
+                        stroke: "fill",
+                        from: "bg",
+                        to: "bg",
+                        via: "bg",
+                    } as Record<string, "bg" | "text" | "fill" | "border">
+                )[match[1]!] ?? "border";
+
+            for (const color of colorsIn(match[2]!.replace(/_/g, " "))) {
+                colorFact(facts.colors, color.hex, color.text)[kind] += 1;
+            }
+        }
+
+        seen = 0;
 
         for (const match of text.matchAll(CLASS_USE)) {
             if (++seen > 8000) {

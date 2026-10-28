@@ -157,7 +157,118 @@ function follow(
         return undefined;
     }
 
+    // SCSS and Less arithmetic: `$space-1 * 3`.
+    if (/[$@][A-Za-z_]/.test(text) && /[*/+()]|\s-\s/.test(text)) {
+        const math = evalMath(text, (name, kind) => {
+            const target = index.get(`${kind}:${name}`);
+
+            return target === undefined ? undefined : follow(index, target, scope)?.text;
+        });
+
+        if (math !== undefined) {
+            text = math;
+        }
+    }
+
     return { text: text.trim(), via };
+}
+
+/** `$a * 3`, `($a + 4px) / 2`: arithmetic on lengths, with variables looked up by `value`. Undefined if it cannot. */
+function evalMath(
+    text: string,
+    value: (name: string, kind: "scss" | "less") => string | undefined,
+): string | undefined {
+    const tokens = text.match(/\$[\w-]+|@[\w-]+|\d*\.?\d+[a-z%]*|[()+*/-]/g);
+    let at = 0;
+
+    if (tokens === null || tokens.join("").length < text.replace(/\s/g, "").length) {
+        return undefined;
+    }
+
+    interface Quantity {
+        n: number;
+        unit: string;
+    }
+
+    const operand = (token: string): Quantity | undefined => {
+        const source = /^[$@]/.test(token)
+            ? value(token.slice(1), token[0] === "$" ? "scss" : "less")
+            : token;
+        const match = source === undefined ? null : /^(-?\d*\.?\d+)([a-z%]*)$/.exec(source.trim());
+
+        return match === null ? undefined : { n: Number(match[1]), unit: match[2]! };
+    };
+
+    const factor = (): Quantity | undefined => {
+        const token = tokens[at++];
+
+        if (token === undefined) {
+            return undefined;
+        }
+
+        if (token === "(") {
+            const inner = sum();
+
+            return tokens[at++] === ")" ? inner : undefined;
+        }
+
+        if (token === "-") {
+            const inner = factor();
+
+            return inner === undefined ? undefined : { n: -inner.n, unit: inner.unit };
+        }
+
+        return operand(token);
+    };
+
+    const product = (): Quantity | undefined => {
+        let left = factor();
+
+        while (left !== undefined && (tokens[at] === "*" || tokens[at] === "/")) {
+            const op = tokens[at++];
+            const right = factor();
+
+            if (right === undefined || (op === "/" && right.n === 0)) {
+                return undefined;
+            }
+
+            left =
+                op === "*"
+                    ? { n: left.n * right.n, unit: left.unit || right.unit }
+                    : { n: left.n / right.n, unit: left.unit === right.unit ? "" : left.unit };
+        }
+
+        return left;
+    };
+
+    const sum = (): Quantity | undefined => {
+        let left = product();
+
+        while (left !== undefined && (tokens[at] === "+" || tokens[at] === "-")) {
+            const op = tokens[at++];
+            const right = product();
+
+            if (
+                right === undefined ||
+                (left.unit !== right.unit && left.unit !== "" && right.unit !== "")
+            ) {
+                return undefined;
+            }
+
+            left = {
+                n: op === "+" ? left.n + right.n : left.n - right.n,
+                unit: left.unit || right.unit,
+            };
+        }
+
+        return left;
+    };
+
+    const result = sum();
+
+    return result === undefined || at !== tokens.length || !Number.isFinite(result.n)
+        ? undefined
+        : `${Math.round(result.n * 1000) / 1000}${result.unit}`;
 }
 
 /** The channels of a color written without its function: `222.2 47.4% 11.2%` (HSL) is how shadcn writes them. */
@@ -318,7 +429,12 @@ const FALLBACK_NAME: Record<Category, string> = {
     size: "base",
 };
 
-const ROLE_GROUPS = ["accent", "danger", "warning", "success", "bg", "text", "border"];
+/** Words that name a role, or its colors (`hover`-ed or `dark`-ened): such a color is nested, not a role of its own. */
+const ROLE_WORDS = new Set(
+    "accent brand primary link highlight danger error destructive critical negative warning warn caution success positive valid ok bg background canvas page surface card panel elevated raised popover layer text fg foreground ink content muted subtle dim faint quiet tertiary border divider outline stroke line separator hairline".split(
+        " ",
+    ),
+);
 
 /** The token path of a project variable: its group, and its name without the group's own prefix. */
 function pathOf(variable: Variable, category: Category): string[] {
@@ -326,9 +442,10 @@ function pathOf(variable: Variable, category: Category): string[] {
     const name = slug(stripped.replace(/\.+/g, "-"));
     const [first, ...tail] = name.split("-");
 
-    // `--accent-hover` is `color.accent.hover`, beside `color.accent.default`.
-    if (category === "color" && ROLE_GROUPS.includes(first!) && tail.length > 0) {
-        return ["color", first!, tail.join("-")];
+    // `--accent-hover` is `color.accent.hover`, beside `color.accent.default`; `--primary` is `color.primary.default`.
+    // A color with a role word in its name sits one level down, so that it never takes the place of the role's own token.
+    if (category === "color" && name !== "" && words(name).some((word) => ROLE_WORDS.has(word))) {
+        return tail.length > 0 ? ["color", first!, tail.join("-")] : ["color", first!, "default"];
     }
 
     return [GROUPS[category], name === "" ? FALLBACK_NAME[category] : name];
@@ -927,6 +1044,7 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     // Roles.
     const roleVars = new Set<string>();
+    const pendingDark: { path: string[]; hex: string }[] = [];
     const lightAlias = (hex: string) => `{${palette(hex, asValue(hex, lightColors)).join(".")}}`;
 
     for (const role of Object.keys(ROLE_PATHS) as RoleName[]) {
@@ -953,9 +1071,7 @@ export function infer(facts: Facts, folder: string): Inferred {
         }
 
         if (dark !== undefined && dark.hex !== light.hex) {
-            const target = palette(dark.hex, asValue(dark.hex, darkColors));
-
-            book.addDark(path, { $value: `{${target.join(".")}}`, $type: "color" });
+            pendingDark.push({ path, hex: dark.hex });
         }
 
         result.roles[role] = {
@@ -972,50 +1088,58 @@ export function infer(facts: Facts, folder: string): Inferred {
         lightRoles.accent === undefined ? undefined : lightColors.get(lightRoles.accent.hex);
 
     if (accent !== undefined) {
-        const pool = [
-            lightRoles.background?.hex,
-            lightRoles.text?.hex,
-            "#ffffff",
-            "#000000",
-        ].filter((hex): hex is string => hex !== undefined);
+        // Text on the accent is a color the project already has: its page, its text, white, or black.
+        const poolOf = (
+            roles: Partial<Record<RoleName, RoleChoice>>,
+            entries: Map<string, ColorEntry>,
+        ) =>
+            [roles.background?.hex, roles.text?.hex, "#ffffff", "#000000"].filter(
+                (hex): hex is string => hex !== undefined && entries.has(hex),
+            );
         // White is what a project already puts on its accent when it uses white as a text color and it reads well enough.
-        const whiteText = (facts.colors.get("#ffffff")?.text ?? 0) > 0;
+        const whiteText =
+            (facts.colors.get("#ffffff")?.text ?? 0) > 0 && lightColors.has("#ffffff");
 
-        const pick = (accentColor: ColorEntry, entries: Map<string, ColorEntry>) => {
+        const pick = (
+            accentColor: ColorEntry,
+            entries: Map<string, ColorEntry>,
+            roles: Partial<Record<RoleName, RoleChoice>>,
+            preferWhite: boolean,
+        ) => {
+            const pool = poolOf(roles, entries);
             const best = topBy(
                 pool,
                 (hex) => {
-                    const color = entries.get(hex)?.rgba ?? parseColor(hex);
+                    const color = entries.get(hex)?.rgba;
 
                     return color === undefined ? 0 : contrastRatio(color, accentColor.rgba);
                 },
                 1,
-            )[0]!;
+            )[0];
 
-            return whiteText && contrastRatio(parseColor("#ffffff")!, accentColor.rgba) >= 3
+            return preferWhite && contrastRatio(parseColor("#ffffff")!, accentColor.rgba) >= 3
                 ? "#ffffff"
                 : best;
         };
 
-        const onLight = pick(accent, lightColors);
+        const onLight = pick(accent, lightColors, lightRoles, whiteText);
         const path = ["color", "text", "on-accent"];
 
-        book.add(path, {
-            $value: `{${palette(onLight, asValue(onLight, lightColors)).join(".")}}`,
-            $type: "color",
-        });
+        if (onLight !== undefined) {
+            book.add(path, {
+                $value: `{${palette(onLight, asValue(onLight, lightColors)).join(".")}}`,
+                $type: "color",
+            });
+        }
 
         const darkAccent =
             darkRoles.accent === undefined ? undefined : darkColors.get(darkRoles.accent.hex);
 
         if (darkAccent !== undefined) {
-            const onDark = pick(darkAccent, darkColors);
+            const onDark = pick(darkAccent, darkColors, darkRoles, false);
 
-            if (onDark !== onLight) {
-                book.addDark(path, {
-                    $value: `{${palette(onDark, asValue(onDark, darkColors)).join(".")}}`,
-                    $type: "color",
-                });
+            if (onLight !== undefined && onDark !== undefined && onDark !== onLight) {
+                pendingDark.push({ path, hex: onDark });
             }
         }
     }
@@ -1027,11 +1151,11 @@ export function infer(facts: Facts, folder: string): Inferred {
             (entry) =>
                 !hexPath.has(entry.hex) &&
                 entry.rgba.a > 0.05 &&
-                entry.uses >= 2 &&
-                known.every((other) => distance(other, entry) > 0.02),
+                entry.uses >= 1 &&
+                known.every((other) => distance(other, entry) > 0.01),
         ),
         (entry) => entry.uses,
-        8,
+        16,
     );
 
     for (const entry of extra) {
@@ -1050,7 +1174,18 @@ export function infer(facts: Facts, folder: string): Inferred {
         const hex = hexOf(entry.lightColor);
         const path = pathOf(entry.variable, "color");
 
-        if (hex === undefined || book.has(path)) {
+        if (hex === undefined) {
+            continue;
+        }
+
+        if (book.has(path)) {
+            // The same name from another file (a stylesheet variable and a theme object): it may know the dark value.
+            const darkHex = hexOf(entry.darkColor);
+
+            if (darkHex !== undefined && darkHex !== hex && !book.dark.has(path.join("."))) {
+                pendingDark.push({ path, hex: darkHex });
+            }
+
             continue;
         }
 
@@ -1063,10 +1198,19 @@ export function infer(facts: Facts, folder: string): Inferred {
         const darkHex = hexOf(entry.darkColor);
 
         if (darkHex !== undefined && darkHex !== hex) {
-            const darkPrimitive = palette(darkHex, asValue(darkHex, darkColors));
-
-            book.addDark(path, { $value: `{${darkPrimitive.join(".")}}`, $type: "color" });
+            pendingDark.push({ path, hex: darkHex });
         }
+    }
+
+    // The other mode's colors: a palette color the light mode already has is referenced; any other is written as it is,
+    // in the mode's file, so the default mode holds only the colors it uses.
+    for (const { path, hex } of pendingDark) {
+        const known = hexPath.get(hex);
+
+        book.addDark(path, {
+            $value: known === undefined ? asValue(hex, darkColors) : `{${known.join(".")}}`,
+            $type: "color",
+        });
     }
 
     // 4. The other categories: the project's own variables first.

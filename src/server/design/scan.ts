@@ -190,6 +190,14 @@ export function scanTokens(root: string): TokenScan {
     };
 }
 
+/**
+ * The scan as one call: the DTCG draft of the project in `root`, as `{ tokens, modes }` (`tokens` is `tokens.json`; `modes`
+ * holds one object for each mode file, by mode name). The report and the roles are in `scanTokens`.
+ */
+export function scanDesignSystem(root: string): Draft {
+    return scanTokens(root).draft;
+}
+
 // --- The report -----------------------------------------------------------------------------------------------------
 
 /** JSON with one line for each token, so a long draft stays readable. */

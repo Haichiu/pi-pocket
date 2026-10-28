@@ -795,3 +795,39 @@ test("a variable that a component sets itself is not reported as a missing token
     assert.match(warning.message, /--n-edge, --color-nope|--color-nope, --n-edge/);
     assert.doesNotMatch(warning.message, /--n-bg/, "the one the component sets is its own");
 });
+
+test("the same write twice changes no byte and no modification time in any file", () => {
+    const dir = project();
+    const change = {
+        tokens: tokens(),
+        modes: { dark: dark() },
+        components: { button: specimen },
+        guidelines: "# Rules\n\nOne accent.\n",
+    };
+
+    writeDesignSystem(dir, change);
+
+    const snapshot = () =>
+        files(dir).map((name) => [
+            name,
+            read(dir, ...name.split("/")),
+            statSync(design(dir, name)).mtimeMs,
+        ]);
+    const first = snapshot();
+
+    for (const name of files(dir)) {
+        utimesSync(design(dir, name), new Date(2_000_000), new Date(2_000_000));
+    }
+
+    writeDesignSystem(dir, change);
+
+    assert.deepEqual(
+        snapshot().map(([name, text]) => [name, text]),
+        first.map(([name, text]) => [name, text]),
+        "the same bytes",
+    );
+    assert.ok(
+        snapshot().every(([, , time]) => time === 2_000_000),
+        "no file was written again",
+    );
+});

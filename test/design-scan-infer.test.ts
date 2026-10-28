@@ -372,7 +372,7 @@ module.exports = {
 
     assert.equal(hex(system, "color.primary.50"), "#eef2ff");
     assert.equal(hex(system, "color.accent.default"), "#6366f1", "primary is the accent");
-    assert.equal(token(system, "color.brand-blue")?.modes.light!.hex, "#1d4ed8");
+    assert.equal(token(system, "color.brand.blue")?.modes.light!.hex, "#1d4ed8");
     assert.equal(token(system, "radius.card")!.modes.light!.css, "12px");
     assert.equal(token(system, "font.sans")!.modes.light!.css, "Inter, system-ui, sans-serif");
     assert.equal(token(system, "breakpoint.tablet")!.modes.light!.css, "640px");
@@ -730,4 +730,127 @@ test("breakpoints a pixel apart are one", () => {
     );
 
     assert.deepEqual(scan.inferred.breakpoints, ["sm 640px", "md 1100px"]);
+});
+
+// --- What the bench taught -------------------------------------------------------------------------------------------
+
+test("SCSS arithmetic is computed, and a theme object named for dark is the dark mode", () => {
+    const scan = scanTokens(
+        project({
+            "a.scss":
+                "$space-1: 4px; $space-2: 8px; $space-3: $space-1 * 3; $space-5: ($space-2 + 4px) / 2 + 10px;",
+            "theme.ts": `export const lightTheme = { colors: { bg: "#ffffff", text: "#111111", primary: "#2255aa" }, space: [0, 4, 8, 16] };
+export const darkTheme = { ...lightTheme, colors: { bg: "#101010", text: "#eeeeee", primary: "#88aaee" } };`,
+        }),
+    );
+    const system = load(scan);
+
+    assert.equal(token(system, "space.3")!.modes.light!.css, "12px", "$space-1 * 3");
+    assert.equal(token(system, "space.5")!.modes.light!.css, "16px", "($space-2 + 4px) / 2 + 10px");
+    assert.equal(hex(system, "color.bg.page"), "#ffffff");
+    assert.equal(hex(system, "color.bg.page", "dark"), "#101010");
+    assert.equal(hex(system, "color.accent.default", "dark"), "#88aaee");
+    // The dark theme's colors are not colors of the default mode.
+    assert.ok(!system.tokens.some((each) => each.modes.light!.hex === "#101010"));
+});
+
+test("scales: sizes a pixel apart merge, a percent radius is not a size, a pill keeps its value, and shadows merge", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root { --radius: 6px }
+.a { font-size: 12px; padding: 15px; margin: 4px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,.2) }
+.b { font-size: 12px; padding: 16px; margin: 5px; border-radius: 3px; box-shadow: 0 2px 5px rgba(0,0,0,.2) }
+.c { font-size: 11px; padding: 16px; border-radius: 50%; box-shadow: inset 0 1px 0 rgba(255,255,255,.5) }
+.d { font-size: 16px; padding: 10px; border-radius: 999px; box-shadow: 0 0 0 3px rgba(51,102,204,.4) }`,
+        }),
+    );
+    const system = load(scan);
+
+    assert.deepEqual(
+        scan.inferred.typeScale.sizes.map((size) => size.split(" ")[1]),
+        ["12px", "16px"],
+        "11px is 12px",
+    );
+    assert.deepEqual(
+        scan.inferred.spacing.steps,
+        [4, 10, 16],
+        "15 and 16 are one, 4 and 5 are one",
+    );
+    assert.ok(token(system, "space.2-5"), "10px is step 2.5");
+    assert.equal(token(system, "radius.md")!.modes.light!.css, "6px");
+    assert.ok(token(system, "radius.4"), "a used radius the project does not name");
+    assert.ok(!token(system, "radius.3"), "3px is 4px");
+    assert.equal(
+        token(system, "radius.full")!.modes.light!.css,
+        "999px",
+        "the pill as the project wrote it; 50% is a circle",
+    );
+    assert.equal(scan.inferred.shadows, 3, "a lift, an inset line, and a ring");
+    assert.ok(token(system, "shadow.inset") && token(system, "shadow.ring"));
+});
+
+test("a color named for a role but not the role sits one level down, so it never takes the role's place", () => {
+    const scan = scanTokens(
+        project({
+            "a.css":
+                ":root { --accent: #2255aa; --primary-dark: #113377; --brand: #3366cc; --hairline: #dddddd; --border: #cccccc; --bg: #fff; --text: #111 }",
+        }),
+    );
+    const system = load(scan);
+
+    assert.equal(scan.inferred.roles.accent!.token, "color.accent.default");
+    assert.ok(token(system, "color.primary.dark"));
+    assert.ok(token(system, "color.brand.default"));
+    assert.ok(token(system, "color.hairline.default"));
+    assert.ok(
+        system.tokens.every(
+            (each) =>
+                !each.path.includes("color") ||
+                each.path.length !== 2 ||
+                each.type !== "color" ||
+                !/^(?:primary|brand|hairline)$/.test(each.path[1]!),
+        ),
+    );
+});
+
+test("text on the accent is a color the project has: no new black or white is invented", () => {
+    const scan = scanTokens(
+        project({
+            "a.css":
+                ":root { --bg: #fbfaf7; --text: #1f2328; --accent: #2563eb } .dark { --bg: #0e1013; --text: #e6e8eb; --accent: #6ea0ff }",
+        }),
+    );
+    const system = load(scan);
+    const onAccent = token(system, "color.text.on-accent")!;
+    const colors = new Set(
+        system.tokens.filter((each) => each.type === "color").map((each) => each.modes.light!.hex),
+    );
+
+    assert.ok(!colors.has("#000000") && !colors.has("#ffffff"));
+    assert.ok(["#fbfaf7", "#1f2328"].includes(onAccent.modes.light!.hex!));
+    assert.ok(["#0e1013", "#e6e8eb"].includes(onAccent.modes.dark!.hex!));
+});
+
+test("the surface is the background of cards and panels, and Tailwind's arbitrary colors count", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `body { background: #faf3e9 } .card { background: #fff } .panel { background: #fff } .row:nth-child(odd) { background: #f5f5f5 } .row2 { background: #f5f5f5 }`,
+            "App.tsx": `export const A = () => <p className="bg-[#fff4d6] text-[#b00020] p-3">x</p>;`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.surface!.value, "#ffffff");
+    assert.ok(scan.colors.some((color) => color.value === "#fff4d6"));
+});
+
+test("scanDesignSystem is the draft alone, as the bench calls it", async () => {
+    const { scanDesignSystem } = await import("../src/server/design/scan.ts");
+    const dir = project({
+        "a.css": ":root { --bg: #fff; --text: #111 } .dark { --bg: #000; --text: #eee }",
+    });
+    const draft = scanDesignSystem(dir);
+
+    assert.deepEqual(Object.keys(draft.modes), ["dark"]);
+    assert.ok((draft.tokens.color as Record<string, unknown>).bg);
+    assert.deepEqual(draft, scanTokens(dir).draft);
 });
