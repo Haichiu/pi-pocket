@@ -7,11 +7,14 @@ import {
     changeOf,
     createModel,
     editsOf,
+    linkOf,
     SECTIONS,
     sectionCounts,
     sectionOf,
+    shadowValue,
     tokenEdits,
     unsavedCount,
+    withPart,
 } from "./system.js";
 
 /** How often the open view asks whether Pi (or someone else) changed the system on disk. */
@@ -602,6 +605,40 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
+    /**
+     * What the system says that needs no action (`notes`): a contrast pair that is below its minimum on purpose (a disabled or
+     * decorative color: exempt). One quiet line that opens; it is not a problem, so it never shows as a warning.
+     */
+    function Notes({ notes, has }) {
+        if (!Array.isArray(notes) || notes.length === 0) {
+            return null;
+        }
+
+        return html`<details class="dsy-notes">
+            <summary>
+                ${`${notes.length} note${notes.length === 1 ? "" : "s"}, no action needed`}
+            </summary>
+            <ul>
+                ${notes.map(
+                    (note, index) =>
+                        html`<li key=${index}>
+                            ${
+                                note.token && has(note.token)
+                                    ? html`<button
+                                          type="button"
+                                          class="dsy-chip"
+                                          onClick=${() => env.openToken(note.token)}
+                                      >
+                                          ${note.token}
+                                      </button> `
+                                    : ""
+                            }${note.message}
+                        </li>`,
+                )}
+            </ul>
+        </details>`;
+    }
+
     /** Unsaved edits and the save: how many, undo, give up, and Save. */
     function SaveBar({ s, count, data, canEdit }) {
         // "Discard" with more than one change asks again, for a few seconds: nothing brings the changes back. The question is
@@ -982,6 +1019,7 @@ export function createSystemView(env, canvas, sections, widgets) {
                     has=${(name) => model.has(name)}
                     narrow=${narrow}
                 />
+                <${Notes} notes=${data.notes} has=${(name) => model.has(name)} />
                 ${!canEdit && html`<p class="dsy-readonly muted small"><${Ico} name="eye" size=${13} /> You can look at the system here. Only people who can steer the session change it.</p>`}
                 <${Section} ctx=${ctx} />`;
         }
@@ -1029,9 +1067,36 @@ export function createSystemView(env, canvas, sections, widgets) {
                     mode=${picking.mode}
                     narrow=${narrow}
                     onClose=${env.closePick}
+                    part=${picking.part}
+                    current=${
+                        picking.part
+                            ? linkOf(
+                                  model.shadowRaw(picking.token, picking.mode).layers[
+                                      picking.part.layer
+                                  ]?.[picking.part.key],
+                              )
+                            : undefined
+                    }
                     onPick=${(name) => {
                         env.closePick();
-                        env.editToken(picking.token, picking.mode, { alias: name });
+
+                        if (picking.part) {
+                            // A part of a shadow links to the token: the member is written as a reference, as in the file.
+                            const { layers } = model.shadowRaw(picking.token, picking.mode);
+
+                            env.editToken(picking.token, picking.mode, {
+                                value: shadowValue(
+                                    withPart(
+                                        layers,
+                                        picking.part.layer,
+                                        picking.part.key,
+                                        `{${name}}`,
+                                    ),
+                                ),
+                            });
+                        } else {
+                            env.editToken(picking.token, picking.mode, { alias: name });
+                        }
                     }}
                 />`
             }

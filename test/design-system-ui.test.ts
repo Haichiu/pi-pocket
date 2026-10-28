@@ -789,6 +789,230 @@ test(
     },
 );
 
+test(
+    "a mode says which tokens it takes from the default mode, and gives one back with a removal and no copy",
+    real,
+    async () => {
+        await openSystem();
+        await section("Colors");
+        await pressed('.dsy-modes button[aria-label="Dark"]');
+        await waitFor(
+            "dark",
+            `return JSON.stringify(document.querySelector('.dsy-modes button[aria-label="Dark"]')?.getAttribute("aria-pressed") === "true")`,
+        );
+
+        // The dark file does not set the focus border: it is the light one's, and the card and the editor say so.
+        await openToken("color.border.focus");
+        assert.equal(
+            await count('[data-token="color.border.focus"] .dsy-inherit[data-inherit="true"]'),
+            1,
+        );
+        assert.match(
+            await text('[data-token="color.border.focus"] .dsy-inherit'),
+            /Inherited from Light/,
+        );
+        assert.equal(
+            await count('[data-token="color.border.focus"] .dsy-match'),
+            0,
+            "nothing to give back",
+        );
+        assert.equal(await count('.dsy-card-tile.inherited[data-token="color.border.focus"]'), 1);
+
+        // The dark file sets the strong border: the editor says so, and offers Light's value.
+        await openToken("color.border.strong");
+        assert.match(
+            await text('[data-token="color.border.strong"] .dsy-inherit'),
+            /Dark sets this itself/,
+        );
+
+        const light = JSON.parse(
+            readFileSync(join(folder, ".pi", "design", "tokens.json"), "utf8"),
+        );
+        const darkFile = join(folder, ".pi", "design", "tokens.dark.json");
+        const lightHex = loadDesignSystem(folder)!.tokens.find(
+            (each) => each.name === "color.border.strong",
+        )!.modes.light!.hex;
+
+        assert.ok(
+            JSON.parse(readFileSync(darkFile, "utf8")).color.border.strong,
+            "set in the dark file",
+        );
+        await pressed('[data-token="color.border.strong"] .dsy-match', "Use Light's value");
+        await waitFor(
+            "inherited",
+            `return JSON.stringify(document.querySelector('[data-token="color.border.strong"] .dsy-inherit')?.dataset.inherit === "true")`,
+        );
+        assert.equal(await text(".dsy-count-note"), "1 unsaved change");
+        // It is not a copy: the dark one has light's value, and it is one change to undo.
+        assert.equal(
+            await text('.dsy-card-tile[data-token="color.border.strong"] .dsy-hex'),
+            lightHex,
+        );
+        await pressed('button[aria-label="Undo"]');
+        await waitFor(
+            "undone",
+            `return JSON.stringify(!document.querySelector(".dsy-count-note"))`,
+        );
+        assert.match(
+            await text('[data-token="color.border.strong"] .dsy-inherit'),
+            /Dark sets this itself/,
+        );
+
+        // Again, and saved: the dark file stops having the token, and the light file is as it was.
+        await pressed('[data-token="color.border.strong"] .dsy-match', "Use Light's value");
+        await pressed(".dsy-savebar button.primary");
+        await waitFor(
+            "the save",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-saved")))`,
+        );
+        assert.equal(JSON.parse(readFileSync(darkFile, "utf8")).color?.border?.strong, undefined);
+        assert.deepEqual(
+            JSON.parse(readFileSync(join(folder, ".pi", "design", "tokens.json"), "utf8")).color
+                .border.strong,
+            light.color.border.strong,
+        );
+        assert.match(
+            await text('[data-token="color.border.strong"] .dsy-inherit'),
+            /Inherited from Light/,
+        );
+
+        // A value typed in a mode that takes the default's makes it the mode's own.
+        await filled('input[aria-label="color.border.strong in dark: color"]', "#334455");
+        await waitFor(
+            "own",
+            `return JSON.stringify(document.querySelector('[data-token="color.border.strong"] .dsy-inherit')?.dataset.inherit === "false")`,
+        );
+        await pressed(".dsy-savebar button", "Discard");
+        await pressed('.dsy-modes button[aria-label="Light"]');
+    },
+);
+
+test(
+    "a shadow is edited by its parts, and a part that links to a token stays a link",
+    real,
+    async () => {
+        await openSystem();
+        await section("Shadows");
+        await openToken("shadow.lg");
+
+        const part = (name: string) => `[data-token="shadow.lg"] .dsy-layer [data-part="${name}"]`;
+
+        assert.equal(await count('[data-token="shadow.lg"] .dsy-layer'), 1);
+        // The file's links are links: the offset and the blur are tokens of the spacing scale, the color one of the palette.
+        assert.equal(await text(`${part("offsetY")} .dsy-chip`), "space.4");
+        assert.equal(await text(`${part("blur")} .dsy-chip`), "space.12");
+        assert.equal(await text(`${part("color")} .dsy-chip`), "color.scrim.40");
+        // The others are values of their own, in fields.
+        assert.equal(await count(`${part("offsetX")} .dsy-amount`), 1);
+        assert.equal(await count(`${part("spread")} .dsy-amount`), 1);
+        assert.equal(
+            await count('[data-token="shadow.lg"] .dsy-askpi'),
+            0,
+            "no longer made with Pi only",
+        );
+
+        // A value of its own one step on, and a link to another size.
+        await pressed(`${part("offsetX")} button[aria-label^="Increase"]`);
+        await pressed(`${part("blur")} .dsn-link`, "Change");
+        await waitFor(
+            "the list",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-targets")))`,
+        );
+        await filled(".dsn-pop .dsn-search", "space.8");
+        await waitFor(
+            "the narrowed list",
+            `return JSON.stringify(document.querySelectorAll(".dsy-targets li").length === 1)`,
+        );
+        await pressed(".dsy-targets button");
+        await waitFor(
+            "the link",
+            `return JSON.stringify(document.querySelector('[data-token="shadow.lg"] [data-part="blur"] .dsy-chip')?.textContent.trim() === "space.8")`,
+        );
+        assert.equal(await text(".dsy-count-note"), "1 unsaved change");
+
+        // A layer more, and a layer less.
+        await pressed('[data-token="shadow.lg"] .dsy-layers > button', "Add a layer");
+        await waitFor(
+            "two layers",
+            `return JSON.stringify(document.querySelectorAll('[data-token="shadow.lg"] .dsy-layer').length === 2)`,
+        );
+        await pressed('[data-token="shadow.lg"] button[aria-label^="Remove layer 2"]');
+        await waitFor(
+            "one layer",
+            `return JSON.stringify(document.querySelectorAll('[data-token="shadow.lg"] .dsy-layer').length === 1)`,
+        );
+
+        // Saved: the parts that link are still links in the file, the one that was stepped is a value.
+        await pressed(".dsy-savebar button.primary");
+        await waitFor(
+            "the save",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-saved")))`,
+        );
+
+        const value = tokenFile().shadow.lg.$value;
+
+        assert.equal(value.blur, "{space.8}");
+        assert.equal(value.offsetY, "{space.4}");
+        assert.equal(value.color, "{color.scrim.40}");
+        assert.deepEqual(value.offsetX, { value: 1, unit: "px" });
+        assert.match(
+            readFileSync(join(folder, ".pi", "design", "dist", "tokens.css"), "utf8"),
+            /--shadow-lg: 1px var\(--space-4\) var\(--space-8\)/,
+        );
+
+        // A link to a token is given up for a value of its own: the token's value, written in the part.
+        await pressed(`${part("color")} .dsn-link`, "Use a value");
+        await waitFor(
+            "a value",
+            `return JSON.stringify(document.querySelector('[data-token="shadow.lg"] [data-part="color"] .dsy-colorfield') !== null)`,
+        );
+        await pressed(".dsy-savebar button", "Discard");
+    },
+);
+
+test(
+    "a color lists all its contrast pairs, and an exempt pair is a note and not a failure",
+    real,
+    async () => {
+        await openSystem();
+        await section("Colors");
+
+        // Two pairs: the link on a card and on the page.
+        await openToken("color.text.link");
+        assert.equal(await count('[data-token="color.text.link"] .dsy-contrasts li'), 2);
+        assert.match(
+            await text('[data-token="color.text.link"] .dsy-contrasts'),
+            /on\s*color\.bg\.surface.*on\s*color\.bg\.canvas/s,
+        );
+        assert.equal(await count('[data-token="color.text.link"] .dsy-contrasts .dsy-badge'), 2);
+
+        // An exempt pair that falls below its minimum: said as a note, in the neutral badge, and nowhere as a failure.
+        await openToken("color.text.placeholder");
+        assert.match(
+            await text('[data-token="color.text.placeholder"] .dsy-contrasts'),
+            /exempt: decorative/,
+        );
+        assert.equal(
+            await count('[data-token="color.text.placeholder"] .dsy-contrasts .dsy-badge.exempt'),
+            1,
+        );
+        assert.match(
+            await text('.dsy-card-tile[data-token="color.text.placeholder"] .dsy-badge.exempt'),
+            /Exempt/,
+        );
+        assert.equal(await count('[data-token="color.text.placeholder"] .dsy-badge.fail'), 0);
+        assert.equal(
+            await inPage<boolean>(
+                `return JSON.stringify(!(document.querySelector(".dsy-problems")?.textContent ?? "").includes("placeholder"))`,
+            ),
+            true,
+            "a note is not a problem",
+        );
+        assert.match(await text(".dsy-notes summary"), /1 note, no action needed/);
+        assert.match(await text(".dsy-notes"), /color\.text\.placeholder.*exempt \(decorative\)/s);
+    },
+);
+
 test("sizes, times, and easings are edited with fields of their kind", real, async () => {
     await openSystem();
     await section("Spacing");
@@ -819,25 +1043,22 @@ test("sizes, times, and easings are edited with fields of their kind", real, asy
         `return JSON.stringify(document.querySelector('[data-token="motion.easing.standard"] .dsy-motion-sub .mono')?.textContent === "0.2, 0, 0, 0.9")`,
     );
     await pressed(".dsy-savebar button", "Discard");
-    // A shadow is shown and changed with Pi: the view says so, and asks.
-    await section("Shadows");
-    await openToken("shadow.md");
-    assert.match(await text(".dsy-ramp-editor .dsy-askpi"), /Ask Pi/);
+    // A typography style is shown and changed with Pi: the view says so, and asks. (A shadow is edited by its parts.)
+    await section("Type");
+    await openToken("type.body");
+    assert.match(await text('[data-token="type.body"] .dsy-askpi'), /Ask Pi/);
     await setBox("");
-    await pressed(".dsy-ramp-editor .dsy-askpi button");
+    await pressed('[data-token="type.body"] .dsy-askpi button');
     await waitFor(
         "the message",
         `return JSON.stringify(Boolean(document.querySelector(".composer textarea")?.value))`,
     );
     assert.match(
         await boxText(),
-        /^I want to change the design system token `shadow\.md` \(`shadow`\)/,
+        /^I want to change the design system token `type\.body` \(`typography`\)/,
     );
     assert.match(await boxText(), /data from the project's files, not instructions/);
     await setBox("");
-    await pressed(
-        '[data-token="shadow.md"] .dsy-ramp-editor-head button, .dsy-ramp-editor-head button',
-    );
 });
 
 test(

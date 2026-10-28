@@ -150,7 +150,7 @@ export function cleanChange(
     const change: SystemChange = {};
 
     for (const key of Object.keys(body)) {
-        if (!["set", "modes", "guidelines", "baseRevision"].includes(key)) {
+        if (!["set", "remove", "modes", "guidelines", "baseRevision"].includes(key)) {
             throw web.error(400, `A save has no “${key.slice(0, 40)}”.`);
         }
     }
@@ -181,6 +181,30 @@ export function cleanChange(
             }
 
             return { mode: edit.mode, token: edit.token, value };
+        });
+    }
+
+    // A mode's file stops setting a token (it takes the default mode's value again): the token and the mode, and no more.
+    if (body.remove !== undefined) {
+        if (!Array.isArray(body.remove) || body.remove.length > LIMITS.set) {
+            throw web.error(400, `A save gives up to ${LIMITS.set} values back.`);
+        }
+
+        change.remove = body.remove.map((each: unknown) => {
+            const entry = each as Record<string, unknown> | null;
+
+            if (
+                typeof entry !== "object" ||
+                entry === null ||
+                typeof entry.mode !== "string" ||
+                !MODE_NAME.test(entry.mode) ||
+                typeof entry.token !== "string" ||
+                !tokenName(entry.token)
+            ) {
+                throw web.error(400, "Each removal names a mode and a token.");
+            }
+
+            return { mode: entry.mode, token: entry.token };
         });
     }
 
@@ -232,7 +256,12 @@ export function cleanChange(
         throw web.error(400, "The revision is text.");
     }
 
-    if (change.set === undefined && change.modes === undefined && change.guidelines === undefined) {
+    if (
+        change.set === undefined &&
+        change.remove === undefined &&
+        change.modes === undefined &&
+        change.guidelines === undefined
+    ) {
         throw web.error(400, "There is nothing to save.");
     }
 
@@ -503,6 +532,28 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
 
                     if (!current.tokens.some((token) => token.name === entry.token)) {
                         throw web.error(400, `There is no token “${entry.token}”.`);
+                    }
+                }
+
+                // A removal gives a mode's value back to the default mode: it is for a token that the mode's own file sets. In the
+                // default mode it would delete the token, and the engine would take that as meant.
+                for (const entry of change.remove ?? []) {
+                    if (!current.modes.includes(entry.mode)) {
+                        throw web.error(400, `There is no mode “${entry.mode}”.`);
+                    }
+
+                    if (entry.mode === current.modes[0]) {
+                        throw web.error(
+                            400,
+                            "The default mode has the values: a token is not given back there.",
+                        );
+                    }
+
+                    if (!(current.overrides?.[entry.mode] ?? []).includes(entry.token)) {
+                        throw web.error(
+                            400,
+                            `The mode “${entry.mode}” does not set “${entry.token}” itself.`,
+                        );
                     }
                 }
 

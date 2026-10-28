@@ -99,7 +99,7 @@ export function createSystemData(pocket, store, data) {
                 return false;
             }
 
-            const { set, guidelines, count } = changeOf(system, state.history);
+            const { set, remove, guidelines, count } = changeOf(system, state.history);
 
             if (count === 0) {
                 store.set({ history: emptyHistory() });
@@ -112,6 +112,7 @@ export function createSystemData(pocket, store, data) {
             try {
                 const result = await pocket.api(`c/${conversation}/system`, {
                     ...(set.length > 0 ? { set } : {}),
+                    ...(remove === undefined ? {} : { remove }),
                     ...(guidelines === undefined ? {} : { guidelines }),
                     baseRevision: system.revision,
                 });

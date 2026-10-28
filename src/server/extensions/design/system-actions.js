@@ -61,8 +61,16 @@ export function createSystemActions(env, systemData) {
             for (const [, op] of editsOf(history)) {
                 if (op.kind === "token" && op.token === name) {
                     const saved = token.modes[op.mode];
+                    const own = system.data.overrides?.[op.mode];
+                    // What a mode's file does not set, it takes from the default again; what it sets, it has as saved.
                     const raw =
-                        saved.alias === undefined ? { value: saved.value } : { alias: saved.alias };
+                        op.mode !== system.data.modes[0] &&
+                        Array.isArray(own) &&
+                        !own.includes(name)
+                            ? { inherit: true }
+                            : saved.alias === undefined
+                              ? { value: saved.value }
+                              : { alias: saved.alias };
 
                     next = push(next, tokenEdit(op.mode, name, raw), Date.now(), false);
                 }
@@ -71,18 +79,17 @@ export function createSystemActions(env, systemData) {
             store.set({ history: next });
         },
 
-        /** A mode takes the default mode's value of a token. */
-        matchDefault(name, mode) {
-            const token = store.get().system.data?.tokens.find((each) => each.name === name);
-            const base = token?.modes[store.get().system.data.modes[0]];
+        /**
+         * A mode takes the default mode's value of a token again: its file stops setting the token. It is a removal that a save
+         * writes, not a copy of the default's value (a copy would stop following the default).
+         */
+        inheritToken(name, mode) {
+            env.editToken(name, mode, { inherit: true });
+        },
 
-            if (base !== undefined) {
-                env.editToken(
-                    name,
-                    mode,
-                    base.alias === undefined ? { value: base.value } : { alias: base.alias },
-                );
-            }
+        /** Open the list of tokens that a part of a shadow (`part`: `{ layer, key, type }`) may link to. */
+        pickPart(token, mode, part) {
+            store.set({ sysPick: { token, mode, part } });
         },
 
         undo() {
