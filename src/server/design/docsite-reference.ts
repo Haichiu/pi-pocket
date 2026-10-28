@@ -188,7 +188,15 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
     );
     // Tokens Studio: the first entry of the generated file, so that what a person sees is what the file holds.
     const studio = studioSnippet(ctx, sample);
+    // `dist/README.md` is written by the compiler (stream T); the page lists it when the system has it.
+    const readme = (compiled as { readme?: string }).readme ?? "";
     const files = [
+        {
+            id: "code-readme",
+            title: "README.md",
+            note: "What each file is, and how to use it with CSS, Tailwind v4, Style Dictionary, and Tokens Studio.",
+            text: readme,
+        },
         {
             id: "code-css",
             title: "tokens.css",

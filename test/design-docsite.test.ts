@@ -1542,3 +1542,19 @@ test(
         });
     },
 );
+
+test("the file list shows dist/README.md when the compiler writes one, and nothing when it does not", () => {
+    const system = flagship();
+    const none = renderSystemDoc(system).html;
+
+    assert.doesNotMatch(none, /id="code-readme"/);
+    system.compiled = {
+        ...system.compiled,
+        readme: "# <b>Files</b>\n\nUse tokens.css.",
+    } as typeof system.compiled;
+
+    const html = renderSystemDoc(system).html;
+
+    assert.match(html, /<summary>README\.md<span/);
+    assert.match(html, /id="code-readme"><code># &lt;b&gt;Files&lt;\/b&gt;/);
+});
