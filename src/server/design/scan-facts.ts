@@ -121,6 +121,8 @@ export interface Facts {
     files: string[];
     partial: boolean;
     tailwind: boolean;
+    /** The project has a WordPress `theme.json`: its variables are named `--wp--preset--…`. */
+    wordpress?: boolean;
     /** The mode that the file being read is named for (`dark.less`), when it is one. */
     fileMode?: Scope;
     /** Declarations that compute a size from custom properties (`calc(var(--gap) * 2)`): the scan resolves them later. */
@@ -1204,8 +1206,265 @@ const SPACING_CLASS =
     /(?<![\w-])(?:p|px|py|pt|pr|pb|pl|ps|pe|m|mx|my|mt|mr|mb|ml|ms|me|gap|gap-x|gap-y|space-x|space-y)-(\d+(?:\.\d+)?)(?![\w-])/g;
 
 /** The theme-like file names: a JavaScript file with these may hold a design theme. */
+// A script that writes styles: styled-components, Emotion, Stitches, makeStyles, a style prop or an `sx` prop.
+const STYLED =
+    /\bstyled\s*[.(]|\bcss\s*`|createGlobalStyle|keyframes\s*`|makeStyles|createUseStyles|\bsx\s*=|style\s*=\s*\{|\bcva\s*\(|\bglobalStyle\b|StyleSheet\.create|\bstyle\s*:\s*\{/;
+
 const THEMEISH =
     /(?:^|\/)(?:tailwind\.config|[^/]*(?:theme|tokens?|colors?|palette|design|variables|styles?|constants?|config)[^/]*)\.(?:[cm]?[jt]s|tsx?)$|\/(?:theme|themes|tokens|styles|design|constants)\/[^/]+\.[cm]?[jt]sx?$/i;
+
+/** `--wp--preset--color--primary` is `--color-primary`; `--wp--custom--radius--pill` is `--custom-radius-pill`; `var:preset|color|primary` too. */
+function wordpressNames(text: string): string {
+    return text
+        .replace(/--wp--preset--([\w-]+?)--([\w-]+)/g, "--$1-$2")
+        .replace(
+            /--wp--custom--([\w-]+)/g,
+            (_, rest: string) => `--custom-${rest.replace(/--/g, "-")}`,
+        )
+        .replace(/var:preset\|([\w-]+)\|([\w-]+)/g, "var(--$1-$2)")
+        .replace(
+            /var:custom\|([\w|-]+)/g,
+            (_, rest: string) => `var(--custom-${rest.replace(/\|/g, "-")})`,
+        );
+}
+
+const WP_CSS: Record<string, string> = {
+    background: "background-color",
+    text: "color",
+};
+
+/** A WordPress `styles` object as CSS rules, so that the scan reads how the theme uses its presets. */
+function wordpressCss(styles: unknown): string {
+    const isObj = (value: unknown): value is Record<string, unknown> =>
+        typeof value === "object" && value !== null && !Array.isArray(value);
+    const text = (value: unknown) =>
+        typeof value === "string" || typeof value === "number"
+            ? wordpressNames(String(value))
+            : undefined;
+    let rules = 0;
+
+    const declarations = (node: Record<string, unknown>): string => {
+        const out: string[] = [];
+        const put = (property: string, value: unknown) => {
+            const found = text(value);
+
+            if (found !== undefined && found !== "") {
+                out.push(`${property}: ${found};`);
+            }
+        };
+
+        if (isObj(node.color)) {
+            for (const [key, property] of Object.entries(WP_CSS)) {
+                put(property, node.color[key]);
+            }
+        }
+
+        if (isObj(node.typography)) {
+            put("font-family", node.typography.fontFamily);
+            put("font-size", node.typography.fontSize);
+            put("line-height", node.typography.lineHeight);
+            put("font-weight", node.typography.fontWeight);
+        }
+
+        if (isObj(node.border)) {
+            put("border-color", node.border.color);
+            put("border-radius", node.border.radius);
+            put("border-width", node.border.width);
+        }
+
+        if (isObj(node.spacing)) {
+            for (const key of ["padding", "margin"]) {
+                const value = node.spacing[key];
+
+                if (isObj(value)) {
+                    for (const side of ["top", "right", "bottom", "left"]) {
+                        put(`${key}-${side}`, value[side]);
+                    }
+                } else {
+                    put(key, value);
+                }
+            }
+
+            put("gap", node.spacing.blockGap);
+        }
+
+        put("box-shadow", node.shadow);
+
+        return out.join(" ");
+    };
+
+    const rule = (selector: string, node: unknown): string => {
+        if (!isObj(node) || ++rules > 120) {
+            return "";
+        }
+
+        const own = declarations(node);
+        const nested: string[] = [];
+
+        for (const [key, child] of Object.entries(node)) {
+            if (key.startsWith(":")) {
+                nested.push(rule(`${selector}${key}`, child));
+            }
+        }
+
+        return `${own === "" ? "" : `${selector} { ${own} }`} ${nested.join(" ")}`;
+    };
+
+    if (!isObj(styles)) {
+        return "";
+    }
+
+    const out = [rule("body", styles)];
+    const elements: Record<string, string> = {
+        link: "a",
+        button: ".wp-element-button, .wp-block-button__link",
+        heading: "h1, h2, h3, h4, h5, h6",
+        caption: "figcaption",
+        cite: "cite",
+    };
+
+    if (isObj(styles.elements)) {
+        for (const [key, node] of Object.entries(styles.elements)) {
+            out.push(
+                rule(
+                    elements[key] ??
+                        (/^h[1-6]$/.test(key) ? key : `.wp-element-${key.replace(/[^\w-]/g, "")}`),
+                    node,
+                ),
+            );
+        }
+    }
+
+    if (isObj(styles.blocks)) {
+        for (const [key, node] of Object.entries(styles.blocks)) {
+            out.push(rule(`.wp-block-${key.replace(/^core\//, "").replace(/[^\w-]/g, "-")}`, node));
+        }
+    }
+
+    return out.join("\n");
+}
+
+/**
+ * A WordPress block theme's `theme.json` (and its style variations in `styles/`): the palette, font sizes, font
+ * families, spacing sizes, shadows, and `settings.custom` become variables; `styles` becomes the rules that use them.
+ * A variation named for dark (`styles/dark.json`) holds the dark values. Returns whether the file was one.
+ */
+function wordpressTheme(facts: Facts, file: string, source: string): boolean {
+    if (
+        !/\bsettings\b/.test(source) ||
+        !/\b(?:palette|fontSizes|spacingSizes|presets|fontFamilies|custom)\b/.test(source)
+    ) {
+        return false;
+    }
+
+    let root: unknown;
+
+    try {
+        root = JSON.parse(source);
+    } catch {
+        return false;
+    }
+
+    const isObj = (value: unknown): value is Record<string, unknown> =>
+        typeof value === "object" && value !== null && !Array.isArray(value);
+    const settings = isObj(root) ? root.settings : undefined;
+
+    if (
+        !isObj(root) ||
+        !isObj(settings) ||
+        (!/wp\.org|theme\.json/i.test(`${root.$schema ?? ""} ${file}`) && !isObj(settings.color))
+    ) {
+        return false;
+    }
+
+    facts.wordpress = true;
+
+    const title = typeof root.title === "string" ? modeOf(root.title) : undefined;
+    const scope: Scope =
+        facts.fileMode ?? (title === "dark" || title === "light" ? title : "default");
+    const add = (name: string, value: unknown, hint: Category) => {
+        if (typeof value === "string" || typeof value === "number") {
+            addVar(facts, {
+                name,
+                value: String(value).slice(0, 400),
+                scope,
+                kind: "css",
+                file,
+                hint,
+            });
+        }
+    };
+    const list = (value: unknown): Record<string, unknown>[] =>
+        Array.isArray(value) ? value.filter(isObj).slice(0, 80) : [];
+    const key = (value: unknown) => String(value ?? "").replace(/[^\w-]/g, "-");
+
+    if (isObj(settings.color)) {
+        for (const item of list(settings.color.palette)) {
+            add(`color-${key(item.slug)}`, item.color, "color");
+        }
+    }
+
+    if (isObj(settings.typography)) {
+        for (const item of list(settings.typography.fontSizes)) {
+            add(`font-size-${key(item.slug)}`, item.size, "text");
+        }
+
+        for (const item of list(settings.typography.fontFamilies)) {
+            add(`font-family-${key(item.slug)}`, item.fontFamily, "font");
+        }
+    }
+
+    if (isObj(settings.spacing)) {
+        for (const item of list(settings.spacing.spacingSizes)) {
+            add(`spacing-${key(item.slug)}`, item.size, "space");
+        }
+    }
+
+    if (isObj(settings.shadow)) {
+        for (const item of list(settings.shadow.presets)) {
+            add(`shadow-${key(item.slug)}`, item.shadow, "shadow");
+        }
+    }
+
+    // `settings.custom`: nested groups, named by their path (`--custom-radius-pill`).
+    const custom = (node: unknown, path: string[]) => {
+        if (path.length > 4) {
+            return;
+        }
+
+        if (isObj(node)) {
+            for (const [name, child] of Object.entries(node).slice(0, 60)) {
+                custom(child, [...path, name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()]);
+            }
+        } else if (typeof node === "string" || typeof node === "number") {
+            const name = path.join("-");
+            const hint: Category | undefined =
+                path[0] === "color"
+                    ? "color"
+                    : path[0] === "radius"
+                      ? "radius"
+                      : path[0] === "spacing"
+                        ? "space"
+                        : path[0] === "shadow"
+                          ? "shadow"
+                          : undefined;
+
+            if (hint !== undefined) {
+                add(`custom-${name}`, node, hint);
+            }
+        }
+    };
+
+    custom(settings.custom, []);
+
+    const css = wordpressCss(root.styles);
+
+    if (css !== "") {
+        ingestStyles(facts, file, parseStyles(css));
+    }
+
+    return true;
+}
 
 /** One entry of a Sass map: its key, and its value as text, or as entries when the value is a map. */
 interface MapEntry {
@@ -1386,6 +1645,11 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
 
     facts.fileMode = mode === "dark" || mode === "light" ? mode : undefined;
 
+    // WordPress names its variables `--wp--preset--color--primary`; the scan reads them as `--color-primary`.
+    if (facts.wordpress) {
+        raw = wordpressNames(raw);
+    }
+
     // `$x` and `@x` are uses of a stylesheet variable.
     if (extension === ".scss" || extension === ".sass" || extension === ".less") {
         for (const match of text.matchAll(/[$@]([A-Za-z_][\w-]*)(?!\s*:)/g)) {
@@ -1410,7 +1674,9 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
     }
 
     if (extension === ".json") {
-        importTokens(facts.imported, rel, raw);
+        if (!wordpressTheme(facts, rel, raw)) {
+            importTokens(facts.imported, rel, raw);
+        }
 
         return;
     }
@@ -1429,7 +1695,10 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
         }
 
         ingestStyles(facts, rel, inline);
-    } else if (isScript) {
+    } else if (
+        isScript &&
+        (THEMEISH.test(rel) || !/^\.(?:[cm]?[jt]s)$/.test(extension) || STYLED.test(raw))
+    ) {
         const blocks = templateStyles(raw);
 
         for (const block of blocks) {

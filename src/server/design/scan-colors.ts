@@ -219,7 +219,7 @@ export function words(name: string): string[] {
         (word) =>
             word !== "" &&
             !w(
-                "color colour clr c theme tw ui sys md ref palette colors var bs ifm sl mui ant chakra mantine pico vt",
+                "color colour clr c theme tw ui sys md ref palette colors var bs ifm sl mui ant chakra mantine pico vt wp preset custom",
             ).includes(word),
     );
 
@@ -637,7 +637,11 @@ export function chooseRoles(
             }
 
             if (role === "accent") {
-                // A colored `accent` is the role's own name; a gray one (shadcn's hover surface) is not the brand.
+                // A color is the brand when it has a hue; a gray one (shadcn's hover surface) is not. How vivid it is only
+                // breaks a tie: a muted brand `primary` still beats a vivid `accent-1`.
+                score += color.c >= 0.03 ? 20 + Math.min(10, color.c * 40) : -10;
+
+                // The role's own word beats a synonym, among colors that have a hue.
                 if (
                     segs.includes("accent") &&
                     !segs.includes("primary") &&
@@ -647,7 +651,10 @@ export function chooseRoles(
                     score += 10;
                 }
 
-                score += Math.min(60, color.c * 400) - (color.c < 0.03 ? 10 : 0);
+                // `accent-1`, `accent-2`: one of a set, not the role.
+                if (segs.some((seg) => /^\d$/.test(seg))) {
+                    score -= 15;
+                }
 
                 // A long name that only holds a role word (`tooltipExternalLinkColor`) is not the brand.
                 const strangers = segs.filter(
@@ -849,7 +856,13 @@ export function chooseRoles(
                 );
             }),
             // A quiet text is a gray: a tinted color (a light link color) is a weaker candidate than a gray.
-            (color) => (color.fact?.text ?? 0) * (color.c < 0.05 ? 1 : 0.3),
+            // A quiet text is also clearly softer than the body text.
+            (color) =>
+                (color.fact?.text ?? 0) *
+                (color.c < 0.05 ? 1 : 0.3) *
+                (contrastRatio(color.rgba, page.rgba) <= contrastRatio(ink.rgba, page.rgba) * 0.7
+                    ? 1
+                    : 0.5),
         )[0];
 
         if (top !== undefined) {

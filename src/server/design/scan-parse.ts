@@ -39,16 +39,16 @@ export const MAX_MAP = 8000;
 export const COMMENTS =
     /(?<![\w.*"'`/-])\/\*[\s\S]*?(?:\*\/|$)|<!--[\s\S]*?(?:-->|$)|(?<![:\w"'`(/\\])\/\/[^\n]*/g;
 
-const DARK_WORD = String.raw`(?:dark|dark-theme|dark-mode|dark-theme|theme-dark|night|nightmode)`;
-// A class or attribute that selects the dark theme: `.dark`, `[data-theme="dark"]`, `[data-bs-theme=dark]`...
-const DARK_PART = String.raw`(?:\.${DARK_WORD}\b|\[data-(?:bs-)?(?:theme|mode|color-mode|color-scheme|appearance)\s*[~|^$*]?=\s*["']?(?:dark|night)["']?\s*\])`;
+const DARK_WORD = String.raw`(?:dark|dark[-_]theme|dark[-_]mode|darkmode|dark[-_]scheme|theme[-_]{1,2}dark|mode[-_]{1,2}dark|scheme[-_]dark|color[-_]scheme[-_]dark|is[-_]dark|has[-_]dark|ui[-_]dark|app[-_]dark|body[-_]dark|v-theme--dark|chakra-ui-dark|ant-dark|night|night[-_]mode|nightmode|theme[-_]night)`;
+// A class or attribute that selects the dark theme: `.dark`, `[data-theme="dark"]`, `[data-mantine-color-scheme=dark]`...
+const DARK_PART = String.raw`(?:\.${DARK_WORD}(?![\w-])|\[(?:data-[\w-]*)?(?:theme|mode|color-mode|color-scheme|colorscheme|appearance|scheme)\s*[~|^$*]?=\s*["']?(?:dark|night|dark[-_]mode|darkmode)["']?\s*\])`;
 const DARK_ANY = new RegExp(DARK_PART, "i");
 // A root-like compound that ends in the dark class: `html.dark`, `:root[data-theme=dark]`, `body.dark`, `.dark`.
 const DARK_ROOT = new RegExp(
     String.raw`^(?:html|body|:root|\*|:host)?(?:${DARK_PART})+(?::root)?$`,
     "i",
 );
-const LIGHT_PART = String.raw`(?:\.(?:light|light-theme|light-mode|theme-light)\b|\[data-(?:bs-)?(?:theme|mode|color-mode|color-scheme|appearance)\s*[~|^$*]?=\s*["']?light["']?\s*\])`;
+const LIGHT_PART = String.raw`(?:\.(?:light|light[-_]theme|light[-_]mode|lightmode|theme[-_]{1,2}light|mode[-_]{1,2}light|scheme[-_]light|v-theme--light|chakra-ui-light|ant-light|day|day[-_]mode)(?![\w-])|\[(?:data-[\w-]*)?(?:theme|mode|color-mode|color-scheme|colorscheme|appearance|scheme)\s*[~|^$*]?=\s*["']?(?:light|day)["']?\s*\])`;
 // A root-like compound that ends in the light class: `:root[data-mode="light"]`, `html.light`, `.light`.
 const LIGHT_ROOT = new RegExp(
     String.raw`^(?:html|body|:root|\*|:host)?(?:${LIGHT_PART})+(?::root)?$`,
