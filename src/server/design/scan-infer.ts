@@ -540,12 +540,10 @@ function categorize(
             }
         }
 
-        {
-            const most = Math.max(layout.space, layout.text, layout.radius, layout.box);
+        const most = Math.max(layout.space, layout.text, layout.radius, layout.box);
 
-            if (most > 0 && layout.box < most) {
-                return layout.space === most ? "space" : layout.radius === most ? "radius" : "text";
-            }
+        if (most > 0 && layout.box < most) {
+            return layout.space === most ? "space" : layout.radius === most ? "radius" : "text";
         }
 
         return "size";

@@ -212,6 +212,8 @@ export function merge(into: ColorFact | undefined, more: ColorFact, hex: string)
 export function words(name: string): string[] {
     const all = name
         .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+        // `red9`, `gray12`: a name and its step.
+        .replace(/([a-z]{3,})(\d{1,3})(?![\d-])/gi, "$1-$2")
         .toLowerCase()
         .split(/[-_.\s]+/);
     // The prefixes of well-known libraries are no part of what a color is for (`--bs-body-bg`, `--ifm-color-primary`).
@@ -346,6 +348,8 @@ export function nameScore(role: RoleName, segs: string[]): number {
 
             if (
                 state ||
+                // `on-surface-variant` (Material 3) is the quieter text.
+                (onBase && segs.includes("variant")) ||
                 // `text-2`, `ink-3`: the second and third text colors are the quieter ones.
                 (ink && segs.some((seg) => /^[2-4]$/.test(seg))) ||
                 has(
@@ -388,6 +392,14 @@ export function nameScore(role: RoleName, segs: string[]): number {
             const quiet =
                 has(segs, w("muted subtle dim dimmed faint soft weak hint quiet caption meta")) ||
                 (weakAt >= 0 && inkAt >= 0 && inkAt < weakAt);
+
+            if (
+                segs.includes("on") &&
+                segs.includes("variant") &&
+                has(segs, ["surface", "background", "bg"])
+            ) {
+                return 78;
+            }
 
             if (
                 (state && !segs.includes("placeholder")) ||

@@ -937,6 +937,7 @@ function themeVars(facts: Facts, file: string, text: string): void {
     }
 
     const paletteTree: Record<string, Literal> = {};
+    const references: { name: string; target: string; hint: Category }[] = [];
 
     for (const match of text.matchAll(heads)) {
         if (++seen > 60) {
@@ -994,10 +995,58 @@ function themeVars(facts: Facts, file: string, text: string): void {
 
             leaves(part, [], found, category);
 
+            // Tokens that name other tokens of the group: Stitches `"$gray1"`, `"$colors$gray1"`, `"{colors.gray.1}"`.
+            const byName = new Map(found.map((leaf) => [leaf.path.join("-"), leaf.value]));
+            const resolve = (value: string): string | undefined => {
+                let current = value;
+
+                for (let hop = 0; hop < 4 && /^\{[\w.$-]+\}$|^\$[\w$.-]+$/.test(current); hop++) {
+                    const name = current.replace(/^\{|\}$/g, "").replace(/^\$/, "");
+                    const full = name.split(/[$.]/).filter((part) => part !== "");
+                    const next =
+                        byName.get(full.join("-")) ??
+                        byName.get(full.slice(1).join("-")) ??
+                        byName.get(full.at(-1) ?? "");
+
+                    if (next === undefined) {
+                        return undefined;
+                    }
+
+                    current = next;
+                }
+
+                return /^\{|^\$/.test(current) ? undefined : current;
+            };
+
             for (const leaf of found) {
                 if (leaf.path.length === 0 && category !== "font") {
                     continue;
                 }
+
+                const value = resolve(leaf.value);
+
+                if (value === undefined) {
+                    continue;
+                }
+
+                // Remember which token a reference named, so the other mode's value of that token can follow it.
+                if (value !== leaf.value && at === "default") {
+                    const target = leaf.value
+                        .replace(/^\{|\}$/g, "")
+                        .split(/[$.]/)
+                        .filter((part) => part !== "")
+                        .at(-1);
+
+                    if (target !== undefined) {
+                        references.push({
+                            name: leaf.path.join("-") || key,
+                            target,
+                            hint: category,
+                        });
+                    }
+                }
+
+                leaf.value = value;
 
                 addVar(facts, {
                     name: leaf.path.join("-") || key,
@@ -1037,6 +1086,21 @@ function themeVars(facts: Facts, file: string, text: string): void {
             );
         } else {
             emit(literal, scope);
+        }
+    }
+
+    // `bg: "$gray1"` in the base theme, and a dark theme that sets `gray1`: the dark `bg` is the dark `gray1`.
+    for (const { name, target, hint } of references) {
+        const other = facts.vars.findLast(
+            (fact) =>
+                fact.file === file &&
+                fact.name === target &&
+                fact.hint === hint &&
+                fact.scope !== "default",
+        );
+
+        if (other !== undefined) {
+            addVar(facts, { name, value: other.value, scope: other.scope, kind: "js", file, hint });
         }
     }
 
@@ -1276,6 +1340,10 @@ const SPACING_CLASS =
 // A script that writes styles: styled-components, Emotion, Stitches, makeStyles, a style prop or an `sx` prop.
 const STYLED =
     /\bstyled\s*[.(]|\bcss\s*`|createGlobalStyle|keyframes\s*`|makeStyles|createUseStyles|\bsx\s*=|style\s*=\s*\{|\bcva\s*\(|\bglobalStyle\b|StyleSheet\.create|\bstyle\s*:\s*\{/;
+
+// A script that holds a theme whatever its name: `colors: {` / `palette: {` / `themes: {` with a few color values.
+const THEME_CONTENT =
+    /\b(?:colors|colours|palette|themes?)\s*:\s*\{[^]{0,2500}?#[0-9a-fA-F]{3,8}\b[^]{0,1500}?#[0-9a-fA-F]{3,8}\b/;
 
 const THEMEISH =
     /(?:^|\/)(?:tailwind\.config|[^/]*(?:theme|tokens?|colors?|palette|design|variables|styles?|constants?|config)[^/]*)\.(?:[cm]?[jt]s|tsx?)$|\/(?:theme|themes|tokens|styles|design|constants)\/[^/]+\.[cm]?[jt]sx?$/i;
@@ -1787,7 +1855,10 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
         ingestStyles(facts, rel, inline);
     } else if (
         isScript &&
-        (THEMEISH.test(rel) || !/^\.(?:[cm]?[jt]s)$/.test(extension) || STYLED.test(raw))
+        (THEMEISH.test(rel) ||
+            THEME_CONTENT.test(raw) ||
+            !/^\.(?:[cm]?[jt]s)$/.test(extension) ||
+            STYLED.test(raw))
     ) {
         const blocks = templateStyles(raw);
 
@@ -1795,7 +1866,7 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
             ingestStyles(facts, rel, parseStyles(block));
         }
 
-        if (THEMEISH.test(rel)) {
+        if (THEMEISH.test(rel) || THEME_CONTENT.test(raw)) {
             // A theme object holds values, not styles in use: `border: "#2d3640"` there is a token, not a border.
             themeVars(facts, rel, raw);
         } else {
