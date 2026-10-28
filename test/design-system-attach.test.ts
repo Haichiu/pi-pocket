@@ -68,7 +68,10 @@ test("with no design system, the link gets a note that says how to make one", as
         content: page('<link rel="stylesheet" href="ds/tokens.css">'),
     });
 
-    assert.match(reply, /The page links ds\/tokens\.css, but this project has no design system \(\.pi\/design\/\)/);
+    assert.match(
+        reply,
+        /The page links ds\/tokens\.css, but this project has no design system \(\.pi\/design\/\)/,
+    );
     assert.match(reply, /design_system init/);
     assert.deepEqual(await names("no-system"), []);
 });
@@ -84,7 +87,10 @@ test("a page that links the tokens gets the compiled file, byte for byte", async
         content: page('<link rel="stylesheet" href="ds/tokens.css">'),
     });
 
-    assert.match(reply, /Attached ds\/tokens\.css from the design system "[^"]+" \(a snapshot of now; publish again to refresh\)\./);
+    assert.match(
+        reply,
+        /Attached ds\/tokens\.css from the design system "[^"]+" \(a snapshot of now; publish again to refresh\)\./,
+    );
     assert.deepEqual(await names("uses-tokens"), ["ds/tokens.css"]);
 
     const found = await bundle("uses-tokens");
@@ -102,7 +108,11 @@ test("all three files are attached when a page links them, and a page that links
             '<link rel="stylesheet" href="ds/tokens.css"><link rel="stylesheet" href="./ds/tailwind.css"><style>@import url("ds/components.css");</style>',
         ),
     });
-    assert.deepEqual(await names("uses-all"), ["ds/components.css", "ds/tailwind.css", "ds/tokens.css"]);
+    assert.deepEqual(await names("uses-all"), [
+        "ds/components.css",
+        "ds/tailwind.css",
+        "ds/tokens.css",
+    ]);
 
     const reply = await publish(artifact, { id: "plain", title: "Plain", content: page("") });
 
@@ -144,7 +154,9 @@ test("a new version refreshes the snapshot; a version that no longer links keeps
     const first = (await bundle("refresh")).assets[0]!.bytes.toString("utf8");
 
     assert.match(first, /--color-accent-default: #3b82f6;/);
-    writeDesignSystem(work, { set: [{ mode: "light", token: "color.accent.default", value: "#ef4444" }] });
+    writeDesignSystem(work, {
+        set: [{ mode: "light", token: "color.accent.default", value: "#ef4444" }],
+    });
 
     const reply = await publish(artifact, {
         id: "refresh",
@@ -157,7 +169,11 @@ test("a new version refreshes the snapshot; a version that no longer links keeps
     const second = await bundle("refresh", 2);
 
     assert.match(second.assets[0]!.bytes.toString("utf8"), /--color-accent-default: #ef4444;/);
-    assert.match((await bundle("refresh", 1)).assets[0]!.bytes.toString("utf8"), /#3b82f6/, "version 1 keeps its own");
+    assert.match(
+        (await bundle("refresh", 1)).assets[0]!.bytes.toString("utf8"),
+        /#3b82f6/,
+        "version 1 keeps its own",
+    );
 
     // A version whose page does not link the system keeps the assets of the version before, as bundles always do.
     await publish(artifact, { id: "refresh", title: "Refresh", content: page("") });
@@ -194,5 +210,8 @@ test("a design system with errors is attached, and the note says to validate", a
         content: page('<link rel="stylesheet" href="ds/tokens.css">'),
     });
 
-    assert.match(reply, /Attached ds\/tokens\.css.*The system has 1 error: run design_system validate\./);
+    assert.match(
+        reply,
+        /Attached ds\/tokens\.css.*The system has 1 error: run design_system validate\./,
+    );
 });

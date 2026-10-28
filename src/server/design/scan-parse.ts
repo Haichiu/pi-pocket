@@ -6,8 +6,8 @@
  */
 import { NAMED_COLORS, parseColor, toHex } from "./color.ts";
 
-/** Which mode a rule belongs to: the default, the dark mode, or a scope that is neither (a component). */
-export type Scope = "default" | "dark" | "other";
+/** Which mode a rule belongs to: the default, the dark mode, an explicit light mode, or a scope that is none (a component). */
+export type Scope = "default" | "dark" | "light" | "other";
 
 /** One declaration, with where it sits. */
 export interface Decl {
@@ -47,50 +47,69 @@ const DARK_ROOT = new RegExp(
     "i",
 );
 const LIGHT_PART = String.raw`(?:\.(?:light|light-theme|light-mode|theme-light)\b|\[data-(?:bs-)?(?:theme|mode|color-mode|color-scheme|appearance)\s*[~|^$*]?=\s*["']?light["']?\s*\])`;
-// What a custom property on the default scope is set on.
-const ROOT_ONLY = new RegExp(
-    String.raw`^(?:(?:html|body|:root|\*|:host|#root|#app|#__next|\.app|\.theme|main)(?:${LIGHT_PART}|\[data-(?:bs-)?(?:theme|mode)\])*|${LIGHT_PART}|\[data-(?:bs-)?(?:theme|mode|color-scheme)\])$`,
+// A root-like compound that ends in the light class: `:root[data-mode="light"]`, `html.light`, `.light`.
+const LIGHT_ROOT = new RegExp(
+    String.raw`^(?:html|body|:root|\*|:host)?(?:${LIGHT_PART})+(?::root)?$`,
     "i",
 );
+// What a custom property on the default scope is set on.
+const ROOT_ONLY =
+    /^(?:html|body|:root|\*|:host|#root|#app|#__next|\.app|\.theme|main)(?:\[data-(?:bs-)?(?:theme|mode)\])*$|^\[data-(?:bs-)?(?:theme|mode|color-scheme)\]$/i;
 const ROOT_ANY = /^(?:html|body|:root|\*|:host)(?:\s*:not\([^)]*\))?$/i;
 
 /** Whether a selector, anywhere in it, selects the dark theme. */
 export const isDarkSelector = (selector: string) => DARK_ANY.test(selector);
 
-/** The scope of the rule for a custom property: which mode its values belong to. */
-function varScope(selector: string, dark: boolean): Scope {
-    const parts = selector
-        .split(",")
-        .map((part) => part.trim())
-        .filter(Boolean);
-
-    if (parts.length === 0) {
-        return dark ? "dark" : "default";
+/** The scope of one selector of the rule: dark, light (explicitly), the default, or none of them. */
+function partScope(part: string, dark: boolean): Scope {
+    if (DARK_ROOT.test(part)) {
+        return "dark";
     }
 
-    if (parts.every((part) => DARK_ROOT.test(part))) {
-        return "dark";
+    if (LIGHT_ROOT.test(part)) {
+        return "light";
     }
 
     if (dark) {
         // Inside `prefers-color-scheme: dark`, the root selectors define the dark values; `:root:not(.light)` too.
-        return parts.some(
-            (part) => ROOT_ANY.test(part) || ROOT_ONLY.test(part) || /^:root\b/i.test(part),
-        )
+        return ROOT_ANY.test(part) || ROOT_ONLY.test(part) || /^:root\b/i.test(part)
             ? "dark"
             : "other";
     }
 
-    return parts.every(
-        (part) =>
-            ROOT_ONLY.test(part) ||
-            /^:root\b(?!.*\.)/i.test(part) ||
-            /^(?:html|body|:root)\s*:not\(/i.test(part),
-    )
+    return ROOT_ONLY.test(part) ||
+        /^:root\b(?!.*[.[])/i.test(part) ||
+        /^(?:html|body|:root)\s*:not\(/i.test(part)
         ? "default"
-        : parts.some((part) => ROOT_ONLY.test(part))
-          ? "default"
-          : "other";
+        : "other";
+}
+
+/**
+ * The scope of the rule for a custom property: which mode its values belong to. A rule for `:root, [data-theme=light]`
+ * is the default; `.dark` is dark; `:root[data-mode="light"]` is light (the mode of a dark-first project).
+ */
+function varScope(selector: string, dark: boolean): Scope {
+    const scopes = selector
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map((part) => partScope(part, dark));
+
+    if (scopes.length === 0) {
+        return dark ? "dark" : "default";
+    }
+
+    if (scopes.includes("default")) {
+        return "default";
+    }
+
+    for (const scope of ["dark", "light"] as const) {
+        if (scopes.every((each) => each === scope)) {
+            return scope;
+        }
+    }
+
+    return scopes.includes("dark") ? "dark" : scopes.includes("light") ? "light" : "other";
 }
 
 const MAX_DECLS = 30_000;

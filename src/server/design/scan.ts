@@ -278,7 +278,9 @@ export function scanReport(scan: TokenScan): string {
         }
 
         lines.push(
-            `Dark mode: ${inferred.hasDark ? `found (${Object.keys(scan.draft.modes).length > 0 ? "tokens.dark.json drafted" : "no overrides drafted"})` : "none found"}`,
+            inferred.hasDark
+                ? `Modes: ${inferred.modes.default} (default), ${inferred.modes.alt}${Object.keys(scan.draft.modes).length > 0 ? ` (tokens.${inferred.modes.alt}.json drafted)` : " (no overrides drafted)"}${inferred.modes.default === "dark" ? "; the project is dark first" : ""}`
+                : "Dark mode: none found",
         );
 
         const fonts = Object.entries(inferred.fonts);

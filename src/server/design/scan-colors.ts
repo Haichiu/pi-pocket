@@ -1094,7 +1094,9 @@ export function paletteName(color: ColorEntry, taken: Set<string>): string[] {
     const alpha = color.rgba.a < 0.995 ? `-a${Math.round(color.rgba.a * 100)}` : "";
     const base = STEPS.indexOf(step(color.l) as (typeof STEPS)[number]);
 
-    for (let offset = 0; offset < STEPS.length; offset++) {
+    // The nearest free step, no farther than the next one: a color two steps off is a different color, so it takes a
+    // suffix (`400-2`) instead of a wrong step.
+    for (let offset = 0; offset <= 1; offset++) {
         for (const at of offset === 0 ? [base] : [base - offset, base + offset]) {
             if (at >= 0 && at < STEPS.length) {
                 const path = ["color", fam, `${STEPS[at]}${alpha}`];

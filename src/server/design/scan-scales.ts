@@ -36,7 +36,10 @@ export interface Inferred {
     shadows: number;
     motion: { durations: string[]; easings: string[] };
     breakpoints: string[];
+    /** Whether the project has a second mode (a dark mode in most; a light one in a dark-first project). */
     hasDark: boolean;
+    /** The names of the modes: the default, and the other one when there is one. */
+    modes: { default: string; alt: string };
     /** What the scan could not decide, or left out. */
     notes: string[];
     /** How many tokens came from a token file instead of a guess. */
@@ -497,7 +500,7 @@ export function spacingScale(
 
         result.spacing = {
             base: steps.length > 0 ? steps.find((value) => value > 0) : undefined,
-            steps: [...new Set(steps)],
+            steps: [...new Set(steps.filter((step) => step > 0))],
             off: [],
         };
 

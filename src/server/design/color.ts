@@ -97,7 +97,7 @@ const fromXyz = (xyz: readonly [number, number, number], a: number): Rgba =>
     fromLinear(multiply(XYZ_TO_SRGB, xyz), a);
 
 /** Oklab to an `Rgba` (Björn Ottosson's matrices). */
-function fromOklab(l: number, a: number, b: number, alpha: number): Rgba {
+export function fromOklab(l: number, a: number, b: number, alpha: number): Rgba {
     const lp = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3;
     const mp = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3;
     const sp = (l - 0.0894841775 * a - 1.291485548 * b) ** 3;
@@ -468,6 +468,14 @@ export function contrastRatio(
     return (high + 0.05) / (low + 0.05);
 }
 
+/** The color in Oklab: lightness 0 to 1, and the green-red and blue-yellow axes. */
+export function toOklab(color: Rgba): { l: number; a: number; b: number } {
+    const { l, c, h } = toOklch(color);
+    const rad = (h * Math.PI) / 180;
+
+    return { l, a: c * Math.cos(rad), b: c * Math.sin(rad) };
+}
+
 /** The color as Oklch: lightness 0 to 1, chroma (about 0 to 0.4), hue in degrees (0 when the color is gray). */
 export function toOklch(color: Rgba): { l: number; c: number; h: number } {
     const r = decodeSrgb(color.r);
@@ -571,4 +579,60 @@ export function colorObjectCss(value: unknown): { css: string } | { error: strin
     }
 
     return { css: `color(${space.css} ${parts.join(" ")}${tail})` };
+}
+
+/**
+ * `color-mix()` of two colors in `space`, as CSS Color 5 defines it for the rectangular spaces: the components are mixed
+ * premultiplied by alpha. `srgb` mixes the encoded channels; every other space (`oklab`, `oklch`, `lab`...) is mixed in
+ * Oklab, which is close for a draft. A percentage left out is the rest of 100%; if both add to less than 100%, the mix
+ * is translucent by the difference.
+ */
+export function mixColors(
+    space: string,
+    first: { color: Rgba; percent?: number },
+    second: { color: Rgba; percent?: number },
+): Rgba {
+    const p1 = first.percent ?? (second.percent === undefined ? 50 : 100 - second.percent);
+    const p2 = second.percent ?? (first.percent === undefined ? 50 : 100 - first.percent);
+
+    const total = p1 + p2;
+
+    if (total <= 0) {
+        return { r: 0, g: 0, b: 0, a: 0 };
+    }
+
+    const w1 = p1 / total;
+    const w2 = p2 / total;
+    const alpha = (first.color.a * w1 + second.color.a * w2) * Math.min(1, total / 100);
+    const a1 = first.color.a * w1;
+    const a2 = second.color.a * w2;
+    const sum = a1 + a2;
+
+    if (sum === 0) {
+        return { r: 0, g: 0, b: 0, a: 0 };
+    }
+
+    if (space === "srgb" || space === "srgb-linear") {
+        const mix = (x: number, y: number) =>
+            space === "srgb"
+                ? (x * a1 + y * a2) / sum
+                : encodeSrgb((decodeSrgb(x) * a1 + decodeSrgb(y) * a2) / sum);
+
+        return {
+            r: clamp(mix(first.color.r, second.color.r)),
+            g: clamp(mix(first.color.g, second.color.g)),
+            b: clamp(mix(first.color.b, second.color.b)),
+            a: clamp(alpha),
+        };
+    }
+
+    const x = toOklab(first.color);
+    const y = toOklab(second.color);
+
+    return fromOklab(
+        (x.l * a1 + y.l * a2) / sum,
+        (x.a * a1 + y.a * a2) / sum,
+        (x.b * a1 + y.b * a2) / sum,
+        alpha,
+    );
 }

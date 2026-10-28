@@ -4,8 +4,8 @@
  * reads the type scale, the spacing scale, the radii, the shadows, and the motion from how the project uses them. The
  * draft is run through the tokens engine, and any token it rejects is dropped, so the result always loads.
  */
-import { px } from "./scan-parse.ts";
-import { contrastRatio, parseColor, toHex } from "./color.ts";
+import { commaParts, px } from "./scan-parse.ts";
+import { type Rgba, contrastRatio, luminance, mixColors, parseColor, toHex } from "./color.ts";
 import {
     type ColorEntry,
     type RoleChoice,
@@ -15,7 +15,9 @@ import {
     distance,
     entryOf,
     mergeColors,
+    nameScore,
     paletteName,
+    words,
 } from "./scan-colors.ts";
 import { type Category, type Facts, type VarFact, namespaceOf, stackOf } from "./scan-facts.ts";
 import {
@@ -59,11 +61,13 @@ interface Variable {
     kind: VarFact["kind"];
     light?: VarFact;
     dark?: VarFact;
+    /** A value from the other mode's scope, used only when the default scope has none. */
+    spare?: VarFact;
     hint?: Category;
 }
 
 /** The winning declaration of each variable in each scope: the best ranked file, and the last in that file. */
-function variables(facts: Facts): Variable[] {
+function variables(facts: Facts, alt: "dark" | "light"): Variable[] {
     const map = new Map<string, Variable>();
     const better = (a: VarFact | undefined, b: VarFact) =>
         a === undefined || b.rank < a.rank || (b.rank === a.rank && b.order > a.order);
@@ -72,10 +76,17 @@ function variables(facts: Facts): Variable[] {
         const key = vkey(fact);
         const variable = map.get(key) ?? { name: fact.name, kind: fact.kind, hint: fact.hint };
 
+        // The default scope is the page's own values; `alt` is the other mode. The scope that is neither (the
+        // opposite mode of the project) only fills in what the default scope does not set.
         if (fact.scope === "default" && better(variable.light, fact)) {
             variable.light = fact;
-        } else if (fact.scope === "dark" && better(variable.dark, fact)) {
+        } else if (fact.scope === alt && better(variable.dark, fact)) {
             variable.dark = fact;
+        } else if (
+            fact.scope === (alt === "dark" ? "light" : "dark") &&
+            variable.light === undefined
+        ) {
+            variable.spare = fact;
         }
 
         if (fact.hint !== undefined) {
@@ -83,6 +94,10 @@ function variables(facts: Facts): Variable[] {
         }
 
         map.set(key, variable);
+    }
+
+    for (const variable of map.values()) {
+        variable.light ??= variable.spare;
     }
 
     return [...map.values()].filter(
@@ -176,7 +191,11 @@ function categorize(variable: Variable, text: string): Category | undefined {
         return space.category;
     }
 
-    if (channelColor(text, name) !== undefined || parseColor(text) !== undefined) {
+    if (
+        channelColor(text, name) !== undefined ||
+        parseColor(text) !== undefined ||
+        /^color-mix\(/i.test(text)
+    ) {
         return "color";
     }
 
@@ -232,10 +251,7 @@ function categorize(variable: Variable, text: string): Category | undefined {
             return "space";
         }
 
-        if (
-            /font-size|text|^fs-|size|step|type-/.test(name) &&
-            !/width|height|icon|avatar|button|input/.test(name)
-        ) {
+        if (/font-size|^text-|-text-|^fs-|^type-|(?:^|-)step-\d/.test(name)) {
             return px(text) !== undefined && px(text)! >= 8 && px(text)! <= 160 ? "text" : "size";
         }
 
@@ -503,45 +519,90 @@ function rewrite(node: unknown, renamed: Map<string, string>): unknown {
     return node;
 }
 
-/** Runs the scan's inference. `folder` names the system. */
-export function infer(facts: Facts, folder: string): Inferred {
-    const result: Inferred = {
-        draft: { tokens: {}, modes: {} },
-        roles: {},
-        palette: {},
-        typeScale: { sizes: [] },
-        fonts: {},
-        spacing: { steps: [], off: [] },
-        radii: [],
-        shadows: 0,
-        motion: { durations: [], easings: [] },
-        breakpoints: [],
-        hasDark: false,
-        notes: [],
-        imported: 0,
-        dropped: [],
-    };
-    const meta = { $extensions: { "com.pi-pocket": { name: folder } } };
+/** A variable sorted into a category, with its value in the default scope and in the other mode. */
+interface Classified {
+    variable: Variable;
+    category: Category;
+    light?: string;
+    dark?: string;
+    lightColor?: string;
+    darkColor?: string;
+    via?: Variable;
+}
 
-    // A project that already keeps tokens in a token file: use them.
-    if (facts.imported.count >= 8) {
-        result.imported = facts.imported.count;
-        result.draft = {
-            tokens: { ...meta, ...(facts.imported.default as Obj) },
-            modes:
-                Object.keys(facts.imported.dark).length > 0
-                    ? { dark: facts.imported.dark as Obj }
-                    : {},
-        };
-        result.hasDark = Object.keys(facts.imported.dark).length > 0;
-        result.notes.push(
-            `Used the ${facts.imported.count} tokens from ${facts.imported.files.join(", ")} as they are; styles were not guessed.`,
-        );
+interface Prepared {
+    classified: Classified[];
+    /** The other mode: `dark` in most projects, `light` in a dark-first one. */
+    alt: "dark" | "light";
+}
 
-        return validate(result);
+/**
+ * A color from CSS text: a color, a channel triple, a `var()`, or a `color-mix()` of those. A variable is looked up in
+ * the mode being read, and in the default scope where the mode does not set it.
+ */
+function evalColor(
+    text: string,
+    name: string,
+    mode: "light" | "dark",
+    index: Map<string, Variable>,
+    depth = 0,
+): Rgba | undefined {
+    const trimmed = text.trim();
+    const direct = parseColor(channelColor(trimmed, name) ?? trimmed);
+
+    if (direct !== undefined || depth > 6) {
+        return direct;
     }
 
-    const all = variables(facts);
+    const reference = /^var\(\s*--([\w-]+)\s*(?:,\s*([\s\S]+))?\)$/.exec(trimmed);
+
+    if (reference !== null) {
+        const target = index.get(`css:${reference[1]}`);
+        const value = (
+            mode === "dark" ? (target?.dark ?? target?.light) : (target?.light ?? target?.dark)
+        )?.value;
+        const next = value ?? reference[2];
+
+        return next === undefined
+            ? undefined
+            : evalColor(next, reference[1]!, mode, index, depth + 1);
+    }
+
+    const mix =
+        /^color-mix\(\s*in\s+([a-z0-9-]+)(?:\s+(?:shorter|longer|increasing|decreasing)\s+hue)?\s*,([\s\S]*)\)$/i.exec(
+            trimmed,
+        );
+
+    if (mix === null) {
+        return undefined;
+    }
+
+    const args = commaParts(mix[2]!);
+
+    if (args.length !== 2) {
+        return undefined;
+    }
+
+    const operands = args.map((arg) => {
+        // `color 40%` or `40% color`.
+        const match = /^(?:(\d*\.?\d+)%\s+([\s\S]+)|([\s\S]+?)\s+(\d*\.?\d+)%)$/.exec(arg.trim());
+        const colorText = match === null ? arg : (match[2] ?? match[3]!);
+        const percent = match === null ? undefined : Number(match[1] ?? match[4]);
+        const color = evalColor(colorText, name, mode, index, depth + 1);
+
+        return color === undefined
+            ? undefined
+            : { color, ...(percent === undefined ? {} : { percent }) };
+    });
+
+    return operands[0] === undefined || operands[1] === undefined
+        ? undefined
+        : mixColors(mix[1]!.toLowerCase(), operands[0], operands[1]);
+}
+
+/** Sorts the project's variables into categories and reads their values in both modes. */
+function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
+    const all = variables(facts, alt);
     const index = new Map<string, Variable>();
 
     for (const variable of all) {
@@ -551,25 +612,6 @@ export function infer(facts: Facts, folder: string): Inferred {
                 variable,
             );
         }
-    }
-
-    const book = new Book();
-    const aliasOf = new Map<string, string[]>();
-    const uses = (variable: Variable) =>
-        (facts.varUse.get(variable.name) ?? 0) +
-        (variable.kind === "theme" || variable.kind === "css"
-            ? (facts.classUse.get(variable.name.replace(/^color-/, "")) ?? 0)
-            : 0);
-
-    // 1. Sort the variables into categories.
-    interface Classified {
-        variable: Variable;
-        category: Category;
-        light?: string;
-        dark?: string;
-        lightColor?: string;
-        darkColor?: string;
-        via?: Variable;
     }
 
     const classified: Classified[] = [];
@@ -606,19 +648,25 @@ export function infer(facts: Facts, folder: string): Inferred {
         };
 
         if (category === "color") {
-            const asColor = (text: string | undefined) => {
+            // What the author wrote when it is a color; the computed color when it is a `color-mix()` or a `var()`.
+            const asColor = (text: string | undefined, mode: "light" | "dark") => {
                 if (text === undefined) {
                     return undefined;
                 }
 
-                const channels = channelColor(text, variable.name);
-                const candidate = channels ?? text;
+                const direct = channelColor(text, variable.name) ?? text;
 
-                return parseColor(candidate) === undefined ? undefined : candidate;
+                if (parseColor(direct) !== undefined) {
+                    return direct;
+                }
+
+                const computed = evalColor(text, variable.name, mode, index);
+
+                return computed === undefined ? undefined : toHex(computed);
             };
 
-            entry.lightColor = asColor(light?.text);
-            entry.darkColor = asColor(dark?.text);
+            entry.lightColor = asColor(light?.text, "light");
+            entry.darkColor = asColor(dark?.text, "dark");
 
             if (entry.lightColor === undefined && entry.darkColor === undefined) {
                 continue;
@@ -627,6 +675,88 @@ export function infer(facts: Facts, folder: string): Inferred {
 
         classified.push(entry);
     }
+
+    return { classified, alt };
+}
+
+/** Whether the project's page background (in the default scope) is dark. */
+function pageIsDark(prep: Prepared): boolean {
+    let best: { score: number; color: Rgba } | undefined;
+
+    for (const entry of prep.classified) {
+        const color = entry.lightColor === undefined ? undefined : parseColor(entry.lightColor);
+        const score = nameScore("background", words(entry.variable.name));
+
+        if (
+            entry.category === "color" &&
+            color !== undefined &&
+            score >= 60 &&
+            (best === undefined || score > best.score)
+        ) {
+            best = { score, color };
+        }
+    }
+
+    return best !== undefined && luminance(best.color) < 0.2;
+}
+
+/** Runs the scan's inference. `folder` names the system. */
+export function infer(facts: Facts, folder: string): Inferred {
+    const result: Inferred = {
+        draft: { tokens: {}, modes: {} },
+        roles: {},
+        palette: {},
+        typeScale: { sizes: [] },
+        fonts: {},
+        spacing: { steps: [], off: [] },
+        radii: [],
+        shadows: 0,
+        motion: { durations: [], easings: [] },
+        breakpoints: [],
+        hasDark: false,
+        modes: { default: "light", alt: "dark" },
+        notes: [],
+        imported: 0,
+        dropped: [],
+    };
+    const meta = { $extensions: { "com.pi-pocket": { name: folder } } };
+
+    // A project that already keeps tokens in a token file: use them.
+    if (facts.imported.count >= 8) {
+        result.imported = facts.imported.count;
+        result.draft = {
+            tokens: { ...meta, ...(facts.imported.default as Obj) },
+            modes:
+                Object.keys(facts.imported.dark).length > 0
+                    ? { dark: facts.imported.dark as Obj }
+                    : {},
+        };
+        result.hasDark = Object.keys(facts.imported.dark).length > 0;
+        result.notes.push(
+            `Used the ${facts.imported.count} tokens from ${facts.imported.files.join(", ")} as they are; styles were not guessed.`,
+        );
+
+        return validate(result);
+    }
+
+    let prep = prepare(facts, "dark");
+
+    // A project whose default scope is dark and that names a light scope is dark first: light is its other mode.
+    if (facts.vars.some((fact) => fact.scope === "light") && pageIsDark(prep)) {
+        prep = prepare(facts, "light");
+    }
+
+    const { classified, alt } = prep;
+
+    result.modes =
+        alt === "dark" ? { default: "light", alt: "dark" } : { default: "dark", alt: "light" };
+    const book = new Book();
+    const aliasOf = new Map<string, string[]>();
+    const uses = (variable: Variable) =>
+        (facts.varUse.get(variable.name) ?? 0) +
+        (variable.kind === "theme" || variable.kind === "css"
+            ? (facts.classUse.get(variable.name.replace(/^color-/, "")) ?? 0)
+            : 0);
 
     const colorVars = classified.filter((entry) => entry.category === "color");
 
@@ -648,7 +778,7 @@ export function infer(facts: Facts, folder: string): Inferred {
         return hex === undefined ? [] : [{ hex, text: entry.darkColor! }];
     });
     const lightColors = mergeColors(lightDefined, facts.colors);
-    const darkColors = mergeColors(darkDefined, facts.darkColors);
+    const darkColors = mergeColors(darkDefined, alt === "dark" ? facts.darkColors : new Map());
     const namedLight = colorVars.flatMap((entry) => {
         const hex = hexOf(entry.lightColor);
 
@@ -678,7 +808,7 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     const hasDarkVars = classified.some((entry) => entry.variable.dark !== undefined);
 
-    result.hasDark = hasDarkVars || facts.darkColors.size > 0;
+    result.hasDark = hasDarkVars || (alt === "dark" && facts.darkColors.size > 0);
 
     // Names paired with the light roles first: the same variable's dark value is the dark role.
     const darkRoles: Partial<Record<RoleName, RoleChoice>> = result.hasDark
@@ -1018,11 +1148,20 @@ export function infer(facts: Facts, folder: string): Inferred {
     pair(tokens, ["color", "text", "muted"], "{color.bg.page}");
     pair(tokens, ["color", "text", "on-accent"], "{color.accent.default}");
     hoistTypes(tokens);
+    // A dark-first project names its default mode: the light mode is the file that changes it.
+    const extension = alt === "light" ? { name: folder, mode: "dark" } : { name: folder };
+    const other = dropTypes(rewrite(darkTree, renamed) as Obj);
+
     result.draft = {
-        tokens: rewrite({ ...meta, ...tokens }, renamed) as Obj,
+        tokens: rewrite({ $extensions: { "com.pi-pocket": extension }, ...tokens }, renamed) as Obj,
         modes:
             Object.keys(darkTree).length > 0
-                ? { dark: dropTypes(rewrite(darkTree, renamed) as Obj) }
+                ? {
+                      [alt]: {
+                          $extensions: { "com.pi-pocket": { colorScheme: alt } },
+                          ...other,
+                      },
+                  }
                 : {},
     };
 

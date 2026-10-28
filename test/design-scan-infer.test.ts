@@ -289,7 +289,7 @@ test("the report lists the roles, the scales, and the draft, fenced", () => {
     assert.match(report, /color\.bg\.page +#ffffff +dark #0b0d12 +from --bg \(background\)/);
     assert.match(report, /Type scale: sm 13px, base 16px, lg 24px, xl 32px \(ratio about 1\.\d+\)/);
     assert.match(report, /Spacing: base 4px; steps 4, 8, 12, 16/);
-    assert.match(report, /Dark mode: found \(tokens\.dark\.json drafted\)/);
+    assert.match(report, /Modes: light \(default\), dark \(tokens\.dark\.json drafted\)/);
     assert.match(report, /\ntokens\.json = \{\n {2}"\$extensions"/);
     assert.match(report, /\ntokens\.dark\.json = \{/);
     assert.match(report, /design_system init fromScan: true/);
@@ -513,7 +513,10 @@ test("Style Dictionary and Tokens Studio files are converted: value, type, sizin
     assert.equal(token(system, "global.radii.card")!.modes.light!.css, "12px");
     assert.equal(token(system, "global.fonts.body")!.type, "fontFamily");
     assert.equal(token(system, "global.lh.body")!.modes.light!.css, "1.5");
-    assert.equal(token(system, "global.shadow.soft")!.modes.light!.css, "0px 4px 12px 0px #00000033");
+    assert.equal(
+        token(system, "global.shadow.soft")!.modes.light!.css,
+        "0px 4px 12px 0px #00000033",
+    );
     assert.equal(token(system, "global.primary")!.description, "Brand");
 });
 
