@@ -11,6 +11,8 @@
 import { lstatSync, realpathSync } from "node:fs";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
+import { expandSassFiles } from "./scan-sass-eval.ts";
+import { indentedToBraces } from "./scan-parse.ts";
 import { LIMITS, collectFiles, readHead, type Skipped } from "./scan-files.ts";
 import { colorsIn, darkMixinsIn } from "./scan-parse.ts";
 import { type Facts, newFacts } from "./scan-facts.ts";
@@ -117,6 +119,25 @@ export function readFacts(root: string): Facts {
         }
     }
 
+    // The Sass of a palette (loops, maps, color functions) is run before the files are read as styles.
+    const sass: { rel: string; text: string }[] = [];
+
+    for (const rel of files.filter((each) => /\.(?:scss|sass)$/i.test(each)).slice(0, 120)) {
+        try {
+            const raw = readHead(join(root, ...rel.split("/")));
+
+            sass.push({ rel, text: /\.sass$/i.test(rel) ? indentedToBraces(raw) : raw });
+        } catch {
+            // A file that cannot be read is left out here, as below.
+        }
+    }
+
+    try {
+        facts.sassExpanded = expandSassFiles(sass);
+    } catch {
+        // Sass that cannot be run is read as it is written.
+    }
+
     for (const [rank, rel] of files.entries()) {
         if (bytes >= LIMITS.totalBytes) {
             facts.partial = true;
@@ -162,8 +183,16 @@ export function readFacts(root: string): Facts {
         facts.rank = rank;
         facts.files.push(rel);
 
+        // A stylesheet whose Sass was run is read as the CSS that it makes (as braces, whatever its syntax was).
+        const expanded = facts.sassExpanded.get(rel);
+
         try {
-            ingestFile(facts, rel, extname(rel).toLowerCase(), text);
+            ingestFile(
+                facts,
+                rel,
+                expanded === undefined ? extname(rel).toLowerCase() : ".scss",
+                expanded ?? text,
+            );
         } catch {
             // One file that cannot be read as styles must not end the scan.
         }

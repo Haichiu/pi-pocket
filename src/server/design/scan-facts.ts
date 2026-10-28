@@ -124,6 +124,8 @@ export interface Facts {
     fileMode?: Scope;
     /** What the walk and the read left out, and why (a vendored folder, a minified file, a file cut at its limit). */
     skipped: Skipped[];
+    /** The Sass files whose loops and functions were run: the text they make, by path. */
+    sassExpanded: Map<string, string>;
     /** Declarations that compute a size from custom properties (`calc(var(--gap) * 2)`): the scan resolves them later. */
     deferred: {
         prop: string;
@@ -213,6 +215,7 @@ export function newFacts(): Facts {
         classWeight: new Map(),
         scoped: new Map(),
         skipped: [],
+        sassExpanded: new Map(),
         imported: {
             default: {},
             dark: {},

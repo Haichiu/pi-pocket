@@ -722,6 +722,7 @@ function mergeColors(scan: unknown, material: Obj, all: MaterialResult): Obj {
 
         return out;
     };
+
     const rest = (isObject(scan) ? (prune(scan) as Obj) : {}) as Obj;
 
     for (const group of Object.keys(material)) {
