@@ -14,7 +14,8 @@
  * The values become variables of the facts, as if a stylesheet had declared them, in the mode the names say.
  */
 import { parseColor } from "./color.ts";
-import { addVar, type Facts } from "./scan-facts.ts";
+import { addVar, type Category, type Facts } from "./scan-facts.ts";
+import { hasAntdTheme } from "./scan-facts-antd.ts";
 import { leaves, modeOf } from "./scan-facts-lists.ts";
 import { JsProject } from "./scan-js-eval.ts";
 import { isDarkSelector, type Literal, type Scope, UNKNOWN } from "./scan-parse.ts";
@@ -31,6 +32,7 @@ const ROLE_WORDS = new Set(
 const wordsOf = (key: string) =>
     key
         .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/([a-z])(\d)/gi, "$1 $2")
         .toLowerCase()
         .split(/[^a-z0-9]+/)
         .filter((word) => word !== "");
@@ -193,14 +195,15 @@ export function shapeThemes(facts: Facts, root: string, files: string[]): void {
 
         candidates += 1;
 
-        const emit = (name: string, value: string, scope: Scope) => {
+        const emit: Emit = (name, value, scope, hint = "color") => {
             const key = `${rel}|${scope}|${name}|${value}`;
 
             if (!seen.has(key) && seen.size < 6000) {
                 seen.add(key);
-                addVar(facts, { name, value, scope, kind: "js", file: rel, hint: "color" });
+                addVar(facts, { name, value, scope, kind: "js", file: rel, hint });
             }
         };
+        const antd = hasAntdTheme(text);
         const fileMode: Scope | undefined = rel
             .replace(/\.[^./]+$/, "")
             .split("/")
@@ -209,6 +212,8 @@ export function shapeThemes(facts: Facts, root: string, files: string[]): void {
             : undefined;
 
         let exported = 0;
+
+        flatOff = antd;
 
         for (const [name, binding] of project.exportsOf(rel)) {
             if (++exported > 80) {
@@ -263,7 +268,10 @@ function looksLikeTheme(rel: string, text: string): boolean {
     return colors >= 3 || roles >= 4;
 }
 
-type Emit = (name: string, value: string, scope: Scope) => void;
+/** Whether the file being read is an Ant Design theme, which has a reader of its own for its sizes. */
+let flatOff = false;
+
+type Emit = (name: string, value: string, scope: Scope, hint?: Category) => void;
 
 function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: Emit): void {
     if (depth > 7) {
@@ -377,6 +385,7 @@ function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: E
 
     if (isRoleObject(node)) {
         roles(node, here, emit);
+        flat(node, here, emit);
 
         // Other keys of the object (`palette: { mode, primary: {…}, grey: {…} }`) may hold ramps.
         for (const [key, child] of entries) {
@@ -452,6 +461,42 @@ function roles(node: { [key: string]: Literal }, mode: Scope, emit: Emit): void 
     for (const leaf of found) {
         if (isShade(leaf.value)) {
             emit(leaf.path.join("-"), leaf.value, mode);
+        }
+    }
+}
+
+/** Sizes, radii, shadows, and families in a flat dictionary of tokens named for what they are (`fontSizeBase300`, `borderRadiusLarge`). */
+function flat(node: { [key: string]: Literal }, mode: Scope, emit: Emit): void {
+    if (flatOff) {
+        return;
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+        if (typeof value !== "string" && typeof value !== "number") {
+            continue;
+        }
+
+        const words = wordsOf(key);
+        const text = typeof value === "number" ? `${value}px` : value;
+
+        if (words.includes("font") && words.includes("size") && /^\d/.test(text)) {
+            emit(key, text, mode, "text");
+        } else if ((words.includes("radius") || words.includes("radii")) && /^\d/.test(text)) {
+            emit(key, text, mode, "radius");
+        } else if (
+            (words.includes("shadow") || words.includes("elevation")) &&
+            typeof value === "string" &&
+            /\d/.test(value)
+        ) {
+            emit(key, value, mode, "shadow");
+        } else if (
+            words.includes("font") &&
+            words.includes("family") &&
+            typeof value === "string"
+        ) {
+            emit(key, value, mode, "font");
+        } else if (/^(?:spacing|space)\w*/i.test(key) && /^\d/.test(text)) {
+            emit(key, text, mode, "space");
         }
     }
 }

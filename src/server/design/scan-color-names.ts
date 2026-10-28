@@ -21,6 +21,21 @@ const LIBRARY_NAMES: [RegExp, string][] = [
     [/^pico-muted-border-color$/i, "border"],
     [/^pico-card-background-color$/i, "surface"],
     [/^pico-primary$/i, "accent"],
+    // Fluent UI: neutral background 1 is the card, 2 the page, foreground 1 the text, 2 and 3 the quieter ones, stroke 1 the border.
+    [/^colorNeutralBackground1$/, "surface"],
+    [/^colorNeutralBackground2$/, "bg-page"],
+    [/^colorNeutralForeground1$/, "text"],
+    [/^colorNeutralForeground2$/, "text-2"],
+    [/^colorNeutralForeground3$/, "text-muted"],
+    [/^colorNeutralStroke1$/, "border"],
+    [/^colorBrandBackground$/, "accent"],
+    [/^colorBrandForeground1$/, "accent-text"],
+    [/^colorPalette(?:Red|Cranberry)(?:Foreground1|Background3)$/, "danger"],
+    [
+        /^colorPalette(?:Yellow|Marigold|DarkOrange|Orange|Gold)(?:Foreground[12]|Background3)$/,
+        "warning",
+    ],
+    [/^colorPalette(?:Green|LightGreen|DarkGreen)(?:Foreground1|Background3)$/, "success"],
 ];
 
 export function words(rawName: string): string[] {
