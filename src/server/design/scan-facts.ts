@@ -10,6 +10,7 @@ import {
     UNKNOWN,
     colorsIn,
     commaParts,
+    isDarkSelector,
     objectStyles,
     pageStyles,
     parseStyles,
@@ -19,6 +20,7 @@ import {
     stripComments,
     templateStyles,
 } from "./scan-parse.ts";
+import { nameScore, words } from "./scan-colors.ts";
 import { importTokens, type Imported } from "./scan-import.ts";
 
 /** A list of words from one string. */
@@ -1621,6 +1623,22 @@ function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
 
             if (decl.scope === "other") {
                 bump(facts.scoped, decl.selector.slice(0, 80));
+
+                // The surface is often set on the card itself (`.card { --bs-card-bg: #fff }`): a component variable that
+                // is named for a card or a panel is the surface, in the mode its selector names.
+                if (
+                    nameScore("surface", words(name)) >= 60 &&
+                    colorsIn(decl.value).length === 1 &&
+                    /^\s*(?:#|rgb|hsl|oklch)/i.test(decl.value)
+                ) {
+                    addVar(facts, {
+                        name,
+                        value: decl.value,
+                        scope: isDarkSelector(decl.selector) ? "dark" : "default",
+                        kind: "css",
+                        file,
+                    });
+                }
 
                 continue;
             }
