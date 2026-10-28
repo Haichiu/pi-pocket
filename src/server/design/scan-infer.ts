@@ -1458,6 +1458,25 @@ function resolveDeferred(facts: Facts, prep: Prepared): void {
             return evalMath(inner, lookup) ?? all;
         });
 
+        // `map-get($spacers, 3)` is the variable `spacers-3`; `space(3)` is the project's function with 3 for its argument.
+        resolved = resolved.replace(
+            /map[.-]get\(\s*\$([\w-]+)\s*,\s*['"]?([\w-]+)['"]?\s*\)/g,
+            (all, map: string, key: string) => lookup(`${map}-${key}`, "scss") ?? all,
+        );
+        resolved = resolved.replace(
+            /(?<![\w.-])([a-z][\w-]*)\(\s*(-?\d*\.?\d+)\s*\)/gi,
+            (all, name: string, argument: string) => {
+                const fn = facts.sassFunctions.get(name);
+
+                return fn === undefined
+                    ? all
+                    : (evalMath(
+                          fn.expression.replace(new RegExp(`\\$${fn.param}\\b`, "g"), argument),
+                          lookup,
+                      ) ?? all);
+            },
+        );
+
         // Sass color functions over variables: `rgba($black, .2)`, `darken($brand, 10%)`, `tint-color(#c5221f, 88%)`.
         resolved = sassColors(resolved, prep.index);
 

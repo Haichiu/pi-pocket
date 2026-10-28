@@ -130,6 +130,8 @@ export interface Facts {
     tailwind: boolean;
     /** The project has a WordPress `theme.json`: its variables are named `--wp--preset--…`. */
     wordpress?: boolean;
+    /** The project's Sass functions that scale a number (`@function space($n) { @return $n * 4px; }`), by name. */
+    sassFunctions: Map<string, { param: string; expression: string }>;
     /** The Sass mixins that hold the dark mode (`@include dark { … }`), from every file. */
     darkMixins: Set<string>;
     /** The file being read, relative to the scanned folder. */
@@ -205,6 +207,7 @@ export function newFacts(): Facts {
         classUse: new Map(),
         rootClasses: new Set(),
         darkMixins: new Set(),
+        sassFunctions: new Map(),
         classCount: new Map(),
         classRules: new Map(),
         fonts: new Map(),
@@ -557,6 +560,10 @@ export function ingest(facts: Facts, decl: Decl): void {
             (SASS_PROPS.test(decl.prop) &&
                 (/(?<![\w$@-])[$@][A-Za-z_]/.test(decl.value) ||
                     /(?<![\w-])(?:tint-color|shade-color|shift-color|darken|lighten|desaturate|fade-in|fade-out|transparentize|opacify|adjust-hue|mix)\(/.test(
+                        decl.value,
+                    ) ||
+                    // A call of the project's own function (`space(3)`, `rem(24)`) or of map.get: resolved with the Sass.
+                    /(?<![\w.-])(?:map[.-]get|(?!(?:calc|var|rgba?|hsla?|oklch|oklab|lab|lch|hwb|color|color-mix|clamp|min|max|minmax|repeat|url|attr|env|translate\w*|rotate\w*|scale\w*|linear-gradient|radial-gradient|conic-gradient|cubic-bezier|steps|counter|format|local|image-set|fit-content|blur|drop-shadow|brightness|contrast|saturate|sepia|invert|grayscale|opacity|hue-rotate)\()[a-z][\w-]*\(\s*-?[\d.$'"])/i.test(
                         decl.value,
                     )) &&
                 !/\$\{/.test(decl.value))) &&
@@ -2009,6 +2016,20 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
     // WordPress names its variables `--wp--preset--color--primary`; the scan reads them as `--color-primary`.
     if (facts.wordpress) {
         raw = wordpressNames(raw);
+    }
+
+    // `@function space($n) { @return $n * 4px; }`: a call `space(3)` is then 12px.
+    if (extension === ".scss" || extension === ".sass") {
+        for (const match of text.matchAll(
+            /@function\s+([\w-]+)\s*\(\s*\$([\w-]+)[^)]*\)\s*\{\s*@return\s+([^;]+);/g,
+        )) {
+            if (facts.sassFunctions.size < 40) {
+                facts.sassFunctions.set(match[1]!, {
+                    param: match[2]!,
+                    expression: match[3]!.trim(),
+                });
+            }
+        }
     }
 
     // `$x` and `@x` are uses of a stylesheet variable.
