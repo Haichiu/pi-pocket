@@ -95,6 +95,23 @@ export function leaves(
             out.push({ path, value: String(literal[0]) });
         }
     } else if (typeof literal === "object" && literal !== null) {
+        // Panda and Chakra v3 write a token as `{ value: "#f9fafb" }` (and may add `description` and `type`).
+        const only = Object.keys(literal).every((key) =>
+            ["value", "description", "type", "deprecated", "extensions"].includes(key),
+        );
+
+        if (only && literal.value !== undefined && typeof literal.value !== "object") {
+            leaves(literal.value, path, out, category);
+
+            return;
+        }
+
+        if (only && Array.isArray(literal.value)) {
+            leaves(literal.value, path, out, category);
+
+            return;
+        }
+
         for (const [key, child] of Object.entries(literal)) {
             leaves(
                 child,
@@ -284,15 +301,78 @@ function paletteColor(
     }
 
     if (typeof node === "object" && node !== null && !Array.isArray(node)) {
-        node = node.DEFAULT ?? node.default;
+        node = node.DEFAULT ?? node.default ?? node.value;
+    }
+
+    // A token written `{ value: "#fff" }` (Panda, Chakra v3), also as the DEFAULT of a group.
+    if (typeof node === "object" && node !== null && !Array.isArray(node)) {
+        node = node.value;
     }
 
     return typeof node === "string" ? node : undefined;
 }
 
+/** The conditions that a Panda or Chakra config defines: `conditions: { extend: { dark: ".dark &", night: "[data-theme=night] &" } }`. */
+function conditionsIn(text: string, env: ReadonlyMap<string, Literal>): Map<string, string> {
+    const out = new Map<string, string>();
+
+    for (const match of [...text.matchAll(/(?<![\w$.])conditions\s*:\s*(?=\{)/g)].slice(0, 3)) {
+        const literal = readLiteral(text, match.index + match[0].length, env);
+
+        if (typeof literal !== "object" || literal === null || Array.isArray(literal)) {
+            continue;
+        }
+
+        const entries = {
+            ...literal,
+            ...(typeof literal.extend === "object" &&
+            literal.extend !== null &&
+            !Array.isArray(literal.extend)
+                ? literal.extend
+                : {}),
+        };
+
+        for (const [name, selector] of Object.entries(entries).slice(0, 80)) {
+            if (typeof selector === "string") {
+                out.set(name.replace(/^_/, ""), selector);
+            }
+        }
+    }
+
+    return out;
+}
+
+/** What a condition key stands for: the base value, the dark or the light mode, or nothing (a state such as `_hover`). */
+function conditionScope(
+    key: string,
+    conditions: ReadonlyMap<string, string>,
+): Scope | "base" | undefined {
+    const name = key.replace(/^_/, "");
+
+    if (["base", "default", "DEFAULT"].includes(name)) {
+        return "base";
+    }
+
+    const named = modeOf(name);
+
+    if (named !== undefined) {
+        return named;
+    }
+
+    // A condition the config names for itself: `night: "[data-theme=night] &"`, `contrast: "@media (prefers-contrast: more)"`.
+    const selector = conditions.get(name);
+
+    return selector === undefined
+        ? undefined
+        : (modeOf(selector.replace(/[^\w]+/g, " ")) ?? undefined);
+}
+
 /**
- * Chakra's `semanticTokens.colors`: a name with a value for each mode (`{ default: "gray.50", _dark: "gray.900" }`),
- * written as a color or as a path into the palette. Each is a variable with two values.
+ * Semantic tokens with a value for each condition, in the forms of Chakra and Panda: `semanticTokens.colors`, a name
+ * with `{ value: { base: "{colors.gray.50}", _dark: "{colors.gray.950}" } }` (v3, Panda), `{ default: "gray.50",
+ * _dark: "gray.900" }` (v2), a plain `value: "{colors.green.600}"`, `DEFAULT` inside a group, conditions nested in a
+ * condition, and conditions the config defines (`_night`). A color is written as itself or as a reference into the palette.
+ * Each is a variable with a value for each mode.
  */
 export function semanticTokens(
     facts: Facts,
@@ -302,6 +382,8 @@ export function semanticTokens(
     tree: Record<string, Literal>,
     scopeAt: (index: number) => Scope,
 ): void {
+    const conditions = conditionsIn(text, env);
+
     for (const match of [...text.matchAll(/(?<![\w$.])semanticTokens\s*:\s*(?=\{)/g)].slice(0, 4)) {
         const literal = readLiteral(text, match.index + match[0].length, env);
         const colors =
@@ -316,24 +398,78 @@ export function semanticTokens(
         const base = scopeAt(match.index);
         let count = 0;
 
+        const add = (path: string[], ref: Literal | undefined, scope: Scope) => {
+            const value = typeof ref === "string" ? paletteColor(ref, tree, env) : undefined;
+
+            if (value !== undefined && path.length > 0) {
+                addVar(facts, {
+                    name: path.join("-"),
+                    value,
+                    scope,
+                    kind: "js",
+                    file,
+                    hint: "color",
+                });
+            }
+        };
+
+        /** The text of a value that may be a condition's own object (`_dark: { base: "{colors.red.400}", _hover: … }`). */
+        const plain = (node: Literal | undefined): Literal | undefined => {
+            if (typeof node !== "object" || node === null || Array.isArray(node)) {
+                return node;
+            }
+
+            for (const key of ["base", "default", "DEFAULT", "_light", "light", "value"]) {
+                if (node[key] !== undefined) {
+                    return plain(node[key]);
+                }
+            }
+
+            return undefined;
+        };
+
+        /** A token's values by condition. `modes` is the object of conditions, or a string. */
+        const conditional = (path: string[], modes: Literal): void => {
+            if (typeof modes === "string") {
+                add(path, modes, base);
+
+                return;
+            }
+
+            if (typeof modes !== "object" || modes === null || Array.isArray(modes)) {
+                return;
+            }
+
+            const entries = Object.entries(modes)
+                .map(([key, value]) => ({ key, scope: conditionScope(key, conditions), value }))
+                .filter(
+                    (entry): entry is { key: string; scope: Scope | "base"; value: Literal } =>
+                        entry.scope !== undefined,
+                );
+            const hasBase = entries.some((entry) => entry.scope === "base");
+
+            // The operating system's dark first, so that the explicit dark condition is the later one.
+            entries.sort((a, b) => Number(/^_?os/i.test(b.key)) - Number(/^_?os/i.test(a.key)));
+
+            for (const entry of entries) {
+                const scope: Scope =
+                    entry.scope === "base"
+                        ? base
+                        : entry.scope === "light" && !hasBase
+                          ? base
+                          : entry.scope;
+
+                add(path, plain(entry.value), scope);
+            }
+        };
+
         const walk = (node: Literal, path: string[]): void => {
-            if (++count > 200 || path.length > 4) {
+            if (++count > 300 || path.length > 5) {
                 return;
             }
 
             if (typeof node === "string") {
-                const value = paletteColor(node, tree, env);
-
-                if (value !== undefined && path.length > 0) {
-                    addVar(facts, {
-                        name: path.join("-"),
-                        value,
-                        scope: base,
-                        kind: "js",
-                        file,
-                        hint: "color",
-                    });
-                }
+                add(path, node, base);
 
                 return;
             }
@@ -342,40 +478,38 @@ export function semanticTokens(
                 return;
             }
 
-            const modes = Object.keys(node).filter((key) =>
-                /^(?:default|_light|_dark|_?light|_?dark)$/.test(key),
-            );
+            // A token of v3 and Panda: `{ value: … }`, the value a string or an object of conditions.
+            if (node.value !== undefined && path.length > 0) {
+                conditional(path, node.value);
 
-            if (modes.length > 0 && path.length > 0) {
-                for (const key of modes) {
-                    const value =
-                        typeof node[key] === "string"
-                            ? paletteColor(node[key], tree, env)
-                            : undefined;
+                return;
+            }
 
-                    if (value !== undefined) {
-                        const scope: Scope = /dark/.test(key)
-                            ? "dark"
-                            : /light/.test(key)
-                              ? "light"
-                              : base;
+            // A token of v2: the conditions are the keys (`default`, `_dark`).
+            const keys = Object.keys(node);
 
-                        addVar(facts, {
-                            name: path.join("-"),
-                            value,
-                            scope,
-                            kind: "js",
-                            file,
-                            hint: "color",
-                        });
-                    }
-                }
+            if (
+                path.length > 0 &&
+                keys.length > 0 &&
+                keys.every((key) => conditionScope(key, conditions) !== undefined) &&
+                !Object.values(node).some(
+                    (child) =>
+                        typeof child === "object" &&
+                        child !== null &&
+                        !Array.isArray(child) &&
+                        "value" in child,
+                )
+            ) {
+                conditional(path, node);
 
                 return;
             }
 
             for (const [key, child] of Object.entries(node)) {
-                walk(child, [...path, ...key.split(".")]);
+                walk(
+                    child,
+                    key === "DEFAULT" || key === "default" ? path : [...path, ...key.split(".")],
+                );
             }
         };
 

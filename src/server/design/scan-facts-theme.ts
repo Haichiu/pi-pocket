@@ -1,4 +1,5 @@
 /** Theme objects in JavaScript and TypeScript (stream T): Tailwind config, Chakra, Mantine, Stitches, vanilla-extract, and the like, read by their keys. */
+import { antdComponentSpans, antdTheme } from "./scan-facts-antd.ts";
 import { type Literal, readLiteral, type Scope, UNKNOWN } from "./scan-parse.ts";
 import { addVar, bump, type Category, type Facts } from "./scan-facts.ts";
 import {
@@ -152,11 +153,18 @@ export function themeVars(facts: Facts, file: string, text: string): void {
     let seen = 0;
 
     // A base unit written as a number: `spacing: 8`, `shape: { borderRadius: 4 }` (Material UI, Chakra).
+    const components = antdComponentSpans(text);
+
     for (const match of text.matchAll(
         /(?<![\w$.])(spacing|borderRadius)\s*:\s*(\d+(?:\.\d+)?)(?![\w.%])(?=\s*[,}\n])/g,
     )) {
         if (++seen > 60) {
             break;
+        }
+
+        // A component's own radius (`components: { Button: { borderRadius: 4 } }`) is not the design's.
+        if (components.some((span) => span.at < match.index && match.index < span.end)) {
+            continue;
         }
 
         addVar(facts, {
@@ -172,9 +180,22 @@ export function themeVars(facts: Facts, file: string, text: string): void {
     const paletteTree: Record<string, Literal> = {};
     const references: { name: string; target: string; hint: Category }[] = [];
 
+    // `semanticTokens` hold a value for each condition: `semanticTokens()` reads them, so the keys in them are not a palette.
+    const semantic = [...text.matchAll(/(?<![\w$.])semanticTokens\s*:\s*(?=\{)/g)].flatMap(
+        (open) => {
+            const end = braceEnd(text, open.index + open[0].length);
+
+            return end === undefined ? [] : [{ at: open.index, end }];
+        },
+    );
+
     for (const match of text.matchAll(heads)) {
         if (++seen > 60) {
             break;
+        }
+
+        if (semantic.some((span) => span.at < match.index && match.index < span.end)) {
+            continue;
         }
 
         const key = match[1] ?? match[2] ?? match[3]!;
@@ -365,4 +386,5 @@ export function themeVars(facts: Facts, file: string, text: string): void {
     themeList(facts, file, text, env);
 
     semanticTokens(facts, file, text, env, paletteTree, scopeAt);
+    antdTheme(facts, file, text, env, scopeAt);
 }

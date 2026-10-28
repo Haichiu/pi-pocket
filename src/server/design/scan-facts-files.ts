@@ -8,6 +8,7 @@ import {
     stripComments,
     templateStyles,
 } from "./scan-parse.ts";
+import { hasAntdTheme } from "./scan-facts-antd.ts";
 import { importConfig, importMaterial, importTokens } from "./scan-import.ts";
 import { bump, emptyKinds, type Facts } from "./scan-facts.ts";
 import { colorFact, ingestStyles } from "./scan-facts-use.ts";
@@ -162,6 +163,7 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
         isScript &&
         (THEMEISH.test(rel) ||
             THEME_CONTENT.test(raw) ||
+            hasAntdTheme(raw) ||
             !/^\.(?:[cm]?[jt]s)$/.test(extension) ||
             STYLED.test(raw))
     ) {
@@ -171,7 +173,7 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
             ingestStyles(facts, rel, parseStyles(block, lineOfBlock(raw, block), facts.darkMixins));
         }
 
-        if (THEMEISH.test(rel) || THEME_CONTENT.test(raw)) {
+        if (THEMEISH.test(rel) || THEME_CONTENT.test(raw) || hasAntdTheme(raw)) {
             // A theme object holds values, not styles in use: `border: "#2d3640"` there is a token, not a border.
             themeVars(facts, rel, raw);
         } else {

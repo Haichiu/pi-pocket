@@ -197,7 +197,8 @@ export function chooseRoles(
             if ((role === "text" || role === "muted") && bg !== undefined) {
                 const ratio = contrastRatio(color.rgba, bg.rgba);
 
-                score += ratio >= 4.5 ? 8 : ratio >= 3 ? 0 : -45;
+                // A quiet text a little under 3:1 (a gray on a gray page) is still quiet text; far under is not text.
+                score += ratio >= 4.5 ? 8 : ratio >= 3 ? 0 : ratio >= 2.5 ? -18 : -45;
             }
 
             // The most referenced variable wins a tie.

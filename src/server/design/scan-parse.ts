@@ -794,8 +794,53 @@ export function readLiteral(
                     continue;
                 }
 
-                // `...spread` or a computed key: skip it.
-                if (text.startsWith("...", at) || text[at] === "[") {
+                // `...shared` or `...shared.token`: the keys of an object that the file declares above.
+                if (text.startsWith("...", at)) {
+                    const named =
+                        /^\.\.\.\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*){0,3})\s*(?=[,}\n])/.exec(
+                            text.slice(at, at + 120),
+                        );
+                    let spread: Literal | undefined;
+
+                    if (named !== null) {
+                        const parts = named[1]!.split(".");
+
+                        spread = env.get(parts[0]!);
+
+                        for (const part of parts.slice(1)) {
+                            spread =
+                                typeof spread === "object" &&
+                                spread !== null &&
+                                !Array.isArray(spread)
+                                    ? spread[part]
+                                    : undefined;
+                        }
+                    }
+
+                    if (
+                        named !== null &&
+                        typeof spread === "object" &&
+                        spread !== null &&
+                        !Array.isArray(spread)
+                    ) {
+                        for (const [name, child] of Object.entries(spread)) {
+                            if (name !== "__proto__" && name !== "constructor") {
+                                out[name] = child;
+                            }
+                        }
+
+                        at += named[0].length;
+
+                        continue;
+                    }
+
+                    skipValue();
+
+                    continue;
+                }
+
+                // A computed key: skip it.
+                if (text[at] === "[") {
                     skipValue();
 
                     continue;
