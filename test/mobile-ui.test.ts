@@ -848,6 +848,22 @@ test("a reconnect that brings the same data keeps it, and draws no session row",
         const { options } = await import("preact");
         const { connect, store } = await import("/store.js");
         const settle = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
+        const { browserModuleState } = await import("/extension-ui.js");
+        // Extensions' browser modules load after the list shows, and each one that finishes draws every row again
+        // (extensionsRev). That is theirs, not the reconnect's: let them all finish before counting.
+        const loading = () => store.state.server.ui.some((each) => {
+            const status = browserModuleState(each.module)?.status;
+
+            return status !== "ready" && status !== "failed";
+        });
+
+        while (loading()) {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+
+        await settle();
+        await settle();
+
         const keys = ["me", "models", "guard", "server", "themeList", "folderFavorites", "sessions"];
         const before = Object.fromEntries(keys.map((key) => [key, store.state[key]]));
         const stream = store.state.streamId;
