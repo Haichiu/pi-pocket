@@ -891,6 +891,7 @@ function evalColor(
         const args = commaParts(call[2]!);
         const color =
             args[0] === undefined ? undefined : evalColor(args[0], name, mode, index, depth + 1);
+
         const amount = (text: string | undefined) => {
             const match = /^(-?\d*\.?\d+)(%?)$/.exec((text ?? "").trim());
 
@@ -1153,6 +1154,7 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
                 ? { ...found, text }
                 : { ...found, text: clamp[1]!.trim() };
         };
+
         const light = fluid(follow(index, variable, "light"));
         const dark =
             variable.dark === undefined ? undefined : fluid(follow(index, variable, "dark"));
@@ -1331,6 +1333,12 @@ function weighClassRules(facts: Facts): void {
             [rule.dark, facts.darkColors],
         ] as const) {
             const fact = hex === undefined ? undefined : map.get(hex);
+
+            // A class on the page's own `<body>` or `<html>` styles the whole page.
+            if (fact !== undefined && facts.rootClasses.has(name)) {
+                fact[rule.kind === "bg" ? "root" : "body"] += rule.kind === "border" ? 0 : 1;
+                fact[rule.kind] += rule.kind === "text" ? 2 : 0;
+            }
 
             if (fact !== undefined && count > 0) {
                 // Text is mostly set on the page, not by classes: a class adds to a text color a little.
@@ -1605,7 +1613,7 @@ export function infer(facts: Facts, folder: string): Inferred {
                     rule.dark !== choice.hex,
             );
 
-            if (pair !== undefined && darkRoles[role] === undefined) {
+            if (pair !== undefined && darkRoles[role]?.basis !== "name") {
                 darkRoles[role] = {
                     role,
                     hex: pair.dark!,

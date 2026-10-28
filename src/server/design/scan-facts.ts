@@ -142,6 +142,8 @@ export interface Facts {
     /** What each length variable is used for: spacing, type size, radius, or the size of a box. */
     varLayout: Map<string, { space: number; text: number; radius: number; box: number }>;
     classUse: Map<string, number>;
+    /** The classes on the page's `<body>` and `<html>`: their rules style the whole page. */
+    rootClasses: Set<string>;
     /** How often each class name is used in markup (`class="a b"`). */
     classCount: Map<string, number>;
     /** The colors that a rule with one class sets (`.text-gray-900 { color: … }`), by class, in each mode. */
@@ -185,6 +187,7 @@ export function newFacts(): Facts {
         varKinds: new Map(),
         varLayout: new Map(),
         classUse: new Map(),
+        rootClasses: new Set(),
         classCount: new Map(),
         classRules: new Map(),
         fonts: new Map(),
@@ -1309,6 +1312,7 @@ function wordpressCss(styles: unknown): string {
 
     const declarations = (node: Record<string, unknown>): string => {
         const out: string[] = [];
+
         const put = (property: string, value: unknown) => {
             const found = text(value);
 
@@ -1446,6 +1450,7 @@ function wordpressTheme(facts: Facts, file: string, source: string): boolean {
     const title = typeof root.title === "string" ? modeOf(root.title) : undefined;
     const scope: Scope =
         facts.fileMode ?? (title === "dark" || title === "light" ? title : "default");
+
     const add = (name: string, value: unknown, hint: Category) => {
         if (typeof value === "string" || typeof value === "number") {
             addVar(facts, {
@@ -1458,6 +1463,7 @@ function wordpressTheme(facts: Facts, file: string, source: string): boolean {
             });
         }
     };
+
     const list = (value: unknown): Record<string, unknown>[] =>
         Array.isArray(value) ? value.filter(isObj).slice(0, 80) : [];
     const key = (value: unknown) => String(value ?? "").replace(/[^\w-]/g, "-");
@@ -1838,6 +1844,18 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
 
             for (const color of colorsIn(match[2]!.replace(/_/g, " "))) {
                 colorFact(facts.colors, color.hex, color.text)[kind] += 1;
+            }
+        }
+
+        seen = 0;
+
+        for (const match of text.matchAll(
+            /<(?:body|html)\b[^>]*?\bclass(?:Name)?\s*=\s*["'`{]+([^"'`}]*)/gi,
+        )) {
+            for (const name of match[1]!.split(/\s+/).slice(0, 20)) {
+                if (/^[\w-]{1,40}$/.test(name)) {
+                    facts.rootClasses.add(name);
+                }
             }
         }
 

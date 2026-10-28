@@ -908,8 +908,30 @@ export function chooseRoles(
     const chroma = entries.filter((color) => color.c >= 0.07 && color.rgba.a > 0.9);
 
     if (chosen.accent === undefined) {
+        const statusSingles = new Set(
+            chroma
+                .filter((color) => !used(color.hex) && color.uses <= 1 && color.c >= 0.1)
+                .flatMap((color) =>
+                    (["danger", "warning", "success"] as const).filter((role) =>
+                        hueOk(role, color),
+                    ),
+                ),
+        ).size;
         const top = byUse(
-            chroma.filter((color) => !used(color.hex)),
+            // Reds, oranges, and greens that are each used once (all of the statuses at once) are more likely the
+            // statuses than the brand.
+            chroma.filter(
+                (color) =>
+                    !used(color.hex) &&
+                    !(
+                        statusSingles >= 2 &&
+                        color.uses <= 1 &&
+                        color.c >= 0.1 &&
+                        (["danger", "warning", "success"] as const).some((role) =>
+                            hueOk(role, color),
+                        )
+                    ),
+            ),
             (color) =>
                 (color.fact?.bg ?? 0) * 1.4 +
                 (color.fact?.text ?? 0) +

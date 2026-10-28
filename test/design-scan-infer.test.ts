@@ -1232,3 +1232,267 @@ test("a theme object with blocks for each mode under one key: colors: { light: {
     assert.equal(scan.inferred.roles.background!.dark, "#0a0a0a");
     assert.equal(scan.inferred.roles.accent!.dark, "#66aaff");
 });
+
+// --- Round 2c: more forms of the same ideas -------------------------------------------------------------------------------
+
+test("a WordPress block theme: the palette, sizes and presets of theme.json, and styles/dark.json for the dark mode", () => {
+    const scan = scanTokens(
+        project({
+            "theme.json": JSON.stringify({
+                $schema: "https://schemas.wp.org/trunk/theme.json",
+                version: 3,
+                settings: {
+                    color: {
+                        palette: [
+                            { color: "#FFF", slug: "base" },
+                            { color: "#111111", slug: "contrast" },
+                            { color: "#2f5d62", slug: "primary" },
+                            { color: "#5e8b7e", slug: "secondary" },
+                            { color: "#f2efe9", slug: "tertiary" },
+                        ],
+                    },
+                    typography: {
+                        fontSizes: [
+                            { slug: "small", size: "0.875rem" },
+                            { slug: "large", size: "1.25rem" },
+                        ],
+                    },
+                    shadow: {
+                        presets: [{ slug: "soft", shadow: "0 1px 2px rgba(17, 17, 17, 0.12)" }],
+                    },
+                    custom: {
+                        color: { border: "#d9d4ca", error: "#b3261e" },
+                        radius: { small: "4px", pill: "999px" },
+                    },
+                },
+                styles: {
+                    color: {
+                        background: "var(--wp--preset--color--base)",
+                        text: "var(--wp--preset--color--contrast)",
+                    },
+                    elements: {
+                        link: { color: { text: "var(--wp--preset--color--primary)" } },
+                        caption: { color: { text: "var(--wp--preset--color--secondary)" } },
+                    },
+                },
+            }),
+            "styles/dark.json": JSON.stringify({
+                $schema: "https://schemas.wp.org/trunk/theme.json",
+                title: "Dark",
+                settings: {
+                    color: {
+                        palette: [
+                            { color: "#14181a", slug: "base" },
+                            { color: "#eceae4", slug: "contrast" },
+                            { color: "#7fc1c8", slug: "primary" },
+                            { color: "#9cc7ba", slug: "secondary" },
+                            { color: "#232a2c", slug: "tertiary" },
+                        ],
+                    },
+                    custom: { color: { border: "#3a4346", error: "#f2877f" } },
+                },
+            }),
+            "style.css": `.card { background: var(--wp--preset--color--tertiary); border: 1px solid var(--wp--custom--color--border) } .card .note { color: var(--wp--custom--color--error) }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#ffffff");
+    assert.equal(roles.background!.dark, "#14181a");
+    assert.equal(roles.text!.value, "#111111");
+    assert.equal(roles.accent!.value, "#2f5d62", "`primary`, the link color");
+    assert.equal(roles.accent!.dark, "#7fc1c8");
+    assert.equal(roles.surface!.value, "#f2efe9", "`tertiary`, the card's background");
+    assert.equal(roles.border!.dark, "#3a4346");
+    assert.equal(roles.danger!.value, "#b3261e");
+    assert.equal(scan.inferred.shadows, 1);
+});
+
+test("Sass color functions and arithmetic over variables, in variables and in rules", () => {
+    const scan = scanTokens(
+        project({
+            "_vars.scss": `$black: #000; $white: #fff; $unit: 8px;
+$text: rgba($black, 0.87); $muted: rgba($black, 0.6); $line: rgba($black, 0.12); $brand: #1976d2; $brand-dark: darken($brand, 10%);
+$bg: #f5f5f5; $surface: $white;`,
+            "card.scss": `.card { background: $surface; border-radius: $unit * 2; padding: $unit * 2 $unit * 3; box-shadow: 0 2px 4px rgba($black, 0.2); border: 1px solid tint-color(#1976d2, 80%) }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.text!.value, "#000000de");
+    assert.equal(roles.muted!.value, "#00000099");
+    assert.equal(roles.border!.value, "#0000001f");
+    assert.deepEqual(
+        scan.inferred.spacing.steps.slice(-2),
+        [16, 24],
+        "padding: $unit * 2 $unit * 3",
+    );
+    assert.deepEqual(
+        scan.inferred.radii,
+        ["lg 16px"].length === 1 ? scan.inferred.radii : [],
+        "radius is computed",
+    );
+    assert.ok(
+        scan.inferred.radii.some((radius) => radius.endsWith("16px")),
+        `radii: ${scan.inferred.radii}`,
+    );
+    assert.equal(scan.inferred.shadows, 1, "box-shadow with rgba($black, .2)");
+});
+
+test("a custom media query that names the dark scheme (PostCSS) is the dark mode", () => {
+    const scan = scanTokens(
+        project({
+            "vars.css": `@custom-media --dark (prefers-color-scheme: dark);
+:root { --clr-page: #f2f3f6; --clr-card: #fff; --clr-ink: #1b1f24; --clr-ink-2: #5b6470; --clr-line: #d8dde4; --clr-cta: #2f5bd7 }
+@media (--dark) { :root { --clr-page: #14161a; --clr-card: #1d2026; --clr-ink: #e7e9ec; --clr-ink-2: #9aa3ad; --clr-line: #2e333b; --clr-cta: #7c9bff } }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f2f3f6", "the media query is not the default");
+    assert.equal(roles.background!.dark, "#14161a");
+    assert.equal(roles.text!.value, "#1b1f24", "`ink`");
+    assert.equal(roles.muted!.value, "#5b6470", "`ink-2` is the second text color");
+    assert.equal(roles.accent!.dark, "#7c9bff", "`cta`");
+});
+
+test("Svelte and CSS Modules wrap selectors: :global(:root) holds the tokens and :global(.dark) the dark ones", () => {
+    const scan = scanTokens(
+        project({
+            "app.css": `:global(:root) { --bg: #f7f6f3; --fg: #22252a; --muted: #70767e; --line: #e2ded6; --accent: #0d7a5f; --space-1: 4px; --space-2: 8px; --space-3: 12px; --radius: 6px; --radius-lg: 12px }
+:global(.dark) { --bg: #121417; --fg: #eceff2; --muted: #9aa1a9; --line: #2a2f35; --accent: #3ecf9a }`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.background!.dark, "#121417");
+    assert.equal(scan.inferred.roles.text!.dark, "#eceff2");
+    assert.deepEqual(scan.inferred.spacing.steps, [4, 8, 12]);
+    assert.equal(scan.inferred.radii.length, 2);
+});
+
+test("fluid type sizes (clamp) are steps at their smallest value, and a numbered length family is what its properties say", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root { --step-0: clamp(1rem, 0.95rem + 0.25vw, 1.125rem); --step-1: clamp(1.25rem, 1.15rem + 0.5vw, 1.5rem);
+  --size-1: .25rem; --size-2: .5rem; --size-3: 1rem; --size-4: 1.5rem; --size-5: 2rem }
+.a { padding: var(--size-3) var(--size-4); margin-top: var(--size-2); gap: var(--size-1) } .b { padding: var(--size-5) }
+h1 { font-size: var(--step-1) } p { font-size: var(--step-0) }`,
+        }),
+    );
+
+    assert.deepEqual(
+        scan.inferred.typeScale.sizes.map((size) => size.split(" ")[1]),
+        ["1rem", "1.25rem"],
+    );
+    assert.deepEqual(
+        scan.inferred.spacing.steps,
+        [4, 8, 16, 24, 32],
+        "--size-N used in padding is spacing",
+    );
+});
+
+test("class rules count by how often markup uses the class, and a class in the dark mode pairs with its light color", () => {
+    const scan = scanTokens(
+        project({
+            "style.css": `.page { background: #ffffff } .bg-gray-100 { background: #f3f4f6 } .bg-gray-900 { background: #111827 }
+.text-gray-900 { color: #111827 } .text-gray-600 { color: #4b5563 } .border-gray-300 { border: 1px solid #d1d5db } .bg-brand { background: #7c3aed }`,
+            "dark.css": `.dark .page { background: #111827 } .dark .bg-gray-100 { background: #1f2937 } .dark .text-gray-900 { color: #f9fafb } .dark .text-gray-600 { color: #9ca3af } .dark .border-gray-300 { border-color: #374151 }`,
+            "index.html": `<body class="page text-gray-900"><div class="bg-gray-100"></div><div class="bg-gray-100"><p class="text-gray-600">x</p></div><p class="text-gray-600 border-gray-300">y</p><a class="bg-brand">z</a></body>`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(
+        roles.background!.value,
+        "#ffffff",
+        "the page wrapper, not the unused .bg-gray-900",
+    );
+    assert.equal(roles.surface!.value, "#f3f4f6", "used twice");
+    assert.equal(roles.surface!.dark, "#1f2937", "the same class in the dark mode");
+    assert.equal(roles.text!.dark, "#f9fafb");
+    assert.equal(roles.muted!.value, "#4b5563");
+    assert.equal(roles.muted!.dark, "#9ca3af");
+});
+
+test("styled-components in plain .js files are read: a component file needs no theme name", () => {
+    const scan = scanTokens(
+        project({
+            "src/components/Card.js": `import styled from "styled-components";
+export const Card = styled.div\`
+  background: #fff; border: 1px solid #e4e7eb; border-radius: 8px; padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(31, 41, 51, 0.12);
+\`;
+export const Meta = styled.p\`color: #616e7c; font-size: 0.875rem;\`;`,
+            "src/components/Status.js": `import styled from "styled-components";
+export const ErrorText = styled.span\`color: #c92a2a;\`;
+export const Warn = styled.span\`color: #e8590c;\`;
+export const Ok = styled.span\`color: #2b8a3e;\`;`,
+        }),
+    );
+
+    assert.ok(scan.files.length >= 2, "both component files were read");
+    assert.equal(scan.inferred.roles.danger!.value, "#c92a2a");
+    assert.equal(scan.inferred.roles.warning!.value, "#e8590c");
+    assert.equal(scan.inferred.roles.success!.value, "#2b8a3e");
+    assert.equal(scan.inferred.shadows, 1);
+});
+
+test("variables kept for the other mode as roles with a mode word (a Sass project with $dark-surface and no dark scope)", () => {
+    const scan = scanTokens(
+        project({
+            "_variables.scss": `$app-background: #f5f5f5; $surface-color: #fff; $text-primary: #212121;
+$dark-background: #303030; $dark-surface: #424242; $dark-text: #fff; $dark-blue: #003366; $brand: #1976d2;`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.dark, "#303030");
+    assert.equal(roles.surface!.dark, "#424242");
+    assert.equal(roles.text!.dark, "#ffffff");
+    assert.ok(
+        !scan.colors.length || roles.accent!.dark === undefined,
+        "$dark-blue is a shade, not a mode",
+    );
+});
+
+test("a custom property set only for the dark mode takes the Sass variable of the same name as its light value", () => {
+    const scan = scanTokens(
+        project({
+            "_variables.scss": `$body-bg: #fdfcfa; $body-color: #2a2d31; $border-color: #dcd9d3; $primary: #4b3f9e;`,
+            "custom.scss": `[data-bs-theme="dark"] { --bs-body-bg: #16181d; --bs-body-color: #e8eaed; --bs-border-color: #2e3238; --bs-primary: #9485f2 }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#fdfcfa");
+    assert.equal(roles.background!.dark, "#16181d");
+    assert.equal(roles.accent!.dark, "#9485f2");
+});
+
+test("a card's own variable (--card-bg on .card) is the surface, in the mode its selector names", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root { --body-bg: #fdfcfa; --body-color: #2a2d31 } [data-theme="dark"] { --body-bg: #16181d; --body-color: #e8eaed }
+.card { --card-bg: #ffffff } [data-theme="dark"] .card { --card-bg: #1f2229 }`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.surface!.value, "#ffffff");
+    assert.equal(scan.inferred.roles.surface!.dark, "#1f2229");
+});
+
+test("a color called warn that is red is the error color (Angular Material's warn palette)", () => {
+    const scan = scanTokens(
+        project({
+            "_palette.scss": `$warn-map: (100: #ffcdd2, 300: #ef5350, 500: #e53935, 700: #b71c1c);
+$primary-map: (500: #2196f3, 700: #1976d2);`,
+        }),
+    );
+
+    assert.equal(
+        scan.inferred.roles.danger!.value,
+        "#e53935",
+        "the middle step of the red palette",
+    );
+    assert.equal(scan.inferred.roles.warning, undefined);
+});
