@@ -74,9 +74,13 @@ const RULE_ORDER: CheckRule[] = [
     "image-alt",
     "missing-viewport",
     "focus-visible",
+    "reduced-motion",
     "heading-order",
     "missing-pid",
 ];
+
+/** Motion longer than this, in milliseconds, or an animation that repeats forever, needs a reduced-motion rule. */
+export const MOTION_MS = 500;
 /** Two colors this close (see `colorDistance`) are the same: a little over 2 steps of 8 bits. */
 const SAME_COLOR = 1;
 /** A nearest token farther than this is no help as a suggestion. */
@@ -633,13 +637,34 @@ export function analyze(
                 continue;
             }
 
+            const part = group.what === "focus" || group.what === "icon" ? group.what : "field";
+            const tag = clip(group.tag, 20);
+            const found =
+                tokens === undefined
+                    ? undefined
+                    : nearestPassing(tokens, [...fg, 1] as RgbaTuple, bg, 3);
+            const property = part === "focus" ? "outline-color" : "color";
+            const edit =
+                found === undefined
+                    ? part === "field"
+                        ? " Give the border a stronger color."
+                        : ` Use ${part === "focus" ? "a ring" : "an icon"} color that reaches 3:1 on ${formatColor(bg)}.`
+                    : ` Set \`${property}: ${tokenRef(found.token)}\` (${formatColor(found.token.rgba!)}, ${found.ratio.toFixed(2)}:1)${part === "icon" ? " on the icon (or its `fill`)" : ""} instead of ${formatColor(fg)}.`;
+            const what =
+                part === "focus"
+                    ? `The focus ring of a <${tag}> is ${shown} against what is around it`
+                    : part === "icon"
+                      ? `The icon in a <${tag}> is ${shown} against what it sits on`
+                      : `The edge of a form field is ${shown} against what it sits on`;
+
             add(
                 {
                     rule: "contrast",
                     level: "warning",
                     ...elementOf(group.el),
                     value: shown,
-                    message: `The edge of a form field is ${shown} against what it sits on; WCAG 1.4.11 needs 3:1. Give the border a stronger color${more(num(group.count))}.`,
+                    ...(found === undefined ? {} : { suggestion: tokenRef(found.token) }),
+                    message: `${what}; WCAG 1.4.11 needs 3:1${more(num(group.count))}.${edit}`,
                 },
                 num(group.count),
             );
@@ -768,6 +793,26 @@ export function analyze(
             },
             num(group.count),
         );
+    }
+
+    // Motion with no way to ask for less: one finding for the page.
+    const motion = raw.motion;
+
+    if (
+        motion !== undefined &&
+        num(motion.count) > 0 &&
+        motion.override !== true &&
+        motion.unreadable !== true
+    ) {
+        add({
+            rule: "reduced-motion",
+            level: "warning",
+            ...elementOf(motion.el),
+            value: `${num(motion.longest)}ms`,
+            message:
+                `${plural(num(motion.count), "element")} use a transition or an animation longer than ${MOTION_MS} ms, or one that repeats forever (the longest is ${num(motion.longest)} ms), and the page has no \`@media (prefers-reduced-motion: reduce)\` rule. ` +
+                "Add \`@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }\`.",
+        });
     }
 
     // `data-pid`: one finding in all, naming the tags.

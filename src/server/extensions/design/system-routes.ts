@@ -74,6 +74,7 @@ const RULES: readonly CheckRule[] = [
     "missing-viewport",
     "missing-pid",
     "focus-visible",
+    "reduced-motion",
 ];
 
 const clip = (value: unknown, max: number): string =>
@@ -324,9 +325,26 @@ export function cleanReport(report: CheckReport): CheckReport {
         }
 
         const rect = each.rect;
+        const fix = each.fix;
 
         findings.push({
             ...(typeof each.id === "string" ? { id: clip(each.id, 60) } : {}),
+            // A fixable finding keeps what `applyExactFixes` needs; it checks the system again before it rewrites.
+            ...(typeof fix === "object" &&
+            fix !== null &&
+            ["color", "length", "font"].includes(fix.kind) &&
+            Array.isArray(fix.properties)
+                ? {
+                      fix: {
+                          kind: fix.kind,
+                          properties: fix.properties.slice(0, 20).map((each) => clip(each, 60)),
+                          literal: clip(fix.literal, 300),
+                          token: clip(fix.token, 200),
+                          cssVar: clip(fix.cssVar, 200),
+                          mode: clip(fix.mode, 64),
+                      },
+                  }
+                : {}),
             rule: each.rule,
             level: each.level === "error" ? "error" : "warning",
             selector: clip(each.selector, 500),
@@ -363,6 +381,9 @@ export function cleanReport(report: CheckReport): CheckReport {
             height: Math.round(coordinate(report?.viewport?.height)),
         },
         colorScheme: report?.colorScheme === "dark" ? "dark" : "light",
+        ...(typeof report?.mode === "string" && report.mode !== ""
+            ? { mode: clip(report.mode, 64) }
+            : {}),
         findings,
         summary: {
             errors: findings.filter((each) => each.level === "error").length,
