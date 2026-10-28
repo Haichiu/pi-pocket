@@ -3,6 +3,7 @@
  * are to hold the design (a stylesheet called `theme.css` before a deep component file), and reads each one bounded.
  * The walk never follows a symlink, so a project cannot lead it out of the folder.
  */
+import { sdConfigIn } from "./scan-import-sd.ts";
 import { closeSync, constants, fstatSync, openSync, readdirSync, readSync } from "node:fs";
 import { extname, join, relative, sep } from "node:path";
 
@@ -62,7 +63,7 @@ const DOT_STYLE_FOLDERS = new Set([".storybook", ".vitepress", ".vuepress", ".do
 const STYLE =
     /\.(?:css|scss|sass|less|styl|stylus|pcss|postcss|html?|vue|svelte|astro|mdx|tsx|jsx|ts|js|mjs|cjs|mts|cts)$/i;
 const TOKEN_JSON =
-    /(?:^|\/)(?:[^/]*tokens?[^/]*|theme[^/]*|[^/]*(?:figma|studio|design-?system)[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
+    /(?:^|\/)(?:design-?tokens?|tokens?|properties|brands?|themes?|style-?dictionary|dictionary)\/(?:[^/]+\/)*[^/]+\.json$|(?:^|\/)(?:config|[\w.-]*config|\.styledictionaryrc)\.json$|(?:^|\/)(?:[^/]*tokens?[^/]*|[^/]*theme[^/]*|[^/]*(?:figma|studio|design-?system|material|m3)[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
 
 export const LIMITS = {
     /** Files read. */
@@ -271,6 +272,43 @@ export function collectFiles(root: string): {
             .map((rel) => rel.slice(0, Math.max(0, rel.lastIndexOf("/")))),
     )) {
         studioSets(root, dir, 0, found);
+    }
+
+    // A Style Dictionary config names its token files by globs: the folders they start in are read too.
+    for (const rel of [...found].filter((each) =>
+        /(?:^|\/)(?:config|sd[.-]config|style-?dictionary[.-]config|[\w.-]*[.-]config|build|\.styledictionaryrc)(?:\.json|\.[cm]?[jt]s)?$/i.test(
+            each,
+        ),
+    )) {
+        let text = "";
+
+        try {
+            text = readHead(join(root, ...rel.split("/")), 60_000);
+        } catch {
+            continue;
+        }
+
+        const config = sdConfigIn(rel.slice(0, Math.max(0, rel.lastIndexOf("/"))), text);
+
+        for (const glob of config === undefined
+            ? []
+            : [...config.include, ...config.source].slice(0, 12)) {
+            const fixed = glob
+                .replace(/^\.\//, "")
+                .split("/")
+                .filter((_, at, all) => at < all.length - 1)
+                .filter((part, at, all) =>
+                    all.slice(0, at + 1).every((each) => !/[*?{]/.test(each)),
+                );
+
+            for (const base of new Set([config!.dir, ""])) {
+                const dir = [base, ...fixed].filter(Boolean).join("/");
+
+                if (dir !== "" || fixed.length === 0) {
+                    studioSets(root, dir, 0, found);
+                }
+            }
+        }
     }
 
     // A minified file (`app.min.css`) is the build of a source, not the design: it is left out when the project has style

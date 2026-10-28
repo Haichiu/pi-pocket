@@ -5,7 +5,14 @@
  * does not need them guessed from its CSS. Files are kept as they are read and sorted into modes by `finishImports`,
  * once every file is in.
  */
-import { convert, isObject, type Obj } from "./scan-import-convert.ts";
+import { isObject, type Obj } from "./scan-import-convert.ts";
+import { materialTokens, type MaterialInput, type MaterialResult } from "./scan-import-material.ts";
+import {
+    sdConfigIn,
+    styleDictionaryTokens,
+    orderByConfig,
+    type SdConfig,
+} from "./scan-import-sd.ts";
 import { looksLikeSets, studioTokens, type StudioSource } from "./scan-import-studio.ts";
 
 /** A token file that was read: its path, what it parsed to, and whether its name says it holds tokens. */
@@ -23,8 +30,14 @@ export interface Imported {
     extra: Record<string, Obj>;
     count: number;
     files: string[];
-    /** A Tokens Studio file was read (it has `$themes` or `$metadata`): it is a token source, however few tokens it holds. */
-    studio: boolean;
+    /** A token source that is sure to be one was read (a Tokens Studio file, a Style Dictionary config): however few tokens it holds. */
+    certain: boolean;
+    /** Style Dictionary configs: the globs of their token files. */
+    configs: SdConfig[];
+    /** Stylesheets that hold Material 3 properties, kept until every file is read. */
+    materialCss: MaterialInput["css"];
+    /** The Material 3 colors, when the files held them: they replace the scan's colors. */
+    material?: MaterialResult;
     /** Token files read and not yet sorted into modes (`finishImports` does that, once, when every file has been read). */
     pending: Pending[];
     /** What the Tokens Studio files said that the scan did not take (a theme that was not read). */
@@ -34,7 +47,7 @@ export interface Imported {
 
 /** A file that may hold tokens: by its name, so `package.json` and `tsconfig.json` are never read as tokens. */
 export const TOKEN_FILE =
-    /(?:^|\/)(?:[^/]*tokens?[^/]*|theme[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
+    /(?:^|\/)(?:[^/]*tokens?[^/]*|[^/]*theme[^/]*)\.json$|(?:^|\/)(?:design-?tokens?|tokens?|properties|brands?|themes?|style-?dictionary|dictionary)\/(?:[^/]+\/)*[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
 
 const MAX_FILES = 300;
 /** `$themes.json` and `$metadata.json`, the two files that Tokens Studio writes beside its sets. */
@@ -75,61 +88,6 @@ export function importTokens(into: Imported, file: string, source: string): void
     }
 }
 
-/** One file of tokens, as one set: the default mode, or the dark mode when the file's name says dark. */
-function singleFile(into: Imported, file: string, root: Obj): void {
-    const target = /(?:^|[^a-z])dark(?:[^a-z]|$)/i.test(file.split("/").at(-1) ?? "")
-        ? into.dark
-        : into.default;
-    let added = 0;
-
-    const visit = (node: Obj, out: Obj, inherited: string | undefined, depth: number) => {
-        const type =
-            typeof node.$type === "string"
-                ? node.$type
-                : typeof node.type === "string" && !("value" in node) && !("$value" in node)
-                  ? node.type
-                  : inherited;
-
-        for (const [key, child] of Object.entries(node)) {
-            if (
-                key.startsWith("$") ||
-                key === "__proto__" ||
-                key === "constructor" ||
-                key === "prototype" ||
-                !isObject(child) ||
-                depth > 12 ||
-                !/^[\w-]{1,64}$/.test(key)
-            ) {
-                continue;
-            }
-
-            if ("$value" in child || "value" in child) {
-                const token = convert(child, type);
-
-                if (token !== undefined && added < 5000) {
-                    out[key] = token;
-                    added += 1;
-                }
-            } else {
-                const group: Obj = {};
-
-                visit(child, group, type, depth + 1);
-
-                if (Object.keys(group).length > 0) {
-                    out[key] = group;
-                }
-            }
-        }
-    };
-
-    visit(root, target, undefined, 0);
-
-    if (added > 0) {
-        into.count += added;
-        into.files.push(file);
-    }
-}
-
 /** A group of the default tree that a later source adds to (a path that is there stays as it is). */
 function addTo(target: Obj, source: Obj): void {
     for (const [key, value] of Object.entries(source)) {
@@ -156,7 +114,7 @@ function addStudio(into: Imported, source: StudioSource, files: string[]): void 
         return;
     }
 
-    into.studio = true;
+    into.certain = true;
     addTo(into.default, found.default);
     addTo(into.dark, found.dark);
 
@@ -241,6 +199,8 @@ export function finishImports(into: Imported): void {
         }
 
         if (isStudioFile(item.root)) {
+            taken.add(item);
+
             const sets = new Map<string, Obj>();
 
             for (const [name, node] of Object.entries(item.root)) {
@@ -266,10 +226,127 @@ export function finishImports(into: Imported): void {
                 },
                 [item.file],
             );
-        } else if (item.named) {
-            singleFile(into, item.file, item.root);
         }
     }
 
+    // Token folders: Style Dictionary sources, and token files of any one project, merged in source order.
+    const rest = pending.filter((item) => !taken.has(item) && isObject(item.root));
+    const configs = [...into.configs, ...configsIn(rest)];
+    const config = configs.find((each) => {
+        const matched = orderByConfig(
+            rest.map((item) => ({ file: item.file, root: item.root as Obj })),
+            each,
+        );
+
+        return matched !== undefined;
+    });
+    const wanted = rest.filter((item) => !isConfigFile(item.root) && !isMaterialJson(item.root));
+    const files = (
+        config === undefined
+            ? wanted.filter((item) => item.named)
+            : (
+                  orderByConfig(
+                      wanted.map((item) => ({ file: item.file, root: item.root as Obj })),
+                      config,
+                  ) ?? []
+              ).map((matched) => wanted.find((item) => item.file === matched.file)!)
+    ).map((item) => ({ file: item.file, root: item.root as Obj }));
+
+    if (files.length > 0) {
+        const found = styleDictionaryTokens(files, config);
+
+        if (found.count > 0) {
+            into.certain = into.certain || config !== undefined;
+            addTo(into.default, found.default);
+            addTo(into.dark, found.dark);
+
+            for (const [mode, tree] of Object.entries(found.extra)) {
+                into.extra[mode] ??= {};
+                addTo(into.extra[mode]!, tree);
+            }
+
+            // The tokens that a mode's own file sets count too: a token file for dark is part of what was read.
+            into.count +=
+                found.count +
+                leavesIn(found.dark) +
+                Object.values(found.extra).reduce((sum, tree) => sum + leavesIn(tree), 0);
+            into.files.push(...files.map((item) => item.file).sort());
+            into.notes.push(
+                ...(config === undefined
+                    ? []
+                    : [
+                          `Style Dictionary config: the token files are the globs of its source (${[...config.include, ...config.source].slice(0, 4).join(", ")}), in that order.`,
+                      ]),
+                ...found.notes,
+            );
+        }
+    }
+
+    // Material 3: stylesheets with --md-sys-color-* properties, and the Theme Builder's JSON.
+    into.material = materialTokens({
+        css: into.materialCss,
+        json: pending
+            .filter((item) => isMaterialJson(item.root))
+            .map((item) => ({ file: item.file, root: item.root as Obj })),
+    });
+    into.materialCss = [];
     into.pending = [];
+}
+
+/** Keeps a stylesheet that holds Material 3 properties; it is read once every file is in. */
+export function importMaterial(into: Imported, file: string, text: string): void {
+    if (into.materialCss.length < 24 && /--md-(?:sys-color|ref-palette)-/.test(text)) {
+        into.materialCss.push({ file, text: text.slice(0, 200_000) });
+    }
+}
+
+/** How many tokens a tree has. */
+function leavesIn(tree: Obj): number {
+    return Object.entries(tree).reduce(
+        (sum, [key, child]) =>
+            sum +
+            (key.startsWith("$") || !isObject(child) ? 0 : "$value" in child ? 1 : leavesIn(child)),
+        0,
+    );
+}
+
+/** Whether a JSON root is a Style Dictionary config (it has `source` and `platforms`), not a token file. */
+function isConfigFile(root: unknown): boolean {
+    return isObject(root) && Array.isArray(root.source) && isObject(root.platforms);
+}
+
+/** The Style Dictionary configs among JSON files: `config.json` with `source` and `platforms`. */
+function configsIn(items: Pending[]): SdConfig[] {
+    return items.flatMap((item) => {
+        const root = item.root as Obj;
+
+        if (!isConfigFile(root)) {
+            return [];
+        }
+
+        const list = (value: unknown) =>
+            Array.isArray(value)
+                ? value.filter((each): each is string => typeof each === "string").slice(0, 40)
+                : [];
+
+        return [{ dir: dirOf(item.file), include: list(root.include), source: list(root.source) }];
+    });
+}
+
+/** The Material Theme Builder's JSON: `{ "schemes": { "light": { "primary": … }, "dark": … } }`. */
+function isMaterialJson(root: unknown): boolean {
+    return (
+        isObject(root) &&
+        isObject(root.schemes) &&
+        Object.values(root.schemes).some((scheme) => isObject(scheme) && "primary" in scheme)
+    );
+}
+
+/** Reads the text of a Style Dictionary config written in JavaScript (`sd.config.js`, `config.mjs`). */
+export function importConfig(into: Imported, file: string, text: string): void {
+    const config = sdConfigIn(dirOf(file), text);
+
+    if (config !== undefined && into.configs.length < 8) {
+        into.configs.push(config);
+    }
 }

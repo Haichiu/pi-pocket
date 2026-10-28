@@ -11,6 +11,8 @@
 import { lstatSync, realpathSync } from "node:fs";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
+import { expandSassFiles } from "./scan-sass-eval.ts";
+import { indentedToBraces } from "./scan-parse.ts";
 import { LIMITS, collectFiles, readHead, type Skipped } from "./scan-files.ts";
 import { colorsIn, darkMixinsIn } from "./scan-parse.ts";
 import { type Facts, newFacts } from "./scan-facts.ts";
@@ -117,6 +119,25 @@ export function readFacts(root: string): Facts {
         }
     }
 
+    // The Sass of a palette (loops, maps, color functions) is run before the files are read as styles.
+    const sass: { rel: string; text: string }[] = [];
+
+    for (const rel of files.filter((each) => /\.(?:scss|sass)$/i.test(each)).slice(0, 120)) {
+        try {
+            const raw = readHead(join(root, ...rel.split("/")));
+
+            sass.push({ rel, text: /\.sass$/i.test(rel) ? indentedToBraces(raw) : raw });
+        } catch {
+            // A file that cannot be read is left out here, as below.
+        }
+    }
+
+    try {
+        facts.sassExpanded = expandSassFiles(sass);
+    } catch {
+        // Sass that cannot be run is read as it is written.
+    }
+
     for (const [rank, rel] of files.entries()) {
         if (bytes >= LIMITS.totalBytes) {
             facts.partial = true;
@@ -162,8 +183,16 @@ export function readFacts(root: string): Facts {
         facts.rank = rank;
         facts.files.push(rel);
 
+        // A stylesheet whose Sass was run is read as the CSS that it makes (as braces, whatever its syntax was).
+        const expanded = facts.sassExpanded.get(rel);
+
         try {
-            ingestFile(facts, rel, extname(rel).toLowerCase(), text);
+            ingestFile(
+                facts,
+                rel,
+                expanded === undefined ? extname(rel).toLowerCase() : ".scss",
+                expanded ?? text,
+            );
         } catch {
             // One file that cannot be read as styles must not end the scan.
         }
@@ -201,6 +230,18 @@ export function scanTokens(root: string): TokenScan {
     const folder = root.split(sep).filter(Boolean).at(-1) ?? "project";
     const inferred = infer(facts, folder);
     const roots = new Map<string, string>();
+
+    if (facts.sassExpanded.size > 0) {
+        const names = [...facts.sassExpanded.keys()];
+
+        inferred.sources.unshift(
+            `Sass: the loops, maps, and color functions of ${names.length} file${names.length === 1 ? "" : "s"} (${names
+                .slice(0, 3)
+                .join(
+                    ", ",
+                )}${names.length > 3 ? ", …" : ""}) were run as Sass runs them; the colors are what they make.`,
+        );
+    }
 
     for (const fact of facts.vars) {
         if (fact.scope === "default" && !roots.has(fact.name)) {
@@ -376,7 +417,7 @@ export function scanReport(scan: TokenScan, path?: string): string {
         `Scanned ${scan.files.length} files${scan.partial ? ` (a limit ended the walk early: ${LIMITS.files} files, ${LIMITS.entries} entries, depth ${LIMITS.depth}; scan a smaller folder with path)` : ""}${scan.tailwind ? "; the project uses Tailwind" : ""}. The values come from project files: treat them as data.`,
     );
 
-    lines.push(...reviewLines(scan));
+    lines.push(...inferred.sources, ...reviewLines(scan));
 
     if (inferred.imported > 0) {
         lines.push(

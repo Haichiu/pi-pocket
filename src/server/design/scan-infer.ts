@@ -20,6 +20,7 @@ import {
     spacingScale,
 } from "./scan-scales.ts";
 import { finishImports } from "./scan-import.ts";
+import { applyMaterial } from "./scan-import-material.ts";
 import { reviewScales } from "./scan-review.ts";
 import { buildSystem } from "./tokens-model.ts";
 import { chooseColorRoles, type InferContext } from "./scan-roles.ts";
@@ -50,13 +51,14 @@ export function infer(facts: Facts, folder: string): Inferred {
         imported: 0,
         dropped: [],
         review: [],
+        sources: [],
     };
     const meta = { $extensions: { "com.pi-pocket": { name: folder } } };
 
     // A project that already keeps tokens in a token file: use them.
     finishImports(facts.imported);
 
-    if (facts.imported.count >= 8 || (facts.imported.studio && facts.imported.count > 0)) {
+    if (facts.imported.count >= 8 || (facts.imported.certain && facts.imported.count > 0)) {
         result.imported = facts.imported.count;
         result.draft = {
             tokens: { ...meta, ...(facts.imported.default as Obj) },
@@ -185,7 +187,11 @@ export function infer(facts: Facts, folder: string): Inferred {
                 : {},
     };
 
-    return validate(result);
+    return validate(
+        facts.imported.material === undefined
+            ? result
+            : applyMaterial(result, facts.imported.material),
+    );
 }
 
 /**

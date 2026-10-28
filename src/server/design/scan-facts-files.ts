@@ -8,7 +8,7 @@ import {
     stripComments,
     templateStyles,
 } from "./scan-parse.ts";
-import { importTokens } from "./scan-import.ts";
+import { importConfig, importMaterial, importTokens } from "./scan-import.ts";
 import { bump, emptyKinds, type Facts } from "./scan-facts.ts";
 import { colorFact, ingestStyles } from "./scan-facts-use.ts";
 import { modeOf } from "./scan-facts-lists.ts";
@@ -120,6 +120,17 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
 
     if (/@import\s+["']tailwindcss|@theme\b/.test(text)) {
         facts.tailwindVersion = 4;
+    }
+
+    importMaterial(facts.imported, rel, raw);
+
+    // A Style Dictionary config in JavaScript names the token files by globs.
+    if (
+        /^\.(?:[cm]?[jt]s)$/.test(extension) &&
+        /\bplatforms\b/.test(text) &&
+        /\bsource\b/.test(text)
+    ) {
+        importConfig(facts.imported, rel, text);
     }
 
     if (extension === ".json") {
