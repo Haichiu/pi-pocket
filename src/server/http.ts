@@ -11,7 +11,7 @@ import { describe, HttpError } from "./errors.ts";
 import { createApi } from "./http/api.ts";
 import { artifact } from "./http/artifacts.ts";
 import { publicArtifactBundle } from "./http/artifact-assets.ts";
-import { iconAddress, iconRoute, manifestFor } from "./http/icon-route.ts";
+import { appleTouchIcon, iconAddress, iconRoute, manifestFor } from "./http/icon-route.ts";
 import { extensionFile } from "./http/extension-routes.ts";
 import { hookRoute } from "./http/hook-routes.ts";
 import { linkRoute } from "./http/link-routes.ts";
@@ -106,6 +106,16 @@ export function createHandler(options: HttpOptions) {
             // The app icon in chosen colors, for the home screen (`web/app-icon.js`): a fetch by the phone, no sign-in.
             if (parts.length === 1 && parts[0] === "app-icon.png") {
                 return iconRoute(request, response, url);
+            }
+
+            // The icon a phone fetches itself, in the owner's colors (`icon-store.ts`).
+            if (
+                parts.length === 1 &&
+                parts[0] === "apple-touch-icon.png" &&
+                (request.method === "GET" || request.method === "HEAD") &&
+                appleTouchIcon(request, response)
+            ) {
+                return;
             }
 
             // The manifest, with the icons of the colors this browser chose when it has chosen (`http/icon-route.ts`).
