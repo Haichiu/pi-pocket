@@ -34,17 +34,17 @@ V's lint fixes (root cause: the DOM walk skipped `<body>`, so text was judged on
 
 ### Judges after round 2 (tree at about ab20007; scan fix not merged)
 
-| Line | Judge A (sonnet-5-5) | Judge B (glm-5.3-flash) | Score |
-|---|---|---|---|
-| 1 Token model | 8 | 9 | **8** |
-| 2 Import (scan) | 4 | 4 | **4** |
-| 3 Enforcement | 7 | 9 | **7** |
-| 4 Accessibility | 7 | 9 | **7** |
-| 5 Agent experience | 7 | 8 | **7** |
-| 6 People experience | 6 | 7 | **6** |
-| 7 Documentation output | 8 | 8 | **8** |
-| 8 Code handoff | 6 | 8 | **6** |
-| 9 Engineering | 6 | 6 | **6** |
+| Line                   | Judge A (sonnet-5-5) | Judge B (glm-5.3-flash) | Score |
+| ---------------------- | -------------------- | ----------------------- | ----- |
+| 1 Token model          | 8                    | 9                       | **8** |
+| 2 Import (scan)        | 4                    | 4                       | **4** |
+| 3 Enforcement          | 7                    | 9                       | **7** |
+| 4 Accessibility        | 7                    | 9                       | **7** |
+| 5 Agent experience     | 7                    | 8                       | **7** |
+| 6 People experience    | 6                    | 7                       | **6** |
+| 7 Documentation output | 8                    | 8                       | **8** |
+| 8 Code handoff         | 6                    | 8                       | **6** |
+| 9 Engineering          | 6                    | 6                       | **6** |
 
 Shared top items: the scan does not generalize; Check checks Light while the canvas shows Dark (and has no high-contrast choice); phone layout (tabs, warnings box, Check dock); Colors opens on primitives; `tailwind.css` doubles every variable and `tokens.css` adds a `--dim-*` layer; docs copy errors; `features.md` and `map.md` out of date; the suite was red at the time of judging.
 
@@ -62,17 +62,17 @@ Scan after T's rounds 3b and 3c (`ds/tokens` 995c1d8, not merged yet): held-out 
 
 ### Judges after round 3 (0262a6c)
 
-| Line | R2 | R3 judge A | R3 judge B | **R3** |
-|---|---|---|---|---|
-| 1 Token model | 8 | 8 | 9 | **8** |
-| 2 Import (scan) | 4 | 7 | 8 | **7** (judged at held-out 0.869; now 0.994) |
-| 3 Enforcement | 7 | 8 | 9 | **8** |
-| 4 Accessibility | 7 | 8 | 9 | **8** |
-| 5 Agent experience | 7 | 8 | 9 | **8** |
-| 6 People experience | 6 | 7 | 8 | **7** |
-| 7 Documentation output | 8 | 8 | 8 | **8** |
-| 8 Code handoff | 6 | 7 | 9 | **7** |
-| 9 Engineering | 6 | 8 | 9 | **8** |
+| Line                   | R2  | R3 judge A | R3 judge B | **R3**                                      |
+| ---------------------- | --- | ---------- | ---------- | ------------------------------------------- |
+| 1 Token model          | 8   | 8          | 9          | **8**                                       |
+| 2 Import (scan)        | 4   | 7          | 8          | **7** (judged at held-out 0.869; now 0.994) |
+| 3 Enforcement          | 7   | 8          | 9          | **8**                                       |
+| 4 Accessibility        | 7   | 8          | 9          | **8**                                       |
+| 5 Agent experience     | 7   | 8          | 9          | **8**                                       |
+| 6 People experience    | 6   | 7          | 8          | **7**                                       |
+| 7 Documentation output | 8   | 8          | 8          | **8**                                       |
+| 8 Code handoff         | 6   | 7          | 9          | **7**                                       |
+| 9 Engineering          | 6   | 8          | 9          | **8**                                       |
 
 Every line rose or held. Disputed: the docs page's component frames are blank in the bench tiles and Harbor's Radii and Shadows shots timed out. Judge A traced both to capture (frames not painted off-screen; the shots script waited for 40 characters); judge B suspected real defects. Round 4 settles it with assertions.
 
@@ -85,6 +85,12 @@ G round 4 (not merged): the docs page's blank component frames were a real defec
 G's security fix (4c83a72): an allowlist sanitizer (`docsite-sanitize.ts`, a new tree from allowed HTML and SVG only), a nonce-only `script-src`, an SVG-aware click guard, contained stages, and 11 real-click probe tests. Re-reviewed: the exploit is gone, the nonce cannot leak, an overlay stays in its stage, and the tests fail with a weakened sanitizer. Merged (8eab207). Left: `cleanCss` is a regex denylist (CSS escapes and `image-set()` pass; the CSP blocks the request); G hardens it with tests.
 
 V round 4 merged (`applyExactFixes`, reduced motion, non-text contrast, check CLI). V's new non-text contrast rule found a real invisible focus ring (1.00:1) in a bench design that was labelled clean; B fixes the design. U round 4 merged; the integrator adapted V's `applyExactFixes` to U's route and removed the stand-in. Open: a UI test shows the whole workspace loading at start when earlier state is stored (U).
+
+### Round 4 evaluation (195b54e)
+
+`npm run check`, `npm run lint`, `npm run format:check` clean; `npm test` **1354 of 1354**. Bench: **1.0** overall (scan 0.998, format 1, lint 1, contrast 1, docs 1 with painted components, System view shots 50 of 50, every tab asserted). Held-out 1: 0.998 (scan 0.994). **Held-out 2** (fresh): overall **0.986**, scan **0.939** (from 0.818: Tokens Studio and WordPress theme.json), lint 1.0, contrast 1.0, docs 1.0.
+
+Round 4 merges also: G's counting rule (headline = role tokens, same as the System view), the CSS cleaner as a parser, T's docsite changes ported into G's split; U's start-budget test fixed (a same-URL navigation returned early); B's docs checks on shadow-root stages, exempt pairs, and the clean-pricing inverse focus ring (a real defect found by V's new rule).
 
 Round 4 assignments: T (Tailwind namespaces and role utilities, one JSON convention plus a Tokens Studio export, committed flagship `dist/` with a diff test, DTCG 2025.10 forms, an example per tool action, component entry points in the summary, split `scan-infer.ts` and `scan-facts.ts`); U (roles count, shadow values on tiles, phone mode control and tab cue and Check sheet height, compact spacing rows, a fixed save bar, one-tap fixes through V's engine, Harbor tabs); V (`applyExactFixes`, reduced motion, non-text contrast, a small check CLI); G (docs component frames for certain, hero by role, shadow and radius layout, page under 600 KB, split `docsite.ts`); B (second held-out set, painted frames check, the shots script in the bench with per-tab assertions).
 
