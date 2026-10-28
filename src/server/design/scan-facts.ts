@@ -451,17 +451,21 @@ function useMotion(facts: Facts, decl: Decl): void {
     }
 }
 
+const SASS_PROPS =
+    /^(?:padding|margin|gap|row-gap|column-gap|border-radius|font-size|box-shadow|border|border-(?:top|right|bottom|left)|outline|color|background|background-color|border-color)(?:-[a-z-]+)?$/;
 const SCALE_PROPS =
     /^(?:padding|margin|gap|row-gap|column-gap|border-radius|font-size)(?:-[a-z-]+)?$/;
 
 /** Counts a declaration (not a custom property) in all the tallies. */
 export function ingest(facts: Facts, decl: Decl): void {
-    // A size computed from custom properties is resolved once the scan knows them.
+    // A size computed from custom properties (or from Sass variables: `$unit * 2`, `rgba($black, .2)`) is resolved once
+    // the scan knows the variables.
     if (
-        SCALE_PROPS.test(decl.prop) &&
-        /calc\(/.test(decl.value) &&
-        /var\(/.test(decl.value) &&
-        facts.deferred.length < 400
+        ((SCALE_PROPS.test(decl.prop) && /calc\(/.test(decl.value) && /var\(/.test(decl.value)) ||
+            (SASS_PROPS.test(decl.prop) &&
+                /(?<![\w$@-])[$@][A-Za-z_]/.test(decl.value) &&
+                !/\$\{/.test(decl.value))) &&
+        facts.deferred.length < 1500
     ) {
         facts.deferred.push({ prop: decl.prop, value: decl.value, selector: decl.selector });
 

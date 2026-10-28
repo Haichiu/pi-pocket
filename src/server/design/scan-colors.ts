@@ -624,8 +624,23 @@ export function chooseRoles(
 
             let score = nameScore(role, segs);
 
+            // A color called `warn` that is red is the error color (Angular Material's `warn` palette).
+            if (role === "danger" && score === 0 && color.c >= 0.1 && hueOk("danger", color)) {
+                const asWarning = nameScore("warning", segs);
+
+                score = asWarning > 0 ? asWarning - 15 : 0;
+            }
+
             if (score === 0) {
                 continue;
+            }
+
+            // Of a palette's steps, the middle one is the color (`warn-500`).
+            if (
+                (role === "danger" || role === "warning" || role === "success") &&
+                segs.some((seg) => /^\d{3}$/.test(seg))
+            ) {
+                score += segs.includes("500") ? 8 : segs.includes("600") ? 5 : 0;
             }
 
             // Sanity from the color itself.

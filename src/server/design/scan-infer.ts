@@ -418,7 +418,12 @@ function categorize(variable: Variable, text: string): Category | undefined {
     if (
         channelColor(text, name) !== undefined ||
         parseColor(text) !== undefined ||
-        /^color-mix\(/i.test(text)
+        /^color-mix\(/i.test(text) ||
+        // Sass and Less color functions over a variable: `rgba($black, .87)`, `darken($brand, 10%)`.
+        (variable.kind !== "css" &&
+            variable.kind !== "theme" &&
+            /^([a-z][a-z-]*)\(\s*[$@\w#]/i.test(text) &&
+            SASS_COLOR.has(/^([a-z][a-z-]*)/i.exec(text)![1]!.toLowerCase()))
     ) {
         return "color";
     }
@@ -778,6 +783,8 @@ interface Prepared {
     classified: Classified[];
     /** The other mode: `dark` in most projects, `light` in a dark-first one. */
     alt: "dark" | "light";
+    /** Colors kept for the other mode under names of their own (`$dark-text`), as the roles they stand for. */
+    others: { role: string; entry: Classified }[];
 }
 
 /**
@@ -796,6 +803,43 @@ function evalColor(
 
     if (direct !== undefined || depth > 6) {
         return direct;
+    }
+
+    // A Sass or Less variable (`$black`, `v.$dark-text`, `@primary`).
+    const sassVar = /^(?:[\w-]+\.)?[$@]([\w-]+)$/.exec(trimmed);
+
+    if (sassVar !== null) {
+        const target = index.get(`scss:${sassVar[1]}`) ?? index.get(`less:${sassVar[1]}`);
+        const value = (
+            mode === "dark" ? (target?.dark ?? target?.light) : (target?.light ?? target?.dark)
+        )?.value;
+
+        return value === undefined
+            ? undefined
+            : evalColor(value, sassVar[1]!, mode, index, depth + 1);
+    }
+
+    const call = /^([a-z][a-z-]*)\(([\s\S]*)\)$/i.exec(trimmed);
+
+    if (call !== null && SASS_COLOR.has(call[1]!.toLowerCase())) {
+        const args = commaParts(call[2]!);
+        const color =
+            args[0] === undefined ? undefined : evalColor(args[0], name, mode, index, depth + 1);
+        const amount = (text: string | undefined) => {
+            const match = /^(-?\d*\.?\d+)(%?)$/.exec((text ?? "").trim());
+
+            return match === null
+                ? undefined
+                : match[2] === "%"
+                  ? Number(match[1]) / 100
+                  : Number(match[1]);
+        };
+
+        if (color !== undefined) {
+            return sassColor(call[1]!.toLowerCase(), color, args.slice(1), amount, (arg) =>
+                evalColor(arg, name, mode, index, depth + 1),
+            );
+        }
     }
 
     const reference = /^var\(\s*--([\w-]+)\s*(?:,\s*([\s\S]+))?\)$/.exec(trimmed);
@@ -842,6 +886,175 @@ function evalColor(
     return operands[0] === undefined || operands[1] === undefined
         ? undefined
         : mixColors(mix[1]!.toLowerCase(), operands[0], operands[1]);
+}
+
+const SASS_COLOR = new Set([
+    "rgba",
+    "rgb",
+    "darken",
+    "lighten",
+    "saturate",
+    "desaturate",
+    "fade-in",
+    "fade-out",
+    "transparentize",
+    "opacify",
+    "mix",
+    "tint-color",
+    "shade-color",
+    "shift-color",
+    "adjust-hue",
+]);
+
+const clamp = (value: number, low = 0, high = 1) => Math.min(high, Math.max(low, value));
+
+/** HSL of an sRGB color: hue in degrees, saturation and lightness 0 to 1. */
+function toHsl({ r, g, b }: Rgba): [number, number, number] {
+    const [x, y, z] = [r / 255, g / 255, b / 255];
+    const high = Math.max(x, y, z);
+    const low = Math.min(x, y, z);
+    const lightness = (high + low) / 2;
+    const delta = high - low;
+
+    if (delta === 0) {
+        return [0, 0, lightness];
+    }
+
+    const saturation = delta / (1 - Math.abs(2 * lightness - 1));
+    const hue =
+        high === x ? ((y - z) / delta) % 6 : high === y ? (z - x) / delta + 2 : (x - y) / delta + 4;
+
+    return [(hue * 60 + 360) % 360, saturation, lightness];
+}
+
+function fromHsl(hue: number, saturation: number, lightness: number, a: number): Rgba {
+    const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+    const h = (((hue % 360) + 360) % 360) / 60;
+    const second = chroma * (1 - Math.abs((h % 2) - 1));
+    const [r, g, b] =
+        h < 1
+            ? [chroma, second, 0]
+            : h < 2
+              ? [second, chroma, 0]
+              : h < 3
+                ? [0, chroma, second]
+                : h < 4
+                  ? [0, second, chroma]
+                  : h < 5
+                    ? [second, 0, chroma]
+                    : [chroma, 0, second];
+    const offset = lightness - chroma / 2;
+
+    return {
+        r: Math.round((r + offset) * 255),
+        g: Math.round((g + offset) * 255),
+        b: Math.round((b + offset) * 255),
+        a,
+    };
+}
+
+/** The Sass color functions that change one color or mix two (`rgba($c, .5)`, `darken($c, 10%)`, `mix(a, b, 30%)`). */
+function sassColor(
+    fn: string,
+    color: Rgba,
+    rest: string[],
+    amount: (text: string | undefined) => number | undefined,
+    other: (text: string) => Rgba | undefined,
+): Rgba | undefined {
+    const value = amount(rest[0]);
+    const mixWith = (target: Rgba, weight: number): Rgba => ({
+        r: Math.round(color.r * weight + target.r * (1 - weight)),
+        g: Math.round(color.g * weight + target.g * (1 - weight)),
+        b: Math.round(color.b * weight + target.b * (1 - weight)),
+        a: color.a * weight + target.a * (1 - weight),
+    });
+    const [hue, saturation, lightness] = toHsl(color);
+
+    switch (fn) {
+        case "rgba":
+        case "rgb":
+            return value === undefined ? undefined : { ...color, a: clamp(value) };
+
+        case "fade-in":
+        case "opacify":
+            return value === undefined ? undefined : { ...color, a: clamp(color.a + value) };
+
+        case "fade-out":
+        case "transparentize":
+            return value === undefined ? undefined : { ...color, a: clamp(color.a - value) };
+
+        case "darken":
+            return value === undefined
+                ? undefined
+                : fromHsl(hue, saturation, clamp(lightness - value), color.a);
+
+        case "lighten":
+            return value === undefined
+                ? undefined
+                : fromHsl(hue, saturation, clamp(lightness + value), color.a);
+
+        case "saturate":
+            return value === undefined
+                ? undefined
+                : fromHsl(hue, clamp(saturation + value), lightness, color.a);
+
+        case "desaturate":
+            return value === undefined
+                ? undefined
+                : fromHsl(hue, clamp(saturation - value), lightness, color.a);
+
+        case "adjust-hue":
+            return value === undefined
+                ? undefined
+                : fromHsl(
+                      hue + value * (rest[0]?.includes("%") ? 1 : 1),
+                      saturation,
+                      lightness,
+                      color.a,
+                  );
+
+        case "mix": {
+            const second = rest[0] === undefined ? undefined : other(rest[0]);
+            const weight = rest[1] === undefined ? 0.5 : amount(rest[1]);
+
+            return second === undefined || weight === undefined
+                ? undefined
+                : mixWith(second, clamp(weight));
+        }
+
+        // Bootstrap: `tint-color($c, 20%)` mixes in white, `shade-color($c, 20%)` mixes in black.
+        case "tint-color":
+            return value === undefined
+                ? undefined
+                : fromMix(color, { r: 255, g: 255, b: 255, a: 1 }, value);
+
+        case "shade-color":
+            return value === undefined
+                ? undefined
+                : fromMix(color, { r: 0, g: 0, b: 0, a: 1 }, value);
+
+        case "shift-color":
+            return value === undefined
+                ? undefined
+                : value >= 0
+                  ? fromMix(color, { r: 0, g: 0, b: 0, a: 1 }, value)
+                  : fromMix(color, { r: 255, g: 255, b: 255, a: 1 }, -value);
+
+        default:
+            return undefined;
+    }
+}
+
+/** `weight` of `target` mixed into `color` (Bootstrap's `mix($target, $color, $weight)`). */
+function fromMix(color: Rgba, target: Rgba, weight: number): Rgba {
+    const w = clamp(weight);
+
+    return {
+        r: Math.round(target.r * w + color.r * (1 - w)),
+        g: Math.round(target.g * w + color.g * (1 - w)),
+        b: Math.round(target.b * w + color.b * (1 - w)),
+        a: color.a,
+    };
 }
 
 /** Sorts the project's variables into categories and reads their values in both modes. */
@@ -921,7 +1134,42 @@ function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
         classified.push(entry);
     }
 
-    return { index, classified, alt };
+    // `$dark-background`, `$dark-text-muted`: when a project keeps a few colors for the other mode under names that are
+    // roles with a mode word before them, they are that mode's roles, not colors of their own. (`$dark-blue` is a shade.)
+    const mode = alt === "dark" ? /^(?:dark|night)$/ : /^(?:light|day)$/;
+    const loose = classified.flatMap((entry) => {
+        const parts = kebab(entry.variable.name)
+            .replace(/^(?:color|colour|clr)-/, "")
+            .split("-");
+        const at = parts.findIndex((part) => mode.test(part));
+        const rest = parts.filter((_, index) => index !== at);
+        const role =
+            entry.category === "color" && at !== -1 && rest.length > 0
+                ? (["background", "surface", "text", "muted", "border"] as const).find(
+                      (each) => nameScore(each, words(rest.join("-"))) >= 60,
+                  )
+                : undefined;
+
+        return role === undefined ? [] : [{ role, entry, rest: rest.join("-") }];
+    });
+    const others: Prepared["others"] = [];
+
+    // A project that sets the other mode's values on its variables already has that mode (`--color-text` in the dark scope).
+    const sets = facts.vars.some((fact) => fact.scope === alt);
+
+    if (!sets && loose.length >= 2 && new Set(loose.map((item) => item.role)).size >= 2) {
+        for (const item of loose) {
+            others.push({ role: item.rest, entry: item.entry });
+            item.entry.variable.twin = true;
+        }
+    }
+
+    return {
+        index,
+        classified: classified.filter((entry) => entry.variable.twin !== true),
+        alt,
+        others,
+    };
 }
 
 /** Whether the project's page background (in the default scope) is dark. */
@@ -974,18 +1222,45 @@ function useDefaultColors(facts: Facts): void {
 
 /** Sizes computed from custom properties (`padding: calc(var(--gap) * 2)`) are uses of the sizes they come to. */
 function resolveDeferred(facts: Facts, prep: Prepared): void {
+    const lookup = (name: string, kind: "scss" | "less" | "css") => {
+        const target = prep.index.get(`${kind}:${name}`);
+
+        return target === undefined ? undefined : follow(prep.index, target, "light")?.text;
+    };
+
     for (const { prop, value, selector } of facts.deferred.splice(0)) {
-        const resolved = value.replace(/calc\(((?:[^()]|\([^()]*\))*)\)/g, (all, inner: string) => {
-            const math = evalMath(inner, (name, kind) => {
-                const target = prep.index.get(`${kind}:${name}`);
-
-                return target === undefined ? undefined : follow(prep.index, target, "light")?.text;
-            });
-
-            return math ?? all;
+        let resolved = value.replace(/calc\(((?:[^()]|\([^()]*\))*)\)/g, (all, inner: string) => {
+            return evalMath(inner, lookup) ?? all;
         });
 
-        if (!/calc\(|var\(/.test(resolved)) {
+        // Sass color functions over variables: `rgba($black, .2)`, `darken($brand, 10%)`.
+        resolved = resolved.replace(
+            /(?<![\w-])([a-z][a-z-]*)\(((?:[^()]|\([^()]*\))*)\)/gi,
+            (all, fn: string) => {
+                if (!SASS_COLOR.has(fn.toLowerCase()) || !/[$@]/.test(all)) {
+                    return all;
+                }
+
+                const color = evalColor(all, "", "light", prep.index);
+
+                return color === undefined
+                    ? all
+                    : `rgba(${color.r}, ${color.g}, ${color.b}, ${Math.round(color.a * 100) / 100})`;
+            },
+        );
+
+        // Arithmetic on lengths: `$unit * 2`, `$unit / 2`, `($a + 4px)`.
+        resolved = resolved.replace(
+            /(?:[$@][\w-]+|\d*\.?\d+[a-z%]*)(?:\s*[*/]\s*(?:[$@][\w-]+|\d*\.?\d+[a-z%]*)|\s+[+-]\s+(?:[$@][\w-]+|\d*\.?\d+[a-z%]*))+/g,
+            (run) => evalMath(run, lookup) ?? run,
+        );
+
+        // A variable left on its own is its value.
+        resolved = resolved.replace(/(?:[\w-]+\.)?[$@]([A-Za-z_][\w-]*)/g, (all, name: string) => {
+            return lookup(name, "scss") ?? lookup(name, "less") ?? all;
+        });
+
+        if (!/calc\(|var\(|(?<![\w-])[$@][A-Za-z_]/.test(resolved)) {
             ingest(facts, {
                 prop,
                 value: resolved,
@@ -1073,11 +1348,18 @@ export function infer(facts: Facts, folder: string): Inferred {
 
         return hex === undefined ? [] : [{ hex, text: entry.lightColor! }];
     });
-    const darkDefined = colorVars.flatMap((entry) => {
-        const hex = hexOf(entry.darkColor);
+    const darkDefined = [
+        ...colorVars.flatMap((entry) => {
+            const hex = hexOf(entry.darkColor);
 
-        return hex === undefined ? [] : [{ hex, text: entry.darkColor! }];
-    });
+            return hex === undefined ? [] : [{ hex, text: entry.darkColor! }];
+        }),
+        ...prep.others.flatMap(({ entry }) => {
+            const hex = hexOf(entry.lightColor);
+
+            return hex === undefined ? [] : [{ hex, text: entry.lightColor! }];
+        }),
+    ];
 
     useDefaultColors(facts);
 
@@ -1098,13 +1380,20 @@ export function infer(facts: Facts, folder: string): Inferred {
                   },
               ];
     });
-    const namedDark = colorVars.flatMap((entry) => {
-        const hex = hexOf(entry.darkColor);
+    const namedDark = [
+        ...colorVars.flatMap((entry) => {
+            const hex = hexOf(entry.darkColor);
 
-        return hex === undefined
-            ? []
-            : [{ name: entry.variable.name, hex, uses: uses(entry.variable) }];
-    });
+            return hex === undefined
+                ? []
+                : [{ name: entry.variable.name, hex, uses: uses(entry.variable) }];
+        }),
+        ...prep.others.flatMap(({ role, entry }) => {
+            const hex = hexOf(entry.lightColor);
+
+            return hex === undefined ? [] : [{ name: role, hex, uses: uses(entry.variable) }];
+        }),
+    ];
 
     for (const each of namedLight) {
         const entry = lightColors.get(each.hex);
@@ -1137,7 +1426,8 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     const hasDarkVars = classified.some((entry) => entry.variable.dark !== undefined);
 
-    result.hasDark = hasDarkVars || (alt === "dark" && facts.darkColors.size > 0);
+    result.hasDark =
+        hasDarkVars || prep.others.length > 0 || (alt === "dark" && facts.darkColors.size > 0);
 
     // Names paired with the light roles first: the same variable's dark value is the dark role.
     const darkRoles: Partial<Record<RoleName, RoleChoice>> = result.hasDark
