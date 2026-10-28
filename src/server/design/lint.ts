@@ -174,26 +174,32 @@ const ROLE_NAMES: Record<string, RegExp> = {
 };
 
 /**
- * The nearest color token to `color`: the closest, a role before a palette value when two are as near. With a `role`,
- * only tokens named for it count when one is near enough to help.
+ * The nearest color token to `color`: the closest, a role before a palette value when two are as near. With a `role`
+ * (how the page uses the color), tokens named for another role are left out (a border is not a background), and one
+ * named for this role counts as a little nearer.
  */
 function nearestColor(set: TokenSet, color: Rgba, role?: string): Nearest | undefined {
-    const pattern = role === undefined ? undefined : ROLE_NAMES[role];
-    const named =
-        pattern === undefined ? [] : set.colors.filter((token) => pattern.test(token.name));
-
-    if (named.length > 0) {
-        return nearestColor({ ...set, colors: named }, color);
-    }
+    const own = role === undefined ? undefined : ROLE_NAMES[role];
+    const others = Object.entries(ROLE_NAMES)
+        .filter(([name]) => name !== role)
+        .map(([, pattern]) => pattern);
+    const pool =
+        own === undefined
+            ? set.colors
+            : set.colors.filter(
+                  (token) =>
+                      own.test(token.name) || !others.some((pattern) => pattern.test(token.name)),
+              );
 
     let best: Nearest | undefined;
 
-    for (const token of set.colors) {
+    for (const token of pool) {
         if (token.rgba === undefined) {
             continue;
         }
 
-        const distance = colorDistance(color, token.rgba);
+        const distance =
+            colorDistance(color, token.rgba) - (own !== undefined && own.test(token.name) ? 3 : 0);
 
         if (
             best === undefined ||
@@ -364,7 +370,10 @@ export function analyze(
                 continue;
             }
 
-            const sorted = [...scale].sort((a, b) => Math.abs(a.px - px) - Math.abs(b.px - px));
+            // Two equally near steps: the smaller one.
+            const sorted = [...scale].sort(
+                (a, b) => Math.abs(a.px - px) - Math.abs(b.px - px) || a.px - b.px,
+            );
             const nearest = sorted[0]!;
             const props = (Array.isArray(group.props) ? group.props : [])
                 .map((prop) => clip(prop, 30))
@@ -546,7 +555,10 @@ export function analyze(
 
     if (pids.length > 0) {
         const total = pids.reduce((sum, group) => sum + num(group.count), 0);
-        const tags = pids.map((group) => `${num(group.count)} <${clip(group.tag, 20)}>`).join(", ");
+        const listed = pids
+            .slice(0, 5)
+            .map((group) => `${num(group.count)} <${clip(group.tag, 20)}>`);
+        const tags = pids.length > 5 ? `${listed.join(", ")}, …` : listed.join(", ");
 
         add({
             rule: "missing-pid",
@@ -614,7 +626,7 @@ export async function checkPage(
         deck,
         touch: view.viewport.width < 768,
     };
-    const raw = (await page.evaluate(`(${PAGE_SCRIPT})(${JSON.stringify(input)})`)) as
+    const raw = (await page.evaluateIsolated(`(${PAGE_SCRIPT})(${JSON.stringify(input)})`)) as
         RawPage | undefined;
 
     if (raw === undefined || raw === null || typeof raw !== "object") {

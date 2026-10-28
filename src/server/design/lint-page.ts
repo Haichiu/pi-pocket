@@ -352,7 +352,9 @@ const familyOf = (list) => {
     return first.toLowerCase();
 };
 const pxOf = (value) => parseFloat(value);
-const interactive = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[role=switch],[tabindex]:not([tabindex="-1"])';
+// What a pointer or finger can hit; the keyboard also reaches anything with a tabindex.
+const pointed = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[role=switch]';
+const interactive = pointed + ',[tabindex]:not([tabindex="-1"])';
 const OS_BLACK = 'rgba(0, 0, 0, 1)';
 const targets = [];
 const textFamilies = new Map();
@@ -505,9 +507,12 @@ for (const el of nodes) {
             return value.toString() === 'auto' || (value.unit === 'percent');
         };
 
+        // A native checkbox or radio keeps the browser's margin unless the page changes it.
+        const native = tag === 'input' && /^(checkbox|radio)$/.test(el.type);
+
         for (const [side, name] of scaleSides) {
             space(style['padding' + name], 'padding', typed('padding-' + side));
-            space(style['margin' + name], 'margin', typed('margin-' + side));
+            space(style['margin' + name], 'margin', native || typed('margin-' + side));
         }
 
         space(style.rowGap === 'normal' ? '0px' : style.rowGap, 'gap', false);
@@ -532,7 +537,7 @@ for (const el of nodes) {
     }
 
     // Targets that a finger or a pointer must hit.
-    if (!input.deck && el.matches(interactive) && !disabled && el.getAttribute('aria-hidden') !== 'true' && !el.parentElement.closest(interactive)) {
+    if (!input.deck && el.matches(pointed) && !disabled && el.getAttribute('aria-hidden') !== 'true' && !el.parentElement.closest(pointed)) {
         let width = rect.width;
         let height = rect.height;
         let left = rect.left;
@@ -557,35 +562,8 @@ for (const el of nodes) {
         if (!inline && !bare && width > 0 && height > 0) targets.push({ el, left, top, width, height, tag });
     }
 
-    // Elements that can take the focus, one for each kind.
-    if (!disabled && el.matches(interactive) && el.getAttribute('aria-hidden') !== 'true' && !el.parentElement.closest(interactive) && !el.closest('[inert]')) {
-        const key = tag + '.' + [...el.classList].slice(0, 3).join('.');
-
-        if (!focusCandidates.has(key)) focusCandidates.set(key, { el, count: 0 });
-
-        focusCandidates.get(key).count++;
-    }
-
     // Overflow: elements that end past the viewport and are not clipped or fixed.
     if (!input.deck && el !== root && el !== body && !state.clip && !state.fixed && rect.right > viewWidth + 1) offenders.push({ el, right: rect.right });
-
-    // Images without a text alternative.
-    if (tag === 'img' || (tag === 'input' && el.type === 'image') || el.getAttribute('role') === 'img') {
-        const role = el.getAttribute('role');
-        const hidden = el.getAttribute('aria-hidden') === 'true' || role === 'presentation' || role === 'none';
-
-        if (!hidden) {
-            const named = el.hasAttribute('aria-label') || el.hasAttribute('aria-labelledby') || (role === 'img' && tag !== 'img' && el.querySelector('title'));
-            const alt = el.hasAttribute('alt');
-            let why = '';
-
-            if (tag === 'img' && !alt && !named) why = 'no alt attribute';
-            else if (tag === 'input' && !alt && !named) why = 'no alt attribute';
-            else if (tag !== 'img' && tag !== 'input' && !named && !el.hasAttribute('title')) why = 'role=img with no accessible name';
-
-            if (why) group(groups.images, tag + '|' + (el.getAttribute('src') || '').slice(0, 120) + '|' + why, () => ({ tag, why }), el);
-        }
-    }
 
     // Headings in order.
     const level = /^h[1-6]$/.test(tag) ? Number(tag[1]) : el.getAttribute('role') === 'heading' ? Number(el.getAttribute('aria-level')) : 0;
@@ -596,6 +574,43 @@ for (const el of nodes) {
     if (/^(header|nav|main|footer|section|article|aside|form|h[1-6]|button|img|a|input|select|textarea)$/.test(tag) && !el.closest('[data-pid]') && !(tag === 'a' && !el.hasAttribute('href'))) {
         group(groups.pids, tag, () => ({ tag }), el);
     }
+}
+
+// Images without a text alternative (an SVG with role=img counts too).
+for (const el of [...doc.querySelectorAll('img,input[type=image],[role=img]')].slice(0, 500)) {
+    const tag = el.localName;
+    const role = el.getAttribute('role');
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    const hidden = el.getAttribute('aria-hidden') === 'true' || role === 'presentation' || role === 'none' || style.display === 'none' || style.visibility !== 'visible' || rect.width <= 0 || rect.height <= 0;
+
+    if (hidden) continue;
+
+    const named = el.hasAttribute('aria-label') || el.hasAttribute('aria-labelledby') || (tag !== 'img' && tag !== 'input' && (el.hasAttribute('title') || el.querySelector('title')));
+    let why = '';
+
+    if ((tag === 'img' || tag === 'input') && !el.hasAttribute('alt') && !named) why = 'no alt attribute';
+    else if (tag !== 'img' && tag !== 'input' && !named) why = 'role=img with no accessible name';
+
+    if (why) group(groups.images, tag + '|' + (el.getAttribute('src') || '').slice(0, 120) + '|' + why, () => ({ tag, why }), el);
+}
+
+// Elements that can take the focus, one for each kind. A control that is see-through (a custom checkbox) still counts.
+for (const el of [...doc.querySelectorAll(interactive)].slice(0, 1000)) {
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+
+    if (style.display === 'none' || style.visibility !== 'visible' || rect.width <= 0 || rect.height <= 0 || el.matches(':disabled') || el.getAttribute('aria-hidden') === 'true') continue;
+
+    if (el.parentElement && el.parentElement.closest(interactive)) continue;
+
+    if (el.closest('[inert]') || (input.deck && !el.closest('section.slide'))) continue;
+
+    const key = el.localName + '.' + [...el.classList].slice(0, 3).join('.');
+
+    if (!focusCandidates.has(key)) focusCandidates.set(key, { el, count: 0 });
+
+    focusCandidates.get(key).count++;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

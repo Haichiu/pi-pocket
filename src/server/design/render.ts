@@ -471,6 +471,33 @@ export class DesignPage {
     }
 
     /**
+     * Run a script in an isolated world: it sees the page's DOM and styles but none of the page's own scripts, so a page
+     * cannot change the objects that the script uses. The checks run this way.
+     */
+    async evaluateIsolated(expression: string): Promise<Json> {
+        const tree = await this.send("Page.getFrameTree");
+        const world = await this.send("Page.createIsolatedWorld", {
+            frameId: tree.frameTree.frame.id,
+            worldName: "pocket-check",
+        });
+        const result = await this.send("Runtime.evaluate", {
+            expression,
+            contextId: world.executionContextId,
+            returnByValue: true,
+            awaitPromise: true,
+            timeout: 10_000,
+        });
+
+        if (result.exceptionDetails !== undefined) {
+            throw new Error(
+                String(result.exceptionDetails.exception?.description ?? "Check script failed."),
+            );
+        }
+
+        return result.result?.value;
+    }
+
+    /**
      * Load the design's page (or another HTML page of its bundle) at a viewport. `scale` is the device pixel ratio the
      * screenshots are taken at.
      */
@@ -513,7 +540,7 @@ export class DesignPage {
 
     /** Wait (bounded) for fonts and images, then two frames. */
     async settle(): Promise<void> {
-        await this.evaluate(`Promise.race([
+        await this.evaluateIsolated(`Promise.race([
             Promise.all([document.fonts.ready, ...Array.from(document.images, image => image.decode().catch(() => {}))]),
             new Promise(resolve => setTimeout(resolve, 3000))
         ]).then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))`);
@@ -643,6 +670,8 @@ export class DesignPage {
             this.send("Network.enable"),
             this.send("Fetch.enable", { patterns: [{ urlPattern: "*" }] }),
             this.send("Browser.setDownloadBehavior", { behavior: "deny" }),
+            // No scrollbar takes a strip of the width, so a page is as wide as its viewport.
+            this.send("Emulation.setScrollbarsHidden", { hidden: true }),
         ]);
     }
 
