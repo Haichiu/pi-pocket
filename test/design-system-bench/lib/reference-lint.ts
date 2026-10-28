@@ -173,7 +173,7 @@ const SCRIPT = String.raw`(() => {
         }
     }
     // A text field with an author-set font size under 16 px makes a phone zoom in when it gets the focus.
-    if (innerWidth < 500) {
+    if (Math.min(innerWidth, screen.width) < 500) {
         for (const d of facts.declarations) {
             if (!['input', 'textarea', 'select'].includes(d.tag) || !/^(font-size|font)$/.test(d.prop) || (d.tag === 'input' && !/^(text|email|password|search|tel|url|number|)$/.test(d.type))) continue;
             if (d.px < 16 && !facts.zoom.some((z) => z.selector === d.selector)) facts.zoom.push({ pid: d.pid, selector: d.selector, px: d.px });
