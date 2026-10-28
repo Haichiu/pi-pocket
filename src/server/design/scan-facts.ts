@@ -916,31 +916,129 @@ function themeVars(facts: Facts, file: string, text: string): void {
             continue;
         }
 
-        const found: { path: string[]; value: string }[] = [];
-
         if (category === "color" && typeof literal === "object" && !Array.isArray(literal)) {
             Object.assign(paletteTree, literal);
         }
 
-        leaves(literal, [], found, category);
+        const emit = (part: Literal, at: Scope) => {
+            const found: { path: string[]; value: string }[] = [];
 
-        for (const leaf of found) {
-            if (leaf.path.length === 0 && category !== "font") {
-                continue;
+            leaves(part, [], found, category);
+
+            for (const leaf of found) {
+                if (leaf.path.length === 0 && category !== "font") {
+                    continue;
+                }
+
+                addVar(facts, {
+                    name: leaf.path.join("-") || key,
+                    value: leaf.value.slice(0, 400),
+                    scope: at,
+                    kind: "js",
+                    file,
+                    hint: category,
+                });
+            }
+        };
+
+        // `colors: { light: { … }, dark: { … } }`: a block for each mode holds that mode's values.
+        const blocks =
+            typeof literal === "object" && literal !== null && !Array.isArray(literal)
+                ? Object.entries(literal).filter(
+                      ([name, child]) =>
+                          modeOf(name) !== undefined &&
+                          typeof child === "object" &&
+                          child !== null &&
+                          !Array.isArray(child),
+                  )
+                : [];
+
+        if (blocks.length > 0 && category !== "text") {
+            for (const [name, child] of blocks) {
+                emit(child, modeOf(name)!);
             }
 
+            emit(
+                Object.fromEntries(
+                    Object.entries(literal as Record<string, Literal>).filter(
+                        ([name]) => !blocks.some(([block]) => block === name),
+                    ),
+                ),
+                scope,
+            );
+        } else {
+            emit(literal, scope);
+        }
+    }
+
+    modeBlocks(facts, file, text, env, scopeAt);
+
+    semanticTokens(facts, file, text, env, paletteTree, scopeAt);
+}
+
+/**
+ * A block named for a mode whose keys are colors (`dark: { canvas: "#101114", ink: "#f2f3f5" }`), where the theme has no
+ * `colors` key around them: the project's variables for that mode.
+ */
+function modeBlocks(
+    facts: Facts,
+    file: string,
+    text: string,
+    env: ReadonlyMap<string, Literal>,
+    scopeAt: (index: number) => Scope,
+): void {
+    const keys = new Set(Object.keys(THEME_KEYS));
+    let count = 0;
+
+    for (const match of text.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)\s*:\s*(?=\{)/g)) {
+        const mode = modeOf(match[1]!);
+
+        if (mode === undefined || ++count > 12) {
+            continue;
+        }
+
+        const literal = readLiteral(text, match.index + match[0].length, env);
+
+        if (
+            typeof literal !== "object" ||
+            literal === null ||
+            Array.isArray(literal) ||
+            Object.keys(literal).some((key) => keys.has(key))
+        ) {
+            continue;
+        }
+
+        // The block's own mode, unless it sits in another mode's object.
+        const scope =
+            scopeAt(match.index + match[0].length) !== "default"
+                ? scopeAt(match.index + match[0].length)
+                : mode;
+        const found: { path: string[]; value: string }[] = [];
+
+        leaves(literal, [], found, "color");
+
+        const colors = found.filter(
+            (leaf) =>
+                leaf.path.length > 0 &&
+                colorsIn(leaf.value, false).length === 1 &&
+                /^\s*(?:#|rgb|hsl|oklch)/i.test(leaf.value),
+        );
+
+        if (colors.length < 3) {
+            continue;
+        }
+
+        for (const leaf of colors) {
             addVar(facts, {
-                name: leaf.path.join("-") || key,
+                name: leaf.path.join("-"),
                 value: leaf.value.slice(0, 400),
                 scope,
                 kind: "js",
                 file,
-                hint: category,
+                hint: "color",
             });
         }
     }
-
-    semanticTokens(facts, file, text, env, paletteTree, scopeAt);
 }
 
 /** A color that a semantic token names: the color itself, or a path into the palette (`gray.50`, `colors.brand.500`). */

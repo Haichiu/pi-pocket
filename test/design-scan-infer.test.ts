@@ -1036,3 +1036,199 @@ body { background: #faf3e9; color: #333 } a { color: #3366cc } .btn { background
         "the link blue's dark value is kept, on the blue",
     );
 });
+
+// --- Round 2b: themes written in other forms -----------------------------------------------------------------------------
+
+const modesOf = (scan: TokenScan) => Object.keys(scan.draft.modes);
+
+test("a theme file that exports a dark and a light object, dark first, has both modes; light is the default", () => {
+    const scan = scanTokens(
+        project({
+            "src/theme.ts": `export const darkTheme = { colors: { background: "#0b0d12", foreground: "#e8eaf0", subtle: "#8b93a7", outline: "#262b38", panel: "#141824", brand: "#7c9cff", critical: "#ff6b6b", caution: "#f5b94a", positive: "#4ed08a" }, space: { sm: "8px", md: "16px" } };
+export const lightTheme = { colors: { background: "#f6f7fb", foreground: "#14161d", subtle: "#5a6275", outline: "#d9dce6", panel: "#ffffff", brand: "#3558e6", critical: "#d6293e", caution: "#b86e00", positive: "#1a8f55" }, space: { sm: "8px", md: "16px" } };`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.deepEqual(modesOf(scan), ["dark"], "light is the default mode, dark the other");
+    assert.equal(roles.background!.value, "#f6f7fb");
+    assert.equal(roles.background!.dark, "#0b0d12");
+    assert.equal(roles.text!.value, "#14161d");
+    assert.equal(roles.surface!.value, "#ffffff");
+    assert.equal(roles.muted!.value, "#5a6275", "`subtle` alone is the quiet text");
+    assert.equal(roles.border!.value, "#d9dce6", "`outline` is the border");
+    assert.equal(roles.accent!.value, "#3558e6");
+    assert.equal(roles.danger!.value, "#d6293e", "`critical` is the danger");
+    assert.equal(roles.warning!.value, "#b86e00", "`caution` is the warning");
+    assert.equal(roles.success!.value, "#1a8f55", "`positive` is the success");
+});
+
+test("a dark-first theme object with a light block that overrides some values: dark is the default, light the other mode", () => {
+    const scan = scanTokens(
+        project({
+            "theme.js": `const theme = {
+  colors: { canvas: "#101114", paper: "#1a1c21", ink: "#f2f3f5", inkSubtle: "#9a9fab", divider: "#2c2f36", primary: "#6c8cff", error: "#ff5d5d", warning: "#ffb020", success: "#3ccf91" },
+  space: [0, 4, 8, 16, 32],
+  light: { canvas: "#fafaf8", paper: "#ffffff", ink: "#16171a", inkSubtle: "#60656f", divider: "#e2e3e6", primary: "#2f55d4" },
+};
+module.exports = theme;`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.deepEqual(modesOf(scan), ["light"]);
+    assert.equal(roles.background!.value, "#101114", "the base object is the default");
+    assert.equal(roles.background!.dark, "#fafaf8", "the block is the other mode");
+    assert.equal(roles.accent!.dark, "#2f55d4");
+    assert.equal(roles.warning!.value, "#ffb020");
+    assert.equal(roles.warning!.dark, undefined, "a value the block does not set is shared");
+});
+
+test("a theme map in SCSS with a map for each mode: the keys are the names, the modes are the scopes", () => {
+    const scan = scanTokens(
+        project({
+            "_themes.scss": `$themes: (
+  light: (bg: #f7f7f5, surface: #ffffff, text: #1b1c1f, text-muted: #6a6e78, border: #dcdde0, accent: #0b6bcb, danger: #c62828),
+  dark: (bg: #0f1012, surface: #17181b, text: #ececf0, text-muted: #9ca0aa, border: #2a2c31, accent: #5aa2f0, danger: #ff7a7a),
+);
+$shadows: (sm: 0 1px 2px rgba(0,0,0,.1), md: 0 6px 16px rgba(0,0,0,.14), lg: 0 1px 2px rgba(0,0,0,.1), 0 8px 24px rgba(0,0,0,.2));
+@each $name, $map in $themes { .theme-#{$name} { @each $key, $value in $map { --#{$key}: #{$value}; } } }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f7f7f5");
+    assert.equal(roles.background!.dark, "#0f1012");
+    assert.equal(roles.muted!.value, "#6a6e78");
+    assert.equal(roles.accent!.dark, "#5aa2f0");
+    assert.equal(scan.inferred.shadows, 3, "a shadow with two layers is one shadow");
+});
+
+test("a map of names that each hold modes: primary: (light: …, dark: …)", () => {
+    const scan = scanTokens(
+        project({
+            "a.scss": `$colors: (
+  background: (light: #ffffff, dark: #111111),
+  text: (light: #222222, dark: #eeeeee),
+  primary: (light: #0055cc, dark: #66aaff),
+);`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.background!.dark, "#111111");
+    assert.equal(scan.inferred.roles.text!.dark, "#eeeeee");
+    assert.equal(scan.inferred.roles.accent!.dark, "#66aaff");
+});
+
+test("variables kept for the dark mode under their own names (--dark-bg) are its values, not colors of their own", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root { --canvas: #f6f4ef; --paper: #ffffff; --ink: #23282f; --divider: #e3ded4; --primary: #1a5fd0;
+  --dark-canvas: #101318; --dark-paper: #171b21; --dark-ink: #e7eaee; --dark-divider: #2b313a; --dark-primary: #8ab4ff }
+.theme-dark { --canvas: var(--dark-canvas); --paper: var(--dark-paper); --ink: var(--dark-ink); --divider: var(--dark-divider); --primary: var(--dark-primary) }
+body { background: var(--canvas); color: var(--ink) } .card { background: var(--paper); border: 1px solid var(--divider) } a { color: var(--primary) }`,
+        }),
+    );
+    const system = load(scan);
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f6f4ef");
+    assert.equal(roles.background!.dark, "#101318");
+    assert.equal(roles.text!.dark, "#e7eaee");
+    assert.equal(roles.accent!.dark, "#8ab4ff");
+    assert.ok(
+        !system.tokens.some((each) => each.name.startsWith("color.dark")),
+        "no color.dark-… tokens: the dark variables are values of the plain ones",
+    );
+});
+
+test("a shade (--primary-dark beside --primary-light) is not the dark mode's value", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root { --primary: #2255aa; --primary-light: #4477cc; --primary-dark: #113377; --danger: #cc2222; --danger-dark: #881111 }`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.accent!.dark, undefined);
+    assert.deepEqual(modesOf(scan), []);
+});
+
+test("a file named for a mode sets that mode's values: dark.less beside variables.less", () => {
+    const scan = scanTokens(
+        project({
+            "variables.less": `@primary-color: #1677ff; @body-background: #f5f5f5; @component-background: #ffffff; @text-color: #222222; @border-color-base: #d9d9d9; @error-color: #ff4d4f;`,
+            "dark.less": `@primary-color: #1668dc; @body-background: #111318; @component-background: #1a1d23; @text-color: #ffffffd9; @border-color-base: #33363d; @error-color: #dc4446;`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f5f5f5");
+    assert.equal(roles.background!.dark, "#111318");
+    assert.equal(roles.surface!.value, "#ffffff", "`component-background` is the surface");
+    assert.equal(roles.surface!.dark, "#1a1d23");
+    assert.equal(roles.accent!.dark, "#1668dc");
+    assert.equal(roles.danger!.dark, "#dc4446");
+});
+
+test("Chakra: a palette written as objects the file declares, and semantic tokens with a value for each mode", () => {
+    const scan = scanTokens(
+        project({
+            "theme.ts": `const brand = { 50: "#e3f0ff", 500: "#1a6be0", 900: "#102c5c" };
+const gray = { 50: "#f7f8fa", 100: "#eef0f3", 200: "#dde1e6", 500: "#6c788a", 800: "#1f2732", 900: "#12181f" };
+export const theme = extendTheme({
+  colors: { brand, gray },
+  semanticTokens: { colors: {
+    "bg.canvas": { default: "gray.50", _dark: "gray.900" },
+    "bg.panel": { default: "#ffffff", _dark: "gray.800" },
+    "text.body": { default: "gray.800", _dark: "gray.100" },
+    "text.subtle": { default: "gray.500", _dark: "gray.200" },
+    "border.line": { default: "gray.200", _dark: "gray.800" },
+  } },
+});`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f7f8fa");
+    assert.equal(roles.background!.dark, "#12181f");
+    assert.equal(roles.surface!.dark, "#1f2732");
+    assert.equal(roles.text!.value, "#1f2732");
+    assert.equal(roles.text!.dark, "#eef0f3");
+    assert.equal(roles.muted!.value, "#6c788a");
+    assert.equal(roles.border!.value, "#dde1e6");
+});
+
+test("quiet text is a gray, not the lighter link color of the dark mode; a label on the accent is a color the mode uses", () => {
+    const scan = scanTokens(
+        project({
+            "index.html": `<style>
+body { background: #fbfaf7; color: #23272e } .card { background: #fff } .muted { color: #6a7280 } a { color: #2f6fed } .btn { background: #2f6fed; color: #fff }
+@media (prefers-color-scheme: dark) {
+  body { background: #14161a; color: #e6e8eb } .card { background: #1c1f24 } .muted, .meta { color: #9aa3ad } a { color: #8ab4ff } a:hover { color: #b0ccff } .btn { background: #8ab4ff; color: #10131a }
+}</style><p class="muted meta">x</p>`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.muted!.dark, "#9aa3ad", "a gray, not #b0ccff");
+    assert.equal(
+        scan.draft.modes.dark !== undefined &&
+            JSON.stringify(scan.draft.modes.dark).includes("#10131a"),
+        true,
+        "the dark label on the light button is kept",
+    );
+});
+
+test("a theme object with blocks for each mode under one key: colors: { light: {…}, dark: {…} }", () => {
+    const scan = scanTokens(
+        project({
+            "theme.ts": `export default { colors: {
+  light: { background: "#ffffff", text: "#111111", border: "#dddddd", primary: "#0055cc" },
+  dark: { background: "#0a0a0a", text: "#f5f5f5", border: "#2a2a2a", primary: "#66aaff" },
+} };`,
+        }),
+    );
+
+    assert.equal(scan.inferred.roles.background!.value, "#ffffff");
+    assert.equal(scan.inferred.roles.background!.dark, "#0a0a0a");
+    assert.equal(scan.inferred.roles.accent!.dark, "#66aaff");
+});

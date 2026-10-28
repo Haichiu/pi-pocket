@@ -410,11 +410,16 @@ export function nameScore(role: RoleName, segs: string[]): number {
                 return 70;
             }
 
-            // A name that is only the word (`muted`, `subtle`, `faint`, `dim`) is the quiet text.
-            return segs.length === 1 &&
-                w("muted subtle faint dim quiet weak hint").includes(segs[0]!)
+            // A name that is only the word is the quiet text; `muted` alone is often a tint of the background (shadcn).
+            if (segs.length !== 1) {
+                return 0;
+            }
+
+            return segs[0] === "muted"
                 ? 45
-                : 0;
+                : w("subtle faint dim quiet weak hint").includes(segs[0]!)
+                  ? 62
+                  : 0;
         }
 
         case "border": {

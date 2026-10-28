@@ -253,7 +253,7 @@ export function scanReport(scan: TokenScan): string {
 
         for (const [role, info] of roles) {
             lines.push(
-                `  ${info.token.padEnd(22)} ${info.value}${info.dark === undefined ? "" : `  dark ${info.dark}`}   ${info.basis === "name" ? `from --${clip(info.source, 40)}` : clip(info.source, 50)} (${role})`,
+                `  ${info.token.padEnd(22)} ${info.value}${info.dark === undefined ? "" : `  ${inferred.modes.alt} ${info.dark}`}   ${info.basis === "name" ? `from --${clip(info.source, 40)}` : clip(info.source, 50)} (${role})`,
             );
         }
 
