@@ -360,11 +360,11 @@ const partsOf = (cssText) => {
 
         if (prop === 'color' || prop === '-webkit-text-fill-color') put('text', colorWords(value));
         else if (prop === 'background' || prop === 'background-color') put('background', colorWords(value));
-        else if (/^border(-(top|right|bottom|left))?(-color)?$/.test(prop)) put('border', colorWords(value));
+        else if (/^border(-(top|right|bottom|left|block|inline)(-(start|end))?)?(-color)?$/.test(prop)) put('border', colorWords(value));
         else if (prop === 'outline' || prop === 'outline-color') put('outline', colorWords(value));
         else if (prop === 'font-size') put('font-size', lengthWords(value));
         else if (prop === 'font') put('font-size', lengthWords(value).slice(0, 1));
-        else if (/^(padding|margin)(-(top|right|bottom|left))?$/.test(prop) || /^(grid-)?(row-|column-)?gap$/.test(prop)) put('space', lengthWords(value));
+        else if (/^(padding|margin)(-(top|right|bottom|left|block|inline)(-(start|end))?)?$/.test(prop) || /^(grid-)?(row-|column-)?gap$/.test(prop)) put('space', lengthWords(value));
         else if (/^border(-(top|bottom)-(left|right))?-radius$/.test(prop)) put('radius', lengthWords(value));
         else if (prop === 'font-family' && !value.includes('var(')) put('family', [value]);
     }
@@ -497,6 +497,16 @@ for (const el of nodes) {
 
     if (image || style.filter !== 'none' || (style.backdropFilter || 'none') !== 'none' || style.mixBlendMode !== 'normal') uncertain = true;
 
+    // Partial opacity (a faded state, a transition caught half way) and an overlay drawn by ::before or ::after make
+    // what is behind the text uncertain; so does a clip or a mask.
+    if (cum < 0.99 || (style.clipPath !== 'none' && style.clipPath !== undefined) || (style.maskImage || style.webkitMaskImage || 'none') !== 'none') uncertain = true;
+
+    for (const pseudo of ['::before', '::after']) {
+        const made = getComputedStyle(el, pseudo);
+
+        if (made.content !== 'none' && made.content !== 'normal' && made.display !== 'none' && (made.position === 'absolute' || made.position === 'fixed') && (made.backgroundImage !== 'none' || (toRgba(made.backgroundColor) || [0, 0, 0, 0])[3] > 0)) uncertain = true;
+    }
+
     if (el !== root && el !== body && style.overflowX !== 'visible') clip = true;
 
     if (style.position === 'fixed') fixed = true;
@@ -507,7 +517,7 @@ for (const el of nodes) {
         const rect = rectOf(el);
 
         if (rect.width > 0 && rect.height > 0) {
-            const positioned = style.position === 'absolute' || style.position === 'fixed' || style.zIndex !== 'auto';
+            const positioned = style.position === 'absolute' || style.position === 'fixed' || style.zIndex !== 'auto' || style.transform !== 'none';
 
             if (MEDIA.has(el.tagName) || image || (positioned && bg[3] > 0)) painters.push({ el, rect });
         }
@@ -597,7 +607,10 @@ for (const el of nodes) {
     if (pxOf(style.outlineWidth) > 0 && !/^(none|hidden)$/.test(style.outlineStyle)) useColor(style.outlineColor, 'outline');
 
     // Fonts and font sizes, and the text's contrast with what is behind it.
-    if (text && !gradientText && fill && rect.width > 1 && rect.height > 1 && pxOf(style.fontSize) >= 1) {
+    // Text made invisible on purpose (a screen-reader-only label) is not judged.
+    const hiddenText = /^rect\(0(px)?,? ?0(px)?,? ?0(px)?,? ?0(px)?\)$/.test(style.clip) || /^inset\((50|100)%/.test(style.clipPath) || pxOf(style.textIndent) <= -500 || (/^(hidden|clip)$/.test(style.overflowX) && rect.height <= 1);
+
+    if (text && !gradientText && !hiddenText && fill && rect.width > 1 && rect.height > 1 && pxOf(style.fontSize) >= 1) {
         const fontSize = pxOf(style.fontSize);
         const family = familyOf(style.fontFamily);
 
