@@ -68,6 +68,36 @@ Work with feedback and hand off:
 - Comments, text edits, and kept tweaks from the canvas reach you as a message, each with its target as JSON (pid, selector, text, html). Make the next version with the artifact tool's edits, and change only what the message names.
 - Hand off a design to code: design_export with format html into the project, then start a linked session with the team tool and give it the export path. design_export also writes png, pdf, and pptx (a deck); it takes tweaks to apply first, viewport (a preset or { width, height }) for a page, and slide (a number, or "all" for a zip of every slide) for a deck.`;
 
+/**
+ * A short design that uses a system, for a session whose project has one. The names are the flagship's: a test renders
+ * it with that system and expects no finding, so the example is correct, not only plausible.
+ */
+export const SYSTEM_EXAMPLE = `<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session card</title>
+<link rel="stylesheet" href="ds/tokens.css">
+<link rel="stylesheet" href="ds/components.css">
+<style>
+body { margin: 0; padding: var(--space-6) var(--space-4); background: var(--color-bg-base); color: var(--color-text-secondary); font-family: var(--font-family-sans); font-size: var(--font-size-md); line-height: var(--font-leading-normal); }
+main { display: grid; gap: var(--space-4); max-width: 420px; margin: 0 auto; }
+.pk-button { min-height: var(--size-tap); }
+</style>
+</head>
+<body>
+<main data-pid="page">
+<article class="pk-card" data-pid="session-card">
+<h4 class="pk-card__title" data-pid="session-title">Design mode</h4>
+<p class="pk-card__text">Three versions, two open comments.</p>
+<div><button class="pk-button pk-button--primary" data-pid="open-button">Open design</button></div>
+</article>
+</main>
+<script type="application/json" id="pocket-tweaks">[
+{ "name": "--color-accent-fill", "label": "Accent", "type": "color", "value": "#3557a5" },
+{ "name": "--radius-card", "label": "Corners", "type": "range", "min": 0, "max": 24, "step": 1, "unit": "px", "value": 8 }
+]</script>
+</body>`;
+
 /** What to do in a project with no design system: the end of the section when nothing was found. */
 const WITHOUT = `${GUIDE}
 
@@ -83,7 +113,10 @@ const USE = `The project has a design system, so a design is on-system or it is 
 - Modes: data-theme="<mode>" on the root selects one. Check each mode with design_preview colorScheme.
 - Bind tweak knobs to tokens (--color-accent-fill, --radius-card) so that the person tunes the system's own values.
 - design_system read with file "guidelines.md" gives the rules to follow; read it before a large design.
-- If the summary reports errors, run design_system validate and tell the person before you build on the system.`;
+- If the summary reports errors, run design_system validate and tell the person before you build on the system.
+
+The skeleton above, on a system (the names are this example's; use the summary's own):
+${SYSTEM_EXAMPLE}`;
 
 /**
  * The design section: the instructions, and the project's design system when there is one, as bounded text that says
