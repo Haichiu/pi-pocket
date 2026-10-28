@@ -223,6 +223,17 @@ export class BenchPage {
         return Buffer.from(String(result.data), "base64");
     }
 
+    /** A PNG of one rectangle of the page (CSS pixels from the top left of the page), at scale 1. */
+    async clip(x: number, y: number, width: number, height: number): Promise<Buffer> {
+        const result = await this.send("Page.captureScreenshot", {
+            format: "png",
+            captureBeyondViewport: true,
+            clip: { x, y, width, height, scale: 1 },
+        });
+
+        return Buffer.from(String(result.data), "base64");
+    }
+
     async close(): Promise<void> {
         this.#browser.connection.unlisten(this.#session);
         await this.#browser.connection
