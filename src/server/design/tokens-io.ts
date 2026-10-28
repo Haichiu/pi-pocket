@@ -282,7 +282,7 @@ export function readFolder(cwd: string): Folder | undefined {
 
 /** The files that `design_system read` may show: the sources and the compiled output, by relative name. */
 const READABLE =
-    /^(?:tokens(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)?\.json|guidelines\.md|components\/[a-z0-9]+(?:-[a-z0-9]+)*\.html|dist\/(?:tokens\.css|tailwind\.css|tokens\.resolved\.json|tokens\.[a-z0-9]+(?:-[a-z0-9]+)*\.resolved\.json|components\.css))$/;
+    /^(?:tokens(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)?\.json|guidelines\.md|components\/[a-z0-9]+(?:-[a-z0-9]+)*\.html|dist\/(?:tokens\.css|tailwind\.css|tokens\.resolved\.json|tokens\.studio\.json|tokens\.[a-z0-9]+(?:-[a-z0-9]+)*\.resolved\.json|components\.css))$/;
 
 /**
  * The text of one file of the design system folder (at most `max` bytes), or undefined when it is not there. The name
@@ -295,7 +295,7 @@ export function readDesignFile(
 ): { text: string; truncated: boolean } | undefined {
     if (!READABLE.test(name)) {
         throw new Error(
-            `"${name.slice(0, 60)}" is not a file of the design system. Use tokens.json, tokens.<mode>.json, guidelines.md, components/<name>.html, or dist/tokens.css, dist/tailwind.css, dist/tokens.resolved.json, dist/tokens.<mode>.resolved.json, dist/components.css.`,
+            `"${name.slice(0, 60)}" is not a file of the design system. Use tokens.json, tokens.<mode>.json, guidelines.md, components/<name>.html, or dist/tokens.css, dist/tailwind.css, dist/tokens.resolved.json, dist/tokens.studio.json, dist/tokens.<mode>.resolved.json, dist/components.css.`,
         );
     }
 

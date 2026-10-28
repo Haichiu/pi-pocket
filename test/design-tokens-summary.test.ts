@@ -195,3 +195,47 @@ test("a system with no components or no roles still summarizes: raw colors are l
     assert.doesNotMatch(text, /Palette \(raw colors/);
     assert.doesNotMatch(text, /Components \(/);
 });
+
+test("the summary lists each component with its slug, the classes of its root element, and the other classes of its states", () => {
+    const dir = project();
+
+    const spec = (markup: string, name: string, extra = "") =>
+        `<script type="application/json" id="pocket-component">{"name":"${name}","states":["default","hover"]}</script>
+<style>.x{color:var(--color-text-primary)}</style>
+<template data-state="default">${markup}</template>
+<template data-state="hover">${extra || markup}</template>`;
+    const system = writeDesignSystem(dir, {
+        tokens: {
+            color: { $type: "color", text: { primary: { $value: "#111111" } } },
+        },
+        components: {
+            card: spec(
+                '<article class="pk-card" tabindex="0"><h3 class="pk-card__title">T</h3></article>',
+                "Card",
+                '<article class="pk-card is-hover"><h3 class="pk-card__title">T</h3></article>',
+            ),
+            "text-field": spec('<label><input class="pk-input" style="x:y"></label>', "Field"),
+            hostile: spec(
+                '<div class="ok &lt;script&gt; a&quot;b {{x}} good-one">x</div>',
+                "Hostile",
+            ),
+        },
+    });
+    const text = systemSummary(system, 6000);
+
+    assert.match(
+        text,
+        /card: Card; root <article class="pk-card">; other classes pk-card__title is-hover; states default, hover/,
+    );
+    assert.match(
+        text,
+        /text-field: Field; root <label>; other classes pk-input; states/,
+        "a root with no class",
+    );
+    assert.match(
+        text,
+        /hostile: Hostile; root <div class="ok good-one">/,
+        "only safe class names are shown",
+    );
+    assert.doesNotMatch(text, /<script|\{\{x\}\}|style=/);
+});

@@ -109,7 +109,7 @@ export interface CompiledFiles {
     css: string;
     /** `tailwind.css`: a Tailwind v4 `@theme` block that maps to the same variables. */
     tailwind: string;
-    /** `tokens.resolved.json`: every token, every mode, resolved. */
+    /** `tokens.resolved.json`: a compact summary of every token and mode, secondary to the per-mode DTCG files. */
     json: string;
     /** `components.css`: the CSS of every component. */
     components: string;
@@ -118,6 +118,8 @@ export interface CompiledFiles {
      * token, for tools that read DTCG (Style Dictionary, Tokens Studio).
      */
     modes?: Record<string, string>;
+    /** `tokens.studio.json`: one file for Tokens Studio, with a token set for each mode and a `$themes` array. */
+    studio?: string;
 }
 
 /** A project's design system, loaded and checked. */
@@ -134,6 +136,11 @@ export interface DesignSystem {
     overrides?: Record<string, string[]>;
     /** The Tailwind namespaces whose defaults `tailwind.css` clears (`--color-*: initial;`), from `tailwindReset`. */
     tailwindReset?: string[];
+    /**
+     * Which DTCG draft the per-mode files follow, from `$extensions["com.pi-pocket"].format`: `"2021"` (the default; a
+     * color is `"#7aa2f7"`, a dimension `"16px"`) or `"2025.10"` (`{ colorSpace, components, alpha, hex }` and `{ value, unit }`).
+     */
+    dtcgFormat?: "2021" | "2025.10";
     components: ComponentSpec[];
     /** `guidelines.md`, bounded. Untrusted project text. */
     guidelines: string;
@@ -182,7 +189,25 @@ export type CheckRule =
     | "font-fallback"
     | "missing-viewport"
     | "missing-pid"
-    | "focus-visible";
+    | "focus-visible"
+    | "reduced-motion";
+
+/**
+ * What a one-tap fix would change, on a finding whose literal equals a token exactly (`applyExactFixes` in `fix.ts`).
+ * A finding with this field is fixable.
+ */
+export interface CheckFix {
+    kind: "color" | "length" | "font";
+    /** The CSS properties that hold the literal, longhands and the shorthands that can carry it: `["background-color", "background"]`. */
+    properties: string[];
+    /** The literal as the finding names it: `#5a5f73`, `16px`, `Geist, system-ui, sans-serif`. */
+    literal: string;
+    /** The token that takes its place: its name (`color.text.muted`) and its custom property (`--color-text-muted`). */
+    token: string;
+    cssVar: string;
+    /** The mode that the literal equals the token in. */
+    mode: string;
+}
 
 /** One finding of `checkDesign`. */
 export interface CheckFinding {
@@ -191,6 +216,8 @@ export interface CheckFinding {
      * can follow a finding. A second finding with the same hash gets `-2`, `-3`.
      */
     id?: string;
+    /** Present when the finding can be fixed with no choice to make: see `CheckFix`. */
+    fix?: CheckFix;
     rule: CheckRule;
     level: "error" | "warning";
     /** The element, as the inspector names it. Empty for a page-level finding. */

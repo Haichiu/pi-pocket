@@ -320,6 +320,24 @@ before(async () => {
         title: "Ferry booking",
         content: ferryPage(loadDesignSystem(folder)!.compiled.css, true),
     });
+
+    // A page that writes colors as the tokens' own values: exact matches, for the one-tap fix.
+    {
+        const made = loadDesignSystem(folder)!;
+        const hex = (name: string) =>
+            made.tokens.find((each) => each.name === name)!.modes.light!.hex as string;
+
+        await publishDesign(app, session, {
+            id: "exact",
+            title: "Exact page",
+            content: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Exact</title>
+<style>${made.compiled.css}
+body { margin: 0; padding: 24px; background: ${hex("color.bg.canvas")}; font: 16px/1.5 var(--font-family-sans); }
+.card { padding: 16px; background: ${hex("color.bg.surface")}; color: ${hex("color.text.primary")}; border: 1px solid ${hex("color.border.default")}; }
+</style></head><body><div class="card" data-pid="card"><h1 data-pid="title" style="margin:0;color:${hex("color.text.primary")}">Exact</h1><p data-pid="body">Colors written as the system's own values.</p></div></body></html>`,
+        });
+    }
+
     viewerToken = app.config.addUser("Vic", "viewer").token;
 
     const faint = mkdtempSync(join(root, "faint-"));
@@ -428,6 +446,18 @@ test("the picker pins the design system, and it opens as sections of tokens", re
         "the roles come before the palette",
     );
     assert.equal(await count(".dsy-step-tile"), 0, "and the palette starts folded");
+    // The tab says how many roles there are (what is open), the roles' label says the same, and the palette's own count is in its head.
+    const counted = await inPage<{ tab: string; roles: string; palette: string }>(`
+        const group = (title) => [...document.querySelectorAll(".dsy-group-head")].find((each) => each.querySelector(".dsy-group-title")?.textContent === title);
+        return JSON.stringify({
+            tab: document.querySelector(".dsy-tabs [role=tab].on .dsn-count")?.textContent,
+            roles: document.querySelector(".dsy-section-label .dsy-group-count")?.textContent,
+            palette: group("Palette")?.querySelector(".dsy-group-count")?.textContent,
+        });
+    `);
+
+    assert.equal(counted.tab, counted.roles, "the Colors tab counts the roles");
+    assert.ok(Number(counted.palette) > Number(counted.tab) - 100 && Number(counted.palette) > 0);
 
     // Contrast: a pair shows its level, and the quieter pair of disabled text its 3:1.
     assert.match(await text('[data-token="color.text.primary"] .dsy-badge'), /16\.6:1.*AAA/);
@@ -440,10 +470,28 @@ test("the picker pins the design system, and it opens as sections of tokens", re
     assert.ok((await count(".dsy-specimen")) >= 5, "type styles as specimens");
     await section("Spacing");
     assert.equal(await count(".dsy-space"), 8);
+    // Spacing is a grid of small tiles (a bar at its own scale, the name, the value), not a row a panel wide for each step.
+    assert.match(await text('[data-token="space.4"]'), /4.*16px/s);
+    assert.ok(
+        await inPage<boolean>(`
+            const grid = document.querySelector('.dsy-tiles[data-size="space"]');
+            const tile = grid.querySelector(".dsy-card-tile").getBoundingClientRect();
+            return JSON.stringify(getComputedStyle(grid).gridTemplateColumns.split(" ").length >= 2 && tile.height < 110);
+        `),
+        "a grid of compact tiles",
+    );
     await section("Radii");
     assert.equal(await count(".dsy-corner"), 5);
+    assert.match(
+        await text('[data-token="radius.md"]'),
+        /md.*8px/s,
+        "a radius has its value under its name",
+    );
     await section("Shadows");
     assert.equal(await count(".dsy-stage i"), 3);
+    // Each shadow tile says what the shadow is, in a few characters: x y blur / alpha.
+    assert.match(await text('[data-token="shadow.sm"]'), /sm.*0 1 2 \/ 12%/s);
+    assert.match(await text('[data-token="shadow.md"]'), /md.*0 6 16 \/ 16%/s);
     await section("Motion");
     assert.equal(await count(".dsy-track"), 6);
     assert.equal(await count(".dsy-curve"), 3);
@@ -1013,6 +1061,81 @@ test(
     },
 );
 
+test(
+    "the save bar keeps its place at the foot of the view while there are edits, with undo, redo, discard, and save",
+    real,
+    async () => {
+        await openSystem();
+        await section("Colors");
+        await openToken("color.border.default");
+        await filled('input[aria-label="color.border.default in light: color"]', "#223344");
+        await waitFor(
+            "the bar",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-savebar")))`,
+        );
+
+        const place = () =>
+            inPage<{ top: number; bottom: number; view: number; scroll: number; column: number }>(`
+            const bar = document.querySelector(".dsy-savebar").getBoundingClientRect();
+            const column = document.querySelector(".dsy-column").getBoundingClientRect();
+            return JSON.stringify({ top: bar.top, bottom: bar.bottom, view: innerHeight, scroll: document.querySelector(".dsy-scroll").scrollTop, column: column.bottom });
+        `);
+        const first = await place();
+
+        // At the foot of the view's column, on the screen; it does not move when the view scrolls.
+        assert.ok(
+            first.bottom <= first.view + 1 && Math.abs(first.bottom - first.column) < 2,
+            JSON.stringify(first),
+        );
+        await inPage(`document.querySelector(".dsy-scroll").scrollTop = 600; return "null";`);
+
+        const after = await place();
+
+        assert.ok(after.scroll > 0, "the view scrolled");
+        assert.equal(Math.round(after.top), Math.round(first.top));
+        // The four things to do with edits are there: undo, redo, give up, save.
+        assert.equal(await count('.dsy-savebar button[aria-label="Undo"]:not([disabled])'), 1);
+        assert.equal(
+            await count('.dsy-savebar button[aria-label="Redo"][disabled]'),
+            1,
+            "nothing to redo yet",
+        );
+        assert.equal(
+            await inPage<number>(
+                `return JSON.stringify([...document.querySelectorAll(".dsy-savebar button")].filter((each) => each.textContent.includes("Discard")).length)`,
+            ),
+            1,
+        );
+        assert.match(await text(".dsy-savebar button.primary"), /Save/);
+        await pressed('.dsy-savebar button[aria-label="Undo"]');
+        await waitFor(
+            "undone",
+            `return JSON.stringify(!document.querySelector(".dsy-count-note"))`,
+        );
+        // (with no edit left the bar goes; redo is in the bar at the top, and brings it back)
+        await pressed('.dsy-history button[aria-label="Redo"]');
+        await waitFor(
+            "redone",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-count-note")))`,
+        );
+
+        // A picture of it, for people to look at: always taken (and not empty); written where DS_SHOTS says.
+        const shot = await page.screenshot();
+
+        assert.ok(shot.data.length > 20_000, "a picture, not a blank");
+
+        if (process.env.DS_SHOTS) {
+            mkdirSync(process.env.DS_SHOTS, { recursive: true });
+            writeFileSync(
+                join(process.env.DS_SHOTS, "system-savebar.png"),
+                Buffer.from(shot.data, "base64"),
+            );
+        }
+
+        await pressed(".dsy-savebar button", "Discard");
+    },
+);
+
 test("sizes, times, and easings are edited with fields of their kind", real, async () => {
     await openSystem();
     await section("Spacing");
@@ -1389,7 +1512,7 @@ async function phone(t: { after: (fn: () => Promise<void>) => void }, width: num
 const stopNow = () =>
     inPage<{ name: string; region: string; ring: number }>(`
         const at = document.activeElement;
-        const regions = [".dsy-tabbar", ".dsy-bars", ".dsy-scroll", ".dsy-savebar", ".dsy-preview", ".dsn-dock-head", ".dsy-sheet-handle", ".dsy-check-options", ".dsy-check-summary", ".dsy-findings", ".dsn-dock-foot", ".dsn-dock"];
+        const regions = [".dsy-tabbar", ".dsy-bars", ".dsy-scroll", ".dsy-savebar", ".dsy-preview", ".dsn-dock-head", ".dsy-sheet-handle", ".dsy-check-options", ".dsy-check-summary", ".dsy-fixbar", ".dsy-findings", ".dsn-dock-foot", ".dsn-dock"];
         const style = getComputedStyle(at);
         return JSON.stringify({
             name: at.getAttribute("aria-label") || at.textContent.trim().replace(/\\s+/g, " ").slice(0, 40),
@@ -1593,6 +1716,7 @@ test(
             ".dsn-dock-head",
             ".dsy-check-options",
             ".dsy-check-summary",
+            ".dsy-fixbar",
             ".dsy-findings",
             ".dsn-dock-foot",
         ];
@@ -1641,6 +1765,56 @@ test(
         if ((await count(".dsy-check-filter button")) > 0) {
             await pressed(".dsy-check-filter button", "Warnings");
         }
+    },
+);
+
+test(
+    "the Check dock fixes the exact matches in one tap: a new version, and the check of it",
+    bridged,
+    async () => {
+        await swap(session);
+        await openDesign();
+        await pressed(".dsn-picker");
+        await pressed(".dsn-list-item", "Exact page");
+        await waitFor(
+            "the design",
+            `return JSON.stringify(document.querySelector(".dsn-picker-title")?.textContent === "Exact page")`,
+        );
+
+        // (an earlier test may have left the Check dock open: the tab then closes it)
+        if (!(await count('.dsn-dock[data-dock="check"]'))) {
+            await pressed('.dsn-tab[title="Check"]');
+        }
+
+        await waitFor(
+            "the dock",
+            `return JSON.stringify(Boolean(document.querySelector('.dsy-check-options [aria-label="Mode"] button[aria-label="Light"]')))`,
+        );
+        await pressed('.dsy-check-options [aria-label="Mode"] button[aria-label="Light"]');
+        await pressed(".dsn-dock-foot button", "Run the check");
+        await waitFor(
+            "the fix",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-fixbar button")))`,
+        );
+        assert.match(await text(".dsy-fixbar"), /exactly a token's/);
+        assert.match(await text(".dsy-fixbar button"), /^Fix \d+ exact match(es)?$/);
+
+        const before = await inPage<number>(
+            `return JSON.stringify(document.querySelectorAll(".dsy-finding").length)`,
+        );
+
+        await pressed(".dsy-fixbar button");
+
+        // The newest version is the new one, and it is checked: there is nothing left of what one tap fixes.
+        await waitFor(
+            "the new version",
+            `return JSON.stringify(document.querySelector(".dsn-picker")?.textContent.includes("v2") === true && Boolean(document.querySelector(".dsy-check-summary")) && !document.querySelector(".dsy-checking") && !document.querySelector(".dsy-fixbar"))`,
+        );
+        assert.ok(
+            (await count(".dsy-finding")) < before,
+            "the exact matches are not findings any more",
+        );
+        assert.match(await text(".dsy-sr"), /^Checked version 2: /);
     },
 );
 
@@ -1780,17 +1954,17 @@ test(
         );
 
         const share = () =>
-            inPage<{ dock: number; canvas: number; above: boolean }>(`
+            inPage<{ dock: number; canvas: number; room: number; above: boolean }>(`
                 const dock = document.querySelector(".dsn-dock").getBoundingClientRect();
                 const room = document.querySelector(".dsn-dock").parentElement.getBoundingClientRect();
                 const canvas = document.querySelector(".dsn-canvas").getBoundingClientRect();
-                return JSON.stringify({ dock: dock.height / room.height, canvas: canvas.height, above: canvas.bottom <= dock.top + 1 });
+                return JSON.stringify({ dock: dock.height / room.height, canvas: canvas.height, room: room.height, above: canvas.bottom <= dock.top + 1 });
             `);
         const middle = await share();
 
-        // Near 60 percent, and the page still shows above it.
-        assert.ok(middle.dock > 0.55 && middle.dock < 0.68, JSON.stringify(middle));
-        assert.ok(middle.canvas >= 120 && middle.above, JSON.stringify(middle));
+        // The page keeps at least 40 percent of the room, and shows above the sheet.
+        assert.ok(middle.dock > 0.45 && middle.dock <= 0.6, JSON.stringify(middle));
+        assert.ok(middle.canvas / middle.room >= 0.4 && middle.above, JSON.stringify(middle));
 
         // The handle is a control with a name, a value, and the arrow keys.
         assert.equal(await count('.dsy-sheet-handle[role="separator"][aria-valuenow="1"]'), 1);
@@ -1810,7 +1984,7 @@ test(
 
         const low = await share();
 
-        assert.ok(low.dock < 0.4 && low.canvas > middle.canvas, JSON.stringify(low));
+        assert.ok(low.dock < 0.3 && low.canvas > middle.canvas, JSON.stringify(low));
         await page.press("Enter");
         await waitFor(
             "the next height",
@@ -2192,6 +2366,15 @@ test(
                 });
             `),
             { apart: true, whole: true, more: "right" },
+        );
+        // The mode switch is buttons, not a native list; the bar of sections that goes on has a mark at its edge.
+        assert.equal(await count(".dsy-bars select"), 0);
+        assert.ok((await count(".dsy-modes button")) >= 3);
+        assert.match(
+            await inPage<string>(
+                `return JSON.stringify(getComputedStyle(document.querySelector(".dsy-tabs-end"), "::before").content)`,
+            ),
+            /\u203a/,
         );
         // A card's tap target is at least 44 px, and so is a swatch of a strip, and a tab 34.
         assert.ok(

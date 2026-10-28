@@ -17,6 +17,7 @@ import {
     plural,
     renderMarkdown,
 } from "../src/server/design/docsite-markdown.ts";
+import { sectionOf } from "../src/server/design/docsite-core.ts";
 import { renderSystemDoc } from "../src/server/design/docsite.ts";
 import { withRender } from "../src/server/design/render.ts";
 import type { PocketHost } from "../src/server/host.ts";
@@ -65,10 +66,11 @@ function token(
     };
 }
 
-/** The page without the `srcdoc` of the component frames, which hold escaped, sandboxed markup of their own. */
-const outsideFrames = (html: string) => html.replace(/srcdoc="[^"]*"/g, 'srcdoc=""');
+/** The page without the code listings, which hold project markup and CSS as escaped text. */
+const outsideListings = (html: string) =>
+    html.replace(/<pre class="snip"[\s\S]*?<\/pre>/g, "<pre></pre>");
 
-test("the page has a section and a link for each part of the system, and a frame for each component", () => {
+test("the page has a section and a link for each part of the system, and a stage for each component", () => {
     const system = flagship();
     const { html } = renderSystemDoc(system);
 
@@ -94,11 +96,13 @@ test("the page has a section and a link for each part of the system, and a frame
         assert.match(html, new RegExp(`id="comp-${spec.slug}"`), `the ${spec.slug} component`);
     }
 
+    // The states are drawn in the page itself (a shadow root that the page's script fills), never in a frame.
     assert.equal(
-        (html.match(/<iframe class="comp-frame"/g) ?? []).length,
+        (html.match(/<div class="comp-stage"/g) ?? []).length,
         system.components.length,
-        "one frame each",
+        "one stage each",
     );
+    assert.doesNotMatch(html, /<iframe|srcdoc=/i, "no frame");
 
     // Color: roles with contrast, the palette, the matrix, and the pairs.
     for (const part of [
@@ -129,7 +133,10 @@ test("the page has a section and a link for each part of the system, and a frame
 
     // Every token is in the reference table, and the code section has the compiled files.
     for (const named of system.tokens) {
-        assert.ok(html.includes(`data-copy="${named.name}"`), `${named.name} can be copied`);
+        assert.ok(
+            html.includes(`<button class="tk">${named.name}</button>`),
+            `${named.name} can be copied`,
+        );
     }
 
     assert.match(html, /id="code-css"/);
@@ -157,54 +164,59 @@ test("each mode has a switch, and the page opens in the default mode", () => {
         /<html lang="en" class="nojs" data-mode="light" data-theme="light" data-dark-mode="dark">/,
     );
     // A value that differs by mode is written once for each mode; one that does not is written once.
-    assert.match(html, /class="mv" data-m="dark"/);
-    assert.match(html, /html:not\(\[data-mode="dark"\]\) \.mv\[data-m="dark"\]\{display:none\}/);
+    assert.match(html, /class="mv" data-m="1"/);
+    assert.match(html, /html:not\(\[data-mode="dark"\]\) \.mv\[data-m="1"\]\{display:none\}/);
 });
 
-test("the page asks for nothing: no external request, no script or style file", () => {
+test("the page asks for nothing: no external request, no script or style file, no frame", () => {
     const { html, assets } = renderSystemDoc(flagship());
-    const frames = [...html.matchAll(/srcdoc="([^"]*)"/g)].map((match) =>
-        match[1]!
-            .replace(/&quot;/g, '"')
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&#39;/g, "'")
-            .replace(/&amp;/g, "&"),
-    );
+    const page = outsideListings(html);
 
     assert.deepEqual(assets, []);
-    assert.ok(frames.length > 0);
+    assert.doesNotMatch(page, /<link[\s>]/i, "no <link>");
+    assert.doesNotMatch(page, /<script[^>]*\ssrc=/i, "no script file");
+    assert.doesNotMatch(page, /<iframe|<object|<embed|srcdoc=/i, "no frame or plug-in");
+    // `@import` may appear as text in a code listing (the generated Tailwind file says how to import it), but never
+    // in a style that the page runs.
+    const styles = [...page.matchAll(/<style>([\s\S]*?)<\/style>/g)]
+        .map((match) => match[1])
+        .join("\n");
 
-    for (const text of [html, ...frames]) {
-        assert.doesNotMatch(text, /<link[\s>]/i, "no <link>");
-        assert.doesNotMatch(text, /<script[^>]*\ssrc=/i, "no script file");
-        // `@import` may appear as text in a code listing (the generated Tailwind file says how to import it), but never
-        // in a style that the page or a frame runs.
-        const styles = [...text.matchAll(/<style>([\s\S]*?)<\/style>/g)]
-            .map((match) => match[1])
-            .join("\n");
+    assert.doesNotMatch(styles, /@import/i, "no @import in a style");
+    assert.doesNotMatch(page, /url\(\s*['"]?(https?:)?\/\//i, "no remote url()");
+    assert.doesNotMatch(
+        page,
+        /\s(src|href|action|poster)=["']?(https?:)?\/\//i,
+        "no remote address",
+    );
+    assert.equal((page.match(/<script/g) ?? []).length, 2, "the page's two scripts only");
 
-        assert.doesNotMatch(styles, /@import/i, "no @import in a style");
-        assert.doesNotMatch(text, /url\(\s*['"]?(https?:)?\/\//i, "no remote url()");
-        assert.doesNotMatch(
-            text,
-            /\s(src|href|action|poster)=["']?(https?:)?\/\//i,
-            "no remote address",
-        );
+    // The policy: nothing from outside, no frame, form, or base, and an image or font only as data.
+    const policy = /http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html)?.[1] ?? "";
+
+    for (const part of [
+        "default-src 'none'",
+        "script-src 'nonce-",
+        "form-action 'none'",
+        "base-uri 'none'",
+        "img-src data:",
+        "font-src data:",
+    ]) {
+        assert.ok(policy.includes(part), `the policy has ${part}`);
     }
 
-    // A policy on the page and on each frame, and the frames cannot reach the page.
-    assert.match(html, /http-equiv="Content-Security-Policy" content="default-src 'none'/);
-    assert.equal((html.match(/sandbox="allow-scripts"/g) ?? []).length, frames.length);
-    assert.ok(!html.includes('sandbox="allow-scripts allow-same-origin"'));
+    assert.doesNotMatch(policy, /frame-src/);
+    // Script runs only with the page's nonce, which is new for each page and is on each of the page's two scripts.
+    const nonce = /script-src 'nonce-([\w-]+)'/.exec(policy)?.[1];
 
-    for (const frame of frames) {
-        const nonce = /script-src 'nonce-([\w-]+)'/.exec(frame)?.[1];
-
-        assert.ok(nonce !== undefined && nonce.length >= 16, "a nonce in the frame's policy");
-        assert.equal((frame.match(/<script/g) ?? []).length, 1, "only the frame's own script");
-        assert.ok(frame.includes(`<script nonce="${nonce}">`));
-    }
+    assert.ok(nonce !== undefined && nonce.length >= 20, "a nonce");
+    assert.doesNotMatch(policy, /script-src[^;]*unsafe-inline/);
+    assert.equal((page.match(new RegExp(`<script nonce="${nonce}">`, "g")) ?? []).length, 2);
+    assert.notEqual(
+        /script-src 'nonce-([\w-]+)'/.exec(renderSystemDoc(flagship()).html)?.[1],
+        nonce,
+        "new for each page",
+    );
 });
 
 /** A system built of hostile text in every place that the page prints. */
@@ -274,7 +286,7 @@ function hostile(): DesignSystem {
 
 test("project text is escaped, and a value that could break a style is left out", () => {
     const { html } = renderSystemDoc(hostile());
-    const page = outsideFrames(html);
+    const page = outsideListings(html);
 
     // Only the page's own two scripts (the first sets the mode, the second runs the page) are in the page.
     assert.equal((page.match(/<script/g) ?? []).length, 2, "two scripts");
@@ -305,22 +317,20 @@ test("project text is escaped, and a value that could break a style is left out"
         assert.ok(!styles.includes(part), `${part} is not in a style`);
     }
 
-    // The frames hold the component's markup and CSS as escaped attribute text: no raw tag can leave them.
-    const frame = /srcdoc="([^"]*)"/.exec(html)![1]!;
+    // Component markup and CSS are on the page once, as escaped text in a listing: no raw tag can leave it.
+    const listings = [
+        ...html.matchAll(/<pre class="snip" id="code-\d+-\d+"><code>([\s\S]*?)<\/code><\/pre>/g),
+    ].map((match) => match[1]!);
 
-    assert.ok(!frame.includes("<"), "the frame's document is escaped in its attribute");
-    assert.ok(!frame.includes('"'));
-    // A component's CSS cannot close the style element that holds it.
-    const doc = frame
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&amp;/g, "&");
-
-    assert.equal((doc.match(/<\/style>/g) ?? []).length, 1, "one style element, closed once");
-    assert.equal((doc.match(/<script nonce=/g) ?? []).length, 1, "one script has the nonce");
-    assert.ok(doc.includes("<\\/style><script>alert(2)"), "the closing tag in the CSS is defused");
+    assert.ok(listings.length >= 3);
+    assert.ok(
+        listings.every((text) => !text.includes("<")),
+        "every listing is escaped",
+    );
+    assert.ok(
+        listings.some((text) => text.includes("&lt;/style&gt;&lt;script&gt;alert(2)")),
+        "the CSS is text",
+    );
 });
 
 test("an empty system, a system with one mode, and a system with no components still render", () => {
@@ -485,20 +495,20 @@ test("the Markdown renderer escapes text first and keeps only safe links", () =>
 const host = { fetchPublic: createPublicFetch() } as PocketHost;
 
 test(
-    "in Chromium the page loads with no error, sizes its frames, switches mode, and runs no component script",
+    "in Chromium the page loads with no error, draws every state in place, switches mode, and runs no component script",
     {
         skip: findBrowser() === undefined ? "No Chromium on this machine." : false,
     },
     async () => {
         const system = flagship();
 
-        // A component whose markup tries to run script and to reach out; the frame must stop both.
+        // A component whose markup tries to run script, to reach out, and to leave: the page must strip all of it.
         system.components = [
             {
                 ...system.components[0]!,
                 slug: "probe",
                 markup: {
-                    default: `<button class="pk-button">Probe</button><script>parent.postMessage({ type: "ds-frame", height: 3999 }, "*"); document.title = "ran"</script><img src="https://example.com/x.png" onerror="parent.postMessage({ type: 'ds-frame', height: 3999 }, '*')">`,
+                    default: `<button class="pk-button pk-button--primary" id="probe" onclick="window.__ran = 4">Probe</button><script>window.__ran = 1</script><img src="https://example.com/x.png" onerror="window.__ran = 2"><a id="leave" href="javascript:window.__ran = 3">leave</a><a href="https://example.com/" id="out">out</a><form action="https://example.com/post"><button type="submit" id="send">Send</button></form><iframe srcdoc="<script>parent.__ran = 5</script>"></iframe>`,
                 },
                 states: ["default"],
             },
@@ -518,24 +528,63 @@ test(
 
             assert.deepEqual(page.errors, []);
             assert.equal(
-                await page.evaluate("document.querySelectorAll('iframe.comp-frame').length"),
-                3,
+                await page.evaluate("document.documentElement.hasAttribute('data-docs-ready')"),
+                true,
             );
+            assert.equal(await page.evaluate("document.querySelectorAll('.comp-stage').length"), 3);
 
-            // Frames report their own height; a script in a component did not make one of them 4,000 px.
-            const heights = (await page.evaluate(
-                "JSON.stringify([...document.querySelectorAll('iframe.comp-frame')].map((frame) => frame.getBoundingClientRect().height))",
-            )) as string;
-            const sizes = JSON.parse(heights) as number[];
+            // Every stage has its shadow root, with its states, drawn in the page: each is tall and in the page's layout.
+            const sizes = JSON.parse(
+                (await page.evaluate(
+                    "JSON.stringify([...document.querySelectorAll('.comp-stage')].map((stage) => [stage.hasAttribute('data-ready'), !!stage.querySelector('.comp-host').shadowRoot, stage.getBoundingClientRect().height, stage.querySelector('.comp-host').shadowRoot.querySelectorAll('.__c').length]))",
+                )) as string,
+            ) as [boolean, boolean, number, number][];
 
             assert.ok(
-                sizes.every((height) => height > 60 && height < 3000),
-                heights,
+                sizes.every(
+                    ([ready, root, height, cells]) => ready && root && height > 100 && cells >= 1,
+                ),
+                JSON.stringify(sizes),
             );
 
-            // The mode switch changes the page and tells each frame.
+            // The probe's script, handlers, addresses, and frame are gone; nothing ran.
+            const inside = (await page.evaluate(
+                "document.querySelector('#comp-probe .comp-host').shadowRoot.innerHTML",
+            )) as string;
+
+            assert.doesNotMatch(
+                inside,
+                /<script|onclick|onerror|javascript:|<iframe|example\.com|action=/i,
+            );
+            assert.match(inside, /id="probe"/);
+            assert.equal(await page.evaluate("typeof window.__ran"), "undefined");
+
+            const here = await page.evaluate("location.href");
+
+            // Clicking its button, its links, and its form does nothing, and the page stays where it is.
+            await page.evaluate(
+                "(() => { const root = document.querySelector('#comp-probe .comp-host').shadowRoot; for (const id of ['probe', 'leave', 'out', 'send']) root.getElementById(id)?.click(); })()",
+            );
+            assert.equal(await page.evaluate("typeof window.__ran"), "undefined");
+            assert.equal(await page.evaluate("location.href"), here);
+
+            // The mode switch recolors the states, with nothing sent to them: they read the page's variables.
+            // (The button eases its color for 150 ms, so read it after that.)
+            const color = async () => {
+                await page.evaluate("new Promise((resolve) => setTimeout(resolve, 400))");
+
+                return page.evaluate(
+                    "getComputedStyle(document.querySelector('#comp-button .comp-host').shadowRoot.querySelector('.pk-button--primary')).backgroundColor",
+                );
+            };
+
+            await page.evaluate("document.querySelector('.seg button[data-mode=light]').click()");
+
+            const light = await color();
+
             await page.evaluate("document.querySelector('.seg button[data-mode=dark]').click()");
             assert.equal(await page.evaluate("document.documentElement.dataset.theme"), "dark");
+            assert.notEqual(await color(), light);
             assert.equal(
                 await page.evaluate(
                     "document.querySelector('.seg button[data-mode=dark]').getAttribute('aria-pressed')",
@@ -559,7 +608,7 @@ test(
             assert.equal(await page.evaluate("document.getElementById('nomatch').hidden"), true);
             assert.equal(
                 await page.evaluate(
-                    "document.querySelectorAll('[data-q]:not([hidden])').length > 3",
+                    "document.querySelectorAll('[data-s]:not([hidden])').length > 3",
                 ),
                 true,
             );
@@ -568,29 +617,71 @@ test(
     },
 );
 
-test("section counts follow one rule: each token once, in one section, so the counts add up", () => {
+test("section counts follow one rule: a headline of role tokens, the palette and component tokens inside, all adding up", () => {
     const system = flagship();
     const { html } = renderSystemDoc(system);
     const count = (id: string) =>
         Number(
             new RegExp(`<a href="#${id}">[^<]*<span class="count">(\\d+)</span>`).exec(html)?.[1],
         );
-    const sections = ["color", "typography", "spacing", "radii", "shadows", "motion", "other"];
-    const sum = sections.reduce((total, id) => total + (count(id) || 0), 0);
+    const ids = ["color", "typography", "spacing", "radii", "shadows", "motion", "other"] as const;
+    const sectionIds = {
+        color: "color",
+        typography: "typography",
+        spacing: "spacing",
+        radii: "radii",
+        shadows: "shadows",
+        motion: "motion",
+        other: "other",
+    } as const;
+    let total = 0;
 
-    assert.equal(sum, system.tokens.length, "the token sections add up to the token total");
+    for (const id of ids) {
+        // The section's tokens, by the rule that every token is in exactly one section (the System view's `sectionOf`).
+        const mine = system.tokens.filter((token) => sectionOf(token) === sectionIds[id]);
+        const semantic = mine.filter((token) => token.tier === "semantic").length;
+        const primitive = mine.filter((token) => token.tier === "primitive").length;
+        const component = mine.filter((token) => token.tier === "component").length;
+        // The headline is the role tokens; a section with none counts its primitives. Component tokens never count in it.
+        const headline = semantic > 0 ? semantic : primitive;
+        const inside = (semantic > 0 ? primitive : 0) + component;
+
+        assert.equal(count(id), headline, `${id}: the navigation says its role tokens`);
+        assert.equal(
+            headline + inside,
+            mine.length,
+            `${id}: the headline and what is inside add up`,
+        );
+        total += mine.length;
+
+        // Under the title, the counts of what is inside, in one line.
+        const line =
+            new RegExp(
+                `<section class="block" id="${id}"[^>]*>(?:(?!</section>)[\\s\\S])*?<p class="counts">([^<]*)</p>`,
+            ).exec(html)?.[1] ?? "";
+        const numbers = [...line.matchAll(/(\d+) /g)].map((match) => Number(match[1]));
+
+        assert.equal(numbers[0], headline, `${id}: ${line}`);
+        assert.equal(
+            numbers.reduce((sum, value) => sum + value, 0),
+            mine.length,
+            `${id}: ${line}`,
+        );
+    }
+
+    assert.equal(total, system.tokens.length, "the sections' tokens add up to the system's");
     assert.equal(count("tokens"), system.tokens.length, "the table lists every token");
     assert.equal(count("components"), system.components.length, "Components counts components");
+    assert.equal(count("color"), 52, "the flagship's Color says its 52 roles");
+    assert.match(html, /<p class="counts">52 roles · 97 palette colors · 62 component colors<\/p>/);
 
     // A token that no specimen draws is still on the page, in its section's table.
     for (const token of system.tokens) {
-        assert.ok(html.includes(`data-copy="${token.name}"`), `${token.name} is on the page`);
+        assert.ok(
+            html.includes(`<button class="tk">${token.name}</button>`),
+            `${token.name} is on the page`,
+        );
     }
-
-    // The same rule as the System view's: the type decides, and for sizes the words of the path.
-    const byType = system.tokens.filter((token) => token.type === "color").length;
-
-    assert.equal(count("color"), byType, "Color counts every color token, a component's too");
 });
 
 test("a ratio is written with one decimal, cut and never rounded up; cards copy a token three ways; the footer says what it is", () => {
@@ -604,10 +695,13 @@ test("a ratio is written with one decimal, cut and never rounded up; cards copy 
         ratios.every((text) => /^\d+\.\d:1$/.test(text)),
         String(ratios.find((text) => !/^\d+\.\d:1$/.test(text))),
     );
-    assert.match(html, /data-copy="var\(--color-bg-surface\)"[^>]*>CSS var</);
-    assert.ok(html.includes('data-copy="bg-bg-surface"'), "a Tailwind class");
-    assert.ok(html.includes('data-copy="text-text-primary"'));
-    assert.match(html, /data-copy="color\.bg\.surface\.\$value"[^>]*>JSON</);
+    // The page's script makes the three buttons from the values a card carries.
+    assert.match(
+        html,
+        /<div class="copy-row" data-var="--color-bg-surface" data-tw="bg-bg-surface" data-json="color\.bg\.surface\.\$value"><\/div>/,
+    );
+    assert.match(html, /data-var="--color-text-primary" data-tw="text-text-primary"/);
+    assert.match(html, /data-var="--color-border-default" data-tw="border-border-default"/);
     assert.match(
         html,
         /<footer class="foot"><strong>Pi Pocket<\/strong> · \d+ tokens · 3 modes · 10 components · generated \d{4}-\d{2}-\d{2} by Pi Pocket<\/footer>/,
@@ -660,7 +754,7 @@ test("the page's sentences have the right number and article", () => {
         compiled: { css: "", tailwind: "", json: "{}", components: "" },
     };
     const text = (html: string) =>
-        outsideFrames(html)
+        outsideListings(html)
             .replace(/<style>[\s\S]*?<\/style>|<script[\s\S]*?<\/script>|<pre[\s\S]*?<\/pre>/g, " ")
             .replace(/<[^>]+>/g, " ")
             .replace(/&[a-z#0-9]+;/g, " ")
@@ -728,7 +822,6 @@ test("an exempt pair is labelled and not a failure; notes have an area; the code
     for (const file of [
         "tokens.css",
         "tailwind.css",
-        "components.css",
         "tokens.resolved.json",
         "tokens.light.resolved.json",
         "tokens.dark.resolved.json",
@@ -736,4 +829,294 @@ test("an exempt pair is labelled and not a failure; notes have an area; the code
     ]) {
         assert.ok(html.includes(`<summary>${file}<`), file);
     }
+});
+
+test("the flagship's page is small, its hero swatches are roles, and its radii are grouped by use", () => {
+    const { html } = renderSystemDoc(flagship());
+
+    assert.ok(Buffer.byteLength(html) < 600_000, `${Buffer.byteLength(html)} bytes`);
+
+    // The hero: one swatch for each role, in reading order, labelled by the role and named in full on hover.
+    const hero = /<div class="strip">([\s\S]*?)<\/div>/.exec(html)![1]!;
+    const labels = [...hero.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1]);
+
+    assert.deepEqual(labels, [
+        "background",
+        "surface",
+        "text",
+        "muted",
+        "border",
+        "accent",
+        "danger",
+        "warning",
+        "success",
+        "info",
+        "brand",
+        "code",
+    ]);
+    assert.match(hero, /title="color\.accent\.default"/);
+    assert.ok(
+        labels.every((label) => label!.length <= 12),
+        "short enough not to wrap",
+    );
+
+    // Radii: the jobs they do, small to large, each with a line on why.
+    for (const [title, note] of [
+        ["Marks and tags", "Up to 4 px"],
+        ["Controls", "5 to 7 px"],
+        ["Containers", "8 px and more"],
+        ["Round", "Fully round"],
+    ]) {
+        assert.ok(
+            html.includes(
+                `<h4 style="margin-top:22px">${title}</h4><p class="sub" style="margin-bottom:0">${note}`,
+            ),
+            String(title),
+        );
+    }
+
+    // Spacing bars share the width: the longest step is a full row.
+    assert.match(html, /<div class="spec cols">/);
+    assert.match(html, /<div class="bar" style="width:100%"><\/div>/);
+});
+
+/** Probes of component markup and CSS that try to run script or to cover the page. Each is one component. */
+const PROBES: { slug: string; markup: string; css?: string; target: string }[] = [
+    {
+        slug: "smil-animate",
+        // SMIL sets a link's address to a script address; a click then follows it.
+        markup: `<svg width="80" height="30"><a href="#" id="t"><rect width="80" height="30" fill="red"/><animate attributeName="href" values="javascript:window.__ran='animate'" fill="freeze"/></a></svg>`,
+        target: "t",
+    },
+    {
+        slug: "smil-set",
+        markup: `<svg width="80" height="30"><a href="#" id="t"><rect width="80" height="30" fill="red"/><set attributeName="href" to="javascript:window.__ran='set'"/></a></svg>`,
+        target: "t",
+    },
+    {
+        slug: "smil-others",
+        markup: `<svg width="80" height="30"><a id="t" href="#"><rect width="80" height="30" fill="red"/><animateTransform attributeName="href" from="javascript:window.__ran='a'" to="javascript:window.__ran='b'" by="javascript:window.__ran='c'"/><animateMotion path="M0 0"/><discard/></a></svg>`,
+        target: "t",
+    },
+    {
+        slug: "svg-xlink",
+        markup: `<svg width="80" height="30" xmlns:xlink="http://www.w3.org/1999/xlink"><a id="t" xlink:href="javascript:window.__ran='xlink'" href="javascript:window.__ran='href'"><rect width="80" height="30" fill="red"/></a></svg>`,
+        target: "t",
+    },
+    {
+        slug: "use-external",
+        markup: `<svg width="80" height="30"><use id="t" href="https://example.com/x.svg#a" xlink:href="data:image/svg+xml;base64,PHN2Zy8+"/><rect id="r" width="80" height="30" fill="red"/></svg>`,
+        target: "r",
+    },
+    {
+        slug: "foreign-object",
+        markup: `<svg width="120" height="40"><foreignObject width="120" height="40"><div xmlns="http://www.w3.org/1999/xhtml" id="t" onclick="window.__ran='fo'"><img src=x onerror="window.__ran='fo-img'"><script>window.__ran = 'fo-script'</script>html in svg</div></foreignObject><rect id="r" width="120" height="40" fill="red"/></svg>`,
+        target: "r",
+    },
+    {
+        slug: "math-href",
+        markup: `<math id="t" href="javascript:window.__ran='math'" onclick="window.__ran='math-click'"><mtext>x</mtext><mi xlink:href="javascript:window.__ran='mi'">y</mi></math><button id="r">after</button>`,
+        target: "r",
+    },
+    {
+        slug: "style-url",
+        markup: `<div id="t" style="width:80px;height:30px;background:url(https://example.com/x.png);background-image:url('javascript:window.__ran=1');behavior:url(x.htc)">style</div><div id="r" style="color:red;width:20px;height:20px">ok</div>`,
+        css: `#t{background:url(https://example.com/y.png)}@import url(https://example.com/z.css);`,
+        target: "t",
+    },
+    {
+        slug: "host-overlay",
+        // The component's CSS makes its own host cover the whole window, over everything.
+        markup: `<button id="t">under</button>`,
+        css: `:host{position:fixed!important;inset:0!important;z-index:2147483647!important;display:block!important;background:red!important;width:100vw!important;height:100vh!important}`,
+        target: "t",
+    },
+    {
+        slug: "form-submit",
+        markup: `<form id="f" action="javascript:window.__ran='form'" method="post"><input name="a" value="1"><button type="submit" id="t" formaction="javascript:window.__ran='formaction'">go</button></form>`,
+        target: "t",
+    },
+    {
+        slug: "html-links",
+        markup: `<a id="t" href="javascript:window.__ran='a'" onclick="window.__ran='click'">a</a><a id="u" href="https://example.com/">out</a><img src=x onerror="window.__ran='img'"><iframe srcdoc="<script>parent.__ran='frame'</script>"></iframe><object data="javascript:window.__ran='object'"></object><embed src="javascript:window.__ran='embed'"><meta http-equiv="refresh" content="0;url=javascript:window.__ran='meta'"><base href="https://example.com/"><link rel="stylesheet" href="https://example.com/a.css"><button id="b" onclick="window.__ran='button'">b</button>`,
+        target: "t",
+    },
+];
+
+test(
+    "no probe in a component's markup or CSS runs script, leaves the page, or covers it: real clicks in Chromium",
+    { skip: findBrowser() === undefined ? "No Chromium on this machine." : false },
+    async () => {
+        const system = flagship();
+        const base = system.components[0]!;
+
+        system.components = PROBES.map((probe) => ({
+            ...base,
+            slug: probe.slug,
+            name: probe.slug,
+            states: ["default"],
+            markup: { default: probe.markup },
+            css: probe.css ?? "",
+        }));
+
+        const bundle: DesignBundle = {
+            meta: { title: "Docs", type: "html", versions: [] },
+            version: 1,
+            content: renderSystemDoc(system).html,
+            assets: [],
+        };
+
+        await withRender(bundle, host, undefined, async (page) => {
+            await page.load({ width: 1280, height: 800 });
+            await page.evaluate("new Promise((resolve) => setTimeout(resolve, 500))");
+
+            assert.deepEqual(page.errors, []);
+            assert.equal(
+                await page.evaluate("document.querySelectorAll('.comp-stage[data-ready]').length"),
+                PROBES.length,
+            );
+
+            const here = await page.evaluate("location.href");
+
+            const click = async (x: number, y: number) => {
+                const point = { x, y, button: "left", clickCount: 1 };
+
+                await page.send("Input.dispatchMouseEvent", { ...point, type: "mouseMoved" });
+                await page.send("Input.dispatchMouseEvent", { ...point, type: "mousePressed" });
+                await page.send("Input.dispatchMouseEvent", { ...point, type: "mouseReleased" });
+                await page.evaluate("new Promise((resolve) => setTimeout(resolve, 60))");
+            };
+
+            for (const probe of PROBES) {
+                // What is in the shadow root: no element or attribute that could run script or reach out.
+                const inside = (await page.evaluate(
+                    `document.querySelector('#comp-${probe.slug} .comp-host').shadowRoot.innerHTML`,
+                )) as string;
+
+                assert.doesNotMatch(
+                    inside,
+                    /<(script|iframe|object|embed|meta|base|link|math|foreignobject|animate|animatetransform|animatemotion|set|discard|form)\b|\son[a-z]+=|javascript:|attributename|example\.com|formaction|action=/i,
+                    `${probe.slug}: ${inside.slice(0, 300)}`,
+                );
+
+                // Scroll the probe's target into view and press it with a real mouse, in the middle of its box.
+                const at = JSON.parse(
+                    (await page.evaluate(`(() => {
+                        const root = document.querySelector('#comp-${probe.slug} .comp-host').shadowRoot;
+                        const target = root.getElementById('${probe.target}') ?? root.querySelector('a, button, rect, div');
+
+                        target?.scrollIntoView({ block: 'center' });
+                        const box = target?.getBoundingClientRect();
+
+                        return JSON.stringify(box ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : null);
+                    })()`)) as string,
+                ) as { x: number; y: number } | null;
+
+                if (at !== null) {
+                    await click(at.x, at.y);
+                }
+
+                assert.equal(
+                    await page.evaluate("typeof window.__ran"),
+                    "undefined",
+                    `${probe.slug}: a script ran`,
+                );
+                assert.equal(
+                    await page.evaluate("location.href"),
+                    here,
+                    `${probe.slug}: the page moved`,
+                );
+            }
+
+            // A click in the middle of the window, and the corners, runs nothing: the overlay probe did not cover the page.
+            for (const [x, y] of [
+                [640, 400],
+                [20, 20],
+                [1260, 780],
+            ] as const) {
+                const top = await page.evaluate(
+                    `(() => { const el = document.elementFromPoint(${x}, ${y}); return el ? (el.closest('.comp-stage') ? 'stage' : el.tagName) : null; })()`,
+                );
+
+                await click(x, y);
+                assert.equal(await page.evaluate("typeof window.__ran"), "undefined");
+                assert.notEqual(top, "stage", `a component covers the page at ${x},${y}`);
+            }
+
+            // The overlay's fixed host is placed against its own stage (layout containment), not the window, and is clipped to it.
+            const inside = await page.evaluate(
+                `(() => { const stage = document.querySelector('#comp-host-overlay .comp-stage').getBoundingClientRect(); const host = document.querySelector('#comp-host-overlay .comp-host').getBoundingClientRect(); return Math.abs(host.left - stage.left) < 2 && Math.abs(host.top - stage.top) < 2; })()`,
+            );
+
+            assert.equal(inside, true);
+            // The page still works: the filter, with no script error.
+            await page.evaluate("document.querySelector('.seg button[data-mode=dark]').click()");
+            assert.equal(await page.evaluate("document.documentElement.dataset.theme"), "dark");
+            assert.deepEqual(page.errors, []);
+        });
+    },
+);
+
+test("the sanitizer's allowlists name no animation, no frame, no foreign object, no script, and no action attribute", async () => {
+    const lists = await import("../src/server/design/docsite-sanitize.ts");
+    const elements = [...lists.HTML_ELEMENTS, ...lists.SVG_ELEMENTS];
+    const attributes = [
+        ...lists.GLOBAL_ATTRIBUTES,
+        ...lists.HTML_ATTRIBUTES,
+        ...lists.SVG_ATTRIBUTES,
+    ];
+
+    for (const banned of [
+        "script",
+        "iframe",
+        "frame",
+        "object",
+        "embed",
+        "form",
+        "foreignobject",
+        "animate",
+        "set",
+        "animatetransform",
+        "animatemotion",
+        "mpath",
+        "discard",
+        "math",
+        "link",
+        "meta",
+        "base",
+        "template",
+        "image",
+    ]) {
+        assert.ok(!elements.includes(banned), `${banned} is not allowed`);
+        assert.ok(
+            lists.DROPPED_ELEMENTS.includes(banned) || ["form", "image"].includes(banned),
+            `${banned} is dropped`,
+        );
+    }
+
+    for (const banned of [
+        "attributename",
+        "to",
+        "from",
+        "by",
+        "action",
+        "formaction",
+        "srcdoc",
+        "srcset",
+        "poster",
+        "target",
+        "contenteditable",
+        "autofocus",
+        "onclick",
+        "begin",
+        "dur",
+        "keytimes",
+    ]) {
+        assert.ok(!attributes.includes(banned), `${banned} is not allowed`);
+    }
+
+    assert.ok(
+        attributes.every((name) => !name.startsWith("on")),
+        "no handler attribute",
+    );
 });

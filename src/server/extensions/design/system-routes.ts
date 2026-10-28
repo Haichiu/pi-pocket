@@ -31,6 +31,8 @@ import { MAX_ASSET_BYTES, MAX_ASSETS, MAX_ASSETS_BYTES, MAX_BYTES } from "../art
 import {
     type CheckOptions,
     checkDesign,
+    fixExactMatches,
+    isFixable,
     loadDesignSystem,
     renderSystemDoc,
     writeDesignSystem,
@@ -74,6 +76,7 @@ const RULES: readonly CheckRule[] = [
     "missing-viewport",
     "missing-pid",
     "focus-visible",
+    "reduced-motion",
 ];
 
 const clip = (value: unknown, max: number): string =>
@@ -303,6 +306,9 @@ export function viewOf(system: DesignSystem) {
             "tokens.css": Buffer.byteLength(system.compiled.css),
             "tailwind.css": Buffer.byteLength(system.compiled.tailwind),
             "tokens.resolved.json": Buffer.byteLength(system.compiled.json),
+            ...(system.compiled.studio === undefined
+                ? {}
+                : { "tokens.studio.json": Buffer.byteLength(system.compiled.studio) }),
             "components.css": Buffer.byteLength(system.compiled.components),
         },
         revision: revisionOf(system),
@@ -310,7 +316,11 @@ export function viewOf(system: DesignSystem) {
 }
 
 /** What a report from the page check holds, cut to a fixed shape: its words come from the page. */
-export function cleanReport(report: CheckReport): CheckReport {
+export function cleanReport(
+    report: CheckReport,
+    system?: DesignSystem,
+    mode?: string,
+): CheckReport {
     const findings: CheckFinding[] = [];
 
     // What is not a finding (a rule the app does not know, a null) is skipped before it counts toward the limit.
@@ -324,9 +334,30 @@ export function cleanReport(report: CheckReport): CheckReport {
         }
 
         const rect = each.rect;
+        const fix = each.fix;
+
+        // Whether one tap can fix it: the engine says (`fixable`), else it is an exact match that the stand-in can rewrite.
+        const fixable =
+            (each as { fixable?: unknown }).fixable === true || isFixable(each, system, mode);
 
         findings.push({
             ...(typeof each.id === "string" ? { id: clip(each.id, 60) } : {}),
+            // A fixable finding keeps what `applyExactFixes` needs; it checks the system again before it rewrites.
+            ...(typeof fix === "object" &&
+            fix !== null &&
+            ["color", "length", "font"].includes(fix.kind) &&
+            Array.isArray(fix.properties)
+                ? {
+                      fix: {
+                          kind: fix.kind,
+                          properties: fix.properties.slice(0, 20).map((each) => clip(each, 60)),
+                          literal: clip(fix.literal, 300),
+                          token: clip(fix.token, 200),
+                          cssVar: clip(fix.cssVar, 200),
+                          mode: clip(fix.mode, 64),
+                      },
+                  }
+                : {}),
             rule: each.rule,
             level: each.level === "error" ? "error" : "warning",
             selector: clip(each.selector, 500),
@@ -338,6 +369,7 @@ export function cleanReport(report: CheckReport): CheckReport {
                 ? { suggestion: clip(each.suggestion, 300) }
                 : {}),
             message: clip(each.message, 400),
+            ...(fixable ? { fixable: true } : {}),
             ...(typeof rect === "object" && rect !== null
                 ? {
                       rect: {
@@ -363,6 +395,9 @@ export function cleanReport(report: CheckReport): CheckReport {
             height: Math.round(coordinate(report?.viewport?.height)),
         },
         colorScheme: report?.colorScheme === "dark" ? "dark" : "light",
+        ...(typeof report?.mode === "string" && report.mode !== ""
+            ? { mode: clip(report.mode, 64) }
+            : {}),
         findings,
         summary: {
             errors: findings.filter((each) => each.level === "error").length,
@@ -576,59 +611,66 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         steer,
     );
 
+    /**
+     * What a check and a fix take from a body: the design and version, and how the page is looked at (a mode of the system, a
+     * color scheme, a size). The body is checked here; a mode that the system does not have is refused with its words.
+     */
+    const checkTarget = async (request: ConversationWebRequest) => {
+        const id = typeof request.body.id === "string" ? request.body.id : "";
+        const version = request.body.version;
+        const scheme = request.body.colorScheme;
+        const mode = request.body.mode;
+        const size = request.body.viewport ?? "mobile";
+
+        if (
+            version !== undefined &&
+            (typeof version !== "number" || !Number.isSafeInteger(version))
+        ) {
+            throw web.error(400, "Choose a version.");
+        }
+
+        if (scheme !== undefined && scheme !== "light" && scheme !== "dark") {
+            throw web.error(400, "Choose light or dark.");
+        }
+
+        if (mode !== undefined && (typeof mode !== "string" || mode === "" || mode.length > 100)) {
+            throw web.error(400, "Choose a mode of the design system.");
+        }
+
+        if (typeof size !== "string" || !Object.hasOwn(VIEWPORTS, size)) {
+            throw web.error(400, "Choose mobile, tablet, or desktop.");
+        }
+
+        const cwd = folderOf(request);
+        const system = await load(cwd);
+
+        // A mode of the system: the page is checked against it, in the color scheme that the system gives it (the
+        // scheme asked for, when the person asked for one).
+        if (mode !== undefined && system !== undefined && !system.modes.includes(mode)) {
+            throw web.error(
+                400,
+                `The design system has no mode "${mode.slice(0, 40)}". Modes: ${system.modes.join(", ")}.`,
+            );
+        }
+
+        const checked = mode !== undefined && system !== undefined ? mode : undefined;
+        const colorScheme =
+            scheme ?? (checked === undefined ? undefined : system?.schemes[checked]);
+        const options: CheckOptions = {
+            viewport: VIEWPORTS[size as keyof typeof VIEWPORTS],
+            ...(colorScheme === undefined ? {} : { colorScheme }),
+            ...(checked === undefined ? {} : { mode: checked }),
+        };
+
+        return { id, version: version as number | undefined, options, system, mode: checked };
+    };
+
     // Check a design against the system: the page is rendered and walked in a private Chromium (`checkDesign`).
     web.conversationRoute(
         "POST",
         "c/:conversation/system/check",
         async (request) => {
-            const id = typeof request.body.id === "string" ? request.body.id : "";
-            const version = request.body.version;
-            const scheme = request.body.colorScheme;
-            const mode = request.body.mode;
-            const size = request.body.viewport ?? "mobile";
-
-            if (
-                version !== undefined &&
-                (typeof version !== "number" || !Number.isSafeInteger(version))
-            ) {
-                throw web.error(400, "Choose a version.");
-            }
-
-            if (scheme !== undefined && scheme !== "light" && scheme !== "dark") {
-                throw web.error(400, "Choose light or dark.");
-            }
-
-            if (
-                mode !== undefined &&
-                (typeof mode !== "string" || mode === "" || mode.length > 100)
-            ) {
-                throw web.error(400, "Choose a mode of the design system.");
-            }
-
-            if (typeof size !== "string" || !Object.hasOwn(VIEWPORTS, size)) {
-                throw web.error(400, "Choose mobile, tablet, or desktop.");
-            }
-
-            const cwd = folderOf(request);
-            const system = await load(cwd);
-
-            // A mode of the system: the page is checked against it, in the color scheme that the system gives it (the
-            // scheme asked for, when the person asked for one).
-            if (mode !== undefined && system !== undefined && !system.modes.includes(mode)) {
-                throw web.error(
-                    400,
-                    `The design system has no mode "${mode.slice(0, 40)}". Modes: ${system.modes.join(", ")}.`,
-                );
-            }
-
-            const checked = mode !== undefined && system !== undefined ? mode : undefined;
-            const colorScheme =
-                scheme ?? (checked === undefined ? undefined : system?.schemes[checked]);
-            const options: CheckOptions = {
-                viewport: VIEWPORTS[size as keyof typeof VIEWPORTS],
-                ...(colorScheme === undefined ? {} : { colorScheme }),
-                ...(checked === undefined ? {} : { mode: checked }),
-            };
+            const { id, version, options, system, mode } = await checkTarget(request);
 
             try {
                 const bundle = await readBundle(
@@ -641,7 +683,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 );
                 const report = await checkDesign(bundle, system, options, host, request.signal);
 
-                return { report: cleanReport(report), id, version: bundle.version };
+                return { report: cleanReport(report, system, mode), id, version: bundle.version };
             } catch (error) {
                 if (request.signal.aborted) {
                     throw error;
@@ -652,6 +694,135 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     error instanceof Error ? error.message.slice(0, 300) : "The check failed.",
                 );
             }
+        },
+        steer,
+    );
+
+    // "Fix the exact matches": a new version of the design with each literal that is a token's value written as `var(--token)`.
+    // The page is checked again here (what is rewritten follows what the check finds now, not what a browser says), and no run
+    // of Pi is made. Like "Go back to this one" it is a version, written in one commit with the version's assets kept, and
+    // the key makes a repeat of the same tap find the version it made.
+    web.conversationRoute(
+        "POST",
+        "c/:conversation/system/fix",
+        async (request) => {
+            const key = request.body.key;
+
+            if (typeof key !== "string" || !KEY.test(key)) {
+                throw web.error(400, "A fix needs a key.");
+            }
+
+            const { id, version, options, system } = await checkTarget(request);
+
+            if (system === undefined) {
+                throw web.error(404, "There is no design system yet.");
+            }
+
+            const callId = `design-fix:${key}`;
+            const index = await request.snapshot(
+                ArtifactsDoc,
+                request.conversation.id,
+                request.context,
+            );
+            const known =
+                index !== undefined && Object.hasOwn(index.items, id) ? index.items[id] : undefined;
+            const again = known?.versions.find((each) => each.callId === callId);
+
+            // The same tap again: the version that it made.
+            if (again !== undefined) {
+                return { id, version: again.version, fixed: 0, again: true };
+            }
+
+            let result;
+            let from;
+
+            try {
+                const bundle = await readBundle(
+                    host,
+                    request.snapshot,
+                    request.conversation.id,
+                    id,
+                    version,
+                    request.context,
+                );
+                const report = await checkDesign(bundle, system, options, host, request.signal);
+
+                from = bundle.version;
+                result = fixExactMatches(bundle, system, report, { mode: options.mode });
+
+                if (result.fixed > 0 && Buffer.byteLength(result.content) > MAX_BYTES) {
+                    throw web.error(400, "The page is too large.");
+                }
+            } catch (error) {
+                if (request.signal.aborted) {
+                    throw error;
+                }
+
+                if (error instanceof Error && "status" in error) {
+                    throw error;
+                }
+
+                throw web.error(
+                    400,
+                    error instanceof Error ? error.message.slice(0, 300) : "The fix failed.",
+                );
+            }
+
+            if (result.fixed === 0) {
+                throw web.error(
+                    409,
+                    "Nothing in this version is an exact match that one tap can fix.",
+                );
+            }
+
+            const content = result.content;
+            const made = await request.commit(async (tx) => {
+                const items = await tx.doc(ArtifactsDoc, request.conversation.id);
+                const current = Object.hasOwn(items.items, id) ? items.items[id] : undefined;
+
+                if (current === undefined || current.type !== "html") {
+                    throw web.error(404, "No such design.");
+                }
+
+                const done = current.versions.find((each) => each.callId === callId);
+
+                if (done !== undefined) {
+                    return done.version;
+                }
+
+                const original = current.versions.find((each) => each.version === from);
+
+                if (original === undefined) {
+                    throw web.error(404, "That version is not there.");
+                }
+
+                const next = current.versions.at(-1)!.version + 1;
+                const { inline: _inline, ...copy } = original;
+
+                // The version's record, assets and all, with a call id of its own that no real call matches; the page is new.
+                current.versions.push({
+                    ...copy,
+                    version: next,
+                    callId,
+                    size: Buffer.byteLength(content),
+                    createdAt: Date.now(),
+                });
+
+                const stored = await tx.doc(
+                    ArtifactBodyDoc,
+                    request.conversation.id,
+                    `${id}@${next}`,
+                    { content },
+                );
+
+                if (stored.content !== content) {
+                    stored.content = content;
+                }
+
+                return next;
+            });
+
+            return { id, version: made, fixed: result.fixed, fixes: result.fixes.slice(0, 20) };
         },
         steer,
     );
@@ -807,10 +978,13 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             const files: [string, string][] = [
                 ["tokens.css", system.compiled.css],
                 ["tailwind.css", system.compiled.tailwind],
-                ["tokens.resolved.json", system.compiled.json],
                 ...Object.entries(system.compiled.modes ?? {}).map(
                     ([mode, text]): [string, string] => [`tokens.${mode}.resolved.json`, text],
                 ),
+                ...(system.compiled.studio === undefined
+                    ? []
+                    : ([["tokens.studio.json", system.compiled.studio]] as [string, string][])),
+                ["tokens.resolved.json", system.compiled.json],
                 ["components.css", system.compiled.components],
             ];
 
