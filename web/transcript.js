@@ -344,9 +344,14 @@ function UserEntry({ entry, view, users }) {
     return html`<${UserMessage} entry=${entry} view=${view} users=${users} />`;
 }
 
-/** One presented input: the message, a chip, the text under the chip, or an anchor Find can still reach. */
+/**
+ * One presented input: the message, a card of one line (its label, summary, and time) that opens to the text as Pi's
+ * groups do, or an anchor Find can still reach.
+ */
 function PresentedUser({ entry, view, users }) {
     const kind = entry.presentation.entryKind;
+    const [fresh] = useState(() => settledFor !== null && settledFor === view.conversation?.id);
+    const unrolled = useRef(-Infinity);
     const [mode, setMode] = useState(() => presentationMode(kind));
     const [opened, setOpened] = useState(() => wasRevealed(entry.id));
     const [text, setText] = useState(entry.text);
@@ -394,7 +399,7 @@ function PresentedUser({ entry, view, users }) {
     }, [wantsText, entry.id, entry.presentation.clipped]);
 
     const draw = presentationDraw(mode, opened);
-    const line = presentationLine(entry.presentation.label, entry.presentation.summary);
+    const { label, summary } = entry.presentation;
 
     if (draw === "message") {
         return html`<${UserMessage} entry=${{ ...entry, text }} view=${view} users=${users} />`;
@@ -409,20 +414,49 @@ function PresentedUser({ entry, view, users }) {
     }
 
     const openedText = draw === "text";
+    const bodyId = `presented-${entry.id}`;
 
-    return html`<div class="user-row presented" data-part="prompt-row" id=${`entry-${entry.id}`}>
-        <button
-            class="chip presented-chip"
-            type="button"
-            aria-expanded=${openedText ? "true" : "false"}
-            onClick=${() => setOpened(!openedText)}
+    return html`<div
+        class="user-row"
+        data-part="prompt-row"
+        data-entry-kind=${kind}
+        id=${`entry-${entry.id}`}
+    >
+        <div
+            class=${`presented-input ${openedText ? "open" : ""} ${fresh ? "enter" : ""}`}
+            data-part="presented-input"
+            data-state=${openedText ? "open" : undefined}
         >
-            ${line}
-        </button>
-        ${
-            openedText &&
-            html`<div class="user-text" data-part="prompt-text"><${MentionedText} text=${text} /></div>`
-        }
+            <button
+                class="presented-head"
+                data-part="presented-head"
+                type="button"
+                aria-expanded=${openedText ? "true" : "false"}
+                aria-controls=${openedText ? bodyId : undefined}
+                title=${presentationLine(label, summary)}
+                onClick=${() => {
+                    unrolled.current = openedText ? -Infinity : performance.now();
+                    setOpened(!openedText);
+                }}
+            >
+                <${Icon} name="chevron" size=${14} class="chev" part="presented-chevron" />
+                <span class="presented-line">
+                    <span class="presented-label">${label}</span>
+                    ${summary && html`<span class="presented-summary"> · ${summary}</span>`}
+                </span>
+                ${entry.at && html`<span class="presented-time">${clock(entry.at)}</span>`}
+            </button>
+            ${
+                openedText &&
+                html`<div
+                    class=${`presented-body ${unrolling(unrolled)}`}
+                    id=${bodyId}
+                    data-part="prompt-text"
+                >
+                    <div class="user-text"><${MentionedText} text=${text} /></div>
+                </div>`
+            }
+        </div>
     </div>`;
 }
 
@@ -521,6 +555,7 @@ function UserMessage({ entry, view, users }) {
     return html`<div
         class=${`user-row ${fresh ? "enter" : ""}`}
         data-part="prompt-row"
+        data-entry-kind=${entry.presentation?.entryKind}
         id=${`entry-${entry.id}`}
     >
         <div
@@ -550,6 +585,12 @@ function UserMessage({ entry, view, users }) {
                     ${name ? initials(name) : "›"}
                 </span>
                 ${name && html`<b class="prompt-author" data-part="prompt-author">${name}</b>`}
+                ${
+                    entry.presentation &&
+                    html`<span class="presented-tag" data-part="presented-tag">
+                        ${entry.presentation.label}
+                    </span>`
+                }
                 ${entry.at && html`<span class="prompt-time">${clock(entry.at)}</span>`}
                 ${scheduled && html`<span class="prompt-time">· scheduled</span>`}
                 ${via && html`<span class="prompt-time">· via ${peerText === undefined ? via[1] : "a linked session"}</span>`}

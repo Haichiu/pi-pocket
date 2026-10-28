@@ -58,6 +58,11 @@ function speaker(entry) {
         return "Context";
     }
 
+    // An input an extension presents: nobody typed it, so its label says what it is.
+    if (entry.presentation !== undefined) {
+        return entry.presentation.label;
+    }
+
     const userId = view.authors?.[entry.id];
 
     if (userId === me?.id) {
@@ -166,9 +171,12 @@ export function FindSheet({ initial }) {
                 continue;
             }
 
-            const start = Math.max(0, at - 50);
-            const snippet = `${start > 0 ? "…" : ""}${text.slice(start, at + needle.length + 90)}`;
-            const from = at - start + (start > 0 ? 1 : 0);
+            // A presented input's label is its speaker: its words start after it, unless the label is what matched.
+            const label = entries[index].presentation?.label.replace(/\s+/g, " ");
+            const first = label !== undefined && at > label.length ? label.length + 1 : 0;
+            const start = Math.max(first, at - 50);
+            const snippet = `${start > first ? "…" : ""}${text.slice(start, at + needle.length + 90)}`;
+            const from = at - start + (start > first ? 1 : 0);
 
             results.push({
                 entry: entries[index],

@@ -188,11 +188,6 @@ export function presentationLine(
     return summary === undefined || summary === "" ? label : `${label}${separator}${summary}`;
 }
 
-/** One peek line: the label and summary, never the message. */
-export function presentationPeek(label: string, summary: string | undefined): string {
-    return presentationLine(label, summary);
-}
-
 /** One PiP line: `▸ Label: summary`, never the message. */
 export function presentationPip(label: string, summary: string | undefined): string {
     return `▸ ${presentationLine(label, summary, ": ")}`;

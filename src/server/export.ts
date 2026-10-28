@@ -43,6 +43,10 @@ function clipped(text: string): string {
     return `${text.slice(0, half)}\n… ${text.length - MAX_OUTPUT} characters left out …\n${text.slice(-half)}`;
 }
 
+/** Text for a `<summary>`, which is HTML. */
+const escapeSummary = (text: string) =>
+    text.replace(/[&<>]/g, (char) => `&#${char.charCodeAt(0)};`);
+
 /** One line naming a tool call, for its `<summary>`. HTML-escaped: summaries are HTML. */
 function summary(call: Extract<ClientBlock, { type: "toolCall" }>): string {
     const args = call.args;
@@ -59,7 +63,7 @@ function summary(call: Extract<ClientBlock, { type: "toolCall" }>): string {
     const line = `${call.name}${subject === "" ? "" : `: ${subject.replace(/\s+/g, " ")}`}`;
     const short = line.length > 120 ? `${line.slice(0, 119)}…` : line;
 
-    return short.replace(/[&<>]/g, (char) => `&#${char.charCodeAt(0)};`);
+    return escapeSummary(short);
 }
 
 /** What a tool call did: its arguments as they matter to a reader, then its result. */
@@ -128,7 +132,7 @@ function presentedMarkdown(
             ? "Input"
             : presentationLine(presentation.label, presentation.summary);
 
-    return `<details><summary>${summary}</summary>\n\n${userMarkdown(entry, author)}\n\n</details>`;
+    return `<details><summary>${escapeSummary(summary)}</summary>\n\n${userMarkdown(entry, author)}\n\n</details>`;
 }
 
 export function transcriptMarkdown(input: ExportInput): string {

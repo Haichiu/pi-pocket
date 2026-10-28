@@ -1681,32 +1681,105 @@ kbd {
     text-wrap: pretty;
 }
 
-/* A module's input: one line, which opens to the text. Hidden keeps the turn and takes no room. */
-.user-row.presented {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: calc(8px * var(--space-y));
+/* An input a module presents (`web.presentEntry`), folded: a card of one line, as Pi's groups are, that opens to the
+ * message. It starts a turn like a person's message, and is a card like theirs, but quieter: nobody typed it. */
+.presented-input {
     min-width: 0;
-}
-
-.user-row > .presented-chip {
-    max-width: 100%;
-    min-height: 40px;
-    height: auto;
-    padding: 8px 14px;
-    border-radius: var(--r-pill);
-    color: var(--muted);
-    cursor: pointer;
-    text-align: left;
-}
-
-.user-row.presented > .user-text {
-    width: 100%;
-    padding: calc(12px * var(--space-y)) calc(16px * var(--space-x));
     border: 1px solid var(--hair);
     border-radius: var(--r-window);
     background: var(--card);
+    overflow: hidden;
+}
+
+.presented-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    /* 40px, 35px, and 30px; a thumb's 34px at least on a touch screen. */
+    min-height: calc(22px + 18px * var(--space-y));
+    padding: 0 calc(14px * var(--space-x));
+    text-align: left;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--muted);
+    transition:
+        color var(--t-hover) var(--ease-out),
+        background-color var(--t-hover) var(--ease-out);
+}
+
+.presented-input.open > .presented-head {
+    border-bottom: 1px solid var(--hair);
+}
+
+@media (hover: hover) {
+    .presented-head:hover {
+        color: var(--text);
+        background: var(--hover);
+    }
+}
+
+/* Inside a card that cuts off what is past it. */
+.presented-head:focus-visible {
+    outline-offset: -2px;
+}
+
+/* The label, then the summary: one line that gives way at its end. */
+.presented-line {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.presented-label {
+    color: var(--text);
+    font-weight: 600;
+}
+
+/* In the queue too: the label, then its summary, quieter. */
+.queued-text .presented-summary {
+    color: var(--muted);
+}
+
+.presented-time {
+    flex: none;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--faint);
+}
+
+/* Opened: the message, as a person's message shows its words. */
+.presented-body {
+    padding: calc(10px * var(--space-y)) calc(16px * var(--space-x)) calc(12px * var(--space-y))
+        calc(38px * var(--space-x));
+    color: var(--text);
+}
+
+.presented-body.unrolling {
+    animation: unroll var(--t-in) var(--ease-out);
+}
+
+@media (max-width: 699px) {
+    .presented-input {
+        border-radius: calc(var(--r-window) + 2px);
+    }
+
+    .presented-body {
+        padding-left: calc(14px * var(--space-x));
+    }
+}
+
+/* Shown open, a presented input is a message with its label beside who sent it. */
+.presented-tag {
+    padding: 0 7px;
+    border-radius: var(--r-pill);
+    background: var(--hover);
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 18px;
 }
 
 .transcript > .presented-hidden,
@@ -10514,6 +10587,15 @@ textarea.notes {
     font-weight: 600;
 }
 
+.peek-line.presented .peek-text {
+    color: var(--muted);
+}
+
+.peek-line.presented b {
+    color: var(--body);
+    font-weight: 600;
+}
+
 .peek-line.cmd .peek-text {
     font: 12px / 1.5 var(--mono);
 }
@@ -13694,7 +13776,8 @@ textarea.notes {
     .step-head {
         min-height: 36px;
     }
-    .activity-head {
+    .activity-head,
+    .presented-head {
         min-height: max(34px, calc(22px + 18px * var(--space-y)));
     }
     .browser-servers .chip,
@@ -17347,7 +17430,7 @@ pre.gallery-code {
 }
 
 /* Pi's answer, what it did, and reports: quieter, a short rise. */
-:root[data-motion="fluid"] :is(.reply, .activity, .report).enter {
+:root[data-motion="fluid"] :is(.reply, .activity, .report, .presented-input).enter {
     animation: fluid-rise var(--t-glide) var(--ease-glide) backwards;
 }
 
@@ -17372,7 +17455,8 @@ pre.gallery-code {
 }
 
 /* A group of steps opening: it unrolls on the glide, and its first steps drop in one after another. */
-:root[data-motion="fluid"] :is(.timeline, .activity-thought, .step-body).unrolling {
+:root[data-motion="fluid"]
+    :is(.timeline, .activity-thought, .step-body, .presented-body).unrolling {
     animation: unroll var(--t-glide) var(--ease-glide);
 }
 

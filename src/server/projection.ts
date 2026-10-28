@@ -19,7 +19,6 @@ import {
 import {
     type EntryPresentationView,
     matchPrefix,
-    presentationPeek,
     presentationSummary,
     type ProjectOptions,
     type RegisteredPresentation,
@@ -1005,6 +1004,7 @@ export type PeekLine =
     | { kind: "shell"; command: string; status: "done" | "error" }
     | { kind: "note"; text: string; name: string }
     | { kind: "error"; text: string }
+    | { kind: "presented"; label: string; summary?: string }
     | { kind: "event"; text: string };
 
 /** How many lines a peek tile gets, and how long each text may run. */
@@ -1073,13 +1073,14 @@ export function peekLines(
     for (const entry of entries) {
         switch (entry.kind) {
             case "user": {
+                // An input an extension presents: its label and summary, never its message.
                 if (entry.presentation !== undefined) {
+                    const { label, summary } = entry.presentation;
+
                     lines.push({
-                        kind: "event",
-                        text: snippet(
-                            presentationPeek(entry.presentation.label, entry.presentation.summary),
-                            PEEK_TEXT,
-                        ),
+                        kind: "presented",
+                        label,
+                        ...(summary === undefined ? {} : { summary: snippet(summary, PEEK_TEXT) }),
                     });
                     break;
                 }

@@ -26,6 +26,25 @@ test("export writes the label and the full text", () => {
     assert.match(markdown, /the whole message/);
 });
 
+test("export escapes a label and summary in its summary line", () => {
+    const entry = {
+        id: 4,
+        kind: "user",
+        text: "body",
+        images: 0,
+        presentation: { entryKind: "x.quiet-input.note", label: "<b>Note</b>", summary: "a & b" },
+    } satisfies ClientEntry;
+    const markdown = transcriptMarkdown({
+        title: "Notes",
+        cwd: "/tmp/work",
+        exportedAt: new Date("2026-01-02T03:04:00Z"),
+        entries: [entry],
+        authors: {},
+    });
+
+    assert.match(markdown, /<summary>&#60;b&#62;Note&#60;\/b&#62; · a &#38; b<\/summary>/);
+});
+
 test("Find searches the label and the text", () => {
     const text = userSearchText({ label: "Note", summary: "saved" }, "the whole message");
 
