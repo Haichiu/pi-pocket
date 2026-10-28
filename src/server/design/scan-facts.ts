@@ -853,11 +853,19 @@ function modeOf(name: string): Scope | undefined {
         .toLowerCase()
         .split(/[^a-z0-9]+/);
 
-    if (words.some((word) => word === "dark" || word === "night" || word === "dim")) {
+    // `mydark`, `appdark`: a mode word at the end of a name is a mode too (a theme called `mytheme`/`mydark` in daisyUI).
+    const last = words.at(-1) ?? "";
+
+    if (
+        words.some((word) => word === "dark" || word === "night" || word === "dim") ||
+        /^[a-z]{2,}(?:dark|night)$/.test(last)
+    ) {
         return "dark";
     }
 
-    return words.some((word) => word === "light" || word === "day") ? "light" : undefined;
+    return words.some((word) => word === "light" || word === "day") || /^[a-z]{2,}light$/.test(last)
+        ? "light"
+        : undefined;
 }
 
 /** Reads theme objects from a JavaScript or TypeScript file: `colors: { … }`, `const palette = { … }`. */
@@ -1105,8 +1113,67 @@ function themeVars(facts: Facts, file: string, text: string): void {
     }
 
     modeBlocks(facts, file, text, env, scopeAt);
+    themeList(facts, file, text, env);
 
     semanticTokens(facts, file, text, env, paletteTree, scopeAt);
+}
+
+/**
+ * A list of themes, each an object with one key (daisyUI: `themes: [{ mytheme: { primary: "#570df8", … } }, { dark: … }]`):
+ * a theme named for a mode is that mode; the first other one is the default.
+ */
+function themeList(
+    facts: Facts,
+    file: string,
+    text: string,
+    env: ReadonlyMap<string, Literal>,
+): void {
+    let defaults = 0;
+
+    for (const match of [...text.matchAll(/(?<![\w$.])themes\s*:\s*(?=\[)/g)].slice(0, 2)) {
+        const list = readLiteral(text, match.index + match[0].length, env);
+
+        if (!Array.isArray(list)) {
+            continue;
+        }
+
+        for (const item of list.slice(0, 12)) {
+            if (typeof item !== "object" || item === null || Array.isArray(item)) {
+                continue;
+            }
+
+            for (const [name, theme] of Object.entries(item).slice(0, 4)) {
+                const mode = modeOf(name);
+
+                if (typeof theme !== "object" || theme === null || Array.isArray(theme)) {
+                    continue;
+                }
+
+                const found: { path: string[]; value: string }[] = [];
+
+                leaves(theme, [], found, "color");
+
+                const colors = found.filter((leaf) =>
+                    /^\s*(?:#[0-9a-f]{3,8}|(?:rgb|hsl|oklch)a?\()/i.test(leaf.value),
+                );
+
+                if (colors.length < 4 || (mode === undefined && ++defaults > 1)) {
+                    continue;
+                }
+
+                for (const leaf of colors) {
+                    addVar(facts, {
+                        name: leaf.path.join("-"),
+                        value: leaf.value.slice(0, 400),
+                        scope: mode ?? "default",
+                        kind: "js",
+                        file,
+                        hint: "color",
+                    });
+                }
+            }
+        }
+    }
 }
 
 /**
