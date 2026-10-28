@@ -1041,6 +1041,7 @@ function themeVars(facts: Facts, file: string, text: string): void {
 
             // Tokens that name other tokens of the group: Stitches `"$gray1"`, `"$colors$gray1"`, `"{colors.gray.1}"`.
             const byName = new Map(found.map((leaf) => [leaf.path.join("-"), leaf.value]));
+
             const resolve = (value: string): string | undefined => {
                 let current = value;
 

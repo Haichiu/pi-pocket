@@ -212,6 +212,8 @@ export function merge(into: ColorFact | undefined, more: ColorFact, hex: string)
 export function words(name: string): string[] {
     const all = name
         .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+        // `font-color-base` (Infima) is the text color, not a font.
+        .replace(/font[-_]colou?r/gi, "text-color")
         // `red9`, `gray12`: a name and its step.
         .replace(/([a-z]{3,})(\d{1,3})(?![\d-])/gi, "$1-$2")
         .toLowerCase()

@@ -1496,3 +1496,102 @@ $primary-map: (500: #2196f3, 700: #1976d2);`,
     );
     assert.equal(scan.inferred.roles.warning, undefined);
 });
+
+// --- Round 2d: theme libraries -----------------------------------------------------------------------------------------
+
+test("a theme file with any name: Vuetify's themes object, with a const for the light theme", () => {
+    const scan = scanTokens(
+        project({
+            "src/plugins/vuetify.js": `const light = { dark: false, colors: { background: '#f4f6fa', surface: '#ffffff', 'on-surface': '#111827', 'on-surface-variant': '#5b6472', primary: '#2f5bea', error: '#d92d20', success: '#1b8a5a', warning: '#e69a00' } };
+export default createVuetify({ theme: { defaultTheme: 'light', themes: { light, dark: { dark: true, colors: { background: '#0f1420', surface: '#181f2e', 'on-surface': '#e6e9f2', 'on-surface-variant': '#9aa4b8', primary: '#7c9cff', error: '#ff6b5e', success: '#4cd08f', warning: '#ffc247' } } } } });`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#f4f6fa");
+    assert.equal(roles.background!.dark, "#0f1420");
+    assert.equal(roles.text!.value, "#111827", "`on-surface` is the text");
+    assert.equal(roles.muted!.value, "#5b6472", "`on-surface-variant` is the quiet text");
+    assert.equal(roles.accent!.dark, "#7c9cff");
+});
+
+test("tokens that name other tokens ($gray1) resolve in each theme, and the dark theme redefines only the palette", () => {
+    const scan = scanTokens(
+        project({
+            "stitches.config.ts": `export const { styled } = createStitches({ theme: { colors: {
+  gray1: "#fdfdfd", gray2: "#f7f7f7", gray6: "#d9d9d9", gray11: "#646464", gray12: "#202020", blue9: "#0090ff", red9: "#e5484d", amber9: "#ffb224", green9: "#30a46c",
+  bg: "$gray1", panel: "$gray2", text: "$gray12", textMuted: "$gray11", line: "$gray6", brand: "$blue9" } } });
+export const darkTheme = createTheme("dark-theme", { colors: { gray1: "#111111", gray2: "#191919", gray6: "#3a3a3a", gray11: "#b4b4b4", gray12: "#eeeeee", blue9: "#3e9eff" } });`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.background!.value, "#fdfdfd");
+    assert.equal(
+        roles.background!.dark,
+        "#111111",
+        "bg points at gray1, which the dark theme sets",
+    );
+    assert.equal(roles.text!.dark, "#eeeeee");
+    assert.equal(roles.muted!.dark, "#b4b4b4");
+    assert.equal(roles.accent!.dark, "#3e9eff");
+    assert.equal(roles.danger!.value, "#e5484d", "`red9` is a red");
+});
+
+test("daisyUI: a list of themes, one of them named for the dark mode", () => {
+    const scan = scanTokens(
+        project({
+            "tailwind.config.js": `module.exports = { daisyui: { themes: [
+  { mytheme: { primary: "#570df8", secondary: "#f000b8", accent: "#37cdbe", "base-100": "#ffffff", "base-200": "#f2f2f2", "base-content": "#1f2937", success: "#36d399", warning: "#fbbd23", error: "#f87272" } },
+  { mydark: { primary: "#661ae6", secondary: "#d926a9", accent: "#1fb2a6", "base-100": "#1d232a", "base-200": "#191e24", "base-content": "#a6adbb", success: "#36d399", warning: "#fbbd23", error: "#ff5861" } },
+] } };`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.accent!.value, "#570df8");
+    assert.equal(roles.accent!.dark, "#661ae6");
+    assert.equal(roles.text!.value, "#1f2937", "`base-content`");
+    assert.equal(roles.text!.dark, "#a6adbb");
+    assert.equal(roles.danger!.dark, "#ff5861");
+});
+
+test("Mantine: palettes as lists of shades, headings, and light/dark pairs under other", () => {
+    const scan = scanTokens(
+        project({
+            "src/theme.ts": `const brand = ["#eff5ff", "#dce7fd", "#c5d8fb", "#a9c6f8", "#8ab1f3", "#6d9bee", "#5382e2", "#4067c4", "#34539e", "#2c4478"];
+export const theme = createTheme({ primaryColor: "brand", colors: { brand }, fontFamily: "Inter, sans-serif", fontSize: "15px",
+  headings: { fontFamily: "Fraunces, serif", sizes: { h1: { fontSize: "2.25rem" }, h2: { fontSize: "1.5rem" } } },
+  other: { textLight: "#212529", textDark: "#e9ecef", mutedLight: "#868e96", mutedDark: "#a6a7ab", borderLight: "#dee2e6", borderDark: "#373a40", statusDangerLight: "#c92a2a", statusDangerDark: "#ff8787" } });`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.text!.value, "#212529");
+    assert.equal(roles.text!.dark, "#e9ecef");
+    assert.equal(roles.border!.dark, "#373a40");
+    assert.equal(roles.danger!.dark, "#ff8787");
+    assert.ok(Object.keys(scan.inferred.fonts).length >= 2, "both families");
+    assert.ok(scan.inferred.typeScale.sizes.length >= 3, "15px and the heading sizes");
+});
+
+test("Material 3 names: on-surface is the text and on-surface-variant the quiet text; typescale sizes are type", () => {
+    const scan = scanTokens(
+        project({
+            "tokens.css": `:root { --md-sys-color-surface: #fef7ff; --md-sys-color-on-surface: #1d1b20; --md-sys-color-on-surface-variant: #49454f; --md-sys-color-outline: #79747e; --md-sys-color-primary: #6750a4; --md-sys-color-error: #b3261e;
+  --md-sys-typescale-body-large-size: 1rem; --md-sys-typescale-body-large-line-height: 1.5rem; --md-sys-typescale-title-large-size: 22px; --md-sys-typescale-display-small-size: 36px }
+@media (prefers-color-scheme: dark) { :root { --md-sys-color-surface: #141218; --md-sys-color-on-surface: #e6e0e9; --md-sys-color-on-surface-variant: #cac4d0; --md-sys-color-outline: #938f99; --md-sys-color-primary: #d0bcff } }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.text!.value, "#1d1b20");
+    assert.equal(roles.muted!.value, "#49454f");
+    assert.equal(roles.muted!.dark, "#cac4d0");
+    assert.equal(roles.border!.value, "#79747e");
+    assert.deepEqual(
+        scan.inferred.typeScale.sizes.map((size) => size.split(" ")[1]),
+        ["1rem", "22px", "36px"],
+        "the line height as a length is no size",
+    );
+});
