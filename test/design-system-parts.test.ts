@@ -156,27 +156,34 @@ test("the fixture's tokens group into roles first and a palette after, and the r
     assert.ok(sys.SECTIONS.every((each: { id: string }) => each.id !== "other" || true));
 });
 
-test("a section counts every token in it, whatever its tier: one rule for the tabs and the docs page", () => {
+test("a tab counts what its section shows open, folded groups carry their own counts, and the parts add up to the system", () => {
     const counts = sys.sectionCounts(system.tokens);
-    const colors = system.tokens.filter((each: { type: string }) => each.type === "color");
-
-    assert.equal(counts.colors, colors.length);
-    // Each token is in one section, so the sections add up to the system.
-    assert.equal(
-        Object.values<number>(counts).reduce((sum, each) => sum + each, 0),
-        system.tokens.length,
+    const total = Object.values<{ open: number; folded: number; total: number }>(counts).reduce(
+        (sum, each) => sum + each.total,
+        0,
     );
 
-    // And a section lists what it counts: its groups hold every one of its tokens.
+    // Colors: the roles are what a tab says; the palette and the component colors are in folded groups.
+    const colors = system.tokens.filter((each: { type: string }) => each.type === "color");
+    const roles = colors.filter((each: { tier: string }) => each.tier === "semantic");
+
+    assert.equal(counts.colors.open, roles.length);
+    assert.equal(counts.colors.total, colors.length);
+    assert.equal(counts.colors.open + counts.colors.folded, colors.length);
+    assert.ok(counts.colors.folded > 0, "the palette is folded");
+    // Each token is in one section, so the sections add up to the system.
+    assert.equal(total, system.tokens.length);
+
+    // A section lists what it counts: its groups hold every token, and the open ones are the open count.
     for (const id of Object.keys(counts)) {
+        const groups = sys.groupsOf(system.tokens, id);
+        const sum = (list: { tokens: unknown[] }[]) =>
+            list.reduce((all, group) => all + group.tokens.length, 0);
+
+        assert.equal(sum(groups), counts[id].total, id);
         assert.equal(
-            sys
-                .groupsOf(system.tokens, id)
-                .reduce(
-                    (sum: number, group: { tokens: unknown[] }) => sum + group.tokens.length,
-                    0,
-                ),
-            counts[id],
+            sum(groups.filter((group: { fold: boolean }) => !group.fold)),
+            counts[id].open,
             id,
         );
     }
@@ -881,4 +888,33 @@ test("a color lists all its contrast pairs, and a pair that is exempt is a note 
         system.problems.some((each) => each.token === "color.text.placeholder"),
         false,
     );
+});
+
+test("a shadow is told in a few characters for its tile: the first layer, its alpha, and how many more", () => {
+    const model = sys.createModel(system);
+    const of = (name: string) => sys.shadowSummary(model.value(name, "light").value);
+
+    // Harbor's: `0 1 2 / 12%`; one with a negative spread and links reads as its resolved sizes.
+    assert.equal(of("shadow.sm"), "0 1 2 / 12%");
+    assert.equal(of("shadow.md"), "0 6 16 / 16%");
+    assert.equal(of("shadow.lg"), "0 16 48 / 40%");
+    // Layers after the first are a count; a color with no alpha has none; an inset says so.
+    assert.equal(
+        sys.shadowSummary([
+            { color: "#112233", offsetX: "0px", offsetY: "2px", blur: "4px", spread: "0px" },
+            { color: "#00000040", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "1px" },
+        ]),
+        "0 2 4 +1",
+    );
+    assert.equal(
+        sys.shadowSummary({
+            color: "#00000080",
+            offsetX: "0px",
+            offsetY: "1px",
+            blur: "2px",
+            inset: true,
+        }),
+        "inset 0 1 2 / 50%",
+    );
+    assert.equal(sys.shadowSummary(null), "");
 });

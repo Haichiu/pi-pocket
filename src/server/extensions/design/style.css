@@ -1730,3 +1730,19 @@ button.dsy-pin-button[aria-pressed="true"] {
 .dsy-check-filter button:focus-visible {
     outline-offset: -2px;
 }
+
+/* One tap for the findings that are exactly a token's value. */
+.dsy-fixbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: 0 0 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--dsn-accent-soft);
+}
+
+.dsy-fixbar > span {
+    flex: 1 1 160px;
+}

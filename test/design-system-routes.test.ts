@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { CheckReport } from "../src/server/design/system-types.ts";
 import { ArtifactAssetDoc, ArtifactBodyDoc, ArtifactsDoc } from "../src/server/docs.ts";
@@ -514,6 +515,85 @@ test("a check of a design answers with a report that has a fixed shape, for thos
     );
     // The id is the artifact's: not a path.
     assert.equal((await call("owner", "system/check", { id: "../ferry" })).status, 400);
+});
+
+test("one tap fixes the exact matches: a new version with var() for each literal that is a token's, once for each key", async () => {
+    const system = loadDesignSystem(folder)!;
+    const hexOf = (name: string) =>
+        system.tokens.find((each) => each.name === name)!.modes.light!.hex as string;
+    // The page writes the text color and a border as the tokens' own values: exact matches. The blue is off the system.
+    const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Exact</title>
+<style>${system.compiled.css}
+body { margin: 0; padding: 24px; background: ${hexOf("color.bg.canvas")}; font: 16px/1.5 var(--font-family-sans); }
+.card { padding: 16px; background: ${hexOf("color.bg.surface")}; color: ${hexOf("color.text.primary")}; border: 1px solid ${hexOf("color.border.default")}; }
+.note { color: #7ba3f8; }
+</style></head><body><div class="card" data-pid="card"><h1 data-pid="title" style="margin:0;color:${hexOf("color.text.primary")}">Exact</h1><p class="note" data-pid="note">Off the system on purpose.</p></div><script>var s = "${hexOf("color.text.primary")}";</script></body></html>`;
+
+    await publishDesign(app, session, { id: "exact", title: "Exact", content: page });
+
+    const body = { id: "exact", mode: "light", viewport: "mobile" };
+    const checked = await call("owner", "system/check", body);
+
+    assert.equal(checked.status, 200);
+
+    const fixable = (checked.data.report as { findings: { fixable?: boolean }[] }).findings.filter(
+        (each) => each.fixable === true,
+    );
+
+    assert.ok(fixable.length >= 1, "an exact match is marked as one that a tap can fix");
+
+    // The tap: a new version, the page rewritten, the script and the off-system blue untouched.
+    const key = "fix-key-0001";
+    const fixed = await call("owner", "system/fix", { ...body, key });
+
+    assert.equal(fixed.status, 200);
+    assert.equal(fixed.data.version, 2);
+    assert.ok(fixed.data.fixed >= 2, JSON.stringify(fixed.data));
+
+    const bodyOf = async (version: number) =>
+        (
+            await app.harness.snapshot(
+                ArtifactBodyDoc,
+                session,
+                `exact@${version}`,
+                BACKGROUND_CONTEXT,
+            )
+        )?.content ?? "";
+    const next = await bodyOf(2);
+
+    assert.match(next, /color: var\(--color-text-primary\)/);
+    assert.match(next, /style="margin:0;color:var\(--color-text-primary\)"/);
+    assert.ok(
+        next.includes(".note { color: #7ba3f8; }"),
+        "a value that is only close to a token is not guessed at",
+    );
+    assert.ok(
+        next.includes(`var s = "${hexOf("color.text.primary")}";`),
+        "scripts are not touched",
+    );
+    assert.equal(await bodyOf(1), page, "the version it came from is as it was");
+
+    // The same tap again finds the version it made; a record with its call id; the newest is the new one.
+    assert.equal((await call("owner", "system/fix", { ...body, key })).data.version, 2);
+
+    const index = await app.harness.snapshot(ArtifactsDoc, session, BACKGROUND_CONTEXT);
+
+    assert.equal(index?.items.exact!.versions.length, 2);
+    assert.equal(index?.items.exact!.versions.at(-1)!.callId, `design-fix:${key}`);
+
+    // Nothing more to fix in the new version (a new key: it is not the same tap), and the checks of a body.
+    assert.equal((await call("owner", "system/fix", { ...body, key: "fix-key-0002" })).status, 409);
+    assert.equal((await call("owner", "system/fix", body)).status, 400);
+    assert.equal((await call("owner", "system/fix", { ...body, key: "no" })).status, 400);
+    assert.equal(
+        (await call("owner", "system/fix", { ...body, key: "fix-key-0003", mode: "sepia" })).status,
+        400,
+    );
+    assert.equal(
+        (await call("owner", "system/fix", { ...body, key: "fix-key-0004", id: "nope" })).status,
+        400,
+    );
+    assert.equal((await call("Vic", "system/fix", { ...body, key: "fix-key-0005" })).status, 404);
 });
 
 test("a report from the check is cut to its fixed shape: the page's words are data", () => {

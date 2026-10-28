@@ -70,18 +70,26 @@ const TIER_TITLES = { semantic: "", primitive: "Primitives", component: "Compone
 const SCALE_TITLES = { spacing: "Scale", radii: "Corners", shadows: "Elevation" };
 
 /**
- * The number of tokens in each section, by section id. One rule, the same as the documentation page's (`sectionOf` in
- * `src/server/design/docsite.ts` is this file's): every token is in exactly one section, whatever its tier, and a
- * component's own tokens count too. So a tab's number is what its section lists (the roles, the palette, and the folded
- * component colors), the documentation page says the same number, and the sections add up to the system's tokens.
+ * What a tab counts, by section id: `{ open, folded, total }`. A tab says `open`: the tokens its section shows when it opens
+ * (the roles of Colors, the styles of Type, a scale), which is what a person works on; the groups that start folded (a
+ * palette, a type scale, a component's own tokens) carry their own counts in their heads. `folded` is the rest, and `total`
+ * is every token of the section (the sections add up to the system's tokens).
  */
 export function sectionCounts(tokens) {
-    const counts = {};
+    const bySection = {};
 
     for (const token of tokens) {
-        const id = sectionOf(token);
+        (bySection[sectionOf(token)] ??= []).push(token);
+    }
 
-        counts[id] = (counts[id] ?? 0) + 1;
+    const counts = {};
+
+    for (const [id, list] of Object.entries(bySection)) {
+        const open = groupsOf(list, id)
+            .filter((group) => !group.fold)
+            .reduce((sum, group) => sum + group.tokens.length, 0);
+
+        counts[id] = { open, folded: list.length - open, total: list.length };
     }
 
     return counts;
@@ -1259,6 +1267,32 @@ export function shadowOf(value) {
         .join(", ");
 
     return safeCss(css);
+}
+
+/**
+ * A shadow in a few characters, for a tile: its first layer as `x y blur`, in pixels, and its color's alpha when it has one,
+ * and `+N` for the layers after it: `0 18 40 / 14% +1`. A size that is not in pixels is written as it is.
+ */
+export function shadowSummary(value) {
+    const layers = (Array.isArray(value) ? value : [value]).filter(isObject);
+    const first = layers[0];
+
+    if (first === undefined) {
+        return "";
+    }
+
+    const size = (member) => {
+        const px = pixelsOf(member ?? "0px");
+
+        return px === null ? (cssOf("dimension", member) ?? "0") : String(Math.round(px * 10) / 10);
+    };
+
+    const alpha = parseColor(first.color)?.a;
+    const parts = [size(first.offsetX), size(first.offsetY), size(first.blur)].join(" ");
+
+    return `${first.inset === true ? "inset " : ""}${parts}${
+        alpha === undefined || alpha >= 1 ? "" : ` / ${Math.round(alpha * 100)}%`
+    }${layers.length > 1 ? ` +${layers.length - 1}` : ""}`;
 }
 
 /** How many things the unsaved edits change in `system` (a step that puts a value back changes nothing). */
