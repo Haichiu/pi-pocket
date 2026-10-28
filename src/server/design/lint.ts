@@ -76,8 +76,7 @@ const RULE_ORDER: CheckRule[] = [
     "missing-viewport",
     "focus-visible",
     "reduced-motion",
-    "form-label",
-    "accessible-name",
+    "missing-label",
     "missing-lang",
     "input-zoom",
     "missing-main",
@@ -856,7 +855,7 @@ export function analyze(
     for (const group of raw.labels ?? []) {
         add(
             {
-                rule: "form-label",
+                rule: "missing-label",
                 level: "error",
                 ...elementOf(group.el),
                 value: clip(group.kind, 40),
@@ -869,7 +868,7 @@ export function analyze(
     for (const group of raw.names ?? []) {
         add(
             {
-                rule: "accessible-name",
+                rule: "missing-label",
                 level: "error",
                 ...elementOf(group.el),
                 value: clip(group.kind, 40),

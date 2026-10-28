@@ -26,7 +26,7 @@ for (const el of [...doc.querySelectorAll('input:not([type=hidden]):not([type=su
 }
 
 // A link or a button needs a name: its text, an aria-label, an aria-labelledby, a title, an image's alt, or an SVG title.
-for (const el of [...doc.querySelectorAll('a[href],button,[role=button],[role=link],summary')].slice(0, 400)) {
+for (const el of [...doc.querySelectorAll('a[href],button,[role=button],[role=link],[role=switch],[role=checkbox],[role=radio],[role=tab],[role=menuitem],summary')].slice(0, 400)) {
     // A button inside a label (or with one pointed at it) is named by the label.
     if (!shown(el) || named(el) || (el.textContent || '').trim() !== '' || [...(el.labels || [])].some((label) => (label.textContent || '').trim() !== '')) continue;
 

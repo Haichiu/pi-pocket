@@ -12,6 +12,37 @@ const MAX_ELEMENTS = 4000;
 const MAX_GROUPS = 300;
 const round = (n) => Math.round(n * 100) / 100;
 
+// The page's style sheets, as rules. A sheet linked from the bundle comes from the render's own server, and the sandbox
+// makes that another origin, so the browser will not show its rules: read its text and parse it here instead. A sheet
+// that cannot be read at all (another site's) makes "what the page's CSS says" unknown, and the checks that need it
+// say less rather than guess.
+const sheetRules = [];
+let sheetsUnreadable = false;
+
+for (const sheet of doc.styleSheets) {
+    if (sheet.disabled || (sheet.media && sheet.media.length > 0 && !win.matchMedia(sheet.media.mediaText).matches)) continue;
+
+    try {
+        sheetRules.push(sheet.cssRules);
+    } catch {
+        try {
+            if (!sheet.href) throw new Error('no address');
+
+            const response = await fetch(sheet.href);
+            const text = await response.text();
+
+            if (!response.ok || text.length > 2000000) throw new Error('unusable');
+
+            const parsed = new CSSStyleSheet();
+
+            parsed.replaceSync(text);
+            sheetRules.push(parsed.cssRules);
+        } catch {
+            sheetsUnreadable = true;
+        }
+    }
+}
+
 // Motion first: the calm style below would hide it. A transition or animation that runs longer than 500 ms, or an
 // animation that repeats forever, is motion that a person who asks for less (prefers-reduced-motion) should not get,
 // unless the page's CSS has a prefers-reduced-motion rule.
@@ -58,13 +89,11 @@ const reducedRule = (rules) => {
     return false;
 };
 
-for (const sheet of doc.styleSheets) {
-    try {
-        if (reducedRule(sheet.cssRules)) motion.override = true;
-    } catch {
-        motion.unreadable = true;
-    }
+for (const rules of sheetRules) {
+    if (reducedRule(rules)) motion.override = true;
 }
+
+motion.unreadable = sheetsUnreadable;
 
 // A style that stops transitions and animations, so every computed value is the resting one.
 const calm = doc.createElement('style');

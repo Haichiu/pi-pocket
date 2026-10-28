@@ -114,7 +114,8 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
         `<a href="#" data-pid="a3"><svg width="10" height="10"><title>Home</title></svg></a><a data-pid="a4">no href</a>` +
         `<button data-pid="b4" aria-labelledby="lbl"></button><span id="lbl">Named by id</span>` +
         `<label>Switch <button role="switch" aria-checked="false" data-pid="b5"></button></label>` +
-        `<label for="b6">Pointed at</label><button id="b6" data-pid="b6"></button>`;
+        `<label for="b6">Pointed at</label><button id="b6" data-pid="b6"></button>` +
+        `<div role="switch" aria-checked="false" data-pid="b7" style="width:20px;height:10px"></div>`;
     const bare = page("", body)
         .replace('<html lang="en">', "<html>")
         .replace('<main data-pid="page">', "<div>")
@@ -125,17 +126,19 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
             .map((item) => item.pid)
             .sort();
 
-    assert.deepEqual(pids("form-label"), ["n1", "n10", "n6", "n8"]);
-    assert.deepEqual(pids("accessible-name"), ["a1", "b1"]);
-    assert.equal(ofRule(report, "form-label")[0]!.level, "error");
+    // One rule for a field, a button, a link, or a switch with no name.
+    assert.deepEqual(pids("missing-label"), ["a1", "b1", "b7", "n1", "n10", "n6", "n8"]);
+    assert.equal(ofRule(report, "missing-label")[0]!.level, "error");
+    const message = (pid: string) =>
+        ofRule(report, "missing-label").find((item) => item.pid === pid)!.message;
+
     assert.match(
-        ofRule(report, "form-label").find((item) => item.pid === "n1")!.message,
-        /^A <input type=email> has no label/,
+        message("n1"),
+        /^A <input type=email> has no label \(no label, aria-label, aria-labelledby, title, or placeholder\)/,
     );
-    assert.match(
-        ofRule(report, "accessible-name")[0]!.message,
-        /Add `aria-label="what it does"`\./,
-    );
+    assert.match(message("b1"), /^A <button> has no accessible name/);
+    assert.match(message("b1"), /Add `aria-label="what it does"`\./);
+    assert.match(message("b7"), /^A <div\[role=switch\]> has no accessible name/);
     const lang = ofRule(report, "missing-lang");
 
     assert.equal(lang.length, 1);
@@ -144,12 +147,20 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
     assert.match(lang[0]!.message, /Set `<html lang="en">`/);
     assert.equal(ofRule(report, "missing-main").length, 1);
     assert.equal(ofRule(report, "missing-main")[0]!.level, "warning");
+    // An empty lang is no lang.
+    const empty = await check(
+        page("", body).replace('<html lang="en">', '<html lang=" ">'),
+        { viewport: "desktop" },
+        null,
+    );
+
+    assert.equal(ofRule(empty, "missing-lang").length, 1);
     // With a lang and a main, those two are gone; the labels and names stay.
     const fine = await check(page("", body), { viewport: "desktop" }, null);
 
     assert.equal(ofRule(fine, "missing-lang").length, 0);
     assert.equal(ofRule(fine, "missing-main").length, 0);
-    assert.equal(ofRule(fine, "form-label").length, 4);
+    assert.equal(ofRule(fine, "missing-label").length, 7);
     // `role=main` counts, and a deck needs no main.
     const role = await check(
         bare.replace("<div>", '<div role="main">'),
@@ -194,3 +205,79 @@ test("a field under 16px is a warning on a phone, with the token to use", browse
 
     assert.match(onPid(none, "input-zoom", "small")!.message, /Set `font-size: 16px`\./);
 });
+
+const defaults =
+    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Defaults</title>\n<link rel="stylesheet" href="site.css">\n<style>input,select,textarea{width:240px}button{min-height:44px;min-width:44px}</style></head><body>\n<main data-pid="m"><article data-pid="art"><section data-pid="sec"><h1 data-pid="h1">Nested h1</h1><section><h1 data-pid="h1b">Deeper h1</h1></section></section></article>\n<h2 data-pid="h2">Sub</h2><p data-pid="p">Text with <a href="#" data-pid="a">a link</a>, <code data-pid="c">code</code>, <small>small</small>, <mark data-pid="mk">mark</mark>.</p>\n<form data-pid="f"><fieldset data-pid="fs"><legend>Group</legend><label>Name <input data-pid="i" type="text"></label>\n<label><input type="radio" name="r" data-pid="r1"> One</label><label><input type="checkbox" data-pid="cb"> Two</label>\n<select data-pid="s" aria-label="Pick"><option>A</option></select><textarea data-pid="t" aria-label="Notes"></textarea>\n<button data-pid="b" type="submit">Send</button><input type="reset" data-pid="rs"></fieldset></form>\n<table data-pid="tb" border="1" cellpadding="6"><caption>Cap</caption><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>\n<ul data-pid="ul"><li>One<ul><li>Nested</li></ul></li></ul><ol data-pid="ol"><li>One</li></ol><dl data-pid="dl"><dt>T</dt><dd>D</dd></dl>\n<blockquote data-pid="bq">Quote</blockquote><pre data-pid="pre">pre text</pre><hr data-pid="hr"><details data-pid="d"><summary>More</summary>Body</details>\n<font color="#ff0000" data-pid="font">Old font tag</font> <center data-pid="center">Centered</center></main></body></html>\n';
+const sheet = (css: string) => [{ name: "site.css", type: "text/css", bytes: Buffer.from(css) }];
+
+test(
+    "a value that no author CSS sets is never an off-system finding, whatever its value",
+    browser,
+    async () => {
+        // The page keeps the browser's defaults on purpose (nested h1, table cells, controls, links, legacy tags) and sets
+        // only the size of its controls, in a style element and in a linked sheet.
+        for (const viewport of ["mobile", "desktop"] as const) {
+            for (const colorScheme of ["light", "dark"] as const) {
+                const report = await check(
+                    defaults,
+                    { viewport, colorScheme },
+                    testSystem(),
+                    sheet("main{max-width:60rem}"),
+                );
+
+                assert.deepEqual(
+                    report.findings
+                        .filter((item) => item.rule.startsWith("off-system"))
+                        // `<font color>` and `cellpadding` are attributes of the markup, not CSS: the rule is about CSS.
+                        .map((item) => `${item.rule}:${item.pid}`),
+                    [],
+                    `${viewport} ${colorScheme}`,
+                );
+            }
+        }
+    },
+);
+
+test(
+    "what a linked sheet or a style attribute sets is judged, and a sheet that cannot be read does not break the rest",
+    browser,
+    async () => {
+        const linked = await check(
+            defaults
+                .replace("</head>", "<style>h2{color:#123456}</style></head>")
+                .replace('<p data-pid="p">', '<p data-pid="p" style="padding:14px">'),
+            { viewport: "desktop" },
+            testSystem(),
+            sheet("button{padding:15px;border:1px solid #abcdef;border-radius:12px}"),
+        );
+        const values = (pid: string) =>
+            linked.findings
+                .filter((item) => item.pid === pid && item.rule.startsWith("off-system"))
+                .map((item) => `${item.rule}:${item.value}`)
+                .sort();
+
+        assert.deepEqual(values("b"), [
+            "off-system-color:#abcdef",
+            "off-system-size:12px",
+            "off-system-size:15px",
+        ]);
+        assert.deepEqual(values("h2"), ["off-system-color:#123456"]);
+        assert.deepEqual(values("p"), ["off-system-size:14px"]);
+        // A sheet from another site cannot be read (the check is offline): the browser's defaults then stand in, and the plain
+        // page still gives no false finding.
+        const external = await check(
+            defaults.replace(
+                '<link rel="stylesheet" href="site.css">',
+                '<link rel="stylesheet" href="https://fonts.example/site.css">',
+            ),
+            { viewport: "desktop" },
+        );
+
+        assert.deepEqual(
+            external.findings
+                .filter((item) => item.rule.startsWith("off-system"))
+                .map((item) => item.pid),
+            [],
+        );
+    },
+);

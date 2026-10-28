@@ -83,8 +83,7 @@ export const RULES = {
     "reduced-motion": "Reduced motion",
     "missing-lang": "Page language",
     "missing-main": "Main landmark",
-    "form-label": "Field label",
-    "accessible-name": "Accessible name",
+    "missing-label": "Missing label",
     "input-zoom": "Input zoom on phones",
 };
 

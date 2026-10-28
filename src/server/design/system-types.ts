@@ -195,8 +195,7 @@ export type CheckRule =
     | "reduced-motion"
     | "missing-lang"
     | "missing-main"
-    | "form-label"
-    | "accessible-name"
+    | "missing-label"
     | "input-zoom";
 
 /**
