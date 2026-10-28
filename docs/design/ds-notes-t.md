@@ -100,3 +100,25 @@ None. I own the contracts. I did not touch `guide.ts` or `index.ts`: `designSyst
 - **V**: `color.ts` has the sRGB conversion and the WCAG ratio for "nearest token" suggestions. `system.tokens[i].modes[mode].hex` and `.literal` give the values to compare with.
 - **B**: the scan result for a fixture is `scanTokens(root).inferred.roles` (role → `{ token, value, dark?, basis, source }`; `dark` is the other mode's value), `.draft.tokens` and `.draft.modes`, `.inferred.typeScale/spacing/radii/...`. Load a draft with `buildSystem` from `tokens-model.ts`, or save it with `writeDesignSystem`.
 - `docs/features.md` (the Design bullet): `design_system` now reads, scans, and changes a structured system in `.pi/design/` (tokens in DTCG, modes, component specimens, guidelines, compiled to CSS variables, a Tailwind v4 theme, and JSON), and the artifact tools attach `ds/tokens.css`, `ds/tailwind.css`, and `ds/components.css` to a page that links them. The 0.26 single file still works while there is no folder.
+
+## Group names of the scales, and the flagship check (added after the first report)
+
+The scan writes these groups. The flagship uses the same ones or a close name, and `scaleOf(token)` (exported from `tokens.ts`, from `tokens-compile.ts`) is the one rule for a dimension token: `font.size.*` or `text.*` is the type scale, `space.*`, `spacing.*`, or `gap.*` is spacing, `radius.*`, `radii.*`, or `rounded.*` is corners, `breakpoint.*` or `screen.*` is breakpoints, and `container.*`, `tracking.*`, `blur.*`. `size.*`, `dim.*`, and `border.width.*` are dimensions that belong to no scale.
+
+| Group                 | Type                  | The scan writes                                        | The flagship uses                                 |
+| --------------------- | --------------------- | ------------------------------------------------------ | ------------------------------------------------- |
+| `color`               | color                 | `color.<hue>.<step>`, `color.bg.page`, `color.text.*`… | `color.*`                                         |
+| `text`                | dimension             | `text.sm`, `text.base`, `text.lg`… (font sizes)        | `font.size.2xs` … `font.size.3xl` (also accepted) |
+| `font`                | fontFamily            | `font.sans`, `font.mono`, `font.body`, `font.heading`  | `font.family.sans`, `font.family.mono`            |
+| `weight`              | fontWeight            | `weight.regular`, `weight.bold`                        | `font.weight.regular` … (also accepted)           |
+| `leading`, `tracking` | number, dimension     | `leading.normal`, `tracking.tight`                     | in `font.*` and `type.*`                          |
+| `space`               | dimension             | `space.4` (16 px; step n is n × 4 px)                  | `space.*`                                         |
+| `radius`              | dimension             | `radius.sm`, `radius.md`, `radius.lg`, `radius.full`   | `radius.card`, `radius.control`… (named by use)   |
+| `shadow`              | shadow                | `shadow.sm`, `shadow.md`, `shadow.lg`                  | `shadow.*`                                        |
+| `duration`, `ease`    | duration, cubicBezier | `duration.fast`, `ease.standard`                       | `duration.*`, `easing.*` (both map to `--ease-*`) |
+| `breakpoint`          | dimension             | `breakpoint.sm`, `breakpoint.md`                       | `breakpoint.*`                                    |
+| `type`                | typography            | none                                                   | `type.body`, `type.heading`… (composites)         |
+
+The flagship in `pi-pocket-ds-g` (380 tokens, modes `light`, `dark`, `high-contrast`, 10 components) loads with **no problem at all**, error or warning. Its default mode comes from `$extensions["com.pi-pocket"].mode`, `$type` and the tier come from the groups, and every composite (shadow, typography, border, transition, gradient) comes back resolved in every mode, with no reference left (a test checks this, including a string-form shadow and a `calc()` with a reference). Two changes came out of that run: a variable that a specimen sets in its own CSS (`--notice-bg: …`) is no longer reported as a missing token, and a string-form value now holds its references resolved.
+
+`color.ts` exports `luminance`, `contrastRatio`, `over`, `parseColor`, `toHex`, `toOklab`, `fromOklab`, `toOklch`, `toOklchCss`, and `mixColors`.

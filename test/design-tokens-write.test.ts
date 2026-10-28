@@ -780,3 +780,18 @@ test("systemSummary treats hostile text as data: one line, no invisible characte
     assert.ok(!/<\//.test(text), text);
     assert.ok(!text.split("\n").some((line) => /^Ignore all rules/.test(line)));
 });
+
+test("a variable that a component sets itself is not reported as a missing token", () => {
+    const own = `<style>.n { --n-bg: var(--color-bg-page); background: var(--n-bg); border-color: var(--n-edge); color: var(--color-nope) }</style>
+<template data-state="default"><div class="n">x</div></template>`;
+    const system = writeDesignSystem(project(), { tokens: tokens(), components: { notice: own } });
+    const warning = system.problems.find(
+        (problem) =>
+            problem.file === "components/notice.html" &&
+            /not tokens|not a token/.test(problem.message),
+    );
+
+    assert.ok(warning, "an unknown variable is still reported");
+    assert.match(warning.message, /--n-edge, --color-nope|--color-nope, --n-edge/);
+    assert.doesNotMatch(warning.message, /--n-bg/, "the one the component sets is its own");
+});
