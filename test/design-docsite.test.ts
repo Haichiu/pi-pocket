@@ -673,7 +673,16 @@ test("section counts follow one rule: a headline of role tokens, the palette and
     assert.equal(count("tokens"), system.tokens.length, "the table lists every token");
     assert.equal(count("components"), system.components.length, "Components counts components");
     assert.equal(count("color"), 52, "the flagship's Color says its 52 roles");
-    assert.match(html, /<p class="counts">52 roles · 97 palette colors · 62 component colors<\/p>/);
+    // The flagship's lines, from the same rule: its palette is the primitive colors, and its component colors are the component tier's.
+    const colors = system.tokens.filter((token) => token.type === "color");
+    const palette = colors.filter((token) => token.tier === "primitive").length;
+    const components = colors.filter((token) => token.tier === "component").length;
+
+    assert.ok(
+        html.includes(
+            `<p class="counts">52 roles · ${palette} palette colors · ${components} component colors</p>`,
+        ),
+    );
 
     // A token that no specimen draws is still on the page, in its section's table.
     for (const token of system.tokens) {
@@ -700,13 +709,13 @@ test("a ratio is written with one decimal, cut and never rounded up; cards copy 
         html,
         /<div class="copy-row" data-var="--color-bg-surface" data-tw="bg-surface" data-json="color\.bg\.surface\.\$value"><\/div>/,
     );
-    assert.match(html, /data-var="--color-text-primary" data-tw="text-primary"/);
+    assert.match(html, /data-var="--color-text-primary" data-tw="text-text"/);
     assert.doesNotMatch(
         html,
-        /data-tw="(bg-bg|text-text|border-border)-/,
+        /data-tw="(bg-bg|text-text|border-border)-(?!secondary)/,
         "the class is the compiled theme's name",
     );
-    assert.match(html, /data-var="--color-border-default" data-tw="border-default"/);
+    assert.match(html, /data-var="--color-border-default" data-tw="border-border"/);
     assert.match(
         html,
         /<footer class="foot"><strong>Pi Pocket<\/strong> · \d+ tokens · 3 modes · 10 components · generated \d{4}-\d{2}-\d{2} by Pi Pocket<\/footer>/,
@@ -818,11 +827,38 @@ test("an exempt pair is labelled and not a failure; notes have an area; the code
     assert.match(html, /<h4>JSON \(DTCG\)<\/h4>/);
     assert.match(html, /<h4>Tokens Studio<\/h4>/);
     assert.match(html, /tokens\.studio\.json\./, "how to load the Tokens Studio file");
-    assert.match(html, /\$themes array/);
+    // The cards show real snippets: a valid Style Dictionary config, and the first lines of the Tokens Studio file.
+    const snip = (id: string) =>
+        (
+            new RegExp(`<pre class="snip" id="${id}"><code>([\\s\\S]*?)</code></pre>`).exec(
+                html,
+            )?.[1] ?? ""
+        )
+            .replace(/&quot;/g, '"')
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&amp;/g, "&");
+    const config = JSON.parse(snip("code-use-json")) as {
+        source: string[];
+        platforms: { css: { transformGroup: string } };
+    };
+
+    assert.deepEqual(config.source, ["tokens.light.resolved.json"]);
+    assert.equal(config.platforms.css.transformGroup, "css");
+    assert.doesNotMatch(snip("code-use-json"), /\/\//, "no comment inside the JSON");
     assert.match(
         html,
-        /&quot;format&quot;: &quot;2025\.10&quot;/,
-        "how to ask for the 2025.10 forms",
+        /<code>"format": "2025\.10"<\/code>/,
+        "how to ask for the 2025.10 forms, beside the code",
+    );
+
+    const studio = JSON.parse(snip("code-use-studio")) as Record<string, unknown>;
+
+    assert.deepEqual(Object.keys(studio), ["light", "$themes", "$metadata"]);
+    assert.equal((studio.$themes as { id: string }[])[0]!.id, "light");
+    assert.match(
+        JSON.stringify(studio.light),
+        /"color":\{"bg":\{"base":\{"\$type":"color","\$value":"\{color\.neutral\.50\}"/,
     );
     assert.ok(
         html.includes("@import &quot;tailwindcss&quot;;\n@import &quot;./tailwind.css&quot;;"),
@@ -1158,3 +1194,205 @@ test("the sanitizer's allowlists name no animation, no frame, no foreign object,
         "no handler attribute",
     );
 });
+
+test("the token table has a column for each mode, filters by type and tier, and searches names and values; headings have links", () => {
+    const system = flagship();
+    const { html } = renderSystemDoc(system);
+    const table = /<section class="block" id="tokens"[\s\S]*?<\/section>/.exec(html)![0];
+
+    assert.match(
+        table,
+        /<thead><tr><th>Token<\/th><th>Type<\/th><th>Light<\/th><th>Dark<\/th><th>High contrast<\/th><\/tr><\/thead>/,
+    );
+    // A cell of a color has the swatch of its own mode, drawn from that mode's value.
+    assert.match(
+        table,
+        /<td data-label="Dark" class="num wrap"><i class="mini-sw" style="background:#1a1b26"><\/i>#1a1b26<\/td>/,
+    );
+    assert.match(table, /<input id="tq" type="search" placeholder="Search names and values"/);
+    assert.match(
+        table,
+        /<select id="tt" aria-label="Filter by type"><option value="">All types<\/option>/,
+    );
+
+    for (const type of new Set(system.tokens.map((token) => token.type))) {
+        assert.ok(table.includes(`<option value="${type}">${type} (`), `a filter for ${type}`);
+    }
+
+    assert.match(
+        table,
+        /<select id="tr" aria-label="Filter by tier"><option value="">All tiers<\/option><option value="primitive">primitive<\/option><option value="semantic">semantic<\/option><option value="component">component<\/option>/,
+    );
+    assert.match(html, /placeholder="Filter tokens and values"/);
+
+    // A link to each section, each component, and each sub-heading with an id: a short anchor, and its icon is CSS.
+    for (const id of ["color", "typography", "spacing", "radii", "components", "tokens", "code"]) {
+        assert.match(
+            html,
+            new RegExp(
+                `<h2 id="${id}-title">[^<]*<a class="anchor" href="#${id}" aria-label="Link to [^"]+"></a></h2>`,
+            ),
+            id,
+        );
+    }
+
+    for (const spec of system.components) {
+        assert.ok(
+            html.includes(
+                `<a class="anchor" href="#comp-${spec.slug}" aria-label="Link to ${spec.name}"></a></h3>`,
+            ),
+            spec.slug,
+        );
+    }
+
+    assert.match(html, /<h3 id="color-roles">Roles<a class="anchor" href="#color-roles"/);
+    assert.match(html, /\.anchor::before\s*\{[^}]*mask:/);
+
+    // Corners: the scale is its own group after the roles; spacing and size have their own groups.
+    assert.match(html, /<h4 style="margin-top:22px">Scale<\/h4>/);
+    assert.match(html, /<h3 id="spacing-steps">Steps/);
+    assert.match(html, /<h3 id="spacing-roles">Roles/);
+    assert.match(html, /<h3 id="sizes">Sizes/);
+});
+
+test(
+    "in Chromium the token table filters by type, tier, and value; a phone draws its rows a screenful at a time; a link opens its fold",
+    { skip: findBrowser() === undefined ? "No Chromium on this machine." : false },
+    async () => {
+        const system = flagship();
+        const bundle: DesignBundle = {
+            meta: { title: "Docs", type: "html", versions: [] },
+            version: 1,
+            content: renderSystemDoc(system).html,
+            assets: [],
+        };
+        const total = system.tokens.length;
+        const visible =
+            "document.querySelectorAll('#tokens tbody tr:not(.more):not([hidden])').length";
+        const type = (name: string) =>
+            `(() => { const select = document.getElementById('tt'); select.value = '${name}'; select.dispatchEvent(new Event('change')); })()`;
+        const write = (id: string, value: string) =>
+            `(() => { const field = document.getElementById('${id}'); field.value = '${value}'; field.dispatchEvent(new Event('input')); })()`;
+
+        await withRender(bundle, host, undefined, async (page) => {
+            await page.load({ width: 1280, height: 800 });
+            await page.evaluate("new Promise((resolve) => setTimeout(resolve, 400))");
+
+            assert.deepEqual(page.errors, []);
+            assert.equal(await page.evaluate(visible), total, "every row on a wide screen");
+            assert.equal(
+                await page.evaluate("document.getElementById('tc').textContent"),
+                `${total} tokens`,
+            );
+            // The script made each row's CSS variable chip from its name; a row whose variable is not that keeps its own.
+            assert.equal(
+                await page.evaluate(
+                    "document.querySelectorAll('#tokens tbody tr:first-child .tk').length",
+                ),
+                2,
+            );
+
+            // By type.
+            await page.evaluate(type("shadow"));
+            assert.equal(
+                await page.evaluate(visible),
+                system.tokens.filter((token) => token.type === "shadow").length,
+            );
+            await page.evaluate(type(""));
+            // By tier.
+            await page.evaluate(
+                "(() => { const select = document.getElementById('tr'); select.value = 'component'; select.dispatchEvent(new Event('change')); })()",
+            );
+            assert.equal(
+                await page.evaluate(visible),
+                system.tokens.filter((token) => token.tier === "component").length,
+            );
+            assert.equal(
+                await page.evaluate("document.getElementById('tc').textContent"),
+                `${system.tokens.filter((token) => token.tier === "component").length} of ${total}`,
+            );
+            await page.evaluate(
+                "(() => { const select = document.getElementById('tr'); select.value = ''; select.dispatchEvent(new Event('change')); })()",
+            );
+            // By value: a hex that only a few tokens have, and the type and tier together.
+            await page.evaluate(write("tq", "#7aa2f7"));
+            const withValue = system.tokens.filter((token) =>
+                Object.values(token.modes).some((mode) =>
+                    JSON.stringify(mode.value).toLowerCase().includes("7aa2f7"),
+                ),
+            ).length;
+
+            assert.ok(withValue >= 3);
+            assert.equal(await page.evaluate(visible), withValue);
+            await page.evaluate(write("tq", ""));
+            assert.equal(await page.evaluate(visible), total);
+            // The page's own filter reads values too, and the table follows it.
+            await page.evaluate(write("q", "#7aa2f7"));
+            assert.ok(((await page.evaluate(visible)) as number) >= 3);
+            assert.ok(((await page.evaluate(visible)) as number) < total);
+            await page.evaluate(write("q", ""));
+            assert.equal(await page.evaluate(visible), total);
+
+            // A link to a code listing inside a closed fold opens the fold.
+            assert.equal(
+                await page.evaluate("document.getElementById('code-css').closest('details').open"),
+                false,
+            );
+            await page.evaluate("location.hash = '#code-css'");
+            await page.evaluate("new Promise((resolve) => setTimeout(resolve, 100))");
+            assert.equal(
+                await page.evaluate("document.getElementById('code-css').closest('details').open"),
+                true,
+            );
+            // A tap on a heading's link follows it and says that it copied (or could not).
+            await page.evaluate("document.querySelector('#color-title .anchor').click()");
+            assert.equal(await page.evaluate("location.hash"), "#color");
+            assert.match(
+                (await page.evaluate("document.querySelector('.toast').textContent")) as string,
+                /link/,
+            );
+        });
+
+        await withRender(bundle, host, undefined, async (page) => {
+            await page.load({ width: 390, height: 844 });
+            await page.evaluate("new Promise((resolve) => setTimeout(resolve, 400))");
+
+            // A phone has the first rows, a "show more" row, and the rest waiting.
+            const drawn = (await page.evaluate(
+                "document.querySelectorAll('#tokens tbody tr:not(.more)').length",
+            )) as number;
+
+            assert.ok(
+                drawn >= 60 && drawn <= 130 && drawn < total,
+                `${drawn} rows drawn of ${total}`,
+            );
+            assert.equal(
+                await page.evaluate("document.querySelectorAll('#tokens tr.more').length"),
+                1,
+            );
+            assert.match(
+                (await page.evaluate(
+                    "document.querySelector('#tokens tr.more button').textContent",
+                )) as string,
+                /^Show \d+ more of \d+$/,
+            );
+            await page.evaluate("document.querySelector('#tokens tr.more button').click()");
+            assert.ok(
+                ((await page.evaluate(
+                    "document.querySelectorAll('#tokens tbody tr:not(.more)').length",
+                )) as number) > drawn,
+            );
+            // A search draws all of them first, so that nothing it should find is left out.
+            await page.evaluate(write("tq", "shadow"));
+            assert.equal(
+                await page.evaluate("document.querySelectorAll('#tokens tr.more').length"),
+                0,
+            );
+            assert.equal(
+                await page.evaluate("document.querySelectorAll('#tokens tbody tr').length"),
+                total,
+            );
+            assert.ok(((await page.evaluate(visible)) as number) >= 6);
+        });
+    },
+);

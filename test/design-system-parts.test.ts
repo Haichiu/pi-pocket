@@ -7,7 +7,7 @@ import { join } from "node:path";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { loadDesignSystem } from "../src/server/extensions/design/system-api.ts";
-import { writeSystemFixture } from "./design-system-fixtures.ts";
+import { ferryPage, writeSystemFixture } from "./design-system-fixtures.ts";
 
 const load = (name: string) =>
     import(new URL(`../src/server/extensions/design/${name}.js`, import.meta.url).href);
@@ -890,21 +890,28 @@ test("a color lists all its contrast pairs, and a pair that is exempt is a note 
     );
 });
 
-test("a shadow is told in a few characters for its tile: the first layer, its alpha, and how many more", () => {
+test("a shadow is told in words for its tile: y, blur, alpha, and x and spread only when they are not 0", () => {
     const model = sys.createModel(system);
     const of = (name: string) => sys.shadowSummary(model.value(name, "light").value);
 
-    // Harbor's: `0 1 2 / 12%`; one with a negative spread and links reads as its resolved sizes.
-    assert.equal(of("shadow.sm"), "0 1 2 / 12%");
-    assert.equal(of("shadow.md"), "0 6 16 / 16%");
-    assert.equal(of("shadow.lg"), "0 16 48 / 40%");
-    // Layers after the first are a count; a color with no alpha has none; an inset says so.
+    assert.equal(of("shadow.sm"), "y 1 · blur 2 · 12%");
+    assert.equal(of("shadow.md"), "y 6 · blur 16 · spread -4 · 16%");
+    assert.equal(of("shadow.lg"), "y 16 · blur 48 · spread -12 · 40%");
+    // x shows when it is not 0; a color with no alpha has none; layers after the first are said in full; an inset says so.
     assert.equal(
         sys.shadowSummary([
-            { color: "#112233", offsetX: "0px", offsetY: "2px", blur: "4px", spread: "0px" },
+            { color: "#112233", offsetX: "2px", offsetY: "2px", blur: "4px", spread: "0px" },
+            { color: "#00000040", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "1px" },
+            { color: "#00000040", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "2px" },
+        ]),
+        "x 2 · y 2 · blur 4 · +2 layers",
+    );
+    assert.equal(
+        sys.shadowSummary([
+            { color: "#112233", offsetX: "0px", offsetY: "2px", blur: "4px" },
             { color: "#00000040", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "1px" },
         ]),
-        "0 2 4 +1",
+        "y 2 · blur 4 · +1 layer",
     );
     assert.equal(
         sys.shadowSummary({
@@ -914,7 +921,20 @@ test("a shadow is told in a few characters for its tile: the first layer, its al
             blur: "2px",
             inset: true,
         }),
-        "inset 0 1 2 / 50%",
+        "inset y 1 · blur 2 · 50%",
     );
     assert.equal(sys.shadowSummary(null), "");
+});
+
+test("the Ferry page's image has a real source (a small picture, not a broken icon) and still has no alt text, which the check needs", () => {
+    const html = ferryPage("");
+    const image = /<img data-pid="photo"[^>]*>/.exec(html)![0];
+
+    assert.match(image, /src="data:image\/svg\+xml,%3Csvg /);
+    assert.doesNotMatch(image, /\salt=/);
+    assert.doesNotMatch(
+        image,
+        /R0lGODlhAQABAAAAACw/,
+        "not the one-pixel gif that draws as a broken image",
+    );
 });

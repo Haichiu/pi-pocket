@@ -360,7 +360,7 @@ export function colorSection(ctx: Ctx): { html: string; count: number } | undefi
     }
 
     return {
-        html: `<p class="intro">${plural(allRoles.length, "role")}${allPalette.length > 0 ? ` over ${plural(allPalette.length, "palette color")}` : ""}${components.length > 0 ? ` and ${plural(components.length, "component color")}` : ""}${ctx.modes.length > 1 ? `, in ${ctx.modes.length} modes` : ""}.${checkSentence(pairs.passing, pairs.total)}</p>${parts.join("")}`,
+        html: `<p class="intro">${ctx.modes.length > 1 ? `Every role has a value in each of the ${ctx.modes.length} modes.` : "Every role has a value."}${checkSentence(pairs.passing, pairs.total)}</p>${parts.join("")}`,
         count: colors.length,
     };
 }

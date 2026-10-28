@@ -1,7 +1,7 @@
 // The System view: the project's design system as a place to work in. The bar (the pinned picker item, the mode in view, undo
 // and redo), the sections, the unsaved edits and the bar that saves them, and, when there is room, the open design beside it
 // that shows every edit live. A person who cannot steer sees all of it and changes none of it.
-import { DEVICES } from "./devices.js";
+import { clampSize, DEVICES } from "./devices.js";
 import { modeTitle } from "./system-widgets.js";
 import {
     changeOf,
@@ -349,8 +349,9 @@ export function createSystemView(env, canvas, sections, widgets) {
             }
         }, [current]);
 
-        // A bar that scrolls fades where more of it is out of sight (`data-more`), so that no tab looks cut off by what is
-        // beside the bar.
+        // A bar that scrolls fades where more of it is out of sight (`data-more`, `data-less`). At rest, which is a moment after
+        // it stops, a tab that is not whole is left out (`data-cut`): a bar never shows half a letter, it shows whole tabs and a
+        // fade toward the rest.
         useEffect(() => {
             const box = bar.current;
 
@@ -358,11 +359,35 @@ export function createSystemView(env, canvas, sections, widgets) {
                 return undefined;
             }
 
+            let timer = 0;
+
+            // The width of the fade (and of the mark) at an edge that has more: a tab under it is not read, so it is not whole.
+            const FADE = 26;
+
+            const rest = () => {
+                const room = box.scrollWidth - box.clientWidth;
+                const left = box.scrollLeft + (box.scrollLeft > 2 ? FADE : 0);
+                const right =
+                    box.scrollLeft + box.clientWidth - (box.scrollLeft < room - 2 ? FADE : 0);
+
+                for (const tab of box.querySelectorAll('[role="tab"]')) {
+                    const whole =
+                        tab.offsetLeft >= left - 1 && tab.offsetLeft + tab.offsetWidth <= right + 1;
+
+                    tab.toggleAttribute("data-cut", room > 2 && !whole);
+                }
+
+                box.dataset.rest = "on";
+            };
+
             const mark = () => {
                 const room = box.scrollWidth - box.clientWidth;
 
                 box.dataset.more = room > 2 && box.scrollLeft < room - 2 ? "right" : "none";
                 box.dataset.less = box.scrollLeft > 2 ? "left" : "none";
+                delete box.dataset.rest;
+                clearTimeout(timer);
+                timer = setTimeout(rest, 160);
             };
 
             const watch = new ResizeObserver(mark);
@@ -372,10 +397,11 @@ export function createSystemView(env, canvas, sections, widgets) {
             watch.observe(box);
 
             return () => {
+                clearTimeout(timer);
                 box.removeEventListener("scroll", mark);
                 watch.disconnect();
             };
-        }, [list.length, data === null]);
+        }, [list.length, data === null, current]);
 
         // With no system there are no sections to go between.
         if (data === null) {
@@ -647,7 +673,8 @@ export function createSystemView(env, canvas, sections, widgets) {
 
     /**
      * What the system says that needs no action (`notes`): a contrast pair that is below its minimum on purpose (a disabled or
-     * decorative color: exempt). One quiet line that opens; it is not a problem, so it never shows as a warning.
+     * decorative color: exempt). One quiet line that opens; it is not a problem, so it never shows as a warning. It is about
+     * colors, so it shows on the Colors tab only.
      */
     function Notes({ notes, has }) {
         if (!Array.isArray(notes) || notes.length === 0) {
@@ -855,6 +882,14 @@ export function createSystemView(env, canvas, sections, widgets) {
     function Preview({ s, designs, design, shown, size, canEdit, pane }) {
         const narrowHead = pane === "page";
         const edits = unsavedCount(s.system.data, s.history);
+        const box = useRef(null);
+        const room = parts.useSize(box);
+        // Beside the view, with no size chosen, the page has the room that the pane has: a page at the size of a desktop in a
+        // pane a third as wide is a card in a corner. A size that was chosen (a phone, a tablet, a desktop) is kept.
+        const fitted =
+            s.device === "auto" && pane === "side" && room.w > 0 && room.h > 0
+                ? { w: clampSize(room.w - 36), h: clampSize(room.h - 78) }
+                : size;
 
         if (!design) {
             return html`<div class="dsy-preview">
@@ -926,12 +961,12 @@ export function createSystemView(env, canvas, sections, widgets) {
                     use the system's variables follow it.
                 </div>`
             }
-            <div class="dsy-preview-canvas">
+            <div class="dsy-preview-canvas" ref=${box}>
                 <${canvas.CanvasView}
                     s=${s}
                     design=${design}
                     version=${shown}
-                    size=${size}
+                    size=${fitted}
                     readOnly=${true}
                 />
             </div>
@@ -1084,7 +1119,7 @@ export function createSystemView(env, canvas, sections, widgets) {
                     has=${(name) => model.has(name)}
                     narrow=${narrow}
                 />
-                <${Notes} notes=${data.notes} has=${(name) => model.has(name)} />
+                ${current === "colors" && html`<${Notes} notes=${data.notes} has=${(name) => model.has(name)} />`}
                 ${!canEdit && html`<p class="dsy-readonly muted small"><${Ico} name="eye" size=${13} /> You can look at the system here. Only people who can steer the session change it.</p>`}
                 <${Section} ctx=${ctx} />`;
         }

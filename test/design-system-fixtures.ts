@@ -453,7 +453,7 @@ p { margin: 0 0 var(--space-4); color: var(--color-text-muted); }
 <div class="card" data-pid="card">
 <h1 data-pid="title">The 9:15 to Harbor Island</h1>
 <p data-pid="sub">Boarding opens at 9:00. Bring a ticket and a coat.</p>
-<img data-pid="photo" width="40" height="40" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
+<img data-pid="photo" width="40" height="40" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='8' fill='%233b6cf6'/%3E%3Cpath d='M20 7v16M20 9l9 12h-9zM9 26h22l-4 7H13z' fill='%23fff'/%3E%3C/svg%3E">
 <p data-pid="note" style="color:#7ba3f8">Off-system blue on purpose.</p>
 <div class="row"><button class="btn" data-pid="book">Book a ticket</button><span class="ok" data-pid="status">On time</span></div>
 </div>${

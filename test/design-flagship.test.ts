@@ -246,3 +246,166 @@ test("the bench's copy of the flagship is the same files as the example", () => 
         );
     }
 });
+
+/** OKLab lightness of a color, 0 (black) to 1 (white). */
+function lightness(hex: unknown): number {
+    const color = parseColor(hex)!;
+    const lin = [color.r, color.g, color.b].map((value) => {
+        const unit = value / 255;
+
+        return unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
+    });
+    const l = Math.cbrt(0.4122214708 * lin[0]! + 0.5363325363 * lin[1]! + 0.0514459929 * lin[2]!);
+    const m = Math.cbrt(0.2119034982 * lin[0]! + 0.6806995451 * lin[1]! + 0.1073969566 * lin[2]!);
+    const s = Math.cbrt(0.0883024619 * lin[0]! + 0.2817188376 * lin[1]! + 0.6299787005 * lin[2]!);
+
+    return 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+}
+
+test("every numbered color ramp falls in lightness at each step, with regular step numbers", () => {
+    const loaded = system();
+    const ramps = new Map<string, ResolvedToken[]>();
+
+    for (const token of loaded.tokens.filter(
+        (item) => item.tier === "primitive" && item.type === "color",
+    )) {
+        const [, group, step] = token.path;
+
+        if (token.path.length === 3 && /^\d+$/.test(step!)) {
+            ramps.set(group!, [...(ramps.get(group!) ?? []), token]);
+        }
+    }
+
+    assert.deepEqual([...ramps.keys()].sort(), [
+        "blue",
+        "cyan",
+        "green",
+        "magenta",
+        "neutral",
+        "orange",
+        "red",
+        "yellow",
+    ]);
+
+    for (const [group, steps] of ramps) {
+        const sorted = [...steps].sort((a, b) => Number(a.path[2]) - Number(b.path[2]));
+
+        for (let at = 1; at < sorted.length; at++) {
+            const before = lightness(sorted[at - 1]!.modes.light!.value);
+            const now = lightness(sorted[at]!.modes.light!.value);
+
+            assert.ok(
+                now < before,
+                `${group}.${sorted[at]!.path[2]} (${now.toFixed(3)}) is darker than ${group}.${sorted[at - 1]!.path[2]} (${before.toFixed(3)})`,
+            );
+        }
+
+        const numbers = sorted.map((token) => Number(token.path[2]));
+
+        if (group === "neutral") {
+            // Steps of 100 up to 700 and of 50 after, plus two half steps that a role needs, each with its reason.
+            const halves = numbers.filter(
+                (n) => n % 100 !== 0 && !(n >= 700 && n % 50 === 0) && n !== 50,
+            );
+
+            assert.deepEqual(halves, [550], "one half step outside the dark end");
+            assert.match(
+                sorted.find((token) => token.path[2] === "550")!.description ?? "",
+                /half step.*on purpose/i,
+            );
+            assert.match(
+                sorted.find((token) => token.path[2] === "750")!.description ?? "",
+                /half step.*on purpose/i,
+            );
+        } else {
+            assert.deepEqual(
+                numbers,
+                [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950],
+                `${group} has the regular steps`,
+            );
+        }
+    }
+
+    // The app's own accent sits at its step: 400.
+    const tokyo = {
+        blue: "#7aa2f7",
+        red: "#f7768e",
+        yellow: "#e0af68",
+        orange: "#eb927b",
+        green: "#9ece6a",
+        cyan: "#449dab",
+        magenta: "#ad8ee6",
+    };
+
+    for (const [hue, hex] of Object.entries(tokyo)) {
+        assert.equal(
+            loaded.tokens.find((token) => token.name === `color.${hue}.400`)!.modes.light!.value,
+            hex,
+        );
+    }
+});
+
+test("space is the scale, size holds sizes, and the corners are one scale with roles that point at it", () => {
+    const loaded = system();
+    const names = (root: string) =>
+        loaded.tokens
+            .filter((token) => token.path[0] === root)
+            .map((token) => token.path.slice(1).join("."));
+
+    // space.*: the 4 px scale and nothing else.
+    assert.deepEqual(names("space"), ["0", "1", "2", "3", "4", "5", "6", "8", "10", "12", "16"]);
+    // size.*: heights, targets, icons, and the avatar; a component's own sizes are its tokens.
+    assert.deepEqual(names("size"), [
+        "control.sm",
+        "control.md",
+        "control.lg",
+        "tap",
+        "icon.sm",
+        "icon.md",
+        "icon.lg",
+        "avatar",
+    ]);
+    assert.deepEqual(names("layout"), ["gap.in", "gap.out"]);
+    assert.ok(loaded.tokens.find((token) => token.name === "switch.width")!.tier === "component");
+    assert.ok(loaded.tokens.find((token) => token.name === "badge.dot")!.tier === "component");
+
+    // Corners: about five steps and round, every role an alias of a step.
+    const scale = loaded.tokens.filter(
+        (token) => token.path[0] === "radius" && token.path[1] === "scale",
+    );
+
+    assert.deepEqual(
+        scale.map((token) => token.path[2]),
+        ["xs", "sm", "md", "lg", "xl", "full"],
+    );
+    assert.deepEqual(
+        scale.map((token) => token.modes.light!.css),
+        ["2px", "4px", "6px", "8px", "12px", "999px"],
+    );
+
+    const roles = loaded.tokens.filter(
+        (token) => token.path[0] === "radius" && token.path[1] !== "scale",
+    );
+
+    assert.deepEqual(
+        roles.map((token) => token.path[1]),
+        ["mark", "tag", "seg", "row", "control", "card", "window", "sheet", "float", "pill"],
+    );
+
+    for (const role of roles) {
+        assert.ok(
+            role.modes.light!.alias?.startsWith("radius.scale."),
+            `${role.name} points at a step`,
+        );
+        assert.equal(role.tier, "semantic");
+    }
+
+    // A role that moved from the app's own corner says so.
+    for (const [role, note] of [
+        ["seg", /app uses 5 px/],
+        ["control", /app uses 7 px/],
+        ["window", /app uses 10 px/],
+    ] as const) {
+        assert.match(roles.find((token) => token.path[1] === role)!.description ?? "", note);
+    }
+});

@@ -314,6 +314,9 @@ export function viewOf(system: DesignSystem) {
             ...(system.compiled.studio === undefined
                 ? {}
                 : { "tokens.studio.json": Buffer.byteLength(system.compiled.studio) }),
+            ...(system.compiled.names === undefined
+                ? {}
+                : { "names.md": Buffer.byteLength(system.compiled.names) }),
             "components.css": Buffer.byteLength(system.compiled.components),
         },
         revision: revisionOf(system),
@@ -989,6 +992,9 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 ...(system.compiled.studio === undefined
                     ? []
                     : ([["tokens.studio.json", system.compiled.studio]] as [string, string][])),
+                ...(system.compiled.names === undefined
+                    ? []
+                    : ([["names.md", system.compiled.names]] as [string, string][])),
                 ["tokens.resolved.json", system.compiled.json],
                 ["components.css", system.compiled.components],
             ];

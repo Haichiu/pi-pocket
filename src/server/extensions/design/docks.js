@@ -626,10 +626,12 @@ export function createDocks(env) {
     };
 
     /**
-     * How high a sheet stands on a phone, as a share of the room under the bars: low, middle, high. The middle one, where it
-     * starts, leaves the page 46 percent of the room (at least 40), so that it is not a speck.
+     * How high a sheet stands on a phone, as a share of the room under the bars: shut (a bar of its own height, with the
+     * count of findings: the page keeps nearly all of the room, and it is where the sheet starts), middle (the page keeps 46
+     * percent), and high. A tap on the bar, a pin, or the handle opens it.
      */
-    const SHEET_SNAPS = [24, 54, 88];
+    const SHEET_SNAPS = [8, 54, 88];
+    const SHEET_WORDS = ["shut", "middle", "high"];
 
     /**
      * The handle of a bottom sheet: drag it to the height you want (it settles on the nearest of three), tap it to go to
@@ -644,7 +646,12 @@ export function createDocks(env) {
             const next = Math.min(SHEET_SNAPS.length - 1, Math.max(0, to));
             const dock = handle.current?.closest(".dsn-dock");
 
-            dock?.style.setProperty("--sheet", `${SHEET_SNAPS[next]}%`);
+            if (next === 0) {
+                dock?.style.removeProperty("--sheet");
+            } else {
+                dock?.style.setProperty("--sheet", `${SHEET_SNAPS[next]}%`);
+            }
+
             store.set({ checkSheet: next });
         };
 
@@ -657,7 +664,7 @@ export function createDocks(env) {
             aria-valuemin="0"
             aria-valuemax=${SHEET_SNAPS.length - 1}
             aria-valuenow=${index}
-            aria-valuetext=${["low", "middle", "high"][index]}
+            aria-valuetext=${SHEET_WORDS[index]}
             tabindex="0"
             onPointerDown=${(event) => {
                 const dock = handle.current.closest(".dsn-dock");
@@ -680,7 +687,7 @@ export function createDocks(env) {
                 if (now) {
                     now.share = Math.min(
                         0.94,
-                        Math.max(0.2, (now.room.bottom - event.clientY) / now.room.height),
+                        Math.max(0.08, (now.room.bottom - event.clientY) / now.room.height),
                     );
                     now.dock.style.setProperty("--sheet", `${now.share * 100}%`);
                 }
@@ -719,6 +726,9 @@ export function createDocks(env) {
     /** The dock for `s.dock`, or nothing. */
     function Dock({ s, design, shown, canEdit, me }) {
         const props = { s, design, shown, canEdit, me };
+        // The findings of a check on a phone are a sheet: a bar at first, then tall enough to read, the page showing above it.
+        const sheet = s.dock === "check" && env.sizeClass(s) === "narrow";
+        const shut = sheet && s.checkSheet === 0;
         const body =
             s.dock === "versions"
                 ? html`<${VersionsDock} ...${props} />`
@@ -729,11 +739,8 @@ export function createDocks(env) {
                     : s.dock === "tweaks"
                       ? html`<${TweaksDock} ...${props} />`
                       : s.dock === "check"
-                        ? html`<${CheckDock} ...${props} />`
+                        ? html`<${CheckDock} ...${props} shut=${shut} />`
                         : null;
-
-        // The findings of a check on a phone are a sheet: tall enough to read, the page still showing above it.
-        const sheet = s.dock === "check" && env.sizeClass(s) === "narrow";
 
         return (
             body &&
@@ -741,10 +748,11 @@ export function createDocks(env) {
                 class="dsn-dock"
                 data-dock=${s.dock}
                 data-sheet=${sheet}
+                data-shut=${shut}
                 aria-label=${DOCKS[s.dock]}
-                style=${sheet ? `--sheet:${SHEET_SNAPS[Math.min(2, Math.max(0, s.checkSheet))]}%` : undefined}
+                style=${sheet && !shut ? `--sheet:${SHEET_SNAPS[Math.min(2, Math.max(0, s.checkSheet))]}%` : undefined}
             >
-                ${sheet && html`<${SheetHandle} s=${s} />`} ${body}
+                ${sheet && !shut && html`<${SheetHandle} s=${s} />`} ${body}
             </aside>`
         );
     }

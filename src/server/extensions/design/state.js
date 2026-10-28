@@ -72,7 +72,11 @@ export function loadPrefs() {
             ? saved.device
             : "auto",
         custom: saved.custom ?? { w: 800, h: 600 },
-        zoom: saved.zoom === "fit" || typeof saved.zoom === "number" ? saved.zoom : "fit",
+        // `auto` follows the panel: the width of the room on a phone, the whole page elsewhere (`zoomOf` in `devices.js`).
+        zoom:
+            ["fit", "width", "auto"].includes(saved.zoom) || typeof saved.zoom === "number"
+                ? saved.zoom
+                : "auto",
         backdrop: ["auto", "light", "dark"].includes(saved.backdrop) ? saved.backdrop : "auto",
     };
 }
@@ -201,7 +205,7 @@ export function systemState() {
         checkWith: { mode: null, size: null },
         /** The finding the person tapped (its number in the list): the canvas shows its pin, scrolled into view. */
         checkFocus: null,
-        /** How high the findings sheet stands on a phone: the index of `SHEET_SNAPS` in `docks.js`. */
-        checkSheet: 1,
+        /** How high the findings sheet stands on a phone: the index of `SHEET_SNAPS` in `docks.js`; 0 is a bar, which it starts as. */
+        checkSheet: 0,
     };
 }

@@ -19,6 +19,7 @@ function compiled(): Map<string, string> {
         ["tokens.resolved.json", system.compiled.json],
         ["components.css", system.compiled.components],
         ["tokens.studio.json", system.compiled.studio!],
+        ["names.md", system.compiled.names!],
     ]);
 
     for (const [mode, text] of Object.entries(system.compiled.modes!)) {

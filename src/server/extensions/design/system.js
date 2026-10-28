@@ -1270,8 +1270,9 @@ export function shadowOf(value) {
 }
 
 /**
- * A shadow in a few characters, for a tile: its first layer as `x y blur`, in pixels, and its color's alpha when it has one,
- * and `+N` for the layers after it: `0 18 40 / 14% +1`. A size that is not in pixels is written as it is.
+ * A shadow in words and few of them, for a tile: its first layer as `y 18 · blur 40 · 14%` (the offset down, the blur, and the
+ * color's alpha when it has one), with `x` and `spread` only when they are not 0, `inset` first when it is, and the layers after
+ * the first as `+1 layer`. A size that is not in pixels is written as it is.
  */
 export function shadowSummary(value) {
     const layers = (Array.isArray(value) ? value : [value]).filter(isObject);
@@ -1284,15 +1285,23 @@ export function shadowSummary(value) {
     const size = (member) => {
         const px = pixelsOf(member ?? "0px");
 
-        return px === null ? (cssOf("dimension", member) ?? "0") : String(Math.round(px * 10) / 10);
+        return px === null ? (cssOf("dimension", member) ?? "0") : Math.round(px * 10) / 10;
     };
 
+    const [x, y, blur, spread] = [first.offsetX, first.offsetY, first.blur, first.spread].map(size);
     const alpha = parseColor(first.color)?.a;
-    const parts = [size(first.offsetX), size(first.offsetY), size(first.blur)].join(" ");
+    const parts = [
+        ...(x !== 0 && x !== "0" ? [`x ${x}`] : []),
+        `y ${y}`,
+        `blur ${blur}`,
+        ...(spread !== 0 && spread !== "0" && spread !== undefined ? [`spread ${spread}`] : []),
+        ...(alpha === undefined || alpha >= 1 ? [] : [`${Math.round(alpha * 100)}%`]),
+        ...(layers.length > 1
+            ? [`+${layers.length - 1} layer${layers.length === 2 ? "" : "s"}`]
+            : []),
+    ];
 
-    return `${first.inset === true ? "inset " : ""}${parts}${
-        alpha === undefined || alpha >= 1 ? "" : ` / ${Math.round(alpha * 100)}%`
-    }${layers.length > 1 ? ` +${layers.length - 1}` : ""}`;
+    return `${first.inset === true ? "inset " : ""}${parts.join(" · ")}`;
 }
 
 /** How many things the unsaved edits change in `system` (a step that puts a value back changes nothing). */

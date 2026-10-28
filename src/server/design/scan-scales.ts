@@ -50,6 +50,8 @@ export interface Inferred {
     imported: number;
     /** Tokens the engine refused, dropped from the draft. */
     dropped: string[];
+    /** The scales that are a thin guess, one line each, for the top of the report. */
+    review: string[];
 }
 
 export const BEZIER: Record<string, number[]> = {
