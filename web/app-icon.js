@@ -1,8 +1,8 @@
-// The app's icons in the colors in use: the tab's icon and the home-screen icon (`apple-touch-icon`, which iOS and
-// Android's "add to home screen" shortcut read). The files in this folder (`icon.svg` and its PNGs) stay as the first
-// load's icons, and as what shows when this module cannot draw (no canvas, no decoding). The web app manifest keeps its
-// own icons: an installed Android app needs a manifest at an address the browser can fetch again, which a page cannot
-// make per palette.
+// The app's icons in the colors in use: the tab's icon (an SVG drawn here) and the home-screen icon (`apple-touch-icon`,
+// which iOS and Android's "add to home screen" shortcut read; the server draws its PNG). The files in this folder
+// (`icon.svg` and its PNGs) are the first load's icons, and stay where this module does not run. The web app manifest
+// keeps its own icons: an installed Android app needs a manifest at an address the browser can fetch again, which a
+// page cannot make per palette.
 
 const SIZE = 512;
 const APPLE = 180;
@@ -34,21 +34,23 @@ export function iconSvg(vars) {
 
 const svgUrl = (svg) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
-/** The icon as a PNG data URL of `size` pixels. */
-async function iconPng(vars, size) {
-    const image = new Image();
+/**
+ * The home-screen icon's address: the server draws the PNG (`src/server/icon-render.ts`). A phone fetches it when the
+ * icon is added, and does not take a `data:` or `blob:` address for it.
+ */
+const homeIconUrl = (vars) => {
+    const color = (name) => (vars[name] ?? DEFAULTS[name]).replace("#", "");
+    const query = new URLSearchParams({
+        frame: color("--o-bg-darker"),
+        card: color("--o-bg"),
+        ring1: color("--o-cyan"),
+        ring2: color("--o-green"),
+        pi: color("--o-orange"),
+        size: String(APPLE),
+    });
 
-    image.src = svgUrl(iconSvg(vars));
-    await image.decode();
-
-    const canvas = document.createElement("canvas");
-
-    canvas.width = size;
-    canvas.height = size;
-    canvas.getContext("2d").drawImage(image, 0, 0, size, size);
-
-    return canvas.toDataURL("image/png");
-}
+    return `/app-icon.png?${query}`;
+};
 
 function setLink(rel, href, type) {
     let link = document.querySelector(`link[rel="${rel}"]`);
@@ -68,11 +70,8 @@ function setLink(rel, href, type) {
 
 let applied = "";
 
-/**
- * Put the icons for `vars` on the page: the tab's at once, the home-screen one when drawn. The same colors again do
- * nothing. A home-screen icon that cannot be drawn leaves the app's own, and is tried again with the next call.
- */
-export async function applyIcons(vars) {
+/** Put the icons for `vars` on the page: the tab's icon and the home-screen icon. The same colors again do nothing. */
+export function applyIcons(vars) {
     const key = JSON.stringify(Object.keys(DEFAULTS).map((name) => vars[name]));
 
     if (key === applied) {
@@ -81,18 +80,5 @@ export async function applyIcons(vars) {
 
     applied = key;
     setLink("icon", svgUrl(iconSvg(vars)), "image/svg+xml");
-
-    try {
-        const apple = await iconPng(vars, APPLE);
-
-        if (key === applied) {
-            setLink("apple-touch-icon", apple);
-        }
-    } catch (error) {
-        console.warn("Pi Pocket: the home-screen icon could not be drawn in these colors.", error);
-
-        if (key === applied) {
-            applied = "";
-        }
-    }
+    setLink("apple-touch-icon", homeIconUrl(vars));
 }
