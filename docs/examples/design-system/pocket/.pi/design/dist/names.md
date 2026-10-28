@@ -22,12 +22,10 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `color.neutral.100` | `--color-neutral-100` | `--color-neutral-100` | `bg-neutral-100` `text-neutral-100` `border-neutral-100` |
 | `color.neutral.200` | `--color-neutral-200` | `--color-neutral-200` | `bg-neutral-200` `text-neutral-200` `border-neutral-200` |
 | `color.neutral.300` | `--color-neutral-300` | `--color-neutral-300` | `bg-neutral-300` `text-neutral-300` `border-neutral-300` |
-| `color.neutral.350` | `--color-neutral-350` | `--color-neutral-350` | `bg-neutral-350` `text-neutral-350` `border-neutral-350` |
 | `color.neutral.400` | `--color-neutral-400` | `--color-neutral-400` | `bg-neutral-400` `text-neutral-400` `border-neutral-400` |
 | `color.neutral.500` | `--color-neutral-500` | `--color-neutral-500` | `bg-neutral-500` `text-neutral-500` `border-neutral-500` |
 | `color.neutral.550` | `--color-neutral-550` | `--color-neutral-550` | `bg-neutral-550` `text-neutral-550` `border-neutral-550` |
 | `color.neutral.600` | `--color-neutral-600` | `--color-neutral-600` | `bg-neutral-600` `text-neutral-600` `border-neutral-600` |
-| `color.neutral.650` | `--color-neutral-650` | `--color-neutral-650` | `bg-neutral-650` `text-neutral-650` `border-neutral-650` |
 | `color.neutral.700` | `--color-neutral-700` | `--color-neutral-700` | `bg-neutral-700` `text-neutral-700` `border-neutral-700` |
 | `color.neutral.750` | `--color-neutral-750` | `--color-neutral-750` | `bg-neutral-750` `text-neutral-750` `border-neutral-750` |
 | `color.neutral.800` | `--color-neutral-800` | `--color-neutral-800` | `bg-neutral-800` `text-neutral-800` `border-neutral-800` |
@@ -39,6 +37,7 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `color.blue.200` | `--color-blue-200` | `--color-blue-200` | `bg-blue-200` `text-blue-200` `border-blue-200` |
 | `color.blue.300` | `--color-blue-300` | `--color-blue-300` | `bg-blue-300` `text-blue-300` `border-blue-300` |
 | `color.blue.400` | `--color-blue-400` | `--color-blue-400` | `bg-blue-400` `text-blue-400` `border-blue-400` |
+| `color.blue.500` | `--color-blue-500` | `--color-blue-500` | `bg-blue-500` `text-blue-500` `border-blue-500` |
 | `color.blue.600` | `--color-blue-600` | `--color-blue-600` | `bg-blue-600` `text-blue-600` `border-blue-600` |
 | `color.blue.700` | `--color-blue-700` | `--color-blue-700` | `bg-blue-700` `text-blue-700` `border-blue-700` |
 | `color.blue.800` | `--color-blue-800` | `--color-blue-800` | `bg-blue-800` `text-blue-800` `border-blue-800` |
@@ -49,6 +48,7 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `color.red.200` | `--color-red-200` | `--color-red-200` | `bg-red-200` `text-red-200` `border-red-200` |
 | `color.red.300` | `--color-red-300` | `--color-red-300` | `bg-red-300` `text-red-300` `border-red-300` |
 | `color.red.400` | `--color-red-400` | `--color-red-400` | `bg-red-400` `text-red-400` `border-red-400` |
+| `color.red.500` | `--color-red-500` | `--color-red-500` | `bg-red-500` `text-red-500` `border-red-500` |
 | `color.red.600` | `--color-red-600` | `--color-red-600` | `bg-red-600` `text-red-600` `border-red-600` |
 | `color.red.700` | `--color-red-700` | `--color-red-700` | `bg-red-700` `text-red-700` `border-red-700` |
 | `color.red.800` | `--color-red-800` | `--color-red-800` | `bg-red-800` `text-red-800` `border-red-800` |
@@ -59,6 +59,7 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `color.yellow.200` | `--color-yellow-200` | `--color-yellow-200` | `bg-yellow-200` `text-yellow-200` `border-yellow-200` |
 | `color.yellow.300` | `--color-yellow-300` | `--color-yellow-300` | `bg-yellow-300` `text-yellow-300` `border-yellow-300` |
 | `color.yellow.400` | `--color-yellow-400` | `--color-yellow-400` | `bg-yellow-400` `text-yellow-400` `border-yellow-400` |
+| `color.yellow.500` | `--color-yellow-500` | `--color-yellow-500` | `bg-yellow-500` `text-yellow-500` `border-yellow-500` |
 | `color.yellow.600` | `--color-yellow-600` | `--color-yellow-600` | `bg-yellow-600` `text-yellow-600` `border-yellow-600` |
 | `color.yellow.700` | `--color-yellow-700` | `--color-yellow-700` | `bg-yellow-700` `text-yellow-700` `border-yellow-700` |
 | `color.yellow.800` | `--color-yellow-800` | `--color-yellow-800` | `bg-yellow-800` `text-yellow-800` `border-yellow-800` |
@@ -69,6 +70,7 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `color.orange.200` | `--color-orange-200` | `--color-orange-200` | `bg-orange-200` `text-orange-200` `border-orange-200` |
 | `color.orange.300` | `--color-orange-300` | `--color-orange-300` | `bg-orange-300` `text-orange-300` `border-orange-300` |
 | `color.orange.400` | `--color-orange-400` | `--color-orange-400` | `bg-orange-400` `text-orange-400` `border-orange-400` |
+| `color.orange.500` | `--color-orange-500` | `--color-orange-500` | `bg-orange-500` `text-orange-500` `border-orange-500` |
 | `color.orange.600` | `--color-orange-600` | `--color-orange-600` | `bg-orange-600` `text-orange-600` `border-orange-600` |
 | `color.orange.700` | `--color-orange-700` | `--color-orange-700` | `bg-orange-700` `text-orange-700` `border-orange-700` |
 | `color.orange.800` | `--color-orange-800` | `--color-orange-800` | `bg-orange-800` `text-orange-800` `border-orange-800` |
@@ -79,6 +81,7 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `color.green.200` | `--color-green-200` | `--color-green-200` | `bg-green-200` `text-green-200` `border-green-200` |
 | `color.green.300` | `--color-green-300` | `--color-green-300` | `bg-green-300` `text-green-300` `border-green-300` |
 | `color.green.400` | `--color-green-400` | `--color-green-400` | `bg-green-400` `text-green-400` `border-green-400` |
+| `color.green.500` | `--color-green-500` | `--color-green-500` | `bg-green-500` `text-green-500` `border-green-500` |
 | `color.green.600` | `--color-green-600` | `--color-green-600` | `bg-green-600` `text-green-600` `border-green-600` |
 | `color.green.700` | `--color-green-700` | `--color-green-700` | `bg-green-700` `text-green-700` `border-green-700` |
 | `color.green.800` | `--color-green-800` | `--color-green-800` | `bg-green-800` `text-green-800` `border-green-800` |
@@ -89,6 +92,7 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `color.cyan.200` | `--color-cyan-200` | `--color-cyan-200` | `bg-cyan-200` `text-cyan-200` `border-cyan-200` |
 | `color.cyan.300` | `--color-cyan-300` | `--color-cyan-300` | `bg-cyan-300` `text-cyan-300` `border-cyan-300` |
 | `color.cyan.400` | `--color-cyan-400` | `--color-cyan-400` | `bg-cyan-400` `text-cyan-400` `border-cyan-400` |
+| `color.cyan.500` | `--color-cyan-500` | `--color-cyan-500` | `bg-cyan-500` `text-cyan-500` `border-cyan-500` |
 | `color.cyan.600` | `--color-cyan-600` | `--color-cyan-600` | `bg-cyan-600` `text-cyan-600` `border-cyan-600` |
 | `color.cyan.700` | `--color-cyan-700` | `--color-cyan-700` | `bg-cyan-700` `text-cyan-700` `border-cyan-700` |
 | `color.cyan.800` | `--color-cyan-800` | `--color-cyan-800` | `bg-cyan-800` `text-cyan-800` `border-cyan-800` |
@@ -99,6 +103,7 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `color.magenta.200` | `--color-magenta-200` | `--color-magenta-200` | `bg-magenta-200` `text-magenta-200` `border-magenta-200` |
 | `color.magenta.300` | `--color-magenta-300` | `--color-magenta-300` | `bg-magenta-300` `text-magenta-300` `border-magenta-300` |
 | `color.magenta.400` | `--color-magenta-400` | `--color-magenta-400` | `bg-magenta-400` `text-magenta-400` `border-magenta-400` |
+| `color.magenta.500` | `--color-magenta-500` | `--color-magenta-500` | `bg-magenta-500` `text-magenta-500` `border-magenta-500` |
 | `color.magenta.600` | `--color-magenta-600` | `--color-magenta-600` | `bg-magenta-600` `text-magenta-600` `border-magenta-600` |
 | `color.magenta.700` | `--color-magenta-700` | `--color-magenta-700` | `bg-magenta-700` `text-magenta-700` `border-magenta-700` |
 | `color.magenta.800` | `--color-magenta-800` | `--color-magenta-800` | `bg-magenta-800` `text-magenta-800` `border-magenta-800` |
@@ -243,14 +248,17 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `space.10` | `--space-10` | `--spacing-10` | `p-10` `m-10` `gap-10` |
 | `space.12` | `--space-12` | `--spacing-12` | `p-12` `m-12` `gap-12` |
 | `space.16` | `--space-16` | `--spacing-16` | `p-16` `m-16` `gap-16` |
-| `space.gap.in` | `--space-gap-in` | `--spacing-in` | `p-in` `m-in` `gap-in` |
-| `space.gap.out` | `--space-gap-out` | `--spacing-out` | `p-out` `m-out` `gap-out` |
-| `space.hair` | `--space-hair` | `--spacing-hair` | `p-hair` `m-hair` `gap-hair` |
 
 ## radius
 
 | Token | `tokens.css` | `tailwind.css` | Utilities |
 | --- | --- | --- | --- |
+| `radius.scale.xs` | `--radius-scale-xs` | `--radius-scale-xs` | `rounded-scale-xs` |
+| `radius.scale.sm` | `--radius-scale-sm` | `--radius-scale-sm` | `rounded-scale-sm` |
+| `radius.scale.md` | `--radius-scale-md` | `--radius-scale-md` | `rounded-scale-md` |
+| `radius.scale.lg` | `--radius-scale-lg` | `--radius-scale-lg` | `rounded-scale-lg` |
+| `radius.scale.xl` | `--radius-scale-xl` | `--radius-scale-xl` | `rounded-scale-xl` |
+| `radius.scale.full` | `--radius-scale-full` | `--radius-scale-full` | `rounded-scale-full` |
 | `radius.mark` | `--radius-mark` | `--radius-mark` | `rounded-mark` |
 | `radius.tag` | `--radius-tag` | `--radius-tag` | `rounded-tag` |
 | `radius.seg` | `--radius-seg` | `--radius-seg` | `rounded-seg` |
@@ -274,11 +282,6 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `size.icon.md` | `--size-icon-md` | `--size-icon-md` | no utility: `var(--size-icon-md)` |
 | `size.icon.lg` | `--size-icon-lg` | `--size-icon-lg` | no utility: `var(--size-icon-lg)` |
 | `size.avatar` | `--size-avatar` | `--size-avatar` | no utility: `var(--size-avatar)` |
-| `size.step-mark` | `--size-step-mark` | `--size-step-mark` | no utility: `var(--size-step-mark)` |
-| `size.switch.width` | `--size-switch-width` | `--size-switch-width` | no utility: `var(--size-switch-width)` |
-| `size.switch.height` | `--size-switch-height` | `--size-switch-height` | no utility: `var(--size-switch-height)` |
-| `size.switch.thumb` | `--size-switch-thumb` | `--size-switch-thumb` | no utility: `var(--size-switch-thumb)` |
-| `size.dot` | `--size-dot` | `--size-dot` | no utility: `var(--size-dot)` |
 
 ## breakpoint
 
@@ -367,6 +370,7 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `button.danger.fg` | `--button-danger-fg` | `--color-button-danger-fg` | `bg-button-danger-fg` `text-button-danger-fg` `border-button-danger-fg` |
 | `button.disabled.bg` | `--button-disabled-bg` | `--color-button-disabled-bg` | `bg-button-disabled-bg` `text-button-disabled-bg` `border-button-disabled-bg` |
 | `button.disabled.fg` | `--button-disabled-fg` | `--color-button-disabled-fg` | `bg-button-disabled-fg` `text-button-disabled-fg` `border-button-disabled-fg` |
+| `button.focus-offset` | `--button-focus-offset` | `--button-focus-offset` | no utility: `var(--button-focus-offset)` |
 
 ## input
 
@@ -390,8 +394,10 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | --- | --- | --- | --- |
 | `switch.track-off` | `--switch-track-off` | `--color-switch-track-off` | `bg-switch-track-off` `text-switch-track-off` `border-switch-track-off` |
 | `switch.track-on` | `--switch-track-on` | `--color-switch-track-on` | `bg-switch-track-on` `text-switch-track-on` `border-switch-track-on` |
-| `switch.thumb` | `--switch-thumb` | `--color-switch-thumb` | `bg-switch-thumb` `text-switch-thumb` `border-switch-thumb` |
+| `switch.thumb` | `--switch-thumb` | `--switch-thumb` | no utility: `var(--switch-thumb)` |
 | `switch.thumb-on` | `--switch-thumb-on` | `--color-switch-thumb-on` | `bg-switch-thumb-on` `text-switch-thumb-on` `border-switch-thumb-on` |
+| `switch.width` | `--switch-width` | `--switch-width` | no utility: `var(--switch-width)` |
+| `switch.height` | `--switch-height` | `--switch-height` | no utility: `var(--switch-height)` |
 
 ## segmented
 
@@ -403,6 +409,7 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `segmented.fg-selected` | `--segmented-fg-selected` | `--color-segmented-fg-selected` | `bg-segmented-fg-selected` `text-segmented-fg-selected` `border-segmented-fg-selected` |
 | `segmented.radius` | `--segmented-radius` | `--segmented-radius` | no utility: `var(--segmented-radius)` |
 | `segmented.radius-seg` | `--segmented-radius-seg` | `--segmented-radius-seg` | no utility: `var(--segmented-radius-seg)` |
+| `segmented.gap` | `--segmented-gap` | `--segmented-gap` | no utility: `var(--segmented-gap)` |
 
 ## badge
 
@@ -424,6 +431,8 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `badge.danger.fg` | `--badge-danger-fg` | `--color-badge-danger-fg` | `bg-badge-danger-fg` `text-badge-danger-fg` `border-badge-danger-fg` |
 | `badge.danger.border` | `--badge-danger-border` | `--color-badge-danger-border` | `bg-badge-danger-border` `text-badge-danger-border` `border-badge-danger-border` |
 | `badge.radius` | `--badge-radius` | `--badge-radius` | no utility: `var(--badge-radius)` |
+| `badge.padding-y` | `--badge-padding-y` | `--badge-padding-y` | no utility: `var(--badge-padding-y)` |
+| `badge.dot` | `--badge-dot` | `--badge-dot` | no utility: `var(--badge-dot)` |
 
 ## card
 
@@ -455,6 +464,7 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `menu.row-height` | `--menu-row-height` | `--menu-row-height` | no utility: `var(--menu-row-height)` |
 | `menu.row-hover` | `--menu-row-hover` | `--color-menu-row-hover` | `bg-menu-row-hover` `text-menu-row-hover` `border-menu-row-hover` |
 | `menu.row-selected` | `--menu-row-selected` | `--color-menu-row-selected` | `bg-menu-row-selected` `text-menu-row-selected` `border-menu-row-selected` |
+| `menu.padding` | `--menu-padding` | `--menu-padding` | no utility: `var(--menu-padding)` |
 
 ## step
 
@@ -475,3 +485,10 @@ Each token has a name in three places: the variable in `tokens.css`, the variabl
 | `code-block.radius` | `--code-block-radius` | `--code-block-radius` | no utility: `var(--code-block-radius)` |
 | `code-block.head-bg` | `--code-block-head-bg` | `--color-code-block-head-bg` | `bg-code-block-head-bg` `text-code-block-head-bg` `border-code-block-head-bg` |
 | `code-block.border` | `--code-block-border` | `--color-code-block-border` | `bg-code-block-border` `text-code-block-border` `border-code-block-border` |
+
+## layout
+
+| Token | `tokens.css` | `tailwind.css` | Utilities |
+| --- | --- | --- | --- |
+| `layout.gap.in` | `--layout-gap-in` | `--layout-gap-in` | no utility: `var(--layout-gap-in)` |
+| `layout.gap.out` | `--layout-gap-out` | `--layout-gap-out` | no utility: `var(--layout-gap-out)` |

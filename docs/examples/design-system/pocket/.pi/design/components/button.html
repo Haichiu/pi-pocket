@@ -23,6 +23,7 @@
             "button.danger.fg",
             "button.disabled.bg",
             "button.disabled.fg",
+            "button.focus-offset",
             "button.gap",
             "button.ghost.bg-active",
             "button.ghost.bg-hover",
@@ -48,8 +49,7 @@
             "motion.ease.standard",
             "shadow.focus-ring",
             "size.tap",
-            "space.2",
-            "space.hair"
+            "space.2"
         ]
     }
 </script>
@@ -82,7 +82,7 @@
     .pk-button:focus-visible,
     .pk-button.is-focus {
         outline: var(--border-width-thick) solid transparent;
-        outline-offset: var(--space-hair);
+        outline-offset: var(--button-focus-offset);
         box-shadow: var(--shadow-focus-ring);
     }
 

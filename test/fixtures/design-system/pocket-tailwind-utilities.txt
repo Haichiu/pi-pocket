@@ -36,6 +36,7 @@ bg-blue-200
 bg-blue-300
 bg-blue-400
 bg-blue-50
+bg-blue-500
 bg-blue-600
 bg-blue-700
 bg-blue-800
@@ -81,6 +82,7 @@ bg-cyan-200
 bg-cyan-300
 bg-cyan-400
 bg-cyan-50
+bg-cyan-500
 bg-cyan-600
 bg-cyan-700
 bg-cyan-800
@@ -99,6 +101,7 @@ bg-green-200
 bg-green-300
 bg-green-400
 bg-green-50
+bg-green-500
 bg-green-600
 bg-green-700
 bg-green-800
@@ -122,6 +125,7 @@ bg-magenta-200
 bg-magenta-300
 bg-magenta-400
 bg-magenta-50
+bg-magenta-500
 bg-magenta-600
 bg-magenta-700
 bg-magenta-800
@@ -135,13 +139,11 @@ bg-neutral-0
 bg-neutral-100
 bg-neutral-200
 bg-neutral-300
-bg-neutral-350
 bg-neutral-400
 bg-neutral-50
 bg-neutral-500
 bg-neutral-550
 bg-neutral-600
-bg-neutral-650
 bg-neutral-700
 bg-neutral-750
 bg-neutral-800
@@ -153,6 +155,7 @@ bg-orange-200
 bg-orange-300
 bg-orange-400
 bg-orange-50
+bg-orange-500
 bg-orange-600
 bg-orange-700
 bg-orange-800
@@ -165,6 +168,7 @@ bg-red-200
 bg-red-300
 bg-red-400
 bg-red-50
+bg-red-500
 bg-red-600
 bg-red-700
 bg-red-800
@@ -190,7 +194,6 @@ bg-success-line
 bg-success-soft
 bg-sunken
 bg-surface
-bg-switch-thumb
 bg-switch-thumb-on
 bg-switch-track-off
 bg-switch-track-on
@@ -204,6 +207,7 @@ bg-yellow-200
 bg-yellow-300
 bg-yellow-400
 bg-yellow-50
+bg-yellow-500
 bg-yellow-600
 bg-yellow-700
 bg-yellow-800
@@ -247,6 +251,7 @@ border-blue-200
 border-blue-300
 border-blue-400
 border-blue-50
+border-blue-500
 border-blue-600
 border-blue-700
 border-blue-800
@@ -292,6 +297,7 @@ border-cyan-200
 border-cyan-300
 border-cyan-400
 border-cyan-50
+border-cyan-500
 border-cyan-600
 border-cyan-700
 border-cyan-800
@@ -310,6 +316,7 @@ border-green-200
 border-green-300
 border-green-400
 border-green-50
+border-green-500
 border-green-600
 border-green-700
 border-green-800
@@ -333,6 +340,7 @@ border-magenta-200
 border-magenta-300
 border-magenta-400
 border-magenta-50
+border-magenta-500
 border-magenta-600
 border-magenta-700
 border-magenta-800
@@ -346,13 +354,11 @@ border-neutral-0
 border-neutral-100
 border-neutral-200
 border-neutral-300
-border-neutral-350
 border-neutral-400
 border-neutral-50
 border-neutral-500
 border-neutral-550
 border-neutral-600
-border-neutral-650
 border-neutral-700
 border-neutral-750
 border-neutral-800
@@ -364,6 +370,7 @@ border-orange-200
 border-orange-300
 border-orange-400
 border-orange-50
+border-orange-500
 border-orange-600
 border-orange-700
 border-orange-800
@@ -376,6 +383,7 @@ border-red-200
 border-red-300
 border-red-400
 border-red-50
+border-red-500
 border-red-600
 border-red-700
 border-red-800
@@ -401,7 +409,6 @@ border-success-line
 border-success-soft
 border-sunken
 border-surface
-border-switch-thumb
 border-switch-thumb-on
 border-switch-track-off
 border-switch-track-on
@@ -415,6 +422,7 @@ border-yellow-200
 border-yellow-300
 border-yellow-400
 border-yellow-50
+border-yellow-500
 border-yellow-600
 border-yellow-700
 border-yellow-800
@@ -448,15 +456,18 @@ p-4
 p-5
 p-6
 p-8
-p-hair
-p-in
-p-out
 rounded-card
 rounded-control
 rounded-float
 rounded-mark
 rounded-pill
 rounded-row
+rounded-scale-full
+rounded-scale-lg
+rounded-scale-md
+rounded-scale-sm
+rounded-scale-xl
+rounded-scale-xs
 rounded-seg
 rounded-sheet
 rounded-tag
@@ -509,6 +520,7 @@ text-blue-200
 text-blue-300
 text-blue-400
 text-blue-50
+text-blue-500
 text-blue-600
 text-blue-700
 text-blue-800
@@ -559,6 +571,7 @@ text-cyan-200
 text-cyan-300
 text-cyan-400
 text-cyan-50
+text-cyan-500
 text-cyan-600
 text-cyan-700
 text-cyan-800
@@ -578,6 +591,7 @@ text-green-200
 text-green-300
 text-green-400
 text-green-50
+text-green-500
 text-green-600
 text-green-700
 text-green-800
@@ -604,6 +618,7 @@ text-magenta-200
 text-magenta-300
 text-magenta-400
 text-magenta-50
+text-magenta-500
 text-magenta-600
 text-magenta-700
 text-magenta-800
@@ -618,13 +633,11 @@ text-neutral-0
 text-neutral-100
 text-neutral-200
 text-neutral-300
-text-neutral-350
 text-neutral-400
 text-neutral-50
 text-neutral-500
 text-neutral-550
 text-neutral-600
-text-neutral-650
 text-neutral-700
 text-neutral-750
 text-neutral-800
@@ -636,6 +649,7 @@ text-orange-200
 text-orange-300
 text-orange-400
 text-orange-50
+text-orange-500
 text-orange-600
 text-orange-700
 text-orange-800
@@ -649,6 +663,7 @@ text-red-200
 text-red-300
 text-red-400
 text-red-50
+text-red-500
 text-red-600
 text-red-700
 text-red-800
@@ -676,7 +691,6 @@ text-success-line
 text-success-soft
 text-sunken
 text-surface
-text-switch-thumb
 text-switch-thumb-on
 text-switch-track-off
 text-switch-track-on
@@ -693,6 +707,7 @@ text-yellow-200
 text-yellow-300
 text-yellow-400
 text-yellow-50
+text-yellow-500
 text-yellow-600
 text-yellow-700
 text-yellow-800

@@ -47,102 +47,107 @@
     --color-neutral-100: #e1e2e7;
     --color-neutral-200: #d0d5e3;
     --color-neutral-300: #c0caf5;
-    --color-neutral-350: #b4bee6;
     --color-neutral-400: #a9b1d6;
     --color-neutral-500: #9097b8;
-    --color-neutral-550: #7882a8;
+    --color-neutral-550: #7882a8; /* A half step, kept on purpose: the one gray that reaches 3:1 on a ligh… */
     --color-neutral-600: #565f89;
-    --color-neutral-650: #3f4254;
     --color-neutral-700: #2b2d3b;
-    --color-neutral-750: #252734;
+    --color-neutral-750: #252734; /* A half step, kept on purpose: the dark mode needs a ground between su… */
     --color-neutral-800: #20212d;
     --color-neutral-850: #1a1b26;
     --color-neutral-900: #13141c;
     --color-neutral-950: #0e0e14;
 
     /* color.blue */
-    --color-blue-50: #e0e8f9;
-    --color-blue-100: #98bafe;
-    --color-blue-200: #b7ccf8;
-    --color-blue-300: #7aa2f7;
-    --color-blue-400: #6b92e6;
-    --color-blue-600: #4a5f8f;
-    --color-blue-700: #3557a5;
-    --color-blue-800: #284895;
-    --color-blue-900: #1b3a85;
-    --color-blue-950: #272e43;
+    --color-blue-50: #e9f0fe;
+    --color-blue-100: #cdddfe;
+    --color-blue-200: #afcaff;
+    --color-blue-300: #93b6fe;
+    --color-blue-400: #7aa2f7;
+    --color-blue-500: #678ad5;
+    --color-blue-600: #5573b5;
+    --color-blue-700: #435d95;
+    --color-blue-800: #324877;
+    --color-blue-900: #223359;
+    --color-blue-950: #13203e;
 
     /* color.red */
-    --color-red-50: #f4e1e8;
-    --color-red-100: #fe9aa9;
-    --color-red-200: #f6b6c4;
-    --color-red-300: #f7768e;
-    --color-red-400: #e5667f;
-    --color-red-600: #89495a;
-    --color-red-700: #a72c4c;
-    --color-red-800: #96193e;
-    --color-red-900: #840032;
-    --color-red-950: #392835;
+    --color-red-50: #feebed;
+    --color-red-100: #fecfd5;
+    --color-red-200: #ffb2bc;
+    --color-red-300: #ff93a4;
+    --color-red-400: #f7768e;
+    --color-red-500: #d56379;
+    --color-red-600: #b45164;
+    --color-red-700: #943f50;
+    --color-red-800: #762e3d;
+    --color-red-900: #581e2b;
+    --color-red-950: #3d0f19;
 
     /* color.yellow */
-    --color-yellow-50: #f1eae2;
-    --color-yellow-100: #f4c787;
-    --color-yellow-200: #ead2b1;
-    --color-yellow-300: #e0af68;
-    --color-yellow-400: #d09f58;
-    --color-yellow-600: #7d6547;
-    --color-yellow-700: #7c5200;
-    --color-yellow-800: #6a4600;
-    --color-yellow-900: #593a00;
-    --color-yellow-950: #36302f;
+    --color-yellow-50: #feedd7;
+    --color-yellow-100: #f9deb9;
+    --color-yellow-200: #f1ce9e;
+    --color-yellow-300: #e9be83;
+    --color-yellow-400: #e0af68;
+    --color-yellow-500: #c09455;
+    --color-yellow-600: #a07a43;
+    --color-yellow-700: #826232;
+    --color-yellow-800: #644a21;
+    --color-yellow-900: #493311;
+    --color-yellow-950: #2f1e04;
 
     /* color.orange */
-    --color-orange-50: #f3e5e5;
-    --color-orange-100: #fdab96;
-    --color-orange-200: #f0c4ba;
-    --color-orange-300: #eb927b;
-    --color-orange-400: #da836c;
-    --color-orange-600: #835751;
-    --color-orange-700: #93422e;
-    --color-orange-800: #833420;
-    --color-orange-900: #732511;
-    --color-orange-950: #372c32;
+    --color-orange-50: #feebe6;
+    --color-orange-100: #ffd4c8;
+    --color-orange-200: #fdbcab;
+    --color-orange-300: #f4a793;
+    --color-orange-400: #eb927b;
+    --color-orange-500: #ca7c67;
+    --color-orange-600: #aa6654;
+    --color-orange-700: #8b5142;
+    --color-orange-800: #6d3d30;
+    --color-orange-900: #512a20;
+    --color-orange-950: #361810;
 
     /* color.green */
-    --color-green-50: #e6efe2;
-    --color-green-100: #b7e38a;
-    --color-green-200: #c9e2b2;
-    --color-green-300: #9ece6a;
-    --color-green-400: #8fbe5a;
-    --color-green-600: #5c7548;
-    --color-green-700: #406501;
-    --color-green-800: #355500;
-    --color-green-900: #2b4700;
-    --color-green-950: #2c3430;
+    --color-green-50: #e5f7d5;
+    --color-green-100: #d3eeb9;
+    --color-green-200: #c1e39f;
+    --color-green-300: #afd985;
+    --color-green-400: #9ece6a;
+    --color-green-500: #85af57;
+    --color-green-600: #6d9244;
+    --color-green-700: #567532;
+    --color-green-800: #405a21;
+    --color-green-900: #2b4011;
+    --color-green-950: #172703;
 
     /* color.cyan */
-    --color-cyan-50: #d8e7ed;
-    --color-cyan-100: #65b2be;
-    --color-cyan-200: #9cc9d2;
-    --color-cyan-300: #449dab;
-    --color-cyan-400: #328e9b;
-    --color-cyan-600: #2f5c69;
-    --color-cyan-700: #056470;
-    --color-cyan-800: #025560;
-    --color-cyan-900: #004750;
-    --color-cyan-950: #202d39;
+    --color-cyan-50: #daf6fb;
+    --color-cyan-100: #b4e0e8;
+    --color-cyan-200: #90c9d3;
+    --color-cyan-300: #6cb3bf;
+    --color-cyan-400: #449dab;
+    --color-cyan-500: #388894;
+    --color-cyan-600: #2d737e;
+    --color-cyan-700: #225e68;
+    --color-cyan-800: #184b53;
+    --color-cyan-900: #0d383f;
+    --color-cyan-950: #05272c;
 
     /* color.magenta */
-    --color-magenta-50: #e9e5f6;
-    --color-magenta-100: #c2a6f7;
-    --color-magenta-200: #d1c2f0;
-    --color-magenta-300: #ad8ee6;
-    --color-magenta-400: #9e7fd5;
-    --color-magenta-600: #645586;
-    --color-magenta-700: #6a4b9c;
-    --color-magenta-800: #5c3c8d;
-    --color-magenta-900: #4f2e7d;
-    --color-magenta-950: #2f2b41;
+    --color-magenta-50: #f2edfe;
+    --color-magenta-100: #e1d4fe;
+    --color-magenta-200: #d0bbfb;
+    --color-magenta-300: #bea5f1;
+    --color-magenta-400: #ad8ee6;
+    --color-magenta-500: #9479c7;
+    --color-magenta-600: #7c64a8;
+    --color-magenta-700: #65518b;
+    --color-magenta-800: #4f3e6e;
+    --color-magenta-900: #3a2b53;
+    --color-magenta-950: #261a39;
 
     /* color.alpha.light */
     --color-alpha-light-faint: #a9b1d612;
@@ -217,62 +222,13 @@
     --z-popover: 45;
     --z-toast: 60;
 
-    /* space */
-    --spacing-0: 0px;
-    --spacing-1: 4px;
-    --spacing-2: 8px;
-    --spacing-3: 12px;
-    --spacing-4: 16px;
-    --spacing-5: 20px;
-    --spacing-6: 24px;
-    --spacing-8: 32px;
-    --spacing-10: 40px;
-    --spacing-12: 48px;
-    --spacing-16: 64px;
-
-    /* space.gap */
-    --spacing-in: 4px; /* Between things inside one tile. */
-    --spacing-out: 8px; /* Between tiles. */
-
-    /* space */
-    --spacing-hair: 2px; /* A hairline of space: the padding of a badge, the offset of a focus ri… */
-
-    /* radius */
-    --radius-mark: 2px; /* State squares. */
-    --radius-tag: 4px; /* Inline code, keys, small tags. */
-    --radius-seg: 5px; /* A segment in its track. */
-    --radius-row: 6px; /* Small buttons and list rows. */
-    --radius-control: 7px; /* Icon buttons, fields, segmented tracks. */
-    --radius-card: 8px; /* Cards and primary buttons. */
-    --radius-window: 10px; /* Windows, approval cards, peek tiles. */
-    --radius-sheet: 12px; /* The message box, sheets, the launcher. */
-    --radius-float: 12px; /* Pop-ups and menus. Equal to radius.sheet today; kept apart so that fl… */
-    --radius-pill: 999px; /* Pills and avatars. */
-
-    /* size.control */
-    --size-control-sm: 28px;
-    --size-control-md: 36px;
-    --size-control-lg: 44px;
-
-    /* size */
-    --size-tap: 44px; /* The smallest touch target on a touch screen. */
-
-    /* size.icon */
-    --size-icon-sm: 14px;
-    --size-icon-md: 16px;
-    --size-icon-lg: 20px;
-
-    /* size */
-    --size-avatar: 28px;
-    --size-step-mark: 19px; /* The mark of a step in an activity timeline. */
-
-    /* size.switch */
-    --size-switch-width: 36px;
-    --size-switch-height: 20px;
-    --size-switch-thumb: 14px;
-
-    /* size */
-    --size-dot: 6px; /* A status dot. */
+    /* radius.scale */
+    --radius-scale-xs: 2px; /* State squares and the smallest marks. */
+    --radius-scale-sm: 4px; /* Inline code, keys, tags, and segments. */
+    --radius-scale-md: 6px; /* Rows, buttons, and fields. */
+    --radius-scale-lg: 8px; /* Cards and windows. */
+    --radius-scale-xl: 12px; /* Sheets, the message box, and pop-ups. */
+    --radius-scale-full: 999px; /* Pills and avatars: fully round. */
 
     /* breakpoint */
     --breakpoint-sm: 480px;
@@ -328,12 +284,12 @@
     --color-danger-on-fill: var(--color-neutral-0); /* Text on the danger fill. */
 
     /* color.warning */
-    --color-warning: var(--color-yellow-700); /* Warnings and cautions. Text and icons. */
+    --color-warning: var(--color-yellow-800); /* Warnings and cautions. Text and icons. */
     --color-warning-soft: var(--color-yellow-50); /* A wash behind warning messages. */
     --color-warning-line: var(--color-yellow-200); /* The border of a warning message. */
 
     /* color.success */
-    --color-success: var(--color-green-700); /* Success and done. Text and icons. */
+    --color-success: var(--color-green-800); /* Success and done. Text and icons. */
     --color-success-soft: var(--color-green-50); /* A wash behind success messages. */
     --color-success-line: var(--color-green-200); /* The border of a success message. */
 
@@ -352,15 +308,56 @@
     --color-code-bg: var(--color-neutral-100); /* The ground of code. */
     --color-code-text: var(--color-neutral-850); /* Code without a color of its own. */
     --color-code-keyword: var(--color-magenta-700); /* Keywords. */
-    --color-code-string: var(--color-green-700); /* Strings. */
+    --color-code-string: var(--color-green-800); /* Strings. */
     --color-code-number: var(--color-orange-700); /* Numbers. */
     --color-code-function: var(--color-blue-700); /* Functions. */
-    --color-code-type: var(--color-yellow-700); /* Types. */
+    --color-code-type: var(--color-yellow-800); /* Types. */
     --color-code-operator: var(--color-cyan-700); /* Operators. */
     --color-code-tag: var(--color-red-700); /* Tags and selectors. */
 
     /* color.shadow */
     --color-shadow: var(--color-alpha-shadow-light); /* The color of every shadow. */
+
+    /* space */
+    --spacing-0: 0px;
+    --spacing-1: 4px;
+    --spacing-2: 8px;
+    --spacing-3: 12px;
+    --spacing-4: 16px;
+    --spacing-5: 20px;
+    --spacing-6: 24px;
+    --spacing-8: 32px;
+    --spacing-10: 40px;
+    --spacing-12: 48px;
+    --spacing-16: 64px;
+
+    /* radius */
+    --radius-mark: var(--radius-scale-xs); /* State squares. */
+    --radius-tag: var(--radius-scale-sm); /* Inline code, keys, small tags. */
+    --radius-seg: var(--radius-scale-sm); /* A segment in its track. The app uses 5 px; here 4 px, on the scale. */
+    --radius-row: var(--radius-scale-md); /* Small buttons and list rows. */
+    --radius-control: var(--radius-scale-md); /* Icon buttons, fields, segmented tracks. The app uses 7 px; here 6 px,… */
+    --radius-card: var(--radius-scale-lg); /* Cards and primary buttons. */
+    --radius-window: var(--radius-scale-lg); /* Windows, approval cards, peek tiles. The app uses 10 px; here 8 px, t… */
+    --radius-sheet: var(--radius-scale-xl); /* The message box, sheets, the launcher. */
+    --radius-float: var(--radius-scale-xl); /* Pop-ups and menus. The same step as a sheet; kept apart so that float… */
+    --radius-pill: var(--radius-scale-full); /* Pills and avatars. */
+
+    /* size.control */
+    --size-control-sm: 28px;
+    --size-control-md: 36px;
+    --size-control-lg: 44px;
+
+    /* size */
+    --size-tap: 44px; /* The smallest touch target on a touch screen. */
+
+    /* size.icon */
+    --size-icon-sm: 14px;
+    --size-icon-md: 16px;
+    --size-icon-lg: 20px;
+
+    /* size */
+    --size-avatar: 28px;
 
     /* shadow */
     --shadow-lift: 0px 18px 40px -18px var(--color-shadow), 0px 2px 6px -2px var(--color-shadow); /* A soft lift: the message box. */
@@ -437,6 +434,10 @@
     --motion-transition-fade: var(--motion-duration-fade) var(--ease-standard) 0ms; /* Something fades in. */
     --motion-transition-exit: var(--motion-duration-exit) var(--motion-ease-exit) 0ms; /* Something leaves. */
 
+    /* layout.gap */
+    --layout-gap-in: var(--spacing-1); /* Between things inside one tile. */
+    --layout-gap-out: var(--spacing-2); /* Between tiles. */
+
     /* === Component tokens === */
 
     /* button */
@@ -471,6 +472,9 @@
     --color-button-disabled-bg: var(--color-selected);
     --color-button-disabled-fg: var(--color-disabled);
 
+    /* button */
+    --button-focus-offset: 2px; /* The gap between a button and its focus ring. */
+
     /* input */
     --color-input-bg: var(--color-raised);
     --color-input-fg: var(--color-text);
@@ -487,8 +491,10 @@
     /* switch */
     --color-switch-track-off: var(--color-strong);
     --color-switch-track-on: var(--color-accent-fill);
-    --color-switch-thumb: var(--color-inverse);
+    --switch-thumb: 14px; /* The size of the thumb. */
     --color-switch-thumb-on: var(--color-accent-on-fill);
+    --switch-width: 36px; /* The width of the track. */
+    --switch-height: 20px; /* The height of the track. */
 
     /* segmented */
     --color-segmented-track: var(--color-selected);
@@ -497,6 +503,7 @@
     --color-segmented-fg-selected: var(--color-text);
     --segmented-radius: var(--radius-control);
     --segmented-radius-seg: var(--radius-seg);
+    --segmented-gap: var(--spacing-1); /* The gap between segments, and around them. */
 
     /* badge.neutral */
     --color-badge-neutral-bg: var(--color-selected);
@@ -525,6 +532,8 @@
 
     /* badge */
     --badge-radius: var(--radius-pill);
+    --badge-padding-y: 2px; /* The vertical padding of a badge. */
+    --badge-dot: 6px; /* The status dot in a badge. */
 
     /* card */
     --color-card-bg: var(--color-surface);
@@ -547,9 +556,10 @@
     --menu-row-height: var(--size-control-md);
     --color-menu-row-hover: var(--color-selected);
     --color-menu-row-selected: var(--color-accent-soft);
+    --menu-padding: var(--spacing-1); /* The padding of a menu around its rows. */
 
     /* step */
-    --step-mark-size: var(--size-step-mark);
+    --step-mark-size: 19px;
     --color-step-running: var(--color-spark);
     --color-step-done: var(--color-success);
     --color-step-failed: var(--color-danger);
@@ -590,56 +600,56 @@
     /* color.border */
     --color-subtle: var(--color-alpha-light-soft);
     --color-border: var(--color-alpha-light-medium);
-    --color-focus: var(--color-blue-300);
+    --color-focus: var(--color-blue-400);
 
     /* color.accent */
-    --color-accent: var(--color-blue-300);
-    --color-accent-fill: var(--color-blue-300);
-    --color-accent-fill-hover: var(--color-blue-100);
-    --color-accent-fill-active: var(--color-blue-400);
+    --color-accent: var(--color-blue-400);
+    --color-accent-fill: var(--color-blue-400);
+    --color-accent-fill-hover: var(--color-blue-300);
+    --color-accent-fill-active: var(--color-blue-500);
     --color-accent-on-fill: var(--color-neutral-850);
     --color-accent-soft: var(--color-blue-950);
-    --color-accent-line: var(--color-blue-600);
+    --color-accent-line: var(--color-blue-700);
 
     /* color.danger */
-    --color-danger: var(--color-red-300);
+    --color-danger: var(--color-red-400);
     --color-danger-soft: var(--color-red-950);
-    --color-danger-line: var(--color-red-600);
-    --color-danger-fill: var(--color-red-300);
-    --color-danger-fill-hover: var(--color-red-100);
+    --color-danger-line: var(--color-red-700);
+    --color-danger-fill: var(--color-red-400);
+    --color-danger-fill-hover: var(--color-red-300);
     --color-danger-on-fill: var(--color-neutral-850);
 
     /* color.warning */
-    --color-warning: var(--color-yellow-300);
+    --color-warning: var(--color-yellow-400);
     --color-warning-soft: var(--color-yellow-950);
-    --color-warning-line: var(--color-yellow-600);
+    --color-warning-line: var(--color-yellow-700);
 
     /* color.success */
-    --color-success: var(--color-green-300);
+    --color-success: var(--color-green-400);
     --color-success-soft: var(--color-green-950);
-    --color-success-line: var(--color-green-600);
+    --color-success-line: var(--color-green-700);
 
     /* color.info */
-    --color-info: var(--color-cyan-100);
+    --color-info: var(--color-cyan-300);
     --color-info-soft: var(--color-cyan-950);
-    --color-info-line: var(--color-cyan-600);
+    --color-info-line: var(--color-cyan-700);
 
     /* color.brand */
-    --color-brand: var(--color-orange-300);
+    --color-brand: var(--color-orange-400);
 
     /* color.spark */
-    --color-spark: var(--color-magenta-300);
+    --color-spark: var(--color-magenta-400);
 
     /* color.code */
     --color-code-bg: var(--color-neutral-900);
     --color-code-text: var(--color-neutral-300);
-    --color-code-keyword: var(--color-magenta-300);
-    --color-code-string: var(--color-green-300);
-    --color-code-number: var(--color-orange-300);
-    --color-code-function: var(--color-blue-300);
-    --color-code-type: var(--color-yellow-300);
+    --color-code-keyword: var(--color-magenta-400);
+    --color-code-string: var(--color-green-400);
+    --color-code-number: var(--color-orange-400);
+    --color-code-function: var(--color-blue-400);
+    --color-code-type: var(--color-yellow-400);
     --color-code-operator: var(--color-cyan-300);
-    --color-code-tag: var(--color-red-300);
+    --color-code-tag: var(--color-red-400);
 
     /* color.shadow */
     --color-shadow: var(--color-alpha-shadow-dark);
@@ -688,7 +698,6 @@
 
     /* switch */
     --color-switch-track-on: var(--color-accent-fill);
-    --color-switch-thumb: var(--color-inverse);
     --color-switch-thumb-on: var(--color-accent-on-fill);
 
     /* segmented */
@@ -768,7 +777,7 @@
     /* color.text */
     --color-text: var(--color-neutral-0);
     --color-text-secondary: var(--color-neutral-300);
-    --color-muted: var(--color-neutral-350);
+    --color-muted: var(--color-neutral-300);
     --color-inverse: var(--color-neutral-950);
     --color-disabled: var(--color-neutral-550);
 
@@ -776,56 +785,56 @@
     --color-subtle: var(--color-alpha-light-medium);
     --color-border: var(--color-neutral-550);
     --color-strong: var(--color-neutral-400);
-    --color-focus: var(--color-blue-100);
+    --color-focus: var(--color-blue-300);
 
     /* color.accent */
-    --color-accent: var(--color-blue-100);
-    --color-accent-fill: var(--color-blue-100);
-    --color-accent-fill-hover: var(--color-blue-50);
-    --color-accent-fill-active: var(--color-blue-200);
+    --color-accent: var(--color-blue-300);
+    --color-accent-fill: var(--color-blue-300);
+    --color-accent-fill-hover: var(--color-blue-200);
+    --color-accent-fill-active: var(--color-blue-400);
     --color-accent-on-fill: var(--color-neutral-950);
     --color-accent-soft: var(--color-blue-950);
     --color-accent-line: var(--color-blue-300);
 
     /* color.danger */
-    --color-danger: var(--color-red-100);
+    --color-danger: var(--color-red-300);
     --color-danger-soft: var(--color-red-950);
     --color-danger-line: var(--color-red-300);
-    --color-danger-fill: var(--color-red-100);
-    --color-danger-fill-hover: var(--color-red-50);
+    --color-danger-fill: var(--color-red-300);
+    --color-danger-fill-hover: var(--color-red-200);
     --color-danger-on-fill: var(--color-neutral-950);
 
     /* color.warning */
-    --color-warning: var(--color-yellow-100);
+    --color-warning: var(--color-yellow-400);
     --color-warning-soft: var(--color-yellow-950);
     --color-warning-line: var(--color-yellow-300);
 
     /* color.success */
-    --color-success: var(--color-green-100);
+    --color-success: var(--color-green-400);
     --color-success-soft: var(--color-green-950);
     --color-success-line: var(--color-green-300);
 
     /* color.info */
-    --color-info: var(--color-cyan-100);
+    --color-info: var(--color-cyan-200);
     --color-info-soft: var(--color-cyan-950);
     --color-info-line: var(--color-cyan-300);
 
     /* color.brand */
-    --color-brand: var(--color-orange-100);
+    --color-brand: var(--color-orange-300);
 
     /* color.spark */
-    --color-spark: var(--color-magenta-100);
+    --color-spark: var(--color-magenta-300);
 
     /* color.code */
     --color-code-bg: var(--color-neutral-950);
     --color-code-text: var(--color-neutral-0);
-    --color-code-keyword: var(--color-magenta-100);
-    --color-code-string: var(--color-green-100);
-    --color-code-number: var(--color-orange-100);
-    --color-code-function: var(--color-blue-100);
-    --color-code-type: var(--color-yellow-100);
-    --color-code-operator: var(--color-cyan-100);
-    --color-code-tag: var(--color-red-100);
+    --color-code-keyword: var(--color-magenta-300);
+    --color-code-string: var(--color-green-400);
+    --color-code-number: var(--color-orange-300);
+    --color-code-function: var(--color-blue-300);
+    --color-code-type: var(--color-yellow-400);
+    --color-code-operator: var(--color-cyan-200);
+    --color-code-tag: var(--color-red-300);
 
     /* color.shadow */
     --color-shadow: var(--color-alpha-shadow-dark);
@@ -877,7 +886,6 @@
     /* switch */
     --color-switch-track-off: var(--color-strong);
     --color-switch-track-on: var(--color-accent-fill);
-    --color-switch-thumb: var(--color-inverse);
     --color-switch-thumb-on: var(--color-accent-on-fill);
 
     /* segmented */
@@ -964,56 +972,56 @@
         /* color.border */
         --color-subtle: var(--color-alpha-light-soft);
         --color-border: var(--color-alpha-light-medium);
-        --color-focus: var(--color-blue-300);
+        --color-focus: var(--color-blue-400);
 
         /* color.accent */
-        --color-accent: var(--color-blue-300);
-        --color-accent-fill: var(--color-blue-300);
-        --color-accent-fill-hover: var(--color-blue-100);
-        --color-accent-fill-active: var(--color-blue-400);
+        --color-accent: var(--color-blue-400);
+        --color-accent-fill: var(--color-blue-400);
+        --color-accent-fill-hover: var(--color-blue-300);
+        --color-accent-fill-active: var(--color-blue-500);
         --color-accent-on-fill: var(--color-neutral-850);
         --color-accent-soft: var(--color-blue-950);
-        --color-accent-line: var(--color-blue-600);
+        --color-accent-line: var(--color-blue-700);
 
         /* color.danger */
-        --color-danger: var(--color-red-300);
+        --color-danger: var(--color-red-400);
         --color-danger-soft: var(--color-red-950);
-        --color-danger-line: var(--color-red-600);
-        --color-danger-fill: var(--color-red-300);
-        --color-danger-fill-hover: var(--color-red-100);
+        --color-danger-line: var(--color-red-700);
+        --color-danger-fill: var(--color-red-400);
+        --color-danger-fill-hover: var(--color-red-300);
         --color-danger-on-fill: var(--color-neutral-850);
 
         /* color.warning */
-        --color-warning: var(--color-yellow-300);
+        --color-warning: var(--color-yellow-400);
         --color-warning-soft: var(--color-yellow-950);
-        --color-warning-line: var(--color-yellow-600);
+        --color-warning-line: var(--color-yellow-700);
 
         /* color.success */
-        --color-success: var(--color-green-300);
+        --color-success: var(--color-green-400);
         --color-success-soft: var(--color-green-950);
-        --color-success-line: var(--color-green-600);
+        --color-success-line: var(--color-green-700);
 
         /* color.info */
-        --color-info: var(--color-cyan-100);
+        --color-info: var(--color-cyan-300);
         --color-info-soft: var(--color-cyan-950);
-        --color-info-line: var(--color-cyan-600);
+        --color-info-line: var(--color-cyan-700);
 
         /* color.brand */
-        --color-brand: var(--color-orange-300);
+        --color-brand: var(--color-orange-400);
 
         /* color.spark */
-        --color-spark: var(--color-magenta-300);
+        --color-spark: var(--color-magenta-400);
 
         /* color.code */
         --color-code-bg: var(--color-neutral-900);
         --color-code-text: var(--color-neutral-300);
-        --color-code-keyword: var(--color-magenta-300);
-        --color-code-string: var(--color-green-300);
-        --color-code-number: var(--color-orange-300);
-        --color-code-function: var(--color-blue-300);
-        --color-code-type: var(--color-yellow-300);
+        --color-code-keyword: var(--color-magenta-400);
+        --color-code-string: var(--color-green-400);
+        --color-code-number: var(--color-orange-400);
+        --color-code-function: var(--color-blue-400);
+        --color-code-type: var(--color-yellow-400);
         --color-code-operator: var(--color-cyan-300);
-        --color-code-tag: var(--color-red-300);
+        --color-code-tag: var(--color-red-400);
 
         /* color.shadow */
         --color-shadow: var(--color-alpha-shadow-dark);
@@ -1062,7 +1070,6 @@
 
         /* switch */
         --color-switch-track-on: var(--color-accent-fill);
-        --color-switch-thumb: var(--color-inverse);
         --color-switch-thumb-on: var(--color-accent-on-fill);
 
         /* segmented */

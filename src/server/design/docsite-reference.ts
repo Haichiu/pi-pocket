@@ -2,6 +2,7 @@
  * The reference parts of the documentation page: the table of every token, the validator notes, and the code to use it. (Split from `docsite.ts`; see it for how the page is built and kept safe.)
  */
 import { escapeHtml as esc, plural } from "./docsite-markdown.ts";
+import type { ResolvedToken } from "./system-types.ts";
 import {
     clip,
     modeLabel,
@@ -14,6 +15,10 @@ import {
     tableRows,
 } from "./docsite-core.ts";
 
+/**
+ * The table of every token: a column for each mode, and above it a search of names and values and a filter by type and
+ * by tier. (The page's script filters the rows, and on a phone draws them a screenful at a time.)
+ */
 export function referenceSection(ctx: Ctx, max: number): { html: string; count: number } {
     const all = ctx.system.tokens;
     const tokens = all.slice(0, max);
@@ -21,9 +26,16 @@ export function referenceSection(ctx: Ctx, max: number): { html: string; count: 
         tokens.length < all.length
             ? `<p class="sub">This table shows the first ${tokens.length} of ${all.length} tokens, to keep the page small. The sections above show the rest.</p>`
             : "";
+    const types = [...new Set(tokens.map((token) => token.type))].sort();
+    const tiers = ["primitive", "semantic", "component"].filter((tier) =>
+        tokens.some((token) => token.tier === tier),
+    );
+    const option = (value: string, label: string) =>
+        `<option value="${esc(value)}">${esc(label)}</option>`;
+    const toolbar = `<div class="toolbar" role="search"><input id="tq" type="search" placeholder="Search names and values" aria-label="Search the table of tokens" autocomplete="off" spellcheck="false"><select id="tt" aria-label="Filter by type">${option("", "All types")}${types.map((type) => option(type, `${type} (${tokens.filter((token) => token.type === type).length})`)).join("")}</select><select id="tr" aria-label="Filter by tier">${option("", "All tiers")}${tiers.map((tier) => option(tier, tier)).join("")}</select><span class="rows-count" id="tc" aria-live="polite"></span></div>`;
 
     return {
-        html: `<p class="intro">Every token with its CSS variable and its value in the mode you chose. Click a name to copy it.</p>${cut}<div class="table-wrap ref"><table><thead><tr><th>Token</th><th>Type</th><th>Value</th></tr></thead><tbody>${tableRows(ctx, tokens)}</tbody></table></div>`,
+        html: `<p class="intro">Every token with its CSS variable and its value in each mode. Click a name to copy it.</p>${cut}${toolbar}<div class="table-wrap ref"><table><thead><tr><th>Token</th><th>Type</th>${ctx.modes.map((mode) => `<th>${esc(modeLabel(mode))}</th>`).join("")}</tr></thead><tbody>${tableRows(ctx, tokens, true)}</tbody></table></div>`,
         count: all.length,
     };
 }
@@ -64,7 +76,57 @@ export function notesHtml(ctx: Ctx): string {
 }
 
 /** The most of a generated file that the page prints: the files are large, and the page is one file too. */
-const FILE_PREVIEW = 8_000;
+const FILE_PREVIEW = 4_000;
+
+/**
+ * A short, real piece of `tokens.studio.json`: the first mode's set with one token, the first theme, and the order of
+ * the sets, cut from the generated file, so that what is shown is what the file holds.
+ */
+function studioSnippet(ctx: Ctx, sample: ResolvedToken | undefined): string {
+    let file: Record<string, unknown> | undefined;
+
+    try {
+        file = JSON.parse(ctx.system.compiled.studio ?? "") as Record<string, unknown>;
+    } catch {
+        file = undefined;
+    }
+
+    const first = ctx.modes[0]!;
+    const set = file?.[first] as Record<string, unknown> | undefined;
+    const themes = file?.$themes as { selectedTokenSets?: Record<string, string> }[] | undefined;
+
+    if (file === undefined || set === undefined || sample === undefined) {
+        return JSON.stringify(
+            { [first]: {}, $themes: [], $metadata: { tokenSetOrder: ctx.modes } },
+            null,
+            4,
+        );
+    }
+
+    // One token of the set, by its path (color.bg.surface), as the file has it.
+    let node: unknown = set;
+    const leaf: Record<string, unknown> = {};
+    let into = leaf;
+
+    for (const [index, key] of sample.path.entries()) {
+        node = (node as Record<string, unknown> | undefined)?.[key];
+        into[key] = index === sample.path.length - 1 ? node : {};
+        into = into[key] as Record<string, unknown>;
+    }
+
+    const theme = themes?.[0];
+    const sets = Object.fromEntries(Object.entries(theme?.selectedTokenSets ?? {}).slice(0, 2));
+
+    return JSON.stringify(
+        {
+            [first]: leaf,
+            $themes: [{ ...(theme ?? {}), selectedTokenSets: sets }],
+            $metadata: file.$metadata,
+        },
+        null,
+        4,
+    );
+}
 
 /** A snippet in a box with a Copy button; the text is project data, so it is escaped. */
 export function snippet(id: string, text: string): string {
@@ -104,8 +166,23 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
         modeFiles[0] === undefined
             ? "tokens.resolved.json"
             : `tokens.${modeFiles[0][0]}.resolved.json`;
-    const json = `{\n    "source": ["${jsonName}"],\n    "platforms": {\n        "css": {\n            "transformGroup": "css",\n            "buildPath": "build/",\n            "files": [{ "destination": "variables.css", "format": "css/variables" }]\n        }\n    }\n}\n// Style Dictionary config.\n// For DTCG 2025.10 objects, not strings\n// ("#7aa2f7", "16px"), set in tokens.json:\n// "$extensions": {\n//     "com.pi-pocket": { "format": "2025.10" }\n// }`;
-    const studio = `// In Tokens Studio, open Tools, then\n// Load from file or URL, and pick\n// tokens.studio.json.\n//\n// Each mode is a token set:\n// ${modeFiles.map(([mode]) => mode).join(", ") || "one set"}.\n// The $themes array has a theme for each\n// mode, which turns its set on.`;
+    // Style Dictionary reads the DTCG files as they are. The config is plain JSON: what it means is written beside it.
+    const json = JSON.stringify(
+        {
+            source: [jsonName],
+            platforms: {
+                css: {
+                    transformGroup: "css",
+                    buildPath: "build/",
+                    files: [{ destination: "variables.css", format: "css/variables" }],
+                },
+            },
+        },
+        null,
+        4,
+    );
+    // Tokens Studio: the first entry of the generated file, so that what a person sees is what the file holds.
+    const studio = studioSnippet(ctx, sample);
     const files = [
         {
             id: "code-css",
@@ -142,7 +219,7 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
         `<div class="use"><h4>${esc(title)}</h4><p class="sub">${note}</p>${snippet(id, text)}</div>`;
 
     return {
-        html: `<p class="intro">The files that the system generates in <code>.pi/design/dist/</code> (<code>components.css</code> holds the CSS of every component, which each component above shows). Read tokens as variables, classes, or JSON. Never copy a value by hand.</p><div class="uses">${use("CSS", "Link tokens.css, then read a token with var(). Set data-theme for a mode.", "code-use-css", css)}${use("Tailwind v4", "Import Tailwind, then tailwind.css. Each token is a variable, so the utilities follow it.", "code-use-tailwind", tailwind)}${use("JSON (DTCG)", "The main output: one file for each mode. Style Dictionary reads it as it is.", "code-use-json", json)}${use("Tokens Studio", "One file for all modes, with a token set for each mode and a $themes array.", "code-use-studio", studio)}</div><h3>The files</h3>${files
+        html: `<p class="intro">The files that the system generates in <code>.pi/design/dist/</code> (<code>components.css</code> holds the CSS of every component, which each component above shows). Read tokens as variables, classes, or JSON. Never copy a value by hand.</p><div class="uses">${use("CSS", "Link tokens.css, then read a token with var(). Set data-theme for a mode.", "code-use-css", css)}${use("Tailwind v4", "Import Tailwind, then tailwind.css. Each token is a variable, so the utilities follow it.", "code-use-tailwind", tailwind)}${use("JSON (DTCG)", `Style Dictionary reads the file for each mode as it is. For DTCG 2025.10 objects and not strings (<code>"#7aa2f7"</code>, <code>"16px"</code>), set <code>"format": "2025.10"</code> in the <code>com.pi-pocket</code> extension of tokens.json.`, "code-use-json", json)}${use("Tokens Studio", "In Tokens Studio open Tools, Load from file or URL, and pick tokens.studio.json. Each mode is a token set, and each theme turns its set on.", "code-use-studio", studio)}</div><h3>The files</h3>${files
             .map(
                 (file) =>
                     `<details class="code"><summary>${esc(file.title)}<span class="desc" style="margin-left:10px;font-weight:400">${esc(file.note)}</span></summary><div class="code-body">${file.text.length > FILE_PREVIEW ? `<p class="sub">The first ${FILE_PREVIEW / 1000} KB of ${Math.round(file.text.length / 1024)} KB. The whole file is in <code>.pi/design/dist/</code>, and in the zip that the System view exports.</p>` : ""}${snippet(file.id, clip(file.text, FILE_PREVIEW))}</div></details>`,

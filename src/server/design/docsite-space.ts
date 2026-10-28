@@ -34,8 +34,16 @@ export function spacingSection(ctx: Ctx): Built {
         plainOnes.filter((token) => /^(space|spacing|gap|gaps|sp|spaces)$/.test(rootOf(token))),
     );
     const sizes = limit(plainOnes.filter((token) => /^(size|sizes|sizing)$/.test(rootOf(token))));
+    // The roles that use a step (the gaps of the layout): semantic tokens of the section that are neither the scale nor sizes.
+    const layout = limit(
+        plainOnes.filter(
+            (token) =>
+                token.tier === "semantic" &&
+                !/^(space|spacing|gap|gaps|sp|spaces|size|sizes|sizing)$/.test(rootOf(token)),
+        ),
+    );
 
-    for (const token of [...space, ...sizes]) {
+    for (const token of [...space, ...sizes, ...layout]) {
         ctx.claimed.add(token);
     }
 
@@ -49,6 +57,20 @@ export function spacingSection(ctx: Ctx): Built {
     if (space.length > 0) {
         parts.push(
             `<h3 id="spacing-steps">Steps</h3><p class="sub">The steps that padding, margins, and gaps move in. Each bar is in proportion to the longest step.</p><div class="spec cols">${space
+                .map((token) =>
+                    rowOf(
+                        ctx,
+                        token,
+                        `<div class="bar" style="width:${Math.max(1, Math.round(((pxOf(valueIn(token, ctx.modes[0]!)?.value) ?? 0) / spaceMax) * 100))}%"></div>`,
+                    ),
+                )
+                .join("")}</div>`,
+        );
+    }
+
+    if (layout.length > 0) {
+        parts.push(
+            `<h3 id="spacing-roles">Roles</h3><p class="sub">Where the system uses a step.</p><div class="spec cols">${layout
                 .map((token) =>
                     rowOf(
                         ctx,
@@ -136,12 +158,25 @@ export function radiiSection(ctx: Ctx): Built {
         return `<div class="radius" data-q="${esc(`${token.name} ${token.description ?? ""}`.toLowerCase())}"><div class="shape" style="border-radius:${varOf(token, "0")}"></div>${copyName(token)}<span class="desc mono">${value}</span>${token.description === undefined ? "" : `<span class="desc">${esc(token.description)}</span>`}</div>`;
     };
 
+    // A system with roles shows them by use, and its scale after them; one with only a scale shows that, by use.
+    const hasRoles = radii.some((token) => token.tier === "semantic");
+    const bandTokens = hasRoles ? radii.filter((token) => token.tier === "semantic") : radii;
+    const scaleTokens = hasRoles ? radii.filter((token) => token.tier === "primitive") : [];
     const banded = BANDS.map((band) => ({
         band,
-        tokens: radii
+        tokens: bandTokens
             .filter((token) => band.has(pxOfToken(token)))
             .sort((x, y) => pxOfToken(x) - pxOfToken(y)),
     })).filter((entry) => entry.tokens.length > 0);
+    const scaleCards =
+        scaleTokens.length === 0
+            ? ""
+            : `<div data-group><h4 style="margin-top:22px">Scale</h4><p class="sub" style="margin-bottom:0">The steps: every role above points at one, and the value comes from here.</p><div class="radii">${[
+                  ...scaleTokens,
+              ]
+                  .sort((x, y) => pxOfToken(x) - pxOfToken(y))
+                  .map(card)
+                  .join("")}</div></div>`;
     const cards =
         radii.length === 0
             ? ""
@@ -155,7 +190,7 @@ export function radiiSection(ctx: Ctx): Built {
                     .join("");
 
     return {
-        html: `<p class="intro">Corners follow what they round.</p>${cards}${note()}${moreTokens(ctx, "radii")}`,
+        html: `<p class="intro">Corners follow what they round.</p>${cards}${scaleCards}${note()}${moreTokens(ctx, "radii")}`,
         count: mine.length,
     };
 }

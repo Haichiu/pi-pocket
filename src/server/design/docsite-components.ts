@@ -9,6 +9,7 @@ import {
     MAX_CODE,
     clip,
     idOf,
+    anchor,
     type Ctx,
     groundToken,
     textToken,
@@ -60,7 +61,7 @@ export function componentArticle(ctx: Ctx, spec: ComponentSpec, index: number): 
         .map((name) => `<button class="tk">${esc(name)}</button>`)
         .join("");
 
-    return `<article class="comp" id="${id}" data-pid="${id}" data-q="${esc(`${spec.name} ${spec.description} ${spec.slug}`.toLowerCase())}"><div class="comp-head"><h3>${esc(spec.name)}</h3><span class="pill">${states.length} state${states.length === 1 ? "" : "s"}</span></div><p class="intro" style="margin-top:6px">${esc(spec.description)}</p>${componentStage(ctx)}${
+    return `<article class="comp" id="${id}" data-pid="${id}" data-q="${esc(`${spec.name} ${spec.description} ${spec.slug}`.toLowerCase())}"><div class="comp-head"><h3>${esc(spec.name)}${anchor(id, spec.name)}</h3><span class="pill">${states.length} state${states.length === 1 ? "" : "s"}</span></div><p class="intro" style="margin-top:6px">${esc(spec.description)}</p>${componentStage(ctx)}${
         usage === undefined || (usage.do.length === 0 && usage.dont.length === 0)
             ? ""
             : `<div class="dos">${usage.do.length > 0 ? list("Do", usage.do, "do") : ""}${usage.dont.length > 0 ? list("Don’t", usage.dont, "dont") : ""}</div>`
