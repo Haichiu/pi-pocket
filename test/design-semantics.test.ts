@@ -124,35 +124,30 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
         .replace('<main data-pid="page">', "<div>")
         .replace("</main>", "</div>");
     const report = await check(bare, { viewport: "desktop" }, null);
-    const pids = (rule: string) =>
-        ofRule(report, rule)
-            .map((item) => item.pid)
-            .sort();
+    // One rule, `missing-label`: a field (or a widget that stands in for one), a link, a button, a tab, or a switch with no
+    // name. A placeholder is not a name: n2 has only that.
+    const labels = ofRule(report, "missing-label");
+    const field = (item: { message: string }) => item.message.includes("has no label");
+    const named = (item: { message: string }) => item.message.includes("has no accessible name");
+    const pidsOf = (list: { pid?: string }[]) => list.map((item) => item.pid).sort();
 
-    // A field (or a widget that stands in for one) is `form-label`; a link, button, tab, or switch is `accessible-name`.
-    // A placeholder is not a name: n2 has only that.
-    assert.deepEqual(pids("form-label"), ["n1", "n10", "n2", "n6", "n8", "w1", "w2"]);
-    assert.deepEqual(pids("accessible-name"), ["a1", "b1", "b7", "t1"]);
-    assert.equal(ofRule(report, "form-label")[0]!.level, "error");
-    assert.equal(ofRule(report, "accessible-name")[0]!.level, "error");
-    const message = (rule: string, pid: string) =>
-        ofRule(report, rule).find((item) => item.pid === pid)!.message;
+    assert.deepEqual(pidsOf(labels.filter(field)), ["n1", "n10", "n2", "n6", "n8", "w1", "w2"]);
+    assert.deepEqual(pidsOf(labels.filter(named)), ["a1", "b1", "b7", "t1"]);
+    assert.ok(labels.every((item) => item.level === "error"));
+    const message = (pid: string) => labels.find((item) => item.pid === pid)!.message;
 
     assert.match(
-        message("form-label", "n1"),
+        message("n1"),
         /^A <input type=email> has no label \(no label, aria-label, aria-labelledby, or title; a placeholder is not a label: it goes away when a person types, and not every screen reader reads it\)/,
     );
     assert.match(
-        message("form-label", "n2"),
+        message("n2"),
         /Add a `<label for="id">` \(or wrap the field in a `<label>`\), or add `aria-label="what it is"`\./,
     );
-    assert.match(message("form-label", "w1"), /^A <div\[role=textbox\]> has no label/);
-    assert.match(message("accessible-name", "b1"), /^A <button> has no accessible name/);
-    assert.match(message("accessible-name", "b1"), /Add `aria-label="what it does"`\./);
-    assert.match(
-        message("accessible-name", "b7"),
-        /^A <div\[role=switch\]> has no accessible name/,
-    );
+    assert.match(message("w1"), /^A <div\[role=textbox\]> has no label/);
+    assert.match(message("b1"), /^A <button> has no accessible name/);
+    assert.match(message("b1"), /Add `aria-label="what it does"`\./);
+    assert.match(message("b7"), /^A <div\[role=switch\]> has no accessible name/);
     const lang = ofRule(report, "missing-lang");
 
     assert.equal(lang.length, 1);
@@ -174,7 +169,7 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
 
     assert.equal(ofRule(fine, "missing-lang").length, 0);
     assert.equal(ofRule(fine, "missing-main").length, 0);
-    assert.equal(ofRule(fine, "form-label").length + ofRule(fine, "accessible-name").length, 11);
+    assert.equal(ofRule(fine, "missing-label").length, 11);
     // `role=main` counts, and a deck needs no main.
     const role = await check(
         bare.replace("<div>", '<div role="main">'),
@@ -199,11 +194,12 @@ test("a field under 16px is a warning on a phone, with the token to use", browse
         `<input data-pid="ok" aria-label="c" style="font-size:16px">` +
         `<select data-pid="sel" aria-label="d" style="font-size:15px"><option>a</option></select>` +
         `<textarea data-pid="area" aria-label="e" style="font-size:13px"></textarea>` +
-        `<input type="checkbox" data-pid="box" aria-label="f"><input type="range" data-pid="range" aria-label="g">`;
+        `<input type="checkbox" data-pid="box" aria-label="f"><input type="range" data-pid="range" aria-label="g">` +
+        `<div style="font-size:14px"><input data-pid="inherit" aria-label="h" style="font:inherit"></div>`;
     const phone = await check(page("", body), { viewport: "mobile" });
     const zoom = ofRule(phone, "input-zoom");
 
-    // An unstyled input has the size of the browser, not of the page: it is not judged.\n    assert.deepEqual(zoom.map((item) => item.pid).sort(), ["area", "sel", "small"]);
+    // An unstyled input has the size of the browser, not of the page: it is not judged.\n    assert.deepEqual(zoom.map((item) => item.pid).sort(), ["area", "inherit", "sel", "small"]);
     assert.equal(zoom[0]!.level, "warning");
     assert.match(
         onPid(phone, "input-zoom", "small")!.message,
@@ -292,6 +288,51 @@ test(
                 .filter((item) => item.rule.startsWith("off-system"))
                 .map((item) => item.pid),
             [],
+        );
+    },
+);
+
+test(
+    "a longhand that no author rule sets is the browser's, even when its shorthand family has another longhand set",
+    browser,
+    async () => {
+        const body =
+            // The paragraph's own margin below (1em of 14px = 14px) is not judged when only margin-top is set.
+            `<p data-pid="p1" style="font-size:var(--font-size-sm);margin-top:0">x</p>` +
+            `<p data-pid="p2" class="q">x</p><p data-pid="p3" style="font-size:var(--font-size-sm);margin-block-start:0">x</p>` +
+            // Set by the author: only that side is judged.
+            `<div data-pid="pad" style="padding-top:10px">x</div>` +
+            `<div data-pid="gap" style="display:flex;row-gap:10px"><span>a</span><span>b</span></div>` +
+            `<div data-pid="border" style="border-top:1px solid var(--color-text-muted);border-bottom-width:3px;border-bottom-style:solid;border-bottom-color:var(--color-text-muted)">x</div>` +
+            `<div data-pid="corner" style="height:40px;border-top-left-radius:6px">x</div>` +
+            // The shorthand sets all four: the bottom one too.
+            `<p data-pid="all" style="font-size:var(--font-size-sm);margin:0 0 14px">x</p>` +
+            `<p data-pid="logical" style="font-size:var(--font-size-sm);margin-block:0;padding-inline:10px">x</p>`;
+        const report = await check(page(".q{font-size:var(--font-size-sm);margin-top:0}", body), {
+            viewport: "desktop",
+        });
+        const values = (pid: string) =>
+            report.findings
+                .filter((item) => item.pid === pid && item.rule === "off-system-size")
+                .map((item) => item.value)
+                .sort();
+
+        assert.deepEqual(values("p1"), []);
+        assert.deepEqual(values("p2"), []);
+        assert.deepEqual(values("p3"), []);
+        assert.deepEqual(values("pad"), ["10px"], "padding-top only: the bottom is 0");
+        assert.deepEqual(values("gap"), ["10px"]);
+        assert.deepEqual(
+            values("border"),
+            [],
+            "border widths are not on a scale; the top border is the author's, the sides are not",
+        );
+        assert.deepEqual(values("corner"), ["6px"]);
+        assert.deepEqual(values("all"), ["14px"], "the shorthand sets the bottom margin");
+        assert.deepEqual(
+            values("logical"),
+            ["10px"],
+            "padding-inline sets left and right; margin-block sets 0",
         );
     },
 );

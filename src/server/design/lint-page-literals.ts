@@ -195,35 +195,68 @@ const matchedRules = (el) => {
     return matched;
 };
 
-// The CSS properties that count as setting each property (the shorthands and the logical forms too).
-const SETTERS = {
-    color: /^color$/,
-    background: /^background(-color)?$/,
-    border: /^border(-(top|right|bottom|left|block|inline)(-(start|end))?)?(-(color|width|style))?$/,
-    outline: /^outline(-(color|width|style))?$/,
-    padding: /^padding(-(top|right|bottom|left|block|inline)(-(start|end))?)?$/,
-    margin: /^margin(-(top|right|bottom|left|block|inline)(-(start|end))?)?$/,
-    gap: /^(grid-)?(row-|column-)?gap$/,
-    radius: /^border(-(top|bottom|start|end)-(left|right|start|end))?-radius$/,
-    'font-size': /^(font|font-size)$/,
-    'font-family': /^(font|font-family)$/,
-};
-const settersOf = (prop) => /^padding/.test(prop) ? 'padding' : /^margin/.test(prop) ? 'margin' : /Radius$/.test(prop) ? 'radius' : /^border/.test(prop) ? 'border' : /^outline/.test(prop) ? 'outline' : /Gap$/.test(prop) ? 'gap' : prop === 'backgroundColor' ? 'background' : prop === 'fontSize' ? 'font-size' : prop === 'fontFamily' ? 'font-family' : 'color';
+// The CSS properties that set one property (a camelCase one, as in computed styles): the longhand itself, the shorthands
+// that carry it, and the logical forms of its side. A shorthand family is not enough: the author who sets margin-top
+// has not set margin-bottom, and the paragraph's own margin there is the browser's.
+const SIDES = { Top: ['top', 'block-start'], Bottom: ['bottom', 'block-end'], Left: ['left', rootStyle.direction === 'rtl' ? 'inline-end' : 'inline-start'], Right: ['right', rootStyle.direction === 'rtl' ? 'inline-start' : 'inline-end'] };
+const CORNERS = { TopLeft: ['top-left', 'start-start'], TopRight: ['top-right', 'start-end'], BottomRight: ['bottom-right', 'end-end'], BottomLeft: ['bottom-left', 'end-start'] };
+const kebab = (name) => name.replace(/([A-Z])/g, (m) => '-' + m.toLowerCase());
+const settersCache = new Map();
+const settersOf = (prop) => {
+    if (settersCache.has(prop)) return settersCache.get(prop);
 
-// Did a rule that matches the element, or its style attribute, set this property (a camelCase one, as in computed styles)?
+    const names = new Set(['all', kebab(prop)]);
+    let match;
+
+    if ((match = /^(padding|margin)(Top|Right|Bottom|Left)$/.exec(prop))) {
+        const [family, side] = [match[1], match[2]];
+        const [physical, logical] = SIDES[side];
+        const axis = side === 'Top' || side === 'Bottom' ? 'block' : 'inline';
+
+        for (const name of [family, family + '-' + physical, family + '-' + logical, family + '-' + axis]) names.add(name);
+    } else if ((match = /^border(Top|Right|Bottom|Left)(Color|Width|Style)$/.exec(prop))) {
+        const [side, kind] = [match[1], match[2].toLowerCase()];
+        const [physical, logical] = SIDES[side];
+        const axis = side === 'Top' || side === 'Bottom' ? 'block' : 'inline';
+
+        for (const base of ['border', 'border-' + physical, 'border-' + logical, 'border-' + axis]) {
+            names.add(base);
+            names.add(base + '-' + kind);
+        }
+
+        names.add('border-' + kind);
+    } else if ((match = /^border(TopLeft|TopRight|BottomRight|BottomLeft)Radius$/.exec(prop))) {
+        for (const name of ['border-radius', 'border-' + CORNERS[match[1]][0] + '-radius', 'border-' + CORNERS[match[1]][1] + '-radius']) names.add(name);
+    } else if (prop === 'rowGap') {
+        for (const name of ['gap', 'row-gap', 'grid-gap', 'grid-row-gap']) names.add(name);
+    } else if (prop === 'columnGap') {
+        for (const name of ['gap', 'column-gap', 'grid-gap', 'grid-column-gap']) names.add(name);
+    } else if (prop === 'outlineColor') {
+        names.add('outline');
+    } else if (prop === 'backgroundColor') {
+        names.add('background');
+    } else if (prop === 'fontSize' || prop === 'fontFamily') {
+        names.add('font');
+    }
+
+    settersCache.set(prop, names);
+
+    return names;
+};
+
+// Did a rule that matches the element, or its style attribute, set this property?
 const declaredMemo = new Map();
 const declaredOwn = (el, prop) => {
-    const kind = settersOf(prop);
     const memo = declaredMemo.get(el) || {};
 
-    if (kind in memo) return memo[kind];
+    if (prop in memo) return memo[prop];
 
-    const pattern = SETTERS[kind];
-    let found = matchedRules(el).some((rule) => [...rule.declared].some((name) => pattern.test(name) || name === 'all'));
+    const setters = settersOf(prop);
+    let found = matchedRules(el).some((rule) => [...rule.declared].some((name) => setters.has(name)));
 
-    if (!found && el.hasAttribute('style')) found = [...declaredNames(el.getAttribute('style'))].some((name) => pattern.test(name) || name === 'all');
+    if (!found && el.hasAttribute('style')) found = [...declaredNames(el.getAttribute('style'))].some((name) => setters.has(name));
 
-    declaredMemo.set(el, Object.assign(memo, { [kind]: found }));
+    declaredMemo.set(el, Object.assign(memo, { [prop]: found }));
 
     return found;
 };
