@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { jumpToEntry } from "../chat.js";
 import { actions, closeSheet, isRow, loadEarlier, store } from "../store.js";
 import { html, Icon, Marked, plainText, Sheet, Spinner, writtenText } from "../ui.js";
+import { userSearchText } from "../user-search.js";
 
 /** How many entries a page of earlier history has (`app.history` on the server), and how many pages find reads. */
 const HISTORY_PAGE = 400;
@@ -13,7 +14,7 @@ const FIND_PAGES = 25;
 function searchText(entry) {
     switch (entry.kind) {
         case "user":
-            return writtenText(entry);
+            return userSearchText(entry.presentation, writtenText(entry));
         case "assistant":
             return entry.blocks
                 .map((block) =>
