@@ -1,7 +1,8 @@
 /**
  * Updates of Pi Pocket itself: it looks for a new release every 6 hours, tells the owner, shows its notes, and updates
  * the git checkout or the global npm install to it with one tap, then restarts; it can also install new releases by itself while no session is
- * working. Its routes and screens are the owner's alone (`updates.ts` does the work).
+ * working. The owner can opt in to beta releases (pre-releases such as `0.27.0-beta.1`). Its routes and screens are
+ * the owner's alone (`updates.ts` does the work).
  */
 import { defineExtension } from "@earendil-works/pi-durable";
 import type { ExtensionWeb, PocketHost, WebHandler, WebRequest } from "../host.ts";
@@ -60,6 +61,14 @@ export default function createUpdates(host: PocketHost, web: ExtensionWeb) {
             label: "Install new versions by themselves",
             description:
                 "Update and restart while no session has worked for 10 minutes. Never for a release whose notes have a warning, or a checkout with changes of its own.",
+            type: "boolean",
+            default: false,
+        },
+        {
+            name: "beta",
+            label: "Beta updates",
+            description:
+                "Also offer beta versions (such as 0.27.0-beta.1) before the stable release. A beta can be less tested. Off keeps stable releases only; a beta then still gets the next stable release.",
             type: "boolean",
             default: false,
         },
@@ -152,6 +161,25 @@ export default function createUpdates(host: PocketHost, web: ExtensionWeb) {
 
         void updates.check().then(autoInstall, () => {});
     };
+
+    // The channel is core's: a server from before the beta channel has no `setBeta`, and the next restart has it.
+    const channel = () => {
+        if (
+            typeof updates.setBeta !== "function" ||
+            updates.beta === (web.setting("beta") === true)
+        ) {
+            return;
+        }
+
+        updates.setBeta(web.setting("beta") === true);
+        look();
+    };
+
+    if (typeof updates.setBeta === "function") {
+        updates.setBeta(web.setting("beta") === true);
+    }
+
+    web.onDispose(web.onSettings(channel));
 
     // Waiting for quiet sessions needs no new look at GitHub: the last one is enough.
     const wait = () => {
