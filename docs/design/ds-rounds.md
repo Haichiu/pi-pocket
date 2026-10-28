@@ -54,6 +54,10 @@ T at e5e92b1 (27 blind projects written by 9 agents, 0.738 → 0.978 on them): h
 
 Round 3 merged so far: G (flagship names, docs page phone layout and copy, guide example, counting rule, 2 flagship fixes from V's real-page check), V (role-aware suggestions, 25 pages: 51 false findings → 0, stable ids, concrete edits, named modes), U (roles first, palette strips, phone Check sheet, a11y, all modes in Check), B (CSS probe fix: the flagship's format is 1.0). The release's own suite has a pre-existing flaky deck test (fails under load at 7bd4e0b too).
 
+### Round 3 evaluation (0262a6c)
+
+`npm run check`, `npm run lint`, `npm test` green: **1258 of 1258**. Bench: **1.0** in every phase. Held-out: overall **0.974** (scan 0.869, format 0.999, lint 1.0, contrast 1.0, docs 1.0). Shots: 46 of 50 (Harbor's Radii and Shadows timed out). Flaky `mobile-ui` reconnect test: a timing bug in the test, exposed because the Design browser module grew from 129 KB to 366 KB and loads late (fixed in ddf81c9; U makes the module load lazily in round 4).
+
 Round 3 assignments: U (people experience), G (docs page, flagship naming, guide), V (role-aware suggestions, 15+ real pages, stable ids), T (scan, then handoff outputs), integrator (docs).
 
 Round 2 started at once on the bench's weakest phases: V on lint, T on scan, B on a held-out set outside the repo (`/mnt/games/Development/ds-holdout/`, never shown to T or V).
