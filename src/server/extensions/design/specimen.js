@@ -24,10 +24,11 @@ export const SPECIMEN_CSP =
 
 /**
  * The document of one component in one mode. `colors` are CSS colors for the page, the stages, and the text (from the
- * system's own roles, or a default); `theme` is the mode's `:root` block (`themeCss`).
+ * system's own roles, or a default); `theme` is the mode's `:root` block (`themeCss`); `scheme` is `light` or `dark`.
  */
-export function specimenDocument({ component, theme, mode, colors }) {
-    const dark = /dark/i.test(mode);
+export function specimenDocument({ component, theme, mode, scheme, colors }) {
+    // The system says whether a mode is light or dark; its name is only a guess when it does not.
+    const dark = scheme === undefined ? /dark/i.test(mode) : scheme === "dark";
     const states = component.states.filter((state) => Object.hasOwn(component.markup, state));
 
     return `<!doctype html>

@@ -13,7 +13,9 @@ import {
     shadowOf,
     showValue,
     themeCss,
+    typographyMeta,
     typographyStyle,
+    typographyStyleOf,
 } from "./system.js";
 
 const SAMPLE = "Sphinx of black quartz, judge my vow";
@@ -208,9 +210,27 @@ export function createSystemSections(env, widgets) {
         </div>`;
     }
 
+    /** Whether a color is the same in every mode shown: then it is drawn once, not once for each mode. */
+    const alike = (values) =>
+        values.every((each) => swatchCss(each.value) === swatchCss(values[0].value));
+
     function ColorRow({ ctx, token }) {
-        const { model, modes } = ctx;
-        const values = modes.map((mode) => model.value(token.name, mode));
+        const { model } = ctx;
+        const all = ctx.modes.map((mode) => model.value(token.name, mode));
+        // A color that is the same everywhere (a primitive, mostly) has one swatch, one value, and one badge.
+        const merged =
+            ctx.modes.length > 1 &&
+            alike(all) &&
+            // ... and fares the same on its pair, if it has one.
+            new Set(
+                ctx.modes.map((mode) => {
+                    const info = model.contrastOf(token.name, mode);
+
+                    return info ? `${Math.round(info.ratio * 10)}${info.pass}` : "";
+                }),
+            ).size === 1;
+        const modes = merged ? ctx.modes.slice(0, 1) : ctx.modes;
+        const values = merged ? all.slice(0, 1) : all;
         const aliases = [...new Set(values.map((each) => each.alias).filter(Boolean))];
         const sub =
             aliases.length > 0
@@ -245,7 +265,8 @@ export function createSystemSections(env, widgets) {
         return html`<div class="dsy-ramp-wrap">
             <div class="dsy-ramp">
                 ${group.tokens.map((token) => {
-                    const values = ctx.modes.map((mode) => ctx.model.value(token.name, mode));
+                    const all = ctx.modes.map((mode) => ctx.model.value(token.name, mode));
+                    const values = all.length > 1 && alike(all) ? all.slice(0, 1) : all;
                     const edited = ctx.modes.some((mode) => ctx.model.edited(token.name, mode));
 
                     return html`<button
@@ -351,9 +372,13 @@ export function createSystemSections(env, widgets) {
                     ctx=${ctx}
                     token=${token}
                     stacked=${true}
-                    sub=${html`<span class="mono">${styleMeta(now.value)}</span>`}
+                    sub=${html`<span class="mono"
+                        >${typographyMeta(ctx.model, mode, now) ?? styleMeta(now.value)}</span
+                    >`}
                 >
-                    <p class="dsy-specimen" style=${typographyStyle(now.value)}>${SAMPLE}</p>
+                    <p class="dsy-specimen" style=${typographyStyleOf(ctx.model, mode, now)}>
+                        ${SAMPLE}
+                    </p>
                 <//>`;
             }
 
@@ -765,10 +790,12 @@ export function createSystemSections(env, widgets) {
         const found = ctx.model.roles();
         const color = (role, fallback) =>
             (found[role] ? swatchCss(ctx.model.value(found[role], mode).value) : "") || fallback;
-        const dark = /dark/i.test(mode);
+        const scheme = ctx.model.system.schemes?.[mode];
+        const dark = scheme === undefined ? /dark/i.test(mode) : scheme === "dark";
         const doc = specimenDocument({
             component,
             mode,
+            scheme,
             theme: themeCss(ctx.model, mode),
             colors: {
                 canvas: color("canvas", dark ? "#12131a" : "#f6f7fb"),
@@ -878,7 +905,7 @@ export function createSystemSections(env, widgets) {
                         component.tokens.length > 0 &&
                         html`<div class="dsy-used">
                             ${component.tokens
-                                .slice(0, 16)
+                                .slice(0, 8)
                                 .map(
                                     (name) =>
                                         html`<button
@@ -891,6 +918,12 @@ export function createSystemSections(env, widgets) {
                                             ${name}
                                         </button>`,
                                 )}
+                            ${
+                                component.tokens.length > 8 &&
+                                html`<span class="muted small dsy-used-more"
+                                    >${`and ${component.tokens.length - 8} more`}</span
+                                >`
+                            }
                         </div>`
                     }
                 </article>`,

@@ -48,14 +48,20 @@ export const TOKENS = {
         red: ramp({ "100": "#fde2e6", "400": "#f7768e", "600": "#d6334f", "800": "#8c1d33" }),
         green: ramp({ "100": "#dff4d0", "400": "#9ece6a", "600": "#3f8f2c", "800": "#1f5a14" }),
         amber: ramp({ "100": "#fdf0cf", "400": "#e0af68", "600": "#a96b00", "800": "#664000" }),
+        // The scrims are the object form (2025.10) with an alpha: a swatch over the checkerboard.
+        scrim: {
+            "40": { $value: black(0.4) },
+            "60": { $value: black(0.6) },
+        },
         bg: {
             canvas: { $value: "{color.gray.50}", $description: "The page behind everything." },
             surface: { $value: "{color.white}", $description: "Cards, sheets, and fields." },
             raised: { $value: "{color.white}" },
             sunken: { $value: "{color.gray.100}" },
             overlay: {
-                $value: black(0.4),
-                $description: "The scrim behind a dialog. Uses the object form, with an alpha.",
+                $value: "{color.scrim.40}",
+                $description:
+                    "The scrim behind a dialog. It links to a primitive in the object form, with an alpha.",
             },
         },
         text: {
@@ -70,9 +76,9 @@ export const TOKENS = {
             },
             muted: { $value: "{color.gray.600}", $extensions: ext(on("color.bg.canvas")) },
             disabled: {
-                $value: "{color.gray.400}",
-                $description: "Fails its pair on purpose: it is for disabled controls only.",
-                $extensions: ext(on("color.bg.surface")),
+                $value: "{color.gray.500}",
+                $description: "Disabled controls only: a quieter pair, 3:1 and not 4.5:1.",
+                $extensions: ext(on("color.bg.surface", 3)),
             },
             inverse: { $value: "{color.white}", $extensions: ext(on("color.accent.default")) },
             link: { $value: "{color.blue.700}", $extensions: ext(on("color.bg.surface")) },
@@ -252,12 +258,13 @@ export const DARK = {
             surface: { $value: "{color.gray.900}" },
             raised: { $value: "{color.gray.800}" },
             sunken: { $value: "{color.black}" },
+            overlay: { $value: "{color.scrim.60}" },
         },
         text: {
             primary: { $value: "{color.gray.50}" },
             secondary: { $value: "{color.gray.300}" },
             muted: { $value: "{color.gray.400}" },
-            disabled: { $value: "{color.gray.600}" },
+            disabled: { $value: "{color.gray.500}" },
             inverse: { $value: "{color.gray.950}" },
             link: { $value: "{color.blue.400}" },
         },
