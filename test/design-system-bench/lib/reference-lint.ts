@@ -37,6 +37,8 @@ interface Facts {
     headings: { pid: string; selector: string; level: number }[];
     meta: { viewport: boolean; scrollWidth: number; innerWidth: number };
     unlabelled: { selector: string }[];
+    lang: boolean;
+    nameless: { pid: string; selector: string; tag: string }[];
     focus: { pid: string; selector: string; indicator: boolean }[];
     rings: { pid: string; selector: string; fg: number[]; bg: number[] }[];
     families: { pid: string; selector: string; family: string; installed: boolean }[];
@@ -49,7 +51,7 @@ const SCRIPT = String.raw`(() => {
             : pid ? el.tagName.toLowerCase() + ' in [data-pid="' + pid + '"]' : el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : '');
     };
     const own = (el) => el.getAttribute('data-pid') ?? '';
-    const facts = { declarations: [], texts: [], targets: [], images: [], headings: [], meta: {}, unlabelled: [], focus: [], rings: [], families: [] };
+    const facts = { declarations: [], texts: [], targets: [], images: [], headings: [], meta: {}, unlabelled: [], lang: !!(document.documentElement.getAttribute('lang') || '').trim(), nameless: [], focus: [], rings: [], families: [] };
     const wanted = /^(color|background(-color)?|border[a-z-]*|outline[a-z-]*|font-size|font-family|padding[a-z-]*|margin[a-z-]*|(row-|column-)?gap)$/;
     const declarations = (text) => {
         const out = []; let depth = 0, start = 0;
@@ -120,7 +122,8 @@ const SCRIPT = String.raw`(() => {
         facts.focus.push({ pid: own(el), selector: short(el), indicator: document.activeElement === el ? outline || changed : true });
         // WCAG 1.4.11: a focus ring is a graphic that needs 3:1 against what it is drawn over. A ring outside the element (a
         // positive offset) is drawn over the parent's background; one inside it, over the element's own.
-        if (document.activeElement === el && outline) {
+        // The browser's own ring (outline-style auto) draws two tones and is not measured: only a ring that the page draws is.
+        if (document.activeElement === el && outline && after.outlineStyle !== 'auto') {
             const color = after.outlineColor.match(/[\d.]+/g).map(Number);
             const over = parseFloat(after.outlineOffset) >= 0 && el.parentElement ? el.parentElement : el;
             facts.rings.push({ pid: own(el), selector: short(el), fg: [color[0], color[1], color[2], color.length > 3 ? color[3] : 1], bg: backdrop(over) });
@@ -131,6 +134,29 @@ const SCRIPT = String.raw`(() => {
     for (const img of document.querySelectorAll('img')) facts.images.push({ pid: own(img), selector: short(img), alt: img.hasAttribute('alt') });
     for (const h of document.querySelectorAll('h1,h2,h3,h4,h5,h6')) facts.headings.push({ pid: own(h), selector: short(h), level: Number(h.tagName[1]) });
     facts.meta = { viewport: !!document.querySelector('meta[name=viewport]'), scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth };
+    // Accessible names: a control, a button, a link, or a widget role with no name that a person or a screen reader could use.
+    // A placeholder is not a name, and a label that is not tied to its control is not one either.
+    const textOf = (node) => (node.textContent || '').replace(/\s+/g, ' ').trim();
+    const hiddenNode = (node) => !!node.closest('[hidden],[aria-hidden="true"],input[type=hidden]') || getComputedStyle(node).display === 'none';
+    const nameOf = (el) => {
+        const labelledby = el.getAttribute('aria-labelledby');
+        if (labelledby) { const text = labelledby.split(/\s+/).map((id) => document.getElementById(id)).filter(Boolean).map(textOf).join(' ').trim(); if (text) return text; }
+        const aria = (el.getAttribute('aria-label') || '').trim();
+        if (aria) return aria;
+        if (el.labels && el.labels.length) { const text = Array.from(el.labels).map(textOf).join(' ').trim(); if (text) return text; }
+        const tag = el.tagName.toLowerCase();
+        if (tag === 'input' && ['submit', 'reset', 'button'].includes(el.type)) return (el.value || (el.type === 'button' ? '' : 'x')).trim();
+        if (tag === 'input' && el.type === 'image') return (el.getAttribute('alt') || '').trim();
+        if (['button', 'a'].includes(tag) || el.hasAttribute('role')) {
+            const text = textOf(el); if (text) return text;
+            const img = Array.from(el.querySelectorAll('img[alt],svg title')).map((n) => n.getAttribute('alt') || n.textContent || '').join(' ').trim(); if (img) return img;
+        }
+        return (el.getAttribute('title') || '').trim();
+    };
+    for (const el of document.body.querySelectorAll('input:not([type=hidden]), select, textarea, button, a[href], [role=button], [role=link], [role=switch], [role=checkbox], [role=radio], [role=tab], [role=menuitem], [role=combobox], [role=textbox]')) {
+        if (hiddenNode(el)) continue;
+        if (!nameOf(el)) facts.nameless.push({ pid: own(el), selector: short(el), tag: el.tagName.toLowerCase() });
+    }
     for (const el of document.body.querySelectorAll('a,button,input,select,textarea,h1,h2,h3,h4,h5,h6,img,section,main,header,footer,nav,article,form,table')) if (!el.hasAttribute('data-pid')) facts.unlabelled.push({ selector: short(el) });
 
     // Declared families that are not installed: the same text measures the same in the family and in the fallback.
@@ -370,6 +396,25 @@ export async function referenceCheck(
 
     for (const item of facts.unlabelled) {
         add({ rule: "missing-pid", level: "warning", selector: item.selector });
+    }
+
+    if (!facts.lang) {
+        add({
+            // Not in CheckRule yet: the bench defines them (README), so a linter can add them under these names.
+            rule: "missing-lang" as CheckFinding["rule"],
+            level: "error",
+            selector: "",
+        });
+    }
+
+    for (const item of facts.nameless) {
+        add({
+            rule: "missing-label" as CheckFinding["rule"],
+            level: "error",
+            selector: item.selector,
+            pid: item.pid,
+            value: `<${item.tag}>`,
+        });
     }
 
     if (!facts.meta.viewport) {

@@ -1409,6 +1409,19 @@ test(
         assert.deepEqual(report.failed, []);
         assert.equal(report.ok, true, JSON.stringify(report.tabs.filter((tab) => !tab.ok)));
         assert.equal(report.tabs.length, 16, "8 tabs at 2 sizes");
+        assert.deepEqual(
+            report.dirty.map((item) => [item.system, item.size, item.saveBar]),
+            [
+                ["harbor", "desktop", true],
+                ["harbor", "phone", true],
+            ],
+            "an edited token shows the save bar at both sizes",
+        );
+        assert.ok(
+            report.dirty.every(
+                (item) => item.file !== undefined && existsSync(join(out, item.file)),
+            ),
+        );
         assert.ok(
             report.tabs.every((tab) => tab.file !== undefined && existsSync(join(out, tab.file))),
         );
@@ -1559,7 +1572,7 @@ test(
         const { referenceCheck } = await import("./design-system-bench/lib/reference-lint.ts");
         const page = (
             ring: string,
-        ) => `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="ds/tokens.css">
+        ) => `<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="ds/tokens.css">
             <style>*{margin:0;padding:0}body{background:var(--color-bg-default)}.hero{padding:var(--space-8);background:var(--color-accent-default)}
             .hero button{min-height:var(--size-tap);padding:0 var(--space-4);border:0;border-radius:var(--radius-md);background:var(--color-bg-surface);color:var(--color-text-primary);font:inherit}
             .hero button:focus-visible{outline:var(--size-ring) solid ${ring};outline-offset:var(--space-1)}</style>
@@ -1593,6 +1606,61 @@ test(
                 );
                 assert.deepEqual(good.findings, [], scheme);
             }
+        } finally {
+            await chromium.close();
+        }
+    },
+);
+
+test(
+    "browser defaults are not findings, a missing lang and a control with no name are",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        const { BenchBrowser } = await import("./design-system-bench/lib/chromium.ts");
+        const { referenceCheck } = await import("./design-system-bench/lib/reference-lint.ts");
+        const css = readFileSync(join(LINT_SYSTEM, "golden", "tokens.css"));
+        const system = systemFromFlat(readFlat(join(LINT_SYSTEM, ".pi", "design")), "Bench");
+        // Only sizes are authored on the controls. The rest (fonts, colors, paddings, margins, borders) is the browser's.
+        const body = `<style>*{box-sizing:border-box}body{background:var(--color-bg-default);color:var(--color-text-primary)}.s{min-height:var(--size-tap);min-width:var(--size-tap)}a{display:inline-flex;align-items:center;min-height:var(--size-tap);min-width:var(--size-tap)}</style>
+            <h1 data-pid="t">Title</h1><p data-pid="p">Text</p><ul data-pid="u"><li data-pid="l">One</li></ul>
+            <label for="a" data-pid="al">Name</label> <input id="a" class="s" data-pid="a"> <button class="s" data-pid="b">Go</button> <a href="#" data-pid="k">Link</a>
+            <hr data-pid="r"><table data-pid="tb"><tbody data-pid="tbb"><tr data-pid="tr"><td data-pid="td">1</td></tr></tbody></table>`;
+        const page = (lang: string, extra: string) =>
+            `<!doctype html><html${lang}><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="ds/tokens.css"></head><body data-pid="page">${body}${extra}</body></html>`;
+        const chromium = (await BenchBrowser.launch())!;
+        const check = (content: string) =>
+            referenceCheck(
+                chromium,
+                { content, assets: [{ name: "ds/tokens.css", type: "text/css", bytes: css }] },
+                system,
+                {
+                    viewport: { width: 800, height: 600 },
+                    colorScheme: "light",
+                },
+            );
+
+        try {
+            assert.deepEqual(
+                (await check(page(' lang="en"', ""))).findings,
+                [],
+                "defaults only: nothing",
+            );
+
+            const bad = await check(
+                page(
+                    "",
+                    '<input class="s" placeholder="Email" data-pid="e"><label data-pid="pl">Phone</label><input class="s" data-pid="ph"><select class="s" data-pid="sel"></select><button class="s" data-pid="ic"><svg aria-hidden="true" width="10" height="10"></svg></button><a href="#" data-pid="im"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" data-pid="imi"></a><input class="s" aria-label="Fine" data-pid="f1"><input type="submit" value="Send" class="s" data-pid="f2">',
+                ),
+            );
+
+            assert.deepEqual(bad.findings.map((item) => [item.rule, item.pid ?? ""]).sort(), [
+                ["missing-label", "e"],
+                ["missing-label", "ic"],
+                ["missing-label", "im"],
+                ["missing-label", "ph"],
+                ["missing-label", "sel"],
+                ["missing-lang", ""],
+            ]);
         } finally {
             await chromium.close();
         }

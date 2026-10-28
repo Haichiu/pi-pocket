@@ -50,12 +50,26 @@ export interface TabResult {
     reason?: string;
 }
 
+/** The dirty-state shot: one token is edited, and the save bar must show. */
+export interface DirtyResult {
+    system: Variant;
+    size: "desktop" | "phone";
+    /** The token that was edited. */
+    token?: string;
+    /** The save bar (`.dsy-savebar`) was on screen with a size. */
+    saveBar: boolean;
+    file?: string;
+    reason?: string;
+}
+
 export interface ShotsReport {
     /** The folder with the PNGs. */
     folder: string;
     saved: string[];
     failed: string[];
     tabs: TabResult[];
+    /** One for each system and size: an edited token, and the save bar on screen. */
+    dirty: DirtyResult[];
     /** True when nothing failed and every tab showed its tokens. */
     ok: boolean;
 }
@@ -650,6 +664,45 @@ async function run(
             });
             await mode(page, "Light").catch(() => {});
 
+            // A dirty state: edit one token (its editor's "Increase" button), and the save bar must be on screen.
+            const dirty: DirtyResult = { system: variant, size: size.name, saveBar: false };
+
+            dirty.file = await shoot(size, "system-dirty", async () => {
+                await openSystem(page);
+                await section(page, "Spacing");
+                dirty.token = await page.ev<string>(`
+                    const row = document.querySelector('.dsy-scroll [data-token]');
+                    return row?.getAttribute("data-token") ?? "";
+                `);
+
+                if (!dirty.token) {
+                    throw new Error("no spacing token row to edit");
+                }
+
+                await press(
+                    page,
+                    `[data-token="${dirty.token}"] .dsy-row-main, button[data-token="${dirty.token}"]`,
+                );
+                await waitFor(page, "the editor", has(".dsy-editor"));
+                await press(page, '.dsy-editor button[aria-label^="Increase"]');
+                await waitFor(
+                    page,
+                    "the save bar",
+                    `const bar = document.querySelector(".dsy-savebar"); const r = bar?.getBoundingClientRect(); return JSON.stringify(Boolean(r && r.width > 0 && r.height > 0))`,
+                );
+                dirty.saveBar = true;
+            });
+
+            if (!dirty.saveBar) {
+                dirty.reason = "the save bar did not show after a token was edited";
+                log(`FAIL  ${variant}-${size.name}-system-dirty: ${dirty.reason}`);
+            }
+
+            report.dirty.push(dirty);
+            // Back to a clean state for the shots that follow.
+            await press(page, ".dsy-savebar button", "Discard").catch(() => {});
+            await mode(page, "Light").catch(() => {});
+
             if (!size.mobile) {
                 await shoot(size, "system-focus", async () => {
                     await openSystem(page);
@@ -738,7 +791,7 @@ export async function runShots(options: ShotsOptions): Promise<ShotsReport> {
     const port = options.port ?? 8915;
     const log = options.log ?? (() => {});
     const folder = resolve(options.out);
-    const report: ShotsReport = { folder, saved: [], failed: [], tabs: [], ok: false };
+    const report: ShotsReport = { folder, saved: [], failed: [], tabs: [], dirty: [], ok: false };
 
     mkdirSync(folder, { recursive: true });
 
