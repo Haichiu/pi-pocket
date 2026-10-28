@@ -1,0 +1,9 @@
+{
+    "name": "fieldnotes",
+    "private": true,
+    "version": "1.4.0",
+    "description": "A small notes app. Plain HTML and CSS.",
+    "scripts": {
+        "start": "serve ."
+    }
+}

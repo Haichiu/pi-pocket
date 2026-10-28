@@ -1,0 +1,23 @@
+<script type="application/json" id="pocket-component">
+    {
+        "name": "Badge",
+        "description": "A short status label.",
+        "states": ["default", "danger"],
+        "tokens": ["color.brand.default", "color.danger", "radius.round"]
+    }
+</script>
+<style>
+    .badge {
+        display: inline-block;
+        padding: var(--space-xs) var(--space-sm);
+        color: var(--color-text-on-brand);
+        background: var(--color-brand-default);
+        border-radius: var(--radius-round);
+        font-size: var(--font-size-small);
+    }
+    .badge.is-danger {
+        background: var(--color-danger);
+    }
+</style>
+<template data-state="default"><span class="badge">New</span></template>
+<template data-state="danger"><span class="badge is-danger">Failed</span></template>
