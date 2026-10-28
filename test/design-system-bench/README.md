@@ -141,7 +141,7 @@ seeded findings):
 - `off-system-color`, `-size`, `-font`: an authored value that is not a `var()`. A literal equal to a token's value is still a
   literal. `transparent`, `currentColor`, `inherit`, `0`, `auto`, `%` and keywords are not values. Font size, padding,
   margin, gap, and radius are checked against the scales; width and height are not.
-- `contrast`: the text color over its effective background, 4.5:1 (3:1 at 24 px, or 18.66 px bold). Disabled controls are exempt.
+- `contrast`: the text color over its effective background, 4.5:1 (3:1 at 24 px, or 18.66 px bold). Disabled controls are exempt. A visible focus ring is a graphic that needs 3:1 over what it is drawn over (WCAG 1.4.11): the lint system has `color.focus.ring-on-accent` for a control on an accent ground, where the plain ring is the same color as the ground.
 - `tap-target`: under 24 px is an error, under 44 px a warning. `image-alt`: no `alt` attribute (`alt=""` is fine).
   `heading-order`: a level skipped going down. `overflow`: the page is wider than the viewport that was asked for.
   `missing-viewport`; `missing-pid` (a control, heading, image or landmark without its own `data-pid`);

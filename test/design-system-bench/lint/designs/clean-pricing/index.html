@@ -163,6 +163,10 @@
             .hero p {
                 max-width: var(--size-container);
             }
+            /* The hero is the accent color, and so is the focus ring: draw the ring in the inverse color there. */
+            .hero .btn:focus-visible {
+                outline-color: var(--color-focus-ring-on-accent);
+            }
             .hero .btn {
                 color: var(--color-text-primary);
                 background: var(--color-bg-surface);

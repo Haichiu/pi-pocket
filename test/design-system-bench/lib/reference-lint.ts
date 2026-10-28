@@ -38,6 +38,7 @@ interface Facts {
     meta: { viewport: boolean; scrollWidth: number; innerWidth: number };
     unlabelled: { selector: string }[];
     focus: { pid: string; selector: string; indicator: boolean }[];
+    rings: { pid: string; selector: string; fg: number[]; bg: number[] }[];
     families: { pid: string; selector: string; family: string; installed: boolean }[];
 }
 
@@ -48,7 +49,7 @@ const SCRIPT = String.raw`(() => {
             : pid ? el.tagName.toLowerCase() + ' in [data-pid="' + pid + '"]' : el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : '');
     };
     const own = (el) => el.getAttribute('data-pid') ?? '';
-    const facts = { declarations: [], texts: [], targets: [], images: [], headings: [], meta: {}, unlabelled: [], focus: [], families: [] };
+    const facts = { declarations: [], texts: [], targets: [], images: [], headings: [], meta: {}, unlabelled: [], focus: [], rings: [], families: [] };
     const wanted = /^(color|background(-color)?|border[a-z-]*|outline[a-z-]*|font-size|font-family|padding[a-z-]*|margin[a-z-]*|(row-|column-)?gap)$/;
     const declarations = (text) => {
         const out = []; let depth = 0, start = 0;
@@ -117,6 +118,13 @@ const SCRIPT = String.raw`(() => {
         const outline = after.outlineStyle !== 'none' && parseFloat(after.outlineWidth) > 0;
         const changed = after.boxShadow !== 'none' && after.boxShadow !== before.boxShadow ? true : [after.boxShadow, after.borderColor, after.backgroundColor, after.outlineStyle].join('|') !== resting;
         facts.focus.push({ pid: own(el), selector: short(el), indicator: document.activeElement === el ? outline || changed : true });
+        // WCAG 1.4.11: a focus ring is a graphic that needs 3:1 against what it is drawn over. A ring outside the element (a
+        // positive offset) is drawn over the parent's background; one inside it, over the element's own.
+        if (document.activeElement === el && outline) {
+            const color = after.outlineColor.match(/[\d.]+/g).map(Number);
+            const over = parseFloat(after.outlineOffset) >= 0 && el.parentElement ? el.parentElement : el;
+            facts.rings.push({ pid: own(el), selector: short(el), fg: [color[0], color[1], color[2], color.length > 3 ? color[3] : 1], bg: backdrop(over) });
+        }
         el.blur();
     }
 
@@ -334,6 +342,22 @@ export async function referenceCheck(
             });
         }
     });
+
+    for (const ring of facts.rings) {
+        const fg: Rgba = { r: ring.fg[0]!, g: ring.fg[1]!, b: ring.fg[2]!, a: ring.fg[3] ?? 1 };
+        const bg: Rgba = { r: ring.bg[0]!, g: ring.bg[1]!, b: ring.bg[2]!, a: ring.bg[3] ?? 1 };
+        const ratio = contrastRatio(fg, bg);
+
+        if (ratio < 3) {
+            add({
+                rule: "contrast",
+                level: "error",
+                selector: ring.selector,
+                pid: ring.pid,
+                value: `${ratio.toFixed(2)}:1`,
+            });
+        }
+    }
 
     for (const control of facts.focus.filter((item) => !item.indicator)) {
         add({
