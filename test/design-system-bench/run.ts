@@ -390,6 +390,12 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
                 );
             }
 
+            for (const item of view.dirty.filter((entry) => !entry.saveBar)) {
+                notes.push(
+                    `System view, ${item.system} ${item.size}: ${item.reason ?? "no save bar after an edit"}.`,
+                );
+            }
+
             for (const failure of view.failed) {
                 notes.push(`System view shot failed: ${failure}`);
             }
@@ -439,7 +445,7 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
                 report.format!.systems.every((item) => item.score === 1),
             ...(only.includes("shots")
                 ? {
-                      "system view: every tab shows its tokens (harbor and flagship, desktop and phone)":
+                      "system view: every tab shows its tokens, and an edit shows the save bar (harbor and flagship, desktop and phone)":
                           report.systemView?.ok === true,
                   }
                 : {}),
