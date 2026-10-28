@@ -533,6 +533,9 @@ export class Room {
     /** Presentations changed: every entry projects again, and open tabs get the ones that now show differently. */
     reproject(): void {
         this.#reprojectEntries(undefined);
+        // The queue is projected with each update (`#inbox`): a waiting input's label changes with the registry even
+        // when no committed row does.
+        this.schedule();
     }
 
     /**

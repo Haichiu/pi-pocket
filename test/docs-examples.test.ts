@@ -32,7 +32,10 @@ const NOTE_BODY = `${"a".repeat(4500)}${NOTE_MARKER}${"b".repeat(4500)}`;
 let prompt = "";
 let sections: Record<string, string> = {};
 
-const route: FauxResponseStep = (context) => {
+/** Holds a turn open while it is set: what is sent then waits in the queue. */
+let hold: Promise<void> | undefined;
+
+const route: FauxResponseStep = async (context) => {
     const { role, text } = lastText(context as never);
 
     // The system prompt reaches the model as system messages, each with the sections that changed since the last.
@@ -69,6 +72,10 @@ const route: FauxResponseStep = (context) => {
 
     if (text.includes("plain push")) {
         return call("bash", { command: "echo git push origin main" });
+    }
+
+    if (text.includes("hold the turn")) {
+        await hold;
     }
 
     if (text.includes("leave a quiet note")) {
@@ -265,6 +272,52 @@ test("the example extensions load as drop-ins, off until the owner turns them on
             async () => newest(sentId) !== undefined && presentedFor(sentId) === undefined,
             "the tab hears it is the owner's message",
         );
+
+        // An input waiting in the queue, and a module that only presents (no browser module, no commands, no
+        // committed row of its kind): the open tab's queue still follows it going on and off.
+        let release = () => {};
+
+        hold = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const turn = await app.commands.submit(id, owner(app), {
+            text: "hold the turn",
+            requestId: crypto.randomUUID(),
+        });
+
+        await until(async () => app.isBusy(id), "the turn is running");
+        await conversation.submit(
+            {
+                type: "input",
+                content: "a ping that waits in the queue",
+                whenBusy: "followUp",
+                requestId: crypto.randomUUID(),
+                entry: { kind: "x.queue-only.ping", data: { summary: "queued ping" } },
+            },
+            context,
+        );
+        const queued = () =>
+            (tab.field("inbox") as { label?: string; text?: string }[] | undefined)?.find(
+                (each) => each.label === "Ping" || each.text === "a ping that waits in the queue",
+            );
+
+        try {
+            await until(async () => queued()?.text !== undefined, "the queue shows the body");
+            const staged = app.webs.stage("queue-only.ts", root, "Queue only");
+
+            staged.web.presentEntry({ kind: "x.queue-only.ping", label: "Ping" });
+            app.webs.commit(staged.part);
+            await until(async () => queued()?.label === "Ping", "the queue shows the label");
+            app.webs.remove("queue-only.ts");
+            await until(
+                async () => queued()?.text !== undefined,
+                "the queue shows the body once the module is off",
+            );
+        } finally {
+            release();
+            hold = undefined;
+            await (await app.harness.submission(turn.submissionId, context))!.wait(context);
+        }
     } finally {
         app.detach(tab.client);
     }
