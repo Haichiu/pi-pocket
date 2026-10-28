@@ -69,8 +69,8 @@ export const isObject = (value: unknown): value is Obj =>
     typeof value === "object" && value !== null && !Array.isArray(value);
 export const clip = (text: string, max = 60) =>
     text.length > max ? `${text.slice(0, max - 1)}…` : text;
-export const show = (value: unknown) =>
-    clip(typeof value === "string" ? value : (JSON.stringify(value) ?? String(value)));
+/** A value for a message: a string in quotes, anything else as JSON, cut short. */
+export const show = (value: unknown) => clip(JSON.stringify(value) ?? String(value));
 export const plain = (text: string) =>
     text
         .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
@@ -83,3 +83,41 @@ export const extensionOf = (node: Obj): Obj => {
 
     return isObject(extensions) && isObject(extensions[EXT]) ? extensions[EXT] : {};
 };
+
+/**
+ * Where `end` leaves a whole UTF-8 sequence after it: it walks back over continuation bytes and then a lead byte whose
+ * sequence the kept bytes complete. Text cut this way has no replacement character at its last character.
+ */
+export function utf8Cut(bytes: Buffer, end: number): number {
+    let back = 0;
+
+    if (end <= 0) {
+        return 0;
+    }
+
+    while (back < 3 && end - back - 1 >= 0 && (bytes[end - back - 1]! & 0xc0) === 0x80) {
+        back++;
+    }
+
+    const at = end - back - 1;
+
+    // Only continuation bytes on the way back: the start of the text is one broken sequence, so keep none of it.
+    if (at < 0) {
+        return 0;
+    }
+
+    const lead = bytes[at]!;
+    const need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+
+    return need <= back + 1 ? end : at;
+}
+
+/** The bounded text of bytes: at most `max` bytes, cut without a broken character at the end. */
+export function boundedText(bytes: Buffer, max: number): { text: string; truncated: boolean } {
+    const kept = bytes.length > max ? utf8Cut(bytes, max) : bytes.length;
+
+    return {
+        text: bytes.subarray(0, Math.max(0, kept)).toString("utf8"),
+        truncated: bytes.length > kept,
+    };
+}

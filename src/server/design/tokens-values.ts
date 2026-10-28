@@ -110,7 +110,7 @@ function expand(text: string, ctx: Ctx): { css: string; literal: string } | unde
         if (target === undefined) {
             failed = true;
         } else {
-            css += target.css;
+            css += `var(${target.cssVar})`;
             literal += target.literal;
         }
     }
@@ -387,7 +387,7 @@ function fontWeight(raw: unknown, ctx: Ctx): Out | undefined {
 
     if (weight === undefined || !Number.isFinite(weight) || weight < 1 || weight > 1000) {
         return ctx.error(
-            `"${show(raw)}" is not a font weight. Write a number from 1 to 1000 (400, 700) or a name such as "bold".`,
+            `${show(raw)} is not a font weight. Write a number from 1 to 1000 (400, 700) or a name such as "bold".`,
         );
     }
 

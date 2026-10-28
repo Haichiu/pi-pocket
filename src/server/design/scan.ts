@@ -55,6 +55,8 @@ export interface Counted {
 }
 
 export interface TokenScan {
+    /** The DTCG draft: the `tokens.json` object and the mode files' objects. */
+    draft: { tokens: Record<string, unknown>; modes: Record<string, Record<string, unknown>> };
     /** Relative paths of the files that were read. */
     files: string[];
     /** True when a limit ended the walk early. */
@@ -273,6 +275,7 @@ export function scanTokens(root: string): TokenScan {
     }
 
     return {
+        draft: { tokens: {}, modes: {} },
         files: read,
         partial,
         variables: Object.fromEntries([...variables].slice(0, LIMITS.variables)),

@@ -21,7 +21,7 @@ import {
 } from "node:fs";
 import { basename, join } from "node:path";
 import type { SystemProblem } from "./system-types.ts";
-import { LIMITS, type RawSystem } from "./tokens-base.ts";
+import { LIMITS, boundedText, type RawSystem } from "./tokens-base.ts";
 
 /** The design system folder, in the session's working directory. */
 export const DESIGN_DIR = join(".pi", "design");
@@ -278,6 +278,41 @@ export function readFolder(cwd: string): Folder | undefined {
     }
 
     return { raw, broken };
+}
+
+/** The files that `design_system read` may show: the sources and the compiled output, by relative name. */
+const READABLE =
+    /^(?:tokens(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)?\.json|guidelines\.md|components\/[a-z0-9]+(?:-[a-z0-9]+)*\.html|dist\/(?:tokens\.css|tailwind\.css|tokens\.resolved\.json|components\.css))$/;
+
+/**
+ * The text of one file of the design system folder (at most `max` bytes), or undefined when it is not there. The name
+ * must be one of the folder's own files; a link or a name with a path is refused.
+ */
+export function readDesignFile(
+    cwd: string,
+    name: string,
+    max = 60_000,
+): { text: string; truncated: boolean } | undefined {
+    if (!READABLE.test(name)) {
+        throw new Error(
+            `"${name.slice(0, 60)}" is not a file of the design system. Use tokens.json, tokens.<mode>.json, guidelines.md, components/<name>.html, or dist/tokens.css, dist/tailwind.css, dist/tokens.resolved.json, dist/components.css.`,
+        );
+    }
+
+    if (!hasDesignFolder(cwd)) {
+        return undefined;
+    }
+
+    const path = join(cwd, DESIGN_DIR, ...name.split("/"));
+
+    if (kindOf(path, name) !== "file") {
+        return undefined;
+    }
+
+    const { bytes, more } = readHead(path, max);
+    const { text } = boundedText(bytes, max);
+
+    return { text: text.replace(/^\uFEFF/, ""), truncated: more };
 }
 
 /** An empty folder state, for a project that has no design system yet. */

@@ -860,11 +860,17 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         const failing: string[] = [];
 
         for (const [at, pair] of pairs.entries()) {
-            const on =
+            const target =
                 isObject(pair) && typeof pair.on === "string"
-                    ? byName.get(refName(WHOLE_REF.exec(pair.on)?.[1] ?? pair.on))
+                    ? refName(WHOLE_REF.exec(pair.on)?.[1] ?? pair.on)
                     : undefined;
+            const on = target === undefined ? undefined : byName.get(target);
             const min = isObject(pair) && typeof pair.min === "number" ? pair.min : 4.5;
+
+            // The color it sits on failed: that error says why, and this one would only repeat it.
+            if (on === undefined && target !== undefined && defs.has(target)) {
+                break;
+            }
 
             if (
                 token.type !== "color" ||

@@ -383,14 +383,15 @@ function tailwindDecls(token: ResolvedToken, mode: string, taken: Map<string, st
 }
 
 function tailwindCss(system: CompileInput): string {
-    // One Tailwind name for one token: the first token keeps it.
+    // One Tailwind name for one token: the first token keeps it, and no name another token already has as its own.
     const taken = new Map<string, string>();
     const owners = new Set<string>();
+    const own = new Set(system.tokens.map((token) => token.cssVar));
 
     for (const token of system.tokens) {
         const name = tailwindName(token);
 
-        if (name !== undefined && !owners.has(name)) {
+        if (name !== undefined && !owners.has(name) && (name === token.cssVar || !own.has(name))) {
             owners.add(name);
             taken.set(token.name, name);
         }
