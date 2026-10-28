@@ -73,18 +73,23 @@ In the Design bullet, replace the `design_preview` and `design_export` sentences
 - `focus-visible` focuses one element of each tag-and-class kind (up to 40 kinds, 20 findings), so a state that only some instances lack is missed.
 - The preview does not run the checks per slide beyond the slide it shows (`checkDesign` can: `slide: "all"`).
 
-## Duplicates with stream T's `color.ts`
+## Round 2: the bench's lint phase (0.772 before, 1.0 after)
 
-The integrator removes these after the merge. `lint-color.ts` does not import T's file. T's `Rgba` is an object (`r`, `g`, `b`, `a`; channels 0 to 1); mine is a tuple (0 to 255, alpha 0 to 1), so a swap needs a small adapter.
+Before: precision 0.815, recall 0.733, 5 false findings (2 on clean designs). After: precision 1, recall 1, 0 findings on the clean designs in both color schemes (`node test/design-system-bench/run.ts --only lint`). One suggestion is not the bench's (below); it does not change the score. Every change is a general fix for a cause, with a test; nothing names a design.
 
-| `lint-color.ts` (V)                            | T's `color.ts`                                | Note                                                                                           |
-| ---------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `Rgba` (tuple)                                 | `Rgba` (object)                               | Same idea, different shape.                                                                    |
-| `luminance(r, g, b)`                           | `luminance(color)`                            | Same WCAG formula.                                                                             |
-| `contrastRatio(a, b)` (opaque, no compositing) | `contrastRatio(foreground, background, page)` | T's also composites alpha. V's page script composites in the browser first.                    |
-| `toOklab(r, g, b)` and `colorDistance`         | `toOklch(color)` (OKLCH, not a distance)      | V needs a distance in OKLab; T has the OKLCH conversion only. Keep V's distance.               |
-| `formatColor(color)`                           | `toHex(color)`                                | V's also prints alpha as `rgb(r g b / a)`.                                                     |
-| `colorCss(value)` (DTCG object to CSS text)    | `colorObjectCss(value)`, `COLOR_SPACES`       | T's validates and returns an error; V's returns `undefined` and the browser resolves the text. |
-| (none)                                         | `parseColor(input)`, `NAMED_COLORS`, `over`   | V parses colors in the browser (canvas), so it has no parser.                                  |
+Root causes, found in a real browser:
 
-Not in T's file, so no duplicate: `dimensionCss`, `familyList`, `isGenericFamily`, `lengthKind`, `tokenSet`, and the token types.
+1. **A real bug: the walk skipped `<body>`.** `body.querySelectorAll("*")` does not include the body, so the page's background (almost always on `body`) was never part of the backdrop and every text was judged on white. That gave `title` at 1.18:1 and `lede` at 2.43:1 in the dark runs (light text on a white backdrop). Fix: the body is in the walk. This was the cause of all three contrast false positives on text.
+2. **The form-field edge heuristic** (`#name`, 1.40:1) was my own extra rule and is not in the plan or the bench. It is kept only for borders that are not the system's: when every color that makes the edge is a system color, the system owns the look (its contrast pairs are checked by the system validator), so the page is not blamed. A border that is not a system color is still judged.
+3. **Tap targets:** the plan says under 24 px is an error and under 44 px a warning, on any viewport. I had added WCAG's spacing exception and a "phone only" condition for the 44 px warning. Both removed. Links inside a sentence stay exempt (WCAG's inline exemption), as does a native checkbox without a label.
+4. **One finding for each `data-pid` scope, not for each value.** Equal values were merged across the whole page, so the finding named the first element and the others were lost (`title` `#151a22`, `avatar-img`: same `src` as `hero-img`). The group key now includes the nearest `data-pid`: the same value in one scope is still one finding with a count, in another scope it is another finding. This fits how people and Pi name elements (comments and pins use the pid).
+5. **`missing-pid` needs the element's own `data-pid`** (the plan: "a control, heading, image or landmark without its own"). A parent's does not count.
+6. **A literal is not a token, even when equal.** `color: #151a22` written in a rule equals `--color-gray-900` in light, but it does not follow the token (dark mode, a change in the system). With a system, the page's own CSS rules and inline styles are read (CSSOM, not computed styles) for colors, lengths (font size, spacing, radius), and font families written without `var()`. A computed value that equals such a literal is reported: an error when it is not a system value, a warning ("written as a literal") with the token to use when it is. `--custom-property` definitions are not uses. Color tolerance for "the same color" is now 1.0 (was 1.5).
+
+Where I disagree with the bench, with evidence: the seeded `banner` expects `color.accent.subtle` or `color.blue.100` for `#e9f0fd`. By OKLab distance the nearest token is `color.bg.subtle` / `gray.100` (`#eceef2`, 1.41) and `blue.100` (`#dce7fb`) is 2.99 away: the color is nearer to the neutral. I report `var(--color-bg-subtle)`, so the bench's suggestion count is 4 of 5. A hue-aware distance (OKLCH with a hue weight) would pick the blue; I did not add one for one case. The integrator decides.
+
+## Duplicates with stream T's `color.ts` (done)
+
+`lint-color.ts` now imports from `color.ts` and the duplicates are deleted: `luminance` and `contrastRatio` (a small wrapper `contrastOf` takes 0 to 255 channels and calls T's `contrastRatio`), `colorCss` (now `colorObjectCss`; the hex fallback for an unknown space stays), and `formatColor` (uses `toHex` for opaque colors; a translucent one is `rgb(r g b / a)`). Kept in `lint-color.ts` because `color.ts` has no equal: `toOklab` and `colorDistance` (OKLab distance with alpha), `dimensionCss`, `familyList`, `isGenericFamily`, `lengthKind`, `tokenSet`, and the token types. The tuple type is now `RgbaTuple` (T's `Rgba` is an object, 0 to 1).
+
+Other bench notes: the full tree has three failing tests that are not from this stream and fail without my changes: `design-docsite` (1), `design-guide` (3), and `design-system-bench` ("with nothing in the tree every phase scores 0": the contrast phase now scores 1 from the bench's own system).

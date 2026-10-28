@@ -14,8 +14,8 @@ export interface PageInput {
     tokenLengths: { css: string; kind: string }[];
     /** Whether to treat the page as a deck: no overflow or tap checks. */
     deck: boolean;
-    /** Narrow viewports get the 44 px touch-size warning. */
-    touch: boolean;
+    /** Whether to find values written as literals in the page's own CSS (with a system). */
+    literals: boolean;
 }
 
 export interface RawElement {
@@ -35,9 +35,9 @@ export interface RawPage {
     hasViewportMeta: boolean;
     resolvedColors: (number[] | null)[];
     resolvedLengths: (number | null)[];
-    colors: (RawGroup & { rgba: number[]; roles: Record<string, number> })[];
-    fonts: (RawGroup & { family: string; list: string })[];
-    sizes: (RawGroup & { kind: string; px: number; props: string[] })[];
+    colors: (RawGroup & { rgba: number[]; roles: Record<string, number>; literal?: boolean })[];
+    fonts: (RawGroup & { family: string; list: string; literal?: boolean })[];
+    sizes: (RawGroup & { kind: string; px: number; props: string[]; literal?: boolean })[];
     contrast: (RawGroup & {
         fg: number[];
         bg: number[];
@@ -45,6 +45,8 @@ export interface RawPage {
         large: boolean;
         ui: boolean;
         ratio?: number;
+        /** The colors that make a form field's edge: its fill and borders, as authored. */
+        edges?: number[][];
     })[];
     targets: (RawGroup & { level: string; width: number; height: number; tag: string })[];
     overflow?: {
@@ -240,7 +242,20 @@ const infoOf = (el) => {
 };
 
 // Groups of equal values: the first element and a count; the selector is worked out once, at the end.
+// Equal values are one group for each data-pid scope: a finding can then name the element a person comments on.
+const owners = new Map();
+const ownerId = (el) => {
+    const owner = el.closest('[data-pid]');
+
+    if (!owner) return 0;
+
+    if (!owners.has(owner)) owners.set(owner, owners.size + 1);
+
+    return owners.get(owner);
+};
 const group = (map, key, make, el) => {
+    if (map !== groups.pids) key += '@' + ownerId(el);
+
     let found = map.get(key);
 
     if (!found) {
@@ -259,12 +274,173 @@ const finish = (map) => [...map.values()].map((item) => Object.assign({}, item, 
 const groups = { colors: new Map(), fonts: new Map(), sizes: new Map(), contrast: new Map(), targets: new Map(), images: new Map(), pids: new Map() };
 const headings = [];
 
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Authored literals. With a system, a color, length, or font written as a literal in the page's own CSS is hard-coded
+// even when its value equals a token: it does not follow the token. The page's rules say which values were authored (a
+// computed value cannot): the colors, lengths, and font families that they set without var().
+
+const literalRules = [];
+const KEEP_WORDS = new Set(['transparent', 'currentcolor', 'inherit', 'initial', 'unset', 'revert', 'revert-layer', 'none', 'auto', 'canvas', 'canvastext', 'buttonface', 'buttontext', 'buttonborder', 'field', 'fieldtext', 'highlight', 'highlighttext', 'linktext', 'visitedtext', 'activetext', 'graytext', 'mark', 'marktext', 'accentcolor', 'accentcolortext', 'selecteditem', 'selecteditemtext']);
+const stripVars = (text) => {
+    let out = '';
+
+    for (let i = 0; i < text.length; ) {
+        if (text.startsWith('var(', i)) {
+            let depth = 0;
+            let j = i + 3;
+
+            for (; j < text.length; j++) {
+                if (text[j] === '(') depth++;
+                else if (text[j] === ')' && --depth === 0) break;
+            }
+
+            out += ' ';
+            i = j + 1;
+        } else {
+            out += text[i++];
+        }
+    }
+
+    return out;
+};
+const colorWords = (text) => {
+    const found = [];
+    const pattern = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\)|[a-z][a-z-]*/gi;
+
+    for (const match of stripVars(text).matchAll(pattern)) {
+        const word = match[0];
+
+        if (/^[a-z]/i.test(word) && !word.includes('(') && (KEEP_WORDS.has(word.toLowerCase()) || !CSS.supports('color', word))) continue;
+
+        found.push(word);
+    }
+
+    return found;
+};
+const lengthWords = (text) => [...stripVars(text).matchAll(/(-?\d*\.?\d+)(px|rem|em|pt)\b/gi)].map((m) => ({ value: Number(m[1]), unit: m[2].toLowerCase() }));
+const splitDecls = (cssText) => {
+    const out = [];
+    let depth = 0;
+    let quote = '';
+    let start = 0;
+
+    for (let i = 0; i <= cssText.length; i++) {
+        const ch = cssText[i];
+
+        if (quote) {
+            if (ch === quote) quote = '';
+        } else if (ch === '"' || ch === "'") quote = ch;
+        else if (ch === '(') depth++;
+        else if (ch === ')') depth--;
+        else if ((ch === ';' && depth === 0) || i === cssText.length) {
+            const text = cssText.slice(start, i);
+            const colon = text.indexOf(':');
+
+            if (colon > 0) out.push([text.slice(0, colon).trim().toLowerCase(), text.slice(colon + 1).replace(/!important\s*$/i, '').trim()]);
+
+            start = i + 1;
+        }
+    }
+
+    return out;
+};
+const partsOf = (cssText) => {
+    const parts = { text: [], background: [], border: [], outline: [], 'font-size': [], space: [], radius: [], family: [] };
+    let any = false;
+    const put = (kind, list) => {
+        if (list.length > 0) {
+            parts[kind].push(...list);
+            any = true;
+        }
+    };
+
+    for (const [prop, value] of splitDecls(cssText)) {
+        if (prop.startsWith('--')) continue;
+
+        if (prop === 'color' || prop === '-webkit-text-fill-color') put('text', colorWords(value));
+        else if (prop === 'background' || prop === 'background-color') put('background', colorWords(value));
+        else if (/^border(-(top|right|bottom|left))?(-color)?$/.test(prop)) put('border', colorWords(value));
+        else if (prop === 'outline' || prop === 'outline-color') put('outline', colorWords(value));
+        else if (prop === 'font-size') put('font-size', lengthWords(value));
+        else if (prop === 'font') put('font-size', lengthWords(value).slice(0, 1));
+        else if (/^(padding|margin)(-(top|right|bottom|left))?$/.test(prop) || /^(grid-)?(row-|column-)?gap$/.test(prop)) put('space', lengthWords(value));
+        else if (/^border(-(top|bottom)-(left|right))?-radius$/.test(prop)) put('radius', lengthWords(value));
+        else if (prop === 'font-family' && !value.includes('var(')) put('family', [value]);
+    }
+
+    return any ? parts : null;
+};
+
+if (input.literals === true) {
+    const walk = (rules) => {
+        for (const rule of rules) {
+            if (literalRules.length >= 800) return;
+
+            if (rule.type === 1) {
+                const parts = partsOf(rule.style.cssText);
+
+                if (parts) literalRules.push({ selector: rule.selectorText, parts });
+            } else if (rule.cssRules && (rule.type === 4 ? win.matchMedia(rule.conditionText || rule.media.mediaText).matches : rule.type === 12 ? CSS.supports(rule.conditionText) : true)) {
+                walk(rule.cssRules);
+            }
+        }
+    };
+
+    for (const sheet of doc.styleSheets) {
+        try {
+            if (!sheet.disabled) walk(sheet.cssRules);
+        } catch {
+            // A style sheet from another origin cannot be read.
+        }
+    }
+}
+
+const literalCache = new Map();
+const literalsOf = (el) => {
+    if (literalCache.has(el)) return literalCache.get(el);
+
+    const merged = { text: [], background: [], border: [], outline: [], 'font-size': [], space: [], radius: [], family: [] };
+
+    if (literalRules.length > 0 || el.hasAttribute('style')) {
+        const lists = literalRules.filter((rule) => {
+            try {
+                return el.matches(rule.selector);
+            } catch {
+                return false;
+            }
+        }).map((rule) => rule.parts);
+        const inline = el.hasAttribute('style') && input.literals === true ? partsOf(el.getAttribute('style')) : null;
+
+        for (const parts of inline ? [...lists, inline] : lists) {
+            for (const kind of Object.keys(merged)) merged[kind].push(...parts[kind]);
+        }
+    }
+
+    literalCache.set(el, merged);
+
+    return merged;
+};
+const sameColor = (a, b) => Math.abs(a[0] - b[0]) <= 1.5 && Math.abs(a[1] - b[1]) <= 1.5 && Math.abs(a[2] - b[2]) <= 1.5 && Math.abs(a[3] - b[3]) <= 0.02;
+const authoredColor = (el, role, rgba) => literalsOf(el)[role].some((css) => {
+    const other = toRgba(css);
+
+    return other && sameColor(other, rgba);
+});
+const rootPx = parseFloat(rootStyle.fontSize) || 16;
+const authoredLength = (el, kind, px, style) => literalsOf(el)[kind].some((item) => {
+    const base = item.unit === 'px' ? 1 : item.unit === 'pt' ? 4 / 3 : item.unit === 'rem' ? rootPx : kind === 'font-size' ? parseFloat(getComputedStyle(el.parentElement || el).fontSize) || rootPx : parseFloat(style.fontSize) || rootPx;
+
+    return Math.abs(Math.abs(item.value) * base - px) <= 0.5;
+});
+const authoredFamily = (el, family) => literalsOf(el).family.some((list) => familyOf(list) === family);
+
 // ---------------------------------------------------------------------------------------------------------------------
 // The walk.
 
 const SKIP = new Set(['HEAD', 'SCRIPT', 'STYLE', 'META', 'LINK', 'TITLE', 'NOSCRIPT', 'TEMPLATE', 'BASE', 'OPTION', 'OPTGROUP']);
 const MEDIA = new Set(['IMG', 'VIDEO', 'CANVAS', 'SVG', 'PICTURE', 'IFRAME', 'OBJECT', 'EMBED']);
-const nodes = body ? [root, ...body.querySelectorAll('*')].slice(0, MAX_ELEMENTS + 1) : [root];
+const nodes = body ? [root, body, ...body.querySelectorAll('*')].slice(0, MAX_ELEMENTS + 2) : [root];
 const states = new Map();
 const painters = [];
 const boxes = new Map();
@@ -361,6 +537,7 @@ const textFamilies = new Map();
 const focusCandidates = new Map();
 const viewWidth = root.clientWidth || win.innerWidth;
 const offenders = [];
+const fontInfo = new Map();
 const spaceSeen = new Map();
 const radiusSeen = new Map();
 const scaleSides = [['top', 'Top'], ['right', 'Right'], ['bottom', 'Bottom'], ['left', 'Left']];
@@ -392,11 +569,12 @@ for (const el of nodes) {
         if (!rgba || rgba[3] <= 0) return;
 
         const key = rgba.map((n) => round(n)).join(',');
+        const hard = input.literals === true && authoredColor(el, role, rgba);
 
         if (used.has(role + key)) return;
 
         used.add(role + key);
-        const found = group(groups.colors, key, () => ({ rgba, roles: {} }), el);
+        const found = group(groups.colors, key + (hard ? '|L' : ''), () => ({ rgba, roles: {}, literal: hard }), el);
 
         if (found) found.roles[role] = (found.roles[role] || 0) + 1;
     };
@@ -423,11 +601,20 @@ for (const el of nodes) {
         const fontSize = pxOf(style.fontSize);
         const family = familyOf(style.fontFamily);
 
-        group(groups.fonts, family, () => ({ family, list: style.fontFamily.slice(0, 300) }), el);
+        const hardFamily = input.literals === true && authoredFamily(el, family);
+
+        group(groups.fonts, family + (hardFamily ? '|L' : ''), () => ({ family, list: style.fontFamily.slice(0, 300), literal: hardFamily }), el);
+
+        const info = fontInfo.get(family) || { list: style.fontFamily.slice(0, 300), count: 0 };
+
+        info.count++;
+        fontInfo.set(family, info);
 
         if (!textFamilies.has(family)) textFamilies.set(family, el);
 
-        group(groups.sizes, 'font-size|' + round(fontSize), () => ({ kind: 'font-size', px: round(fontSize), props: ['font-size'] }), el);
+        const hardSize = input.literals === true && authoredLength(el, 'font-size', fontSize, style);
+
+        group(groups.sizes, 'font-size|' + round(fontSize) + (hardSize ? '|L' : ''), () => ({ kind: 'font-size', px: round(fontSize), props: ['font-size'], literal: hardSize }), el);
 
         const near = overlapped(el, rect);
 
@@ -454,22 +641,29 @@ for (const el of nodes) {
             return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
         };
         let edge = false;
+        const edges = [];
+        const fillRaw = toRgba(style.backgroundColor);
 
         best = ratioOf(own, around);
 
-        if (best > 1.02) edge = true;
+        if (best > 1.02) {
+            edge = true;
+
+            if (fillRaw && fillRaw[3] > 0) edges.push(fillRaw);
+        }
 
         for (const [side, name] of scaleSides) {
             const color = toRgba(style['border' + name + 'Color']);
 
             if (pxOf(style['border' + name + 'Width']) > 0 && !/^(none|hidden)$/.test(style['border' + name + 'Style']) && color && color[3] > 0) {
                 edge = true;
+                edges.push(color);
                 best = Math.max(best, ratioOf(mix(own, color, color[3] * state.cum), around));
             }
         }
 
         if (edge && best < 3) {
-            group(groups.contrast, 'ui|' + own.map(Math.round) + '|' + around.map(Math.round) + '|' + best.toFixed(1), () => ({ fg: own.map(Math.round), bg: around.map(Math.round), size: 0, large: false, ui: true, ratio: best }), el);
+            group(groups.contrast, 'ui|' + own.map(Math.round) + '|' + around.map(Math.round) + '|' + best.toFixed(1), () => ({ fg: own.map(Math.round), bg: around.map(Math.round), size: 0, large: false, ui: true, ratio: best, edges: edges.slice(0, 5) }), el);
         }
     }
 
@@ -480,14 +674,17 @@ for (const el of nodes) {
 
             if (auto || !(px > 0.5) || Number.isNaN(px)) return;
 
-            const key = 'space|' + round(px);
+            const hard = input.literals === true && authoredLength(el, 'space', px, style);
+            const key = 'space|' + round(px) + (hard ? '|L' : '');
 
-            if (spaceSeen.get(key) !== el) {
-                spaceSeen.set(key, el);
-                group(groups.sizes, key, () => ({ kind: 'space', px: round(px), props: [] }), el);
+            let seen = spaceSeen.get(key);
+
+            if (!seen || seen.el !== el) {
+                seen = { el, found: group(groups.sizes, key, () => ({ kind: 'space', px: round(px), props: [], literal: hard }), el) };
+                spaceSeen.set(key, seen);
             }
 
-            const found = groups.sizes.get(key);
+            const found = seen.found;
 
             if (found && found.props.length < 3 && !found.props.includes(prop)) found.props.push(prop);
         };
@@ -527,12 +724,13 @@ for (const el of nodes) {
 
             if (!(px > 0.5) || px >= Math.min(rect.width, rect.height) / 2) continue;
 
-            const key = 'radius|' + round(px);
+            const hard = input.literals === true && authoredLength(el, 'radius', px, style);
+            const key = 'radius|' + round(px) + (hard ? '|L' : '');
 
             if (radiusSeen.get(key) === el) continue;
 
             radiusSeen.set(key, el);
-            group(groups.sizes, key, () => ({ kind: 'radius', px: round(px), props: ['border-radius'] }), el);
+            group(groups.sizes, key, () => ({ kind: 'radius', px: round(px), props: ['border-radius'], literal: hard }), el);
         }
     }
 
@@ -571,7 +769,7 @@ for (const el of nodes) {
     if (level >= 1 && level <= 6 && (el.textContent || '').trim() !== '') headings.push({ el, level });
 
     // Elements that comments and pins need a data-pid on.
-    if (/^(header|nav|main|footer|section|article|aside|form|h[1-6]|button|img|a|input|select|textarea)$/.test(tag) && !el.closest('[data-pid]') && !(tag === 'a' && !el.hasAttribute('href'))) {
+    if (/^(header|nav|main|footer|section|article|aside|form|h[1-6]|button|img|a|input|select|textarea)$/.test(tag) && !el.hasAttribute('data-pid') && !(tag === 'a' && !el.hasAttribute('href'))) {
         group(groups.pids, tag, () => ({ tag }), el);
     }
 }
@@ -614,39 +812,11 @@ for (const el of [...doc.querySelectorAll(interactive)].slice(0, 1000)) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Tap targets: under 24 px is an error unless the 24 px circles around the small targets keep clear of each other
-// (WCAG 2.2, 2.5.8); on a narrow viewport, under 44 px is a warning.
-
-const small = (target) => Math.min(target.width, target.height) < 24;
-const center = (target) => [target.left + target.width / 2, target.top + target.height / 2];
-const circleHits = (target, other) => {
-    const [cx, cy] = center(target);
-    const dx = Math.max(other.left - cx, 0, cx - (other.left + other.width));
-    const dy = Math.max(other.top - cy, 0, cy - (other.top + other.height));
-
-    return Math.hypot(dx, dy) < 12;
-};
+// Tap targets: under 24 px is an error, under 44 px a warning (WCAG 2.2 sets 24 px; 44 px is the common touch advice).
 
 for (const target of targets) {
     const least = Math.min(target.width, target.height);
-    let level = '';
-
-    if (small(target)) {
-        const crowded = targets.some((other) => {
-            if (other === target || other.el === target.el) return false;
-
-            if (circleHits(target, other)) return true;
-
-            const [ax, ay] = center(target);
-            const [bx, by] = center(other);
-
-            return small(other) && Math.hypot(ax - bx, ay - by) < 24;
-        });
-
-        if (crowded) level = 'error';
-    } else if (input.touch && least < 44) {
-        level = 'warning';
-    }
+    const level = least < 24 ? 'error' : least < 44 ? 'warning' : '';
 
     if (level) {
         const width = Math.round(target.width);
@@ -710,12 +880,12 @@ for (const [family, el] of textFamilies) {
     if (KEYWORD.test(family) || fontFaces.length >= 12) continue;
 
     const own = faces.filter((face) => face.family === family);
-    const count = groups.fonts.get(family).count;
+    const count = fontInfo.get(family).count;
 
     if (own.length > 0 && !own.some((face) => face.status === 'loaded')) {
-        fontFaces.push({ count, family: shownName(groups.fonts.get(family).list), why: 'the @font-face did not load (' + own[0].status + ')', failed: true, el: infoOf(el) });
+        fontFaces.push({ count, family: shownName(fontInfo.get(family).list), why: 'the @font-face did not load (' + own[0].status + ')', failed: true, el: infoOf(el) });
     } else if (own.length === 0 && !OS_FONTS.has(family) && !installed(family)) {
-        fontFaces.push({ count, family: shownName(groups.fonts.get(family).list), why: 'there is no @font-face for it and it is not installed', failed: false, el: infoOf(el) });
+        fontFaces.push({ count, family: shownName(fontInfo.get(family).list), why: 'there is no @font-face for it and it is not installed', failed: false, el: infoOf(el) });
     }
 }
 
