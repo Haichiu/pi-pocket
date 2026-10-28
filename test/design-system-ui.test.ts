@@ -581,6 +581,14 @@ test(
             "the picker",
             `return JSON.stringify(Boolean(document.querySelector(".dsy-targets")))`,
         );
+        // The list is over the whole workspace, not held inside the row that opened it.
+        assert.ok(
+            await inPage<boolean>(`
+                const layer = document.querySelector(".dsn-pop-layer").getBoundingClientRect();
+                const view = document.querySelector(".dsn").getBoundingClientRect();
+                return JSON.stringify(layer.width === view.width && layer.height === view.height);
+            `),
+        );
         await filled(".dsn-pop .dsn-search", "red.600");
         await waitFor(
             "the narrowed list",

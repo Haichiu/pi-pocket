@@ -555,7 +555,11 @@ export function createModel(system, edits = new Map()) {
                 return null;
             }
 
-            let pair = token.contrast;
+            // The pair names its ground as a token's name, or as a reference to it (`{color.bg.surface}`).
+            let pair =
+                token.contrast === undefined
+                    ? undefined
+                    : { ...token.contrast, on: String(token.contrast.on).replace(/^\{|\}$/g, "") };
             let auto = false;
 
             if (pair === undefined) {

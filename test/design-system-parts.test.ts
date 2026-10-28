@@ -268,6 +268,20 @@ test("contrast comes from the token's pair, or is worked out for text, and it mo
     assert.equal(primary.pass, true);
     assert.equal(primary.level, "AAA");
     assert.equal(model.contrastOf("color.text.disabled", "light").pass, false);
+    // A pair written as a reference reads the same.
+    const braced = {
+        ...system,
+        tokens: system.tokens.map((token) =>
+            token.name === "color.text.primary"
+                ? { ...token, contrast: { on: "{color.bg.surface}", min: 7 } }
+                : token,
+        ),
+    };
+
+    assert.equal(
+        sys.createModel(braced).contrastOf("color.text.primary", "light").on,
+        "color.bg.surface",
+    );
     // A color that is not text, and has no pair, has no badge.
     assert.equal(model.contrastOf("color.bg.surface", "light"), null);
     assert.equal(model.contrastOf("color.accent.default", "light"), null);
