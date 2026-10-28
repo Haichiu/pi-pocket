@@ -6,8 +6,8 @@
  *
  * The page runs in the artifact sandbox, so it asks for nothing: no network, no app, no external font or image. All
  * project text (names, descriptions, values, Markdown, component markup and CSS) is data. Text is escaped; token values
- * that reach a style are checked first; component markup and CSS run only in an `iframe` that has no script and a
- * policy that blocks every request.
+ * that reach a style are checked first; component markup and CSS show in a shadow root of their own, after the page's
+ * script has stripped every script, handler, and address from the markup, under a policy that blocks every request.
  */
 import { type DesignSystem, type ResolvedToken } from "./system-types.ts";
 import { contrastRatio, parseColor, readableOn, toHex } from "./docsite-color.ts";

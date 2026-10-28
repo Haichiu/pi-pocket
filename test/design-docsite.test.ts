@@ -65,10 +65,11 @@ function token(
     };
 }
 
-/** The page without the `srcdoc` of the component frames, which hold escaped, sandboxed markup of their own. */
-const outsideFrames = (html: string) => html.replace(/srcdoc="[^"]*"/g, 'srcdoc=""');
+/** The page without the code listings, which hold project markup and CSS as escaped text. */
+const outsideListings = (html: string) =>
+    html.replace(/<pre class="snip"[\s\S]*?<\/pre>/g, "<pre></pre>");
 
-test("the page has a section and a link for each part of the system, and a frame for each component", () => {
+test("the page has a section and a link for each part of the system, and a stage for each component", () => {
     const system = flagship();
     const { html } = renderSystemDoc(system);
 
@@ -94,11 +95,13 @@ test("the page has a section and a link for each part of the system, and a frame
         assert.match(html, new RegExp(`id="comp-${spec.slug}"`), `the ${spec.slug} component`);
     }
 
+    // The states are drawn in the page itself (a shadow root that the page's script fills), never in a frame.
     assert.equal(
-        (html.match(/<iframe class="comp-frame"/g) ?? []).length,
+        (html.match(/<div class="comp-stage"/g) ?? []).length,
         system.components.length,
-        "one frame each",
+        "one stage each",
     );
+    assert.doesNotMatch(html, /<iframe|srcdoc=/i, "no frame");
 
     // Color: roles with contrast, the palette, the matrix, and the pairs.
     for (const part of [
@@ -161,50 +164,43 @@ test("each mode has a switch, and the page opens in the default mode", () => {
     assert.match(html, /html:not\(\[data-mode="dark"\]\) \.mv\[data-m="dark"\]\{display:none\}/);
 });
 
-test("the page asks for nothing: no external request, no script or style file", () => {
+test("the page asks for nothing: no external request, no script or style file, no frame", () => {
     const { html, assets } = renderSystemDoc(flagship());
-    const frames = [...html.matchAll(/srcdoc="([^"]*)"/g)].map((match) =>
-        match[1]!
-            .replace(/&quot;/g, '"')
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&#39;/g, "'")
-            .replace(/&amp;/g, "&"),
-    );
+    const page = outsideListings(html);
 
     assert.deepEqual(assets, []);
-    assert.ok(frames.length > 0);
+    assert.doesNotMatch(page, /<link[\s>]/i, "no <link>");
+    assert.doesNotMatch(page, /<script[^>]*\ssrc=/i, "no script file");
+    assert.doesNotMatch(page, /<iframe|<object|<embed|srcdoc=/i, "no frame or plug-in");
+    // `@import` may appear as text in a code listing (the generated Tailwind file says how to import it), but never
+    // in a style that the page runs.
+    const styles = [...page.matchAll(/<style>([\s\S]*?)<\/style>/g)]
+        .map((match) => match[1])
+        .join("\n");
 
-    for (const text of [html, ...frames]) {
-        assert.doesNotMatch(text, /<link[\s>]/i, "no <link>");
-        assert.doesNotMatch(text, /<script[^>]*\ssrc=/i, "no script file");
-        // `@import` may appear as text in a code listing (the generated Tailwind file says how to import it), but never
-        // in a style that the page or a frame runs.
-        const styles = [...text.matchAll(/<style>([\s\S]*?)<\/style>/g)]
-            .map((match) => match[1])
-            .join("\n");
+    assert.doesNotMatch(styles, /@import/i, "no @import in a style");
+    assert.doesNotMatch(page, /url\(\s*['"]?(https?:)?\/\//i, "no remote url()");
+    assert.doesNotMatch(
+        page,
+        /\s(src|href|action|poster)=["']?(https?:)?\/\//i,
+        "no remote address",
+    );
+    assert.equal((page.match(/<script/g) ?? []).length, 2, "the page's two scripts only");
 
-        assert.doesNotMatch(styles, /@import/i, "no @import in a style");
-        assert.doesNotMatch(text, /url\(\s*['"]?(https?:)?\/\//i, "no remote url()");
-        assert.doesNotMatch(
-            text,
-            /\s(src|href|action|poster)=["']?(https?:)?\/\//i,
-            "no remote address",
-        );
+    // The policy: nothing from outside, no frame, form, or base, and an image or font only as data.
+    const policy = /http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html)?.[1] ?? "";
+
+    for (const part of [
+        "default-src 'none'",
+        "form-action 'none'",
+        "base-uri 'none'",
+        "img-src data:",
+        "font-src data:",
+    ]) {
+        assert.ok(policy.includes(part), `the policy has ${part}`);
     }
 
-    // A policy on the page and on each frame, and the frames cannot reach the page.
-    assert.match(html, /http-equiv="Content-Security-Policy" content="default-src 'none'/);
-    assert.equal((html.match(/sandbox="allow-scripts"/g) ?? []).length, frames.length);
-    assert.ok(!html.includes('sandbox="allow-scripts allow-same-origin"'));
-
-    for (const frame of frames) {
-        const nonce = /script-src 'nonce-([\w-]+)'/.exec(frame)?.[1];
-
-        assert.ok(nonce !== undefined && nonce.length >= 16, "a nonce in the frame's policy");
-        assert.equal((frame.match(/<script/g) ?? []).length, 1, "only the frame's own script");
-        assert.ok(frame.includes(`<script nonce="${nonce}">`));
-    }
+    assert.doesNotMatch(policy, /frame-src/);
 });
 
 /** A system built of hostile text in every place that the page prints. */
@@ -274,7 +270,7 @@ function hostile(): DesignSystem {
 
 test("project text is escaped, and a value that could break a style is left out", () => {
     const { html } = renderSystemDoc(hostile());
-    const page = outsideFrames(html);
+    const page = outsideListings(html);
 
     // Only the page's own two scripts (the first sets the mode, the second runs the page) are in the page.
     assert.equal((page.match(/<script/g) ?? []).length, 2, "two scripts");
@@ -305,22 +301,20 @@ test("project text is escaped, and a value that could break a style is left out"
         assert.ok(!styles.includes(part), `${part} is not in a style`);
     }
 
-    // The frames hold the component's markup and CSS as escaped attribute text: no raw tag can leave them.
-    const frame = /srcdoc="([^"]*)"/.exec(html)![1]!;
+    // Component markup and CSS are on the page once, as escaped text in a listing: no raw tag can leave it.
+    const listings = [
+        ...html.matchAll(/<pre class="snip" id="code-\d+-\d+"><code>([\s\S]*?)<\/code><\/pre>/g),
+    ].map((match) => match[1]!);
 
-    assert.ok(!frame.includes("<"), "the frame's document is escaped in its attribute");
-    assert.ok(!frame.includes('"'));
-    // A component's CSS cannot close the style element that holds it.
-    const doc = frame
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&amp;/g, "&");
-
-    assert.equal((doc.match(/<\/style>/g) ?? []).length, 1, "one style element, closed once");
-    assert.equal((doc.match(/<script nonce=/g) ?? []).length, 1, "one script has the nonce");
-    assert.ok(doc.includes("<\\/style><script>alert(2)"), "the closing tag in the CSS is defused");
+    assert.ok(listings.length >= 3);
+    assert.ok(
+        listings.every((text) => !text.includes("<")),
+        "every listing is escaped",
+    );
+    assert.ok(
+        listings.some((text) => text.includes("&lt;/style&gt;&lt;script&gt;alert(2)")),
+        "the CSS is text",
+    );
 });
 
 test("an empty system, a system with one mode, and a system with no components still render", () => {
@@ -485,20 +479,20 @@ test("the Markdown renderer escapes text first and keeps only safe links", () =>
 const host = { fetchPublic: createPublicFetch() } as PocketHost;
 
 test(
-    "in Chromium the page loads with no error, sizes its frames, switches mode, and runs no component script",
+    "in Chromium the page loads with no error, draws every state in place, switches mode, and runs no component script",
     {
         skip: findBrowser() === undefined ? "No Chromium on this machine." : false,
     },
     async () => {
         const system = flagship();
 
-        // A component whose markup tries to run script and to reach out; the frame must stop both.
+        // A component whose markup tries to run script, to reach out, and to leave: the page must strip all of it.
         system.components = [
             {
                 ...system.components[0]!,
                 slug: "probe",
                 markup: {
-                    default: `<button class="pk-button">Probe</button><script>parent.postMessage({ type: "ds-frame", height: 3999 }, "*"); document.title = "ran"</script><img src="https://example.com/x.png" onerror="parent.postMessage({ type: 'ds-frame', height: 3999 }, '*')">`,
+                    default: `<button class="pk-button pk-button--primary" id="probe" onclick="window.__ran = 4">Probe</button><script>window.__ran = 1</script><img src="https://example.com/x.png" onerror="window.__ran = 2"><a id="leave" href="javascript:window.__ran = 3">leave</a><a href="https://example.com/" id="out">out</a><form action="https://example.com/post"><button type="submit" id="send">Send</button></form><iframe srcdoc="<script>parent.__ran = 5</script>"></iframe>`,
                 },
                 states: ["default"],
             },
@@ -518,24 +512,63 @@ test(
 
             assert.deepEqual(page.errors, []);
             assert.equal(
-                await page.evaluate("document.querySelectorAll('iframe.comp-frame').length"),
-                3,
+                await page.evaluate("document.documentElement.hasAttribute('data-docs-ready')"),
+                true,
             );
+            assert.equal(await page.evaluate("document.querySelectorAll('.comp-stage').length"), 3);
 
-            // Frames report their own height; a script in a component did not make one of them 4,000 px.
-            const heights = (await page.evaluate(
-                "JSON.stringify([...document.querySelectorAll('iframe.comp-frame')].map((frame) => frame.getBoundingClientRect().height))",
-            )) as string;
-            const sizes = JSON.parse(heights) as number[];
+            // Every stage has its shadow root, with its states, drawn in the page: each is tall and in the page's layout.
+            const sizes = JSON.parse(
+                (await page.evaluate(
+                    "JSON.stringify([...document.querySelectorAll('.comp-stage')].map((stage) => [stage.hasAttribute('data-ready'), !!stage.shadowRoot, stage.getBoundingClientRect().height, stage.shadowRoot.querySelectorAll('.__c').length]))",
+                )) as string,
+            ) as [boolean, boolean, number, number][];
 
             assert.ok(
-                sizes.every((height) => height > 60 && height < 3000),
-                heights,
+                sizes.every(
+                    ([ready, root, height, cells]) => ready && root && height > 100 && cells >= 1,
+                ),
+                JSON.stringify(sizes),
             );
 
-            // The mode switch changes the page and tells each frame.
+            // The probe's script, handlers, addresses, and frame are gone; nothing ran.
+            const inside = (await page.evaluate(
+                "document.querySelector('#comp-probe .comp-stage').shadowRoot.innerHTML",
+            )) as string;
+
+            assert.doesNotMatch(
+                inside,
+                /<script|onclick|onerror|javascript:|<iframe|example\.com|action=/i,
+            );
+            assert.match(inside, /id="probe"/);
+            assert.equal(await page.evaluate("typeof window.__ran"), "undefined");
+
+            const here = await page.evaluate("location.href");
+
+            // Clicking its button, its links, and its form does nothing, and the page stays where it is.
+            await page.evaluate(
+                "(() => { const root = document.querySelector('#comp-probe .comp-stage').shadowRoot; for (const id of ['probe', 'leave', 'out', 'send']) root.getElementById(id)?.click(); })()",
+            );
+            assert.equal(await page.evaluate("typeof window.__ran"), "undefined");
+            assert.equal(await page.evaluate("location.href"), here);
+
+            // The mode switch recolors the states, with nothing sent to them: they read the page's variables.
+            // (The button eases its color for 150 ms, so read it after that.)
+            const color = async () => {
+                await page.evaluate("new Promise((resolve) => setTimeout(resolve, 400))");
+
+                return page.evaluate(
+                    "getComputedStyle(document.querySelector('#comp-button .comp-stage').shadowRoot.querySelector('.pk-button--primary')).backgroundColor",
+                );
+            };
+
+            await page.evaluate("document.querySelector('.seg button[data-mode=light]').click()");
+
+            const light = await color();
+
             await page.evaluate("document.querySelector('.seg button[data-mode=dark]').click()");
             assert.equal(await page.evaluate("document.documentElement.dataset.theme"), "dark");
+            assert.notEqual(await color(), light);
             assert.equal(
                 await page.evaluate(
                     "document.querySelector('.seg button[data-mode=dark]').getAttribute('aria-pressed')",
@@ -660,7 +693,7 @@ test("the page's sentences have the right number and article", () => {
         compiled: { css: "", tailwind: "", json: "{}", components: "" },
     };
     const text = (html: string) =>
-        outsideFrames(html)
+        outsideListings(html)
             .replace(/<style>[\s\S]*?<\/style>|<script[\s\S]*?<\/script>|<pre[\s\S]*?<\/pre>/g, " ")
             .replace(/<[^>]+>/g, " ")
             .replace(/&[a-z#0-9]+;/g, " ")

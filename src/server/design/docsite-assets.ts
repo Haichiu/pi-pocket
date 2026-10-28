@@ -1152,13 +1152,24 @@ td.num {
     margin: 0;
 }
 
-.comp-frame {
+.comp-stage {
     display: block;
-    width: 100%;
+    min-height: 120px;
     margin-top: 14px;
+    overflow: hidden;
     border: 1px solid var(--dd-line);
     border-radius: var(--dd-radius);
-    background: var(--dd-panel);
+    background: var(--g, var(--dd-panel));
+    color: var(--t, var(--dd-text));
+    font: 14px/1.5 var(--f, system-ui, sans-serif);
+    contain: layout paint;
+}
+
+.stage-note {
+    margin: 0;
+    padding: 16px;
+    color: var(--dd-muted);
+    font-size: 13px;
 }
 
 .dos {
@@ -1656,7 +1667,7 @@ pre.snip {
 }
 `;
 
-/** The script of the page: the mode switch, copy, search, navigation, demos, and the height of the component frames. */
+/** The script of the page: the mode switch, copy, search, navigation, demos, and the component states. */
 export const DOC_JS = `
 (function () {
     "use strict";
@@ -1711,8 +1722,8 @@ export const DOC_JS = `
         });
     });
 
-    // Mode: the system's own modes. The theme (light or dark) of the page follows the mode.
-    var frames = $$("iframe.comp-frame");
+    // Mode: the system's own modes. The theme (light or dark) of the page follows the mode. Every token variable
+    // is set on the body for each mode, so nothing else needs to change: component states inherit them.
     function setMode(mode, theme) {
         root.setAttribute("data-mode", mode);
         root.setAttribute("data-theme", theme);
@@ -1721,7 +1732,6 @@ export const DOC_JS = `
         });
         var picker = $(".modesel");
         if (picker) { picker.value = mode; }
-        frames.forEach(function (frame) { syncFrame(frame); });
     }
     $$(".seg button").forEach(function (button) {
         button.addEventListener("click", function () {
@@ -1735,32 +1745,68 @@ export const DOC_JS = `
             setMode(option.value, option.getAttribute("data-theme"));
         });
     }
-    var startMode = root.getAttribute("data-mode");
+    setMode(root.getAttribute("data-mode"), root.getAttribute("data-theme"));
 
-    // A component frame is sandboxed: it has no access to this page, and this page none to it. Each side talks by
-    // message. The frame reports its height; this page tells it the mode. Messages are data: check them first.
-    function syncFrame(frame) {
-        if (!frame.contentWindow) { return; }
-        frame.contentWindow.postMessage({ type: "ds-mode", mode: root.getAttribute("data-mode"), theme: root.getAttribute("data-theme") }, "*");
-    }
-    window.addEventListener("message", function (event) {
-        var data = event.data;
-        if (!data || data.type !== "ds-frame" || typeof data.height !== "number" || !isFinite(data.height)) { return; }
-        frames.forEach(function (frame) {
-            if (frame.contentWindow === event.source) {
-                frame.style.height = Math.min(4000, Math.max(40, Math.ceil(data.height) + 2)) + "px";
-            }
+    // Component states. The markup and CSS are project text. Each state is parsed in an inert document (nothing in it
+    // runs or loads), stripped of scripts, handlers, and every address but "#" and small images, and put in a shadow
+    // root: the component's CSS stays in, the page's stays out, and the page's custom properties come in.
+    var BANNED = "script,iframe,frame,frameset,object,embed,link,meta,base,noscript,template,portal,applet";
+    var ADDRESS = ["href", "src", "xlink:href", "action", "formaction", "srcset", "poster", "data", "background", "ping", "cite", "longdesc", "manifest", "codebase", "usemap", "icon", "srcdoc", "target"];
+    function clean(rootNode) {
+        $$(BANNED, rootNode).forEach(function (node) { node.remove(); });
+        $$("*", rootNode).forEach(function (node) {
+            Array.prototype.slice.call(node.attributes).forEach(function (attribute) {
+                var name = attribute.name.toLowerCase();
+                var value = attribute.value.replace(/[\\u0000-\\u0020\\u007f-\\u009f]+/g, "").toLowerCase();
+                if (name.indexOf("on") === 0) { node.removeAttribute(attribute.name); return; }
+                if (ADDRESS.indexOf(name) !== -1 && !/^#/.test(value) && !/^data:image\\/(png|gif|jpeg|webp);/.test(value)) {
+                    node.removeAttribute(attribute.name);
+                }
+            });
         });
+    }
+    var STAGE_CSS = "*{box-sizing:border-box}.__w{overflow:hidden}.__g{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));margin:0 -1px -1px 0}.__c{min-width:0;padding:16px 18px 20px;box-shadow:inset -1px -1px 0 rgb(128 128 128/.28)}.__l{margin:0 0 14px;font:600 11px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;opacity:.62}";
+    $$(".comp-stage").forEach(function (stage) {
+        if (!stage.attachShadow) { return; }
+        var article = stage.closest("article");
+        var panels = $$(".snip-wrap[data-kind]", article);
+        var css = "";
+        var wrap = document.createElement("div");
+        var grid = document.createElement("div");
+        wrap.className = "__w";
+        grid.className = "__g";
+        panels.forEach(function (panel) {
+            var code = $("pre", panel).textContent;
+            if (panel.getAttribute("data-kind") === "css") { css = code; return; }
+            var cell = document.createElement("div");
+            var label = document.createElement("p");
+            var parsed = new DOMParser().parseFromString(code, "text/html");
+            cell.className = "__c";
+            label.className = "__l";
+            label.textContent = panel.getAttribute("data-panel");
+            cell.appendChild(label);
+            clean(parsed.body);
+            Array.prototype.slice.call(parsed.body.childNodes).forEach(function (node) { cell.appendChild(document.importNode(node, true)); });
+            grid.appendChild(cell);
+        });
+        var shadow = stage.attachShadow({ mode: "open" });
+        var style = document.createElement("style");
+        style.textContent = STAGE_CSS + css;
+        wrap.appendChild(grid);
+        shadow.appendChild(style);
+        shadow.appendChild(wrap);
+        // A specimen is a picture of a state: its links and forms go nowhere.
+        shadow.addEventListener("click", function (event) {
+            var path = event.composedPath();
+            for (var i = 0; i < path.length; i++) { if (path[i].tagName === "A") { event.preventDefault(); return; } }
+        });
+        shadow.addEventListener("submit", function (event) { event.preventDefault(); });
+        var note = $(".stage-note", stage);
+        if (note) { note.remove(); }
+        stage.setAttribute("data-ready", "");
     });
-    frames.forEach(function (frame) {
-        frame.addEventListener("load", function () { syncFrame(frame); });
-    });
-    setMode(startMode, root.getAttribute("data-theme"));
-    var resizeTimer = 0;
-    window.addEventListener("resize", function () {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(function () { frames.forEach(syncFrame); }, 120);
-    });
+    // A capture (the bench, design_preview, a PDF) can wait for this: every state is drawn in the page itself.
+    root.setAttribute("data-docs-ready", "");
 
     // Navigation on a phone.
     var menuButton = $(".icon-btn");
@@ -1851,15 +1897,3 @@ export const DOC_JS = `
 
 /** Runs first, in the head: the page opens in the mode that the visitor's color scheme asks for, with no flash. */
 export const DOC_BOOT_JS = `(function(){try{var r=document.documentElement,m=r.getAttribute("data-dark-mode");if(m&&window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches){r.setAttribute("data-mode",m);r.setAttribute("data-theme","dark")}}catch(e){}})();`;
-
-/** The script inside each component frame (it runs only with the page's nonce): it sizes the frame and follows the mode. */
-export const FRAME_JS = `(function(){
-var id=document.documentElement.getAttribute("data-frame");
-function size(){var g=document.querySelector(".__g");if(!g){return}parent.postMessage({type:"ds-frame",id:id,height:Math.ceil(g.getBoundingClientRect().height)},"*")}
-addEventListener("message",function(e){var d=e.data;if(e.source!==parent||!d||d.type!=="ds-mode"){return}
-if(typeof d.mode==="string"&&/^[a-z0-9-]+$/.test(d.mode)){document.documentElement.setAttribute("data-mode",d.mode)}
-if(d.theme==="light"||d.theme==="dark"){document.documentElement.setAttribute("data-theme",d.theme)}
-size()});
-addEventListener("load",size);
-if(window.ResizeObserver){new ResizeObserver(size).observe(document.body)}
-size()})();`;

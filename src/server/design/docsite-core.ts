@@ -29,10 +29,13 @@ export const MAX_PAGE = 1_800_000;
 /** The longest piece of code the page prints for a component or for the compiled files. */
 export const MAX_CODE = 60_000;
 
+/**
+ * The page's policy. Nothing loads from outside, no frame or form or `<base>` is allowed, and an image or a font only as
+ * data. Script stays inline (the artifact viewer adds its own bridge script, which a nonce policy would block): the
+ * page's script strips every script, handler, and address from a component's markup before it shows it.
+ */
 export const PAGE_CSP =
-    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:; frame-src about:";
-export const frameCsp = (nonce: string) =>
-    `default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'nonce-${nonce}'`;
+    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'";
 
 // ── Small helpers ──────────────────────────────────────────────────────────────────────────────────────────────────
 
