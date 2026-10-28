@@ -99,49 +99,145 @@ const partsOf = (cssText) => {
     return any ? parts : null;
 };
 
+// Every style rule of the page (not only those with literals): its selector, what it holds, and which properties it
+// sets. With them, "did the author set this property on this element" has an answer: a rule that matches the element
+// sets it, or its style attribute does. The rules are indexed by the id, a class, or the tag of the last compound of
+// each selector, so that an element is tried only against the rules that could match it.
+const allRules = [];
+const byId = new Map();
+const byClass = new Map();
+const byTag = new Map();
+const general = [];
+let unreadableSheet = false;
+let capHit = false;
+const declaredNames = (cssText) => new Set(splitDecls(cssText).map(([prop]) => prop).filter((prop) => !prop.startsWith('--')));
+const indexRule = (rule) => {
+    const keys = [];
+
+    for (const part of rule.selector.split(/,(?![^(\[]*[)\]])/)) {
+        const last = part.trim().split(/\s*[>+~]\s*|\s+(?![^(\[]*[)\]])/).pop() || '';
+        const id = /#([\w-]+)/.exec(last);
+        const klass = /\.([\w-]+)/.exec(last);
+        const tag = /^([a-z][\w-]*)/i.exec(last);
+
+        keys.push(part.includes('&') || /^[:*\[]/.test(last) && !id && !klass ? ['*'] : id ? ['#', id[1]] : klass ? ['.', klass[1]] : tag ? ['t', tag[1].toLowerCase()] : ['*']);
+    }
+
+    for (const [kind, name] of keys) {
+        const map = kind === '#' ? byId : kind === '.' ? byClass : kind === 't' ? byTag : null;
+
+        if (!map) general.push(rule);
+        else {
+            if (!map.has(name)) map.set(name, []);
+            map.get(name).push(rule);
+        }
+    }
+};
+
 if (input.literals === true) {
     const walk = (rules) => {
         for (const rule of rules) {
-            if (literalRules.length >= 800) return;
+            if (allRules.length >= 4000) {
+                capHit = true;
+
+                return;
+            }
 
             if (rule.type === 1) {
-                const parts = partsOf(rule.style.cssText);
+                const entry = { selector: rule.selectorText, parts: partsOf(rule.style.cssText), declared: declaredNames(rule.style.cssText) };
 
-                if (parts) literalRules.push({ selector: rule.selectorText, parts });
+                allRules.push(entry);
+                indexRule(entry);
+
+                if (entry.parts) literalRules.push(entry);
+            } else if (rule.type === 3 && rule.styleSheet) {
+                try {
+                    walk(rule.styleSheet.cssRules);
+                } catch {
+                    unreadableSheet = true;
+                }
             } else if (rule.cssRules && (rule.type === 4 ? win.matchMedia(rule.conditionText || rule.media.mediaText).matches : rule.type === 12 ? CSS.supports(rule.conditionText) : true)) {
                 walk(rule.cssRules);
             }
         }
     };
 
-    for (const sheet of doc.styleSheets) {
-        try {
-            if (!sheet.disabled) walk(sheet.cssRules);
-        } catch {
-            // A style sheet from another origin cannot be read.
-        }
-    }
+    for (const rules of sheetRules) walk(rules);
+
+    // A sheet that could not be read at all (another site's): the rules are not all known.
+    unreadableSheet = sheetsUnreadable;
 }
+
+// Whether the rules are all known: the answer of "did the author set it" then comes from them, not from the browser's defaults.
+const declarationsKnown = input.literals === true && !unreadableSheet && !capHit;
+const matchedCache = new Map();
+const matchedRules = (el) => {
+    if (matchedCache.has(el)) return matchedCache.get(el);
+
+    const candidates = new Set(general);
+
+    for (const rule of byTag.get(el.localName) || []) candidates.add(rule);
+
+    if (el.id) for (const rule of byId.get(el.id) || []) candidates.add(rule);
+
+    for (const name of el.classList) for (const rule of byClass.get(name) || []) candidates.add(rule);
+
+    const matched = [...candidates].filter((rule) => {
+        try {
+            return el.matches(rule.selector);
+        } catch {
+            return false;
+        }
+    });
+
+    matchedCache.set(el, matched);
+
+    return matched;
+};
+
+// The CSS properties that count as setting each property (the shorthands and the logical forms too).
+const SETTERS = {
+    color: /^color$/,
+    background: /^background(-color)?$/,
+    border: /^border(-(top|right|bottom|left|block|inline)(-(start|end))?)?(-(color|width|style))?$/,
+    outline: /^outline(-(color|width|style))?$/,
+    padding: /^padding(-(top|right|bottom|left|block|inline)(-(start|end))?)?$/,
+    margin: /^margin(-(top|right|bottom|left|block|inline)(-(start|end))?)?$/,
+    gap: /^(grid-)?(row-|column-)?gap$/,
+    radius: /^border(-(top|bottom|start|end)-(left|right|start|end))?-radius$/,
+    'font-size': /^(font|font-size)$/,
+    'font-family': /^(font|font-family)$/,
+};
+const settersOf = (prop) => /^padding/.test(prop) ? 'padding' : /^margin/.test(prop) ? 'margin' : /Radius$/.test(prop) ? 'radius' : /^border/.test(prop) ? 'border' : /^outline/.test(prop) ? 'outline' : /Gap$/.test(prop) ? 'gap' : prop === 'backgroundColor' ? 'background' : prop === 'fontSize' ? 'font-size' : prop === 'fontFamily' ? 'font-family' : 'color';
+
+// Did a rule that matches the element, or its style attribute, set this property (a camelCase one, as in computed styles)?
+const declaredMemo = new Map();
+const declaredOwn = (el, prop) => {
+    const kind = settersOf(prop);
+    const memo = declaredMemo.get(el) || {};
+
+    if (kind in memo) return memo[kind];
+
+    const pattern = SETTERS[kind];
+    let found = matchedRules(el).some((rule) => [...rule.declared].some((name) => pattern.test(name) || name === 'all'));
+
+    if (!found && el.hasAttribute('style')) found = [...declaredNames(el.getAttribute('style'))].some((name) => pattern.test(name) || name === 'all');
+
+    declaredMemo.set(el, Object.assign(memo, { [kind]: found }));
+
+    return found;
+};
 
 const literalCache = new Map();
 const literalsOf = (el) => {
     if (literalCache.has(el)) return literalCache.get(el);
 
     const merged = { text: [], background: [], border: [], outline: [], 'font-size': [], space: [], radius: [], family: [] };
+    const lists = matchedRules(el).filter((rule) => rule.parts).map((rule) => rule.parts);
+    const inline = el.hasAttribute('style') && input.literals === true ? partsOf(el.getAttribute('style')) : null;
 
-    if (literalRules.length > 0 || el.hasAttribute('style')) {
-        const lists = literalRules.filter((rule) => {
-            try {
-                return el.matches(rule.selector);
-            } catch {
-                return false;
-            }
-        }).map((rule) => rule.parts);
-        const inline = el.hasAttribute('style') && input.literals === true ? partsOf(el.getAttribute('style')) : null;
-
-        for (const parts of inline ? [...lists, inline] : lists) {
-            for (const kind of Object.keys(merged)) merged[kind].push(...parts[kind]);
-        }
+    for (const parts of inline ? [...lists, inline] : lists) {
+        for (const kind of Object.keys(merged)) merged[kind].push(...parts[kind]);
     }
 
     literalCache.set(el, merged);

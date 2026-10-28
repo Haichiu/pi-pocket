@@ -94,8 +94,7 @@ test(
             assert.equal(rules.has("overflow"), false, colorScheme);
             assert.equal(rules.has("image-alt"), false, colorScheme);
             // The specimens name their controls (a switch inside its label, a field with its label).
-            assert.equal(rules.has("accessible-name"), false, colorScheme);
-            assert.equal(rules.has("form-label"), false, colorScheme);
+            assert.equal(rules.has("missing-label"), false, colorScheme);
             // The two real findings that this page once had are fixed in the flagship: the code block's inner `<pre>`
             // took the browser's monospace, and the hint of a hovered menu row (in dark) was 4.48:1.
             // (The page's own headings have no font of their own; that is the test page's, not the flagship's.)

@@ -269,7 +269,16 @@ const LENGTH_PROP = /^(padding|margin|rowGap|columnGap|border.*Radius)/;
 
 // A property that is not inherited: set by the author when it is not what the tag has by default. A length that is
 // the same number of ems as the default (a paragraph's margin) is the default too.
+// Without the page's rules (a sheet from another site cannot be read), the markup's own presentation attributes
+// (font color, bgcolor, a table's cellpadding) must not be mistaken for CSS.
+const legacyMarkup = (el) => el.matches('font,[bgcolor]') || (/^(table|thead|tbody|tfoot|tr|td|th|caption)$/.test(el.localName) && el.closest('table[border],table[cellpadding],table[cellspacing],table[bgcolor]') !== null);
 const authoredOwn = (el, prop, style) => {
+    // With every rule of the page known, "set by the author" is a fact about the rules: one that matches the element, or
+    // its style attribute, sets the property. Otherwise the browser's defaults stand in for it.
+    if (declarationsKnown) return declaredOwn(el, prop);
+
+    if (legacyMarkup(el)) return false;
+
     const wanted = defaultsOf(el, parentPx(el));
 
     if (style[prop] === wanted[prop]) return false;
@@ -289,6 +298,16 @@ const inheritedMemo = new Map();
 const inheritedAuthored = (el, prop) => {
     const style = getComputedStyle(el);
     const parent = el.parentElement;
+
+    if (declarationsKnown) {
+        // Set on the element by a rule, or inherited from an ancestor that set it; a value that differs from the
+        // parent's with no rule of the page behind it is the browser's (a link's blue).
+        if (declaredOwn(el, prop)) return true;
+
+        return parent !== null && style[prop] === getComputedStyle(parent)[prop] && inheritedAuthored(parent, prop);
+    }
+
+    if (legacyMarkup(el)) return false;
 
     if (!parent) return style[prop] !== defaultsOf(doc.createElement('div'), 16)[prop];
 
