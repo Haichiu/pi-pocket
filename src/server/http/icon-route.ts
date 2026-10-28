@@ -32,3 +32,26 @@ export function iconRoute(request: IncomingMessage, response: ServerResponse, ur
     });
     response.end(request.method === "HEAD" ? undefined : png);
 }
+
+const HEX = "(?:[0-9a-f]{3}|[0-9a-f]{6})";
+const COOKIE = new RegExp(`(?:^|;\\s*)pocket_icon=(${HEX}(?:\\.${HEX}){4})(?:;|$)`, "i");
+
+/**
+ * The home-screen icon's address for the colors in the request's `pocket_icon` cookie (`frame.card.ring1.ring2.pi`, which
+ * `web/app-icon.js` keeps), or null without one. iOS may read the icon from the page as served, so the page carries it.
+ */
+export function iconAddress(request: IncomingMessage): string | null {
+    const value = COOKIE.exec(request.headers.cookie ?? "")?.[1];
+
+    if (value === undefined) {
+        return null;
+    }
+
+    const [frame, card, ring1, ring2, pi] = value.split(".");
+    const query = new URLSearchParams({ frame, card, ring1, ring2, pi, size: "180" } as Record<
+        string,
+        string
+    >);
+
+    return `/app-icon.png?${query}`;
+}

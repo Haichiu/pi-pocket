@@ -10,7 +10,7 @@ import { describe, HttpError } from "./errors.ts";
 import { createApi } from "./http/api.ts";
 import { artifact } from "./http/artifacts.ts";
 import { publicArtifactBundle } from "./http/artifact-assets.ts";
-import { iconRoute } from "./http/icon-route.ts";
+import { iconAddress, iconRoute } from "./http/icon-route.ts";
 import { extensionFile } from "./http/extension-routes.ts";
 import { hookRoute } from "./http/hook-routes.ts";
 import { linkRoute } from "./http/link-routes.ts";
@@ -123,7 +123,7 @@ export function createHandler(options: HttpOptions) {
 
             // The web app: index.html for app routes, files from web/ otherwise.
             if (parts.length === 0 || parts[0] === "s") {
-                return serveApp(response);
+                return serveApp(response, iconAddress(request));
             }
 
             const file = normalize(join(WEB, ...parts));
@@ -133,7 +133,7 @@ export function createHandler(options: HttpOptions) {
             }
 
             if (file === join(WEB, "index.html")) {
-                return serveApp(response);
+                return serveApp(response, iconAddress(request));
             }
 
             return await serveFile(request, response, file);

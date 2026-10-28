@@ -113,3 +113,21 @@ test("a size is kept in range, and a color that is not hex is refused", () => {
     assert.equal(decode(renderIcon(APP_ICON, 99999)!).size, 1024);
     assert.equal(renderIcon({ ...APP_ICON, pi: "red" }, 180), null);
 });
+
+test("the page carries the icon address of the colors in the cookie, and no other", async () => {
+    const { iconAddress } = await import("../src/server/http/icon-route.ts");
+    const request = (cookie?: string) =>
+        ({ headers: cookie === undefined ? {} : { cookie } }) as never;
+
+    assert.equal(
+        iconAddress(request("a=1; pocket_icon=070707.000.b0b0b0.b6b6b6.b9b9b9")),
+        "/app-icon.png?frame=070707&card=000&ring1=b0b0b0&ring2=b6b6b6&pi=b9b9b9&size=180",
+    );
+    assert.equal(iconAddress(request()), null, "no cookie");
+    assert.equal(iconAddress(request("pocket_icon=zz")), null, "not colors");
+    assert.equal(
+        iconAddress(request('pocket_icon=070707.000.b0b0b0.b6b6b6.b9b9b9"><script>')),
+        null,
+        "nothing but the colors reaches the page",
+    );
+});
