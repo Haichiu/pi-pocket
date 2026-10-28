@@ -52,6 +52,16 @@ const homeIconUrl = (vars) => {
     return `/app-icon.png?${query}`;
 };
 
+/**
+ * The colors in a cookie, `frame.card.ring1.ring2.pi` in hex: iOS may read the icon from the page as it is served, before
+ * any script runs, so the server puts the address in the page from this cookie (`src/server/http/icon-route.ts`).
+ */
+const COOKIE = "pocket_icon";
+const cookieValue = (vars) =>
+    ["--o-bg-darker", "--o-bg", "--o-cyan", "--o-green", "--o-orange"]
+        .map((name) => (vars[name] ?? DEFAULTS[name]).replace("#", ""))
+        .join(".");
+
 function setLink(rel, href, type) {
     let link = document.querySelector(`link[rel="${rel}"]`);
 
@@ -81,4 +91,5 @@ export function applyIcons(vars) {
     applied = key;
     setLink("icon", svgUrl(iconSvg(vars)), "image/svg+xml");
     setLink("apple-touch-icon", homeIconUrl(vars));
+    document.cookie = `${COOKIE}=${cookieValue(vars)}; path=/; max-age=31536000; samesite=lax`;
 }
