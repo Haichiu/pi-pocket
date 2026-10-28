@@ -725,9 +725,21 @@ function mergeColors(scan: unknown, material: Obj, all: MaterialResult): Obj {
 
     const rest = (isObject(scan) ? (prune(scan) as Obj) : {}) as Obj;
 
-    for (const group of Object.keys(material)) {
-        delete rest[group];
+    // The groups of roles are Material's own. A palette group (`indigo`, `gray`) keeps the project's steps that Material does
+    // not have, and takes Material's where a step is in both.
+    const roleGroups = new Set([...Object.values(ROLES).map((path) => path[0]!), "md"]);
+    const out: Obj = { ...rest };
+
+    for (const [group, node] of Object.entries(material)) {
+        const mine = rest[group];
+
+        out[group] =
+            !roleGroups.has(group) && isObject(mine) && isObject(node)
+                ? { ...mine, ...node }
+                : node;
     }
 
-    return { ...rest, ...material };
+    delete out.md;
+
+    return out;
 }

@@ -478,3 +478,52 @@ test("a stylesheet with no loops, maps, or color functions is read as it was wri
         "#ffffff",
     );
 });
+
+test("a palette of nested maps, a function that reads them, and a mixin that writes them: every value is Dart Sass's", () => {
+    const scan = scanTokens(
+        project({
+            "theme.scss": `@use "sass:color"; @use "sass:map"; @use "sass:math";
+$bases: (blue: #2563eb, green: #16a34a, rose: #e11d48, slate: #475569);
+$tints: (50: 94%, 100: 86%, 200: 72%, 300: 54%, 400: 28%);
+$shades: (600: 12%, 700: 26%, 800: 42%, 900: 58%);
+$colors: ();
+@each $name, $base in $bases {
+  $ramp: (500: $base);
+  @each $step, $w in $tints { $ramp: map.merge($ramp, ($step: color.mix(white, $base, $w))); }
+  @each $step, $w in $shades { $ramp: map.merge($ramp, ($step: color.mix(black, $base, $w))); }
+  $colors: map.merge($colors, ($name: $ramp));
+}
+@function c($name, $step: 500) { @return map.get(map.get($colors, $name), $step); }
+$primary: c(blue, 600);
+$danger: c(rose);
+$success: c(green, 700);
+$bg: color.adjust(c(slate, 50), $lightness: 3%);
+$text: c(slate, 900);
+$border: color.change(c(slate, 200), $alpha: 0.6);
+@mixin ramp($name) { @each $step, $v in map.get($colors, $name) { --#{$name}-#{$step}: #{$v}; } }
+:root { @include ramp(blue); @include ramp(slate); --primary: #{$primary}; --danger: #{$danger}; --success: #{$success}; --bg: #{$bg}; --text: #{$text}; --border: #{$border}; }`,
+        }),
+    );
+    const system = load(scan);
+    const { roles } = scan.inferred;
+
+    // What Dart Sass makes of these lines.
+    assert.ok(near(roles.accent?.value, "#2157cf"), String(roles.accent?.value));
+    assert.equal(roles.danger?.value, "#e11d48");
+    assert.ok(near(roles.success?.value, "#107937"), String(roles.success?.value));
+    assert.ok(near(roles.background?.value, "#fcfdfd"), String(roles.background?.value));
+    assert.ok(near(roles.text?.value, "#1e242c"), String(roles.text?.value));
+    assert.equal(roles.border?.value, "#cbcfd599", "a color with alpha");
+    assert.ok(
+        near(hex(system, "color.blue.100"), "#e0e9fc"),
+        String(hex(system, "color.blue.100")),
+    );
+    assert.ok(
+        system.tokens.filter((each) => /^color\.(?:blue|slate)\./.test(each.name)).length >= 20,
+        "the two ramps the mixin wrote",
+    );
+    assert.ok(
+        !system.tokens.some((each) => /^color\.(?:ramp|v)\b/.test(each.name)),
+        "a variable that a loop keeps for itself is not a token",
+    );
+});

@@ -231,6 +231,18 @@ export function scanTokens(root: string): TokenScan {
     const inferred = infer(facts, folder);
     const roots = new Map<string, string>();
 
+    if (facts.sassExpanded.size > 0) {
+        const names = [...facts.sassExpanded.keys()];
+
+        inferred.sources.unshift(
+            `Sass: the loops, maps, and color functions of ${names.length} file${names.length === 1 ? "" : "s"} (${names
+                .slice(0, 3)
+                .join(
+                    ", ",
+                )}${names.length > 3 ? ", …" : ""}) were run as Sass runs them; the colors are what they make.`,
+        );
+    }
+
     for (const fact of facts.vars) {
         if (fact.scope === "default" && !roots.has(fact.name)) {
             roots.set(`--${fact.name}`, fact.value.slice(0, LIMITS.valueChars));

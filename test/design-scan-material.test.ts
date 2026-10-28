@@ -402,3 +402,43 @@ test("fewer than eight roles are not a Material 3 export, and a stylesheet that 
         "the project's own roles are read as before",
     );
 });
+
+test("a hand-made export: no background means the surface is the page too; a font stack keeps its quotes; the project's own colors stay beside Material's", () => {
+    const scan = scanTokens(
+        project({
+            "css/tokens.css": `:root {
+  --md-ref-typeface-brand: 'Roboto Flex', Roboto, sans-serif;
+  --md-sys-color-primary: #6750a4; --md-sys-color-on-primary: #ffffff; --md-sys-color-tertiary: #7d5260; --md-sys-color-error: #b3261e;
+  --md-sys-color-surface: #fef7ff; --md-sys-color-surface-container: #f3edf7; --md-sys-color-on-surface: #1d1b20;
+  --md-sys-color-on-surface-variant: #49454f; --md-sys-color-outline: #79747e; --md-sys-color-outline-variant: #cac4d0;
+}
+@media (prefers-color-scheme: dark) { :root:not(.light-scheme) { --md-sys-color-primary: #d0bcff; --md-sys-color-surface: #141218; --md-sys-color-on-surface: #e6e0e9; } }`,
+            "css/app.css":
+                ".badge { background: #e8def8; color: var(--md-sys-color-on-surface) } .chip { background: #e8def8 } .snack { background: #322f35; border-radius: 4px } .toast { background: #322f35 }",
+        }),
+    );
+    const system = load(scan);
+
+    assert.equal(hex(system, "color.bg.page"), "#fef7ff", "the surface is the page");
+    assert.equal(hex(system, "color.bg.surface"), "#fef7ff");
+    assert.equal(hex(system, "color.bg.page", "dark"), "#141218");
+    assert.deepEqual(token(system, "font.brand")!.modes.light!.value, [
+        "Roboto Flex",
+        "Roboto",
+        "sans-serif",
+    ]);
+    // Colors that the project's own styles use, and Material does not have, stay; the ones that Material has are not twice.
+    const colors = system.tokens
+        .filter((each) => each.type === "color" && each.modes.light!.alias === undefined)
+        .map((each) => each.modes.light!.hex);
+
+    assert.ok(
+        colors.includes("#e8def8") && colors.includes("#322f35"),
+        "the project's literals stay",
+    );
+    assert.equal(
+        colors.filter((each) => each === "#6750a4").length,
+        1,
+        "a color of Material's is listed once",
+    );
+});

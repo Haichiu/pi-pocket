@@ -61,51 +61,41 @@ class Scope {
         return project.vars.get(name);
     }
 
-    set(name: string, value: Value, project: Project, global: boolean): void {
-        if (global) {
+    /** Sets a variable and says whether it is the project's own (a global one). */
+    set(name: string, value: Value, project: Project, forceGlobal: boolean): boolean {
+        if (forceGlobal || this.parent === undefined) {
             project.vars.set(name, value);
 
-            return;
+            return true;
         }
 
         // An assignment reaches a variable that exists in this scope or in the control flow around it.
-        for (
-            let scope: Scope | undefined = this;
-            scope !== undefined;
-            scope = scope.flow ? scope.parent : undefined
-        ) {
+        let scope: Scope = this;
+
+        for (;;) {
             if (scope.vars.has(name)) {
                 scope.vars.set(name, value);
 
-                return;
+                return false;
             }
 
-            if (!scope.flow) {
+            if (!scope.flow || scope.parent === undefined) {
                 break;
             }
+
+            scope = scope.parent;
         }
 
-        // The root scope is the project.
-        if (this.parent === undefined) {
+        // Control flow at the top level assigns the project's variable when there is one; else the variable is its own.
+        if (scope.parent === undefined && project.vars.has(name)) {
             project.vars.set(name, value);
 
-            return;
-        }
-
-        let top: Scope = this;
-
-        while (top.flow && top.parent !== undefined && top.parent.parent !== undefined) {
-            top = top.parent;
-        }
-
-        // A flow scope directly under the root assigns the project's variable.
-        if (top.flow && top.parent?.parent === undefined && project.vars.has(name)) {
-            project.vars.set(name, value);
-
-            return;
+            return true;
         }
 
         this.vars.set(name, value);
+
+        return false;
     }
 }
 
@@ -391,9 +381,10 @@ class Run implements Env {
             return;
         }
 
-        this.scope.set(name, value, this.project, isGlobal);
+        const global = this.scope.set(name, value, this.project, isGlobal);
 
-        if (emit && value.t !== "null") {
+        // A variable that a loop or a function keeps for itself is not the stylesheet's: only globals and a rule's own are written.
+        if (emit && value.t !== "null" && (global || !this.scope.flow)) {
             // An alias (`$a: $b`) or a plain value keeps its text: the scan follows an alias by itself.
             const plain =
                 /^\$[\w-]+$/.test(source) ||
