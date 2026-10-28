@@ -919,6 +919,14 @@ const PROBES: { slug: string; markup: string; css?: string; target: string }[] =
         target: "r",
     },
     {
+        slug: "css-fetch",
+        // Every way to make the page fetch an image or a font from outside: functions, escapes, and at-rules, in a style
+        // attribute, in a style element, and in the component's CSS.
+        markup: `<div id="t" style="border-image:image-set('https://evil.example/s1' 1x);background:u\\72l(https://evil.example/s2);list-style-image:url(https://evil.example/s3);cursor:url(https://evil.example/s4),auto;mask:-webkit-image-set(url(https://evil.example/s5) 1x);width:60px;height:20px">x</div><style>#t{content:image-set('https://evil.example/s6' 1x);background:cross-fade(url(https://evil.example/s7),#fff,50%)}@\\69mport 'https://evil.example/s8';</style><svg width="20" height="20"><rect id="r" width="20" height="20" style="fill:url(https://evil.example/s9)" fill="url(https://evil.example/s10)"/></svg>`,
+        css: `#t{border-image:image-set("https://evil.example/c1" 1x);background:-webkit-image-set(url(https://evil.example/c2) 1x)}@\\69mport "https://evil.example/c3";@font-face{font-family:f;src:url(https://evil.example/c4.woff2)}.x{background:element(#t);list-style:src("https://evil.example/c5")}`,
+        target: "t",
+    },
+    {
         slug: "style-url",
         markup: `<div id="t" style="width:80px;height:30px;background:url(https://example.com/x.png);background-image:url('javascript:window.__ran=1');behavior:url(x.htc)">style</div><div id="r" style="color:red;width:20px;height:20px">ok</div>`,
         css: `#t{background:url(https://example.com/y.png)}@import url(https://example.com/z.css);`,
@@ -995,7 +1003,7 @@ test(
 
                 assert.doesNotMatch(
                     inside,
-                    /<(script|iframe|object|embed|meta|base|link|math|foreignobject|animate|animatetransform|animatemotion|set|discard|form)\b|\son[a-z]+=|javascript:|attributename|example\.com|formaction|action=/i,
+                    /<(script|iframe|object|embed|meta|base|link|math|foreignobject|animate|animatetransform|animatemotion|set|discard|form)\b|\son[a-z]+=|javascript:|attributename|example\.com|evil\.example|image-set|cross-fade|@import|@font-face|formaction|action=/i,
                     `${probe.slug}: ${inside.slice(0, 300)}`,
                 );
 
@@ -1027,6 +1035,22 @@ test(
                     `${probe.slug}: the page moved`,
                 );
             }
+
+            // No request was attempted, for a script's sake or an image's: none failed, none was blocked, none was made.
+            assert.deepEqual(page.failedRequests, [], "a request was attempted and blocked");
+            assert.equal(
+                await page.evaluate(
+                    "performance.getEntriesByType('resource').some((entry) => /evil\\.example/.test(entry.name))",
+                ),
+                false,
+                "a request was made",
+            );
+            assert.equal(
+                await page.evaluate(
+                    "(() => { const t = document.querySelector('#comp-css-fetch .comp-host').shadowRoot.getElementById('t'); const s = getComputedStyle(t); return [s.borderImageSource, s.listStyleImage, s.cursor, s.maskImage].join('|'); })()",
+                ),
+                "none|none|auto|none",
+            );
 
             // A click in the middle of the window, and the corners, runs nothing: the overlay probe did not cover the page.
             for (const [x, y] of [
