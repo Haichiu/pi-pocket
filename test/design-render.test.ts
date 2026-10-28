@@ -523,3 +523,31 @@ test(
         assert.deepEqual(results, [true, true]);
     },
 );
+
+test("PI_POCKET_BROWSER_ARGS reaches the design render's Chromium", { skip: browser === undefined }, async () => {
+    const { Chromium } = await import("../src/server/browser/cdp.ts");
+    const realLaunch = Chromium.launch;
+    let launched: readonly string[] | undefined;
+    const fake = {
+        connection: { send: async () => ({}), listen: () => {} },
+        kill: () => {},
+        exited: Promise.resolve(),
+    } as unknown as Chromium;
+
+    Chromium.launch = async (_executable: string, _profile: string, extra: readonly string[]) => {
+        launched = extra;
+
+        return fake;
+    };
+    process.env.PI_POCKET_BROWSER_ARGS = "--no-sandbox --design-flag";
+
+    try {
+        await withRender(bundle, host, undefined, async () => true);
+    } finally {
+        Chromium.launch = realLaunch;
+        delete process.env.PI_POCKET_BROWSER_ARGS;
+    }
+
+    assert.ok(launched?.includes("--no-sandbox"), "the env flag reaches Chromium");
+    assert.ok(launched?.includes("--design-flag"), "space-separated args are kept apart");
+});
