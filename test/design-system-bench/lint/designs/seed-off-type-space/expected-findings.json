@@ -1,0 +1,49 @@
+{
+    "design": "seed-off-type-space",
+    "viewport": [1280, 800],
+    "colorSchemes": ["light"],
+    "findings": [
+        {
+            "rule": "off-system-size",
+            "pid": "lead",
+            "value": "15px"
+        },
+        {
+            "rule": "off-system-size",
+            "pid": "note",
+            "value": "13px"
+        },
+        {
+            "rule": "off-system-size",
+            "pid": "panel",
+            "value": "13px"
+        },
+        {
+            "rule": "off-system-size",
+            "pid": "stack",
+            "value": "22px"
+        },
+        {
+            "rule": "off-system-size",
+            "pid": "avatar",
+            "value": "7px"
+        },
+        {
+            "rule": "off-system-size",
+            "pid": "quote",
+            "value": "18px"
+        },
+        {
+            "rule": "off-system-font",
+            "pid": "headline",
+            "value": "Bellweather Serif",
+            "suggestion": ["font.family.body"]
+        },
+        {
+            "rule": "font-fallback",
+            "pid": "headline",
+            "value": "Bellweather Serif"
+        }
+    ],
+    "description": "Six sizes off the scales (font sizes, padding, gap, radius, margin) and a font that is not in the system and is not loaded."
+}

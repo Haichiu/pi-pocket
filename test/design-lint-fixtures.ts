@@ -1,0 +1,104 @@
+// A small design system and a helper to check a page against it, for the design check tests.
+import { createPublicFetch } from "../src/server/public-fetch.ts";
+import type { PocketHost } from "../src/server/host.ts";
+import type { DesignBundle } from "../src/server/design/bundle.ts";
+import { type CheckOptions, checkDesign } from "../src/server/design/lint.ts";
+import type {
+    CheckFinding,
+    CheckReport,
+    DesignSystem,
+    ResolvedToken,
+    TokenTier,
+    TokenType,
+} from "../src/server/design/system-types.ts";
+
+export const host = { fetchPublic: createPublicFetch() } as PocketHost;
+
+/** A token with a value in the light mode, and in the dark mode when given. */
+export function token(
+    name: string,
+    type: TokenType,
+    value: unknown,
+    dark?: unknown,
+    tier: TokenTier = "semantic",
+): ResolvedToken {
+    const css = (item: unknown) => (typeof item === "string" ? item : "");
+
+    return {
+        path: name.split("."),
+        name,
+        cssVar: `--${name.replaceAll(".", "-")}`,
+        type,
+        tier,
+        modes: {
+            light: { value, css: css(value) },
+            dark: { value: dark ?? value, css: css(dark ?? value) },
+        },
+    };
+}
+
+/** Colors, two fonts, a type scale, a spacing scale, and radii, in light and dark. */
+export function testSystem(): DesignSystem {
+    return {
+        name: "Test system",
+        modes: ["light", "dark"],
+        schemes: { light: "light", dark: "dark" },
+        components: [],
+        guidelines: "",
+        problems: [],
+        compiled: { css: "", tailwind: "", json: "", components: "" },
+        tokens: [
+            token("color.bg.page", "color", "#f6f7fb", "#101218"),
+            token("color.bg.surface", "color", "#ffffff", "#1a1d27"),
+            token("color.text.primary", "color", "#1c1e26", "#e6e8f0"),
+            token("color.text.muted", "color", "#5a5f73", "#a0a5b8"),
+            token("color.border.default", "color", "#8a90a6", "#4a4f63"),
+            token("color.accent.default", "color", "#3b6cf6", "#7aa2f7"),
+            token("color.accent.fg", "color", "#ffffff", "#101218"),
+            token("color.blue.500", "color", "#3b6cf6", "#7aa2f7", "primitive"),
+            token("font.body", "fontFamily", "system-ui, sans-serif"),
+            token("font.mono", "fontFamily", ["JetBrains Mono", "monospace"]),
+            token("font.size.sm", "dimension", "14px"),
+            token("font.size.md", "dimension", "16px"),
+            token("font.size.lg", "dimension", { value: 1.5, unit: "rem" }),
+            token("space.2", "dimension", "8px"),
+            token("space.3", "dimension", "12px"),
+            token("space.4", "dimension", "16px"),
+            token("space.6", "dimension", "24px"),
+            token("radius.md", "dimension", "8px"),
+        ],
+    };
+}
+
+/** A bundle for a page. */
+export function bundleOf(content: string, assets: DesignBundle["assets"] = []): DesignBundle {
+    return { meta: { title: "Test", type: "html", versions: [] }, version: 1, content, assets };
+}
+
+const head =
+    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
+
+/** A page: the head with a viewport meta, the style, and the body. */
+export const page = (style: string, body: string) =>
+    `${head}<style>body{margin:0;font:16px/1.5 system-ui,sans-serif;color:#1c1e26;background:#f6f7fb}${style}</style></head><body>${body}</body></html>`;
+
+/** Check a page at a phone size against the test system (`null`: no system). */
+export function check(
+    content: string,
+    options: CheckOptions = {},
+    system: DesignSystem | null = testSystem(),
+    assets: DesignBundle["assets"] = [],
+): Promise<CheckReport> {
+    return checkDesign(
+        bundleOf(content, assets),
+        system ?? undefined,
+        { viewport: "mobile", ...options },
+        host,
+    );
+}
+
+/** The findings of a rule, and of a rule on one `data-pid`. */
+export const ofRule = (report: CheckReport, rule: string): CheckFinding[] =>
+    report.findings.filter((finding) => finding.rule === rule);
+export const onPid = (report: CheckReport, rule: string, pid: string): CheckFinding | undefined =>
+    report.findings.find((finding) => finding.rule === rule && finding.pid === pid);

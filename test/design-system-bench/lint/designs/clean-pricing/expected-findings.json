@@ -1,0 +1,8 @@
+{
+    "design": "clean-pricing",
+    "clean": true,
+    "viewport": [390, 844],
+    "colorSchemes": ["light", "dark"],
+    "findings": [],
+    "description": "A pricing page at 390 px. Uses keyword and zero values (transparent, currentColor, 0, auto, 100%), a decorative empty alt, an aria-hidden icon, and a disabled button. None of these is a finding. Zero findings, light and dark."
+}

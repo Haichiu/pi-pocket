@@ -1,0 +1,37 @@
+{
+    "design": "seed-off-colors",
+    "viewport": [1280, 800],
+    "colorSchemes": ["light"],
+    "findings": [
+        {
+            "rule": "off-system-color",
+            "pid": "banner",
+            "value": "#e9f0fd",
+            "suggestion": ["color.accent.subtle", "color.blue.100"]
+        },
+        {
+            "rule": "off-system-color",
+            "pid": "banner-title",
+            "value": "#1c1c28",
+            "suggestion": ["color.text.primary", "color.gray.900"]
+        },
+        {
+            "rule": "off-system-color",
+            "pid": "cta",
+            "value": "rgb(43, 106, 224)",
+            "suggestion": ["color.accent.default", "color.blue.500", "color.focus.ring"]
+        },
+        {
+            "rule": "off-system-color",
+            "pid": "tag",
+            "value": "#7a1fa2"
+        },
+        {
+            "rule": "off-system-color",
+            "pid": "rule",
+            "value": "#cdd3dc",
+            "suggestion": ["color.border.default", "color.gray.200"]
+        }
+    ],
+    "description": "Five literal colors in place of tokens: four near a token, one far from every token."
+}

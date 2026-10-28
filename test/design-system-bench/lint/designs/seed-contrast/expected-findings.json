@@ -1,0 +1,23 @@
+{
+    "design": "seed-contrast",
+    "viewport": [1280, 800],
+    "colorSchemes": ["light"],
+    "findings": [
+        {
+            "rule": "contrast",
+            "pid": "badge-low",
+            "level": "error"
+        },
+        {
+            "rule": "contrast",
+            "pid": "ghost-text",
+            "level": "error"
+        },
+        {
+            "rule": "contrast",
+            "pid": "chip",
+            "level": "error"
+        }
+    ],
+    "description": "Three text and fill pairs below 4.5:1 that use only tokens (muted text on accent, border color as text, accent on its own hover color)."
+}

@@ -1,5 +1,6 @@
 // The workspace's state: one small store for the whole tab, made when the module loads. It lives outside the panel's
 // component, so going back to the chat on a phone (which closes the panel) and coming again keeps the canvas as it was.
+import { emptyHistory } from "./system.js";
 
 /** A store: `get()`, `set(patch or fn)`, and `subscribe(listener)`. */
 export function createStore(initial) {
@@ -62,23 +63,33 @@ const write = (storage, key, value) => {
 /** What a person chose for how the canvas looks: kept in this browser. */
 export function loadPrefs() {
     const saved = read(localStorage, PREFS) ?? {};
-    const small = typeof innerWidth === "number" && innerWidth < 700;
 
     return {
+        // Until the person picks a size, the canvas follows the panel: the phone's frame on a phone (`auto`).
         device: ["mobile", "tablet", "desktop", "slide", "custom"].includes(saved.device)
             ? saved.device
-            : small
-              ? "mobile"
-              : "desktop",
+            : "auto",
         custom: saved.custom ?? { w: 800, h: 600 },
         zoom: saved.zoom === "fit" || typeof saved.zoom === "number" ? saved.zoom : "fit",
         backdrop: ["auto", "light", "dark"].includes(saved.backdrop) ? saved.backdrop : "auto",
     };
 }
 
+/** The size name for `device`: `auto` is the phone's frame in a narrow panel, the tablet's in a middling one, else the desktop's. */
+export function resolveDevice(device, width) {
+    return device !== "auto"
+        ? device
+        : width > 0 && width < 700
+          ? "mobile"
+          : width > 0 && width < 1000
+            ? "tablet"
+            : "desktop";
+}
+
 export function savePrefs(state) {
     write(localStorage, PREFS, {
-        device: state.device,
+        // `auto` is not a choice: it is saved as none, so the next load follows the panel again.
+        device: state.device === "auto" ? undefined : state.device,
         custom: state.custom,
         zoom: state.zoom,
         backdrop: state.backdrop,
@@ -137,10 +148,54 @@ export function sessionState() {
         reload: 0,
         /** Whether the frame's bridge can inspect, edit, and tweak (it is there when the bridge has `send`). */
         bridge: true,
+        ...systemState(),
     };
 }
 
 /** The state before anything is chosen. */
 export function initialState() {
-    return { ...loadPrefs(), width: 0, conversation: null, ...sessionState() };
+    return {
+        ...loadPrefs(),
+        width: 0,
+        conversation: null,
+        /** Focus mode: the conversation is hidden, and the panel has the whole width. */
+        focus: false,
+        ...sessionState(),
+    };
+}
+
+/**
+ * The System view's part of the state. `system` is what the server has (`status` idle, loading, ready, or failed), and
+ * `history` the person's unsaved edits to it (`system.js`). `previewVars` is what the open design is told to show them.
+ */
+export function systemState() {
+    return {
+        system: { status: "idle", data: null, legacy: null, error: "" },
+        history: emptyHistory(),
+        /** The mode the view shows: a mode's name, `both` (side by side), or null for the default one. */
+        sysMode: null,
+        sysSection: "colors",
+        /** The token whose editor is open. */
+        sysOpen: null,
+        /** The groups the person folded, by id. */
+        sysFolded: {},
+        /** The long groups the person opened in full, by id. */
+        sysAll: {},
+        sysQuery: "",
+        sysSearch: false,
+        /** The alias list that is open: `{ token, mode }`. It is drawn over the whole view, not inside a row. */
+        sysPick: null,
+        /** On a narrow panel: the view itself, or the open design under it (`system` or `preview`). */
+        sysPane: "system",
+        /** The last save: `idle`, `saving`, `failed` (with `error` and `problems`), `conflict`, or `saved` (with `note`). */
+        save: { status: "idle", error: "", problems: [], note: "" },
+        /** Whether the guidelines are open for editing. */
+        sysWriting: false,
+        /** Custom properties the open design shows now: the unsaved edits and the mode in view. */
+        previewVars: {},
+        /** Page checks, by `artifact@version:scheme:size`: `{ status, report, error }`. */
+        checks: {},
+        /** The options of the next check. */
+        checkWith: { scheme: "light", size: "mobile" },
+    };
 }

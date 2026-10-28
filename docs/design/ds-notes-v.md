@@ -1,0 +1,90 @@
+# Stream V notes: verification and export (`ds/verify`)
+
+## What was built
+
+### `src/server/design/lint.ts` (checks), with `lint-page.ts` and `lint-color.ts`
+
+- **`checkDesign(bundle, system | undefined, options, host, signal): Promise<CheckReport>`**, the contract. It renders in the private Chromium (`withRender`), loads the page, applies the view, runs the steps, and checks. It works with only a `DesignSystem` object (no file reads).
+- **`CheckOptions`** (new, in `lint.ts`; `system-types.ts` is untouched): `viewport` (a preset or `{ width, height }`, default desktop), `colorScheme` (`light` | `dark`), `mode` (a system mode; default `dark` for a dark scheme when the system has that mode, else its default mode; a non-default mode also sets `data-theme` on the root when the page sets none), `tweaks`, `page` (another HTML page of the bundle), `actions` (`hover | click | focus` + selector, run first), `slide` (a deck: a slide from 1, or `"all"` up to 40).
+- **`checkPage(page, system, view)`**: the same checks on a page already loaded in a `DesignPage`. `design_preview` uses it, so the checks cost no extra render. Also exported: `analyze(raw, tokens)` (pure: no browser), `modeFor`, `reportOf`, `mergeFindings`.
+- **`lint-page.ts`** is the script that runs in the page: one walk of the DOM (capped at 4,000 elements and 300 groups for each kind), which returns groups of equal values with a count and the first element. It runs in an **isolated world** (`Page.createIsolatedWorld`), so a page cannot change `getComputedStyle`, `Array.from`, and so on. Its answer is untrusted: `analyze` checks shapes and cuts strings.
+- **`lint-color.ts`**: OKLab distance, WCAG contrast, and `tokenSet(system, mode)`: the system's colors, font families, and font-size, spacing, and radius lengths in one mode. Token colors and lengths are resolved **by the browser** (the same canvas path that resolves the page's colors), so every CSS color syntax and `rem`/`clamp()` work, and a token compares with the page like with like.
+- Rules (levels): `off-system-color` (error), `off-system-font` (error), `off-system-size` (warning; font size, spacing, radius, each on its own scale), `contrast` (error for text: 4.5, 3 for large text; warning for a form field's edge: 3), `tap-target` (error under 24 px unless the WCAG 2.2 24 px circle spacing exception holds; warning under 44 px on a viewport under 768 px), `overflow` (error when the page scrolls sideways, warning when `overflow-x: hidden` hides content), `image-alt` (error), `heading-order` (warning), `font-fallback` (error when a declared `@font-face` did not load, warning when a family has no face and is not installed), `missing-viewport` (error; not for decks), `missing-pid` (warning; one finding for the whole page that names the tags), `focus-visible` (warning).
+- Precision choices: the background is the real one (every ancestor's color, opacity, alpha composited over the canvas). Contrast is **not judged** when it cannot be known: a gradient, image, filter, blend mode, or `backdrop-filter` in the chain, text over media or a positioned fill, `background-clip: text`, disabled controls, hidden or 1 px text. Auto and percent margins and padding, pill and circle radii, native checkbox margins, text-link tap targets inside a sentence, a native checkbox without a label, and `0` are not findings. The default black text is not an off-system color. Transitions and animations are switched off while checking, so computed values are resting values. Focus is tested on one element of each kind by really focusing it, and the snapshot covers the element, its descendants, its labels, and siblings and parents three levels up, so a `:focus-visible + .box` pattern counts.
+- Equal values are one finding: its message ends with `(and N more elements)` (or says `N elements`), and the selector, `pid`, and `rect` are the first element's.
+- Suggestions: `off-system-color` names the nearest token (a role beats a palette value when two are as near; a token named for another role is not offered: a border is not a background; none when nothing is within 20); `contrast` names the system color nearest to the text color that passes on that background; `off-system-size` names the nearest step (the smaller one on a tie); `off-system-font` names the font token with the same generic fallback.
+
+### `design_preview`
+
+New arguments: `checks` (default true), `tweaks`, `colorScheme`, `page`, `actions` (up to 10; hover, click, focus; a step that cannot run is a `Note:` and is skipped). The output is the screenshots, then one text: `Checks (mobile, desktop; light; system "Name", mode light): 3 errors, 5 warnings.`, up to 30 findings (errors first, then by rule), `… and N more`, notes, then the console errors and failed requests (the old JSON text is gone; `details.errors` and `details.failedRequests` stay, and `details.checks` holds up to 200 findings for each view). A finding that is in only some of the viewports names them. With actions, the checks run before and after the steps and merge. A system that cannot be read is a note, and the screenshots still come.
+
+### Export fixes
+
+- Deck PNG: `slide` (number from 1) in the tool and the route; `"all"` writes a zip of `slide-N.png` (default path `exports/<id>-v<n>-slides.zip`). `slide` with a non-deck or another format is an error.
+- `tweaks` in the tool and the route are applied before the export (CSS custom properties with the knob's unit, plus a `pocket:tweak` event, as the canvas does). The route takes `viewport` as a preset, `WxH`, or `{ width, height }`.
+- A page's PDF is as wide as the viewport (paper width and height from the viewport, no margins; an `@page` rule still wins, and decks keep their slide size).
+- PPTX: notes leave out `style`, `script`, `template`, `noscript`, and `title` text (`slides()` reads text nodes, not `textContent`); slide images are taken at 2× (3840×2160 for the default slide; no side over 4096 pixels, so very large slides are scaled less).
+- Renders hide scrollbars (`Emulation.setScrollbarsHidden`): a tall page's PNG was 15 px narrower than its viewport.
+
+### `render.ts`
+
+- `Slots` (limit, queue, wait): renders **queue** first in, first out instead of failing the third. 2 at once, up to 16 waiting, up to 5 minutes of waiting; a wait ends on abort. The 90 s limit starts when a render starts.
+- `DesignPage`: `load(viewport, { scale, page })`, `setScale`, `settle`, `applyView({ colorScheme, theme, tweaks })`, `act(actions)`, `evaluateIsolated`, `pdf(viewport)`. `tweakValues` and `designActions` validate tool and route input.
+
+## What differs from the plan
+
+- `color.ts` was renamed `lint-color.ts` so that it does not clash with stream T's `color.ts` (commit 5440256 on `ds/tokens`).
+- New files besides `lint.ts`: `lint-page.ts` (the page script), `lint-color.ts` (math and token sets), `tokens-stub.ts` (below). All are in `src/server/design/` and are new, so nothing conflicts.
+- `checkDesign` takes `CheckOptions` as its `options` (the plan left its shape open). `checkPage` is the extra seam so the preview does not render twice.
+- `design_preview`'s `slide` stays a single number; `"all"` is only for `design_export`.
+- Level choices the plan did not fix: off-system colors and fonts are **errors** (the system is the point), sizes are warnings.
+- `focus-visible` and the form-field edge are warnings (best effort).
+
+## Stubs
+
+- `src/server/design/tokens-stub.ts`: `loadDesignSystem(cwd)` with the plan's signature, returning `undefined`. `index.ts` imports it. When T lands, the integrator changes that one import to `./tokens.ts` and deletes the stub. `designTools(host, { loadSystem })` takes the loader as an optional second argument, which the tests use, so U's `designTools(host)` call needs no change.
+
+## For U (the System view)
+
+- `checkDesign(await readBundle(...), loadDesignSystem(cwd), { viewport, colorScheme, tweaks, slide }, host, signal)` gives `CheckReport`. Each finding has `selector`, `pid`, and `rect` (page coordinates) for pins, `suggestion` (`var(--…)`), and a message that can go to Pi as is. Counts of equal values are in the message.
+- A check takes about 0.5 s on a small page and about 1.5 s with 4,000 elements.
+
+## Text for `docs/features.md` (the integrator merges it)
+
+In the Design bullet, replace the `design_preview` and `design_export` sentences: `design_preview` renders a version in a private headless Chromium at mobile and desktop sizes (or the sizes asked for) and returns screenshots, then a short report: values that are not design-system tokens (with the nearest token), contrast (WCAG 2.2 AA), tap targets, sideways overflow, image alt text, heading order, fonts that did not load, a missing viewport tag, missing `data-pid`s, and elements with no visible focus style; at most 30 findings, errors first. Options: `checks` (on by default), `tweaks`, `colorScheme`, `page`, and `actions` (hover, click, or focus before the screenshot). `design_export` also takes `tweaks`, a custom `viewport`, and (for a deck's PNG) `slide`, or `"all"` for a zip of every slide. A page's PDF is as wide as the viewport, and PPTX slide images have twice the pixels. Renders queue (2 at once) instead of failing.
+
+## What I checked
+
+- `npm run format`, `npm run check`, `npm run lint`, and the full `npm test` (961 tests) pass.
+- New tests: `test/design-lint.test.ts` (24 tests: color math, token sets, every rule with a positive and a negative page, dark mode, tweaks, another page, actions, decks, a clean page with zero findings, a hostile page), `test/design-verify.test.ts` (18 tests: the queue, input validation, the report text, every new preview argument, deck slide PNG and zip, tweaks, custom size, PDF width, PPTX notes and 2× images, tool and route).
+- By hand on a throwaway copy (`127.0.0.12:8912`): the export route with `slide`, `slide: "all"`, a custom `viewport`, and `tweaks` over HTTP with a signed-in owner; an invalid slide is a clear 400.
+- Real pages: `site/index.html` and `site/architecture.html` (900 elements, no system): the findings were real (a real horizontal overflow at 390 px, 17 px footer links, grey text at 2.05:1).
+
+## What is still weak
+
+- **No real `loadDesignSystem` yet**, so `design_preview` has no off-system rules until T lands (tested with an injected system).
+- **Token naming is a guess**: which dimension tokens are the type, spacing, and radius scales comes from path names (`lengthKind` in `lint-color.ts`: `space`, `spacing`, `radius`, `font.size`, `text.*`…). A system that names them otherwise gets no size rule. Worth one look when T's names are final.
+- **Gradients are not parsed**: a color inside `linear-gradient()` is not compared with the system, and text on a gradient or image is not judged for contrast.
+- **Box shadows, SVG fills, and outlines of the default focus ring** are not compared with the system.
+- **Caps**: 4,000 elements and 300 groups for each kind; beyond that the rest is not checked, and the report does not say so.
+- **Fluid sizes** (`clamp()` in a page) are compared at the checked viewport only, so a fluid font size is off-system unless a token resolves to the same pixels.
+- **Backgrounds come from the DOM chain and rectangle overlap**, not from hit testing (scrolling would change the page), so a sibling overlay is found only when it is positioned or has an image.
+- `font-fallback` for a family with no `@font-face` guesses by measuring text, with an allow list of common system fonts; a font installed only on the reader's machine is a warning.
+- `focus-visible` focuses one element of each tag-and-class kind (up to 40 kinds, 20 findings), so a state that only some instances lack is missed.
+- The preview does not run the checks per slide beyond the slide it shows (`checkDesign` can: `slide: "all"`).
+
+## Duplicates with stream T's `color.ts`
+
+The integrator removes these after the merge. `lint-color.ts` does not import T's file. T's `Rgba` is an object (`r`, `g`, `b`, `a`; channels 0 to 1); mine is a tuple (0 to 255, alpha 0 to 1), so a swap needs a small adapter.
+
+| `lint-color.ts` (V)                            | T's `color.ts`                                | Note                                                                                           |
+| ---------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `Rgba` (tuple)                                 | `Rgba` (object)                               | Same idea, different shape.                                                                    |
+| `luminance(r, g, b)`                           | `luminance(color)`                            | Same WCAG formula.                                                                             |
+| `contrastRatio(a, b)` (opaque, no compositing) | `contrastRatio(foreground, background, page)` | T's also composites alpha. V's page script composites in the browser first.                    |
+| `toOklab(r, g, b)` and `colorDistance`         | `toOklch(color)` (OKLCH, not a distance)      | V needs a distance in OKLab; T has the OKLCH conversion only. Keep V's distance.               |
+| `formatColor(color)`                           | `toHex(color)`                                | V's also prints alpha as `rgb(r g b / a)`.                                                     |
+| `colorCss(value)` (DTCG object to CSS text)    | `colorObjectCss(value)`, `COLOR_SPACES`       | T's validates and returns an error; V's returns `undefined` and the browser resolves the text. |
+| (none)                                         | `parseColor(input)`, `NAMED_COLORS`, `over`   | V parses colors in the browser (canvas), so it has no parser.                                  |
+
+Not in T's file, so no duplicate: `dimensionCss`, `familyList`, `isGenericFamily`, `lengthKind`, `tokenSet`, and the token types.

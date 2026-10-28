@@ -4,9 +4,15 @@ import { createCanvas, frameUrl } from "./canvas.js";
 import { designsOf, latestOf, siblingsOf } from "./data.js";
 import { clampSize, DEVICES, exportViewport, sizeOf } from "./devices.js";
 import { createDocks } from "./docks.js";
+import { createPicker } from "./picker.js";
+import { checkKey } from "./system-data.js";
+import { createSystemSections } from "./system-sections.js";
+import { createSystemView } from "./system-view.js";
+import { createSystemWidgets } from "./system-widgets.js";
 import { changed } from "./tweaks.js";
 import { createViews } from "./views.js";
-import { useStore } from "./state.js";
+import { resolveDevice, useStore } from "./state.js";
+import { unsavedCount } from "./system.js";
 
 /** The sheet's own width classes: below 560 px it stacks; from 900 px the side panel sits beside the canvas. */
 const NARROW = 560;
@@ -16,10 +22,13 @@ const STACK = 560;
 export function createWorkspace(env) {
     const { pocket, store, data, parts, app } = env;
     const { html, useEffect, useMemo, useRef, useState } = pocket;
-    const { Ico, Popover, Segmented, useSize, ago } = parts;
+    const { Ico, Popover, Segmented, useSize } = parts;
     const canvas = createCanvas(env);
     const docks = createDocks(env);
     const views = createViews(env, canvas);
+    const { Picker } = createPicker(env);
+    const widgets = createSystemWidgets(env);
+    const system = createSystemView(env, canvas, createSystemSections(env, widgets), widgets);
 
     /** Parts of the app's own state this reads: the session's artifacts, who the person is. Redraws only when they change. */
     function useApp() {
@@ -51,79 +60,7 @@ export function createWorkspace(env) {
         );
     }
 
-    const listNote = (design) =>
-        `${design.id} · v${latestOf(design)} · ${ago(design.versions.at(-1)?.createdAt ?? 0)}`;
-
     // ─── Pop-ups ─────────────────────────────────────────────────────────────
-
-    function Picker({ s, designs, design, onClose }) {
-        const [query, setQuery] = useState("");
-        const words = query.trim().toLowerCase();
-        const shown = designs.filter(
-            (each) =>
-                words === "" ||
-                each.title.toLowerCase().includes(words) ||
-                each.id.includes(words) ||
-                (each.group ?? "").includes(words),
-        );
-        const rows = [];
-        const grouped = new Set();
-
-        for (const each of shown) {
-            if (each.group && !grouped.has(each.group)) {
-                grouped.add(each.group);
-                rows.push({ header: each.group });
-                rows.push(...shown.filter((other) => other.group === each.group));
-            } else if (!each.group) {
-                rows.push(each);
-            }
-        }
-
-        return html`<${Popover}
-            label="Designs"
-            onClose=${onClose}
-            wide=${true}
-            sheet=${env.sizeClass(s) === "narrow"}
-        >
-            ${
-                designs.length > 7 &&
-                html`<input
-                    class="dsn-search"
-                    type="search"
-                    placeholder="Find a design"
-                    value=${query}
-                    onInput=${(event) => setQuery(event.currentTarget.value)}
-                />`
-            }
-            <ul class="dsn-list" aria-label="Designs">
-                ${rows.map((row) =>
-                    row.header
-                        ? html`<li class="dsn-list-head" key=${`g:${row.header}`}>
-                              <${Ico} name="layers" size=${13} /> ${row.header}
-                          </li>`
-                        : html`<li key=${row.id}>
-                              <button
-                                  type="button"
-                                  aria-current=${row.id === design?.id}
-                                  class=${`dsn-list-item ${row.id === design?.id ? "on" : ""} ${row.group ? "in-group" : ""}`}
-                                  onClick=${() => {
-                                      env.open(row.id);
-                                      onClose();
-                                  }}
-                              >
-                                  <span class="dsn-list-main">
-                                      <strong>${row.title}</strong>
-                                      <span class="muted small mono">${listNote(row)}</span>
-                                  </span>
-                                  ${row.kind === "deck" && html`<span class="dsn-chip">deck</span>`}
-                                  ${row.id === design?.id && html`<${Ico} name="check" size=${15} />`}
-                              </button>
-                          </li>`,
-                )}
-                ${shown.length === 0 && html`<li class="muted small dsn-empty">Nothing by that name.</li>`}
-            </ul>
-        <//>`;
-    }
 
     function CustomSize({ s }) {
         return html`<div class="dsn-custom">
@@ -250,6 +187,14 @@ export function createWorkspace(env) {
                 />
                 <div class="dsn-menu-label">Design</div>
                 <${MenuItem}
+                    icon="palette"
+                    label="Design system"
+                    onClick=${() => {
+                        env.openSystem();
+                        onClose();
+                    }}
+                />
+                <${MenuItem}
                     icon="compare"
                     label="Compare versions"
                     disabled=${design.versions.length < 2}
@@ -339,6 +284,9 @@ export function createWorkspace(env) {
         const open_ = openOf(s.notes[design.id]?.comments ?? []).length;
         const edits = (s.edits[`${design.id}@${shown}`] ?? []).length;
         const moved = changed(s.knobs, s.tweaks[design.id] ?? {}).length;
+        const report =
+            s.checks[checkKey(design.id, shown, s.checkWith.scheme, s.checkWith.size)]?.report;
+        const found = report ? report.summary.errors + report.summary.warnings : 0;
         const tabs = [
             { id: "view", label: "Preview", icon: "eye" },
             {
@@ -349,6 +297,7 @@ export function createWorkspace(env) {
             },
             ...(canEdit ? [{ id: "edit", label: "Edit text", icon: "text", badge: edits }] : []),
             ...(canEdit ? [{ id: "tweaks", label: "Tweaks", icon: "sliders", badge: moved }] : []),
+            ...(canEdit ? [{ id: "check", label: "Check", icon: "shield", badge: found }] : []),
             { id: "versions", label: "Versions", icon: "history", badge: design.versions.length },
         ];
         const active =
@@ -360,9 +309,11 @@ export function createWorkspace(env) {
                     ? "comment"
                     : s.dock === "tweaks"
                       ? "tweaks"
-                      : s.dock === "versions"
-                        ? "versions"
-                        : "view";
+                      : s.dock === "check"
+                        ? "check"
+                        : s.dock === "versions"
+                          ? "versions"
+                          : "view";
 
         return html`<div class="dsn-bars">
             <div class="dsn-bar">
@@ -386,6 +337,19 @@ export function createWorkspace(env) {
                     options=${devices.map((device) => ({ ...device, label: device.title }))}
                     onChange=${env.setDevice}
                 />
+                ${
+                    env.beside() &&
+                    html`<button
+                        type="button"
+                        class=${`icon-button ${s.focus ? "on" : ""}`}
+                        title=${s.focus ? "Show the conversation" : "Hide the conversation"}
+                        aria-label=${s.focus ? "Show the conversation" : "Hide the conversation"}
+                        aria-pressed=${s.focus}
+                        onClick=${env.toggleFocus}
+                    >
+                        <${Ico} name=${s.focus ? "unfocus" : "focus"} size=${17} />
+                    </button>`
+                }
                 <button
                     type="button"
                     class="icon-button"
@@ -513,6 +477,9 @@ export function createWorkspace(env) {
                     )}
                 </div>`
             }
+            <button type="button" class="dsn-link dsy-empty-system" onClick=${env.openSystem}>
+                <${Ico} name="palette" size=${15} /> The design system
+            </button>
         </div>`;
     }
 
@@ -541,6 +508,13 @@ export function createWorkspace(env) {
         // open comes forward, unless the person is in the middle of something.
         useEffect(() => {
             if (s.conversation === null) {
+                return;
+            }
+
+            if (s.wanted?.system) {
+                store.set({ wanted: null });
+                env.openSystem();
+
                 return;
             }
 
@@ -581,7 +555,12 @@ export function createWorkspace(env) {
             }
 
             if (design === null && designs.length > 0) {
-                env.open(designs[0].id);
+                // The System view keeps the screen: the design is only the one it shows its edits on.
+                if (s.view === "system") {
+                    store.set({ artifact: designs[0].id, version: null });
+                } else {
+                    env.open(designs[0].id);
+                }
             } else if (
                 added.length > 0 &&
                 design !== null &&
@@ -606,14 +585,23 @@ export function createWorkspace(env) {
             }
         }, [s.artifact, s.conversation]);
 
+        // The design system is read once in the background, so that the picker can say what it holds.
+        useEffect(() => {
+            if (s.conversation !== null && s.system.status === "idle") {
+                void env.systemData.load({ quiet: true });
+            }
+        }, [s.conversation]);
+
         // A deck is shown at slide size by default, and a page is never shown at it.
         const deck = design?.kind === "deck" || s.deck !== null;
+        // Until the person picks a size, the page follows the panel: the phone's frame in a narrow one.
+        const chosen = resolveDevice(s.device, store.get().width || width);
         const device =
-            deck && s.device === "desktop"
+            deck && chosen === "desktop"
                 ? "slide"
-                : !deck && s.device === "slide"
+                : !deck && chosen === "slide"
                   ? "desktop"
-                  : s.device;
+                  : chosen;
         const size = sizeOf(device, s.custom);
         const latest = design ? latestOf(design) : 1;
         const shown = design
@@ -622,6 +610,7 @@ export function createWorkspace(env) {
                 : latest
             : 1;
         const group = design ? siblingsOf(designs, design) : [];
+        const unsaved = unsavedCount(s.system.data, s.history);
 
         // Pi makes a new version while the person is in the middle of something (a mode, a draft, text edits): the page they
         // work on stays, with the way to the new one, instead of loading under them.
@@ -650,6 +639,36 @@ export function createWorkspace(env) {
         if (s.conversation === null) {
             return html`<div class="dsn" ref=${root}>
                 <${pocket.Loader} label="Opening Design" />
+            </div>`;
+        }
+
+        // The System view: its own bar and body, with the open design (if there is one) beside it or behind a tap.
+        if (s.view === "system") {
+            return html`<div
+                class="dsn dsy"
+                ref=${root}
+                data-size=${env.sizeClass(s)}
+                data-view="system"
+                data-focus=${s.focus}
+            >
+                <${system.SystemBar}
+                    s=${s}
+                    designs=${designs}
+                    design=${design}
+                    shown=${shown}
+                    room=${room}
+                    canEdit=${canEdit}
+                    Picker=${Picker}
+                />
+                <${system.SystemView}
+                    s=${s}
+                    designs=${designs}
+                    design=${design}
+                    shown=${shown}
+                    size=${size}
+                    room=${room}
+                    canEdit=${canEdit}
+                />
             </div>`;
         }
 
@@ -705,6 +724,16 @@ export function createWorkspace(env) {
                     ${`Version ${shown} of ${latest}. `}
                     <button type="button" class="dsn-link" onClick=${() => env.showVersion(null)}>
                         Show the newest
+                    </button>
+                </div>`
+            }
+            ${
+                unsaved > 0 &&
+                s.view === "canvas" &&
+                html`<div class="dsn-old dsy-unsaved">
+                    ${`The design system has ${unsaved} unsaved change${unsaved === 1 ? "" : "s"}, shown here. `}
+                    <button type="button" class="dsn-link" onClick=${env.openSystem}>
+                        Open the system
                     </button>
                 </div>`
             }
