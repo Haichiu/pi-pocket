@@ -125,6 +125,24 @@ Round 5 progress: V's checks reach **1.0** on the third held-out set (precision 
 
 Lint generalizes to every set. The scan is strong on every format family it knows and weak on families it has never met (Figma Variables 0.11 on set 4): T's round 6 builds a rendered fallback and a shape-based theme-object reader instead of more formats one at a time.
 
+### Judges after round 5 (f4ba521)
+
+| Line                   | R4  | R5 judge A | R5 judge B | **R5**                     |
+| ---------------------- | --- | ---------- | ---------- | -------------------------- |
+| 1 Token model          | 8   | 8          | 9          | **8**                      |
+| 2 Import (scan)        | 8   | 7          | 8          | **7** (fresh set 4: 0.617) |
+| 3 Enforcement          | 8   | 8          | 9          | **8**                      |
+| 4 Accessibility        | 9   | 9          | 9          | **9**                      |
+| 5 Agent experience     | 8   | 8          | 9          | **8**                      |
+| 6 People experience    | 7   | 8          | 9          | **8**                      |
+| 7 Documentation output | 9   | 9          | 9          | **9**                      |
+| 8 Code handoff         | 8   | 8          | 9          | **8**                      |
+| 9 Engineering          | 8   | 9          | 9          | **9**                      |
+
+Judge A's concrete items: wrong suggestions (white text on blue → a yellow primitive; `#7aa2f7` → a component token although `color.blue.400` equals it; a gray border → a cyan info token), duplicate findings in separate rows; `bg-bg`, `text-text`, and a stale `tailwind.css` header; the System view's Spacing and Radii not grouped like the docs; shadow layers hidden; phone Check has an empty area and a stray page-level pin; "High contrast" overlaps its icon; flagship roles with one value (`bg.canvas`, `selected`, `sunken`); docs code without syntax color and with stretched panels; one flat tool schema. Judge B adds: accepted findings per design, a report of unchecked contrast, the Tokens Studio snippet's indent, truncated `tokens.css` comments.
+
+Round 6 assignments: T (the general scan paths and Figma Variables, measured on fresh set 4; principled Tailwind names with no stutter, a header test, full comments; a duplicate-value warning; splits), V (exact-match and role-and-hue-aware suggestions, grouped duplicates, accepted findings, unchecked-contrast report), U (System view groups by tier and group, full shadow layers, phone Check fixes, accepted-finding UI), G (syntax color, natural-height panels, collapsed identical values, shadow layers, the snippet indent, a `dist/README.md`, distinct flagship role values).
+
 Round 5 assignments: U (phone Check bar and canvas, tab strip, pinned editor header, readable shadow values, focus-mode canvas, the fixture's broken image), G (flagship ramps, spacing groups, a radius scale; docs code blocks, the Tokens Studio snippet, the All tokens table, section anchors; split `docsite-assets.ts`), T (ramp-order warning, a names table, clearer utility names, scan report of skipped and low-confidence sources, a transcript test, split `scan-colors.ts`), V (author-set values only, role tokens first, page semantics checks, input zoom, `npm run design:check`, split `lint-page.ts`), B (a third fresh held-out set, a dirty-state shot), integrator (docs).
 
 Round 4 assignments: T (Tailwind namespaces and role utilities, one JSON convention plus a Tokens Studio export, committed flagship `dist/` with a diff test, DTCG 2025.10 forms, an example per tool action, component entry points in the summary, split `scan-infer.ts` and `scan-facts.ts`); U (roles count, shadow values on tiles, phone mode control and tab cue and Check sheet height, compact spacing rows, a fixed save bar, one-tap fixes through V's engine, Harbor tabs); V (`applyExactFixes`, reduced motion, non-text contrast, a small check CLI); G (docs component frames for certain, hero by role, shadow and radius layout, page under 600 KB, split `docsite.ts`); B (second held-out set, painted frames check, the shots script in the bench with per-tab assertions).
