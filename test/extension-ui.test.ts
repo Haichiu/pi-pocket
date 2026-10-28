@@ -394,6 +394,16 @@ test(
         await until(() => hasLabel("App row"), "the default App row without a session");
         assert.equal(await hasLabel("Session row"), false, "a Session row needs a session");
         await inPage(`(await import("/store.js")).closeSheet(); return "null";`);
+        // A sheet that closes takes its history entry off a moment later (`back.js`, with a traversal that waits for
+        // the browser). A route written before then is undone by that traversal when the browser is slow: wait for it.
+        await until(
+            async () =>
+                (await inPage<number>(
+                    `return JSON.stringify(history.state?.pocket?.layers ?? 0)`,
+                )) === 0,
+            "the sheet's history entry to go",
+            30_000,
+        );
 
         await inPage(`(await import("/store.js")).navigate(${session}); return "null";`);
         await until(() => has(".composer"), "the session opens");

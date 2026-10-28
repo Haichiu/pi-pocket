@@ -524,7 +524,10 @@ test(
 
         await withRender(bundle, host, undefined, async (page) => {
             await page.load({ width: 1280, height: 800 });
-            await page.evaluate("new Promise((resolve) => setTimeout(resolve, 600))");
+            // The page says when every state is drawn in place (`data-docs-ready`): wait for that, not for a time.
+            await page.evaluate(
+                "new Promise((resolve) => { const look = () => document.documentElement.hasAttribute('data-docs-ready') ? resolve(true) : setTimeout(look, 20); look(); })",
+            );
 
             assert.deepEqual(page.errors, []);
             assert.equal(
@@ -569,14 +572,12 @@ test(
             assert.equal(await page.evaluate("location.href"), here);
 
             // The mode switch recolors the states, with nothing sent to them: they read the page's variables.
-            // (The button eases its color for 150 ms, so read it after that.)
-            const color = async () => {
-                await page.evaluate("new Promise((resolve) => setTimeout(resolve, 400))");
-
-                return page.evaluate(
-                    "getComputedStyle(document.querySelector('#comp-button .comp-host').shadowRoot.querySelector('.pk-button--primary')).backgroundColor",
+            // (The button eases its color for 150 ms: read it when that transition has ended, not after a fixed time,
+            // which a busy machine can stretch past.)
+            const color = () =>
+                page.evaluate(
+                    "(async () => { const button = document.querySelector('#comp-button .comp-host').shadowRoot.querySelector('.pk-button--primary'); getComputedStyle(button).backgroundColor; await Promise.all(button.getAnimations().map((each) => each.finished.catch(() => {}))); return getComputedStyle(button).backgroundColor; })()",
                 );
-            };
 
             await page.evaluate("document.querySelector('.seg button[data-mode=light]').click()");
 

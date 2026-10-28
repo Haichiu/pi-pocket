@@ -1080,6 +1080,11 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
     const deckSheet = () => {
         const { width, height } = deck.size;
         const scale = Math.min(win.innerWidth / width, win.innerHeight / height) || 1;
+
+        // The window size this scale was made for: the watch below paints again when it is another (a frame that was
+        // not laid out when the deck started has no resize event to tell of its first size).
+        deck.fit = [win.innerWidth, win.innerHeight];
+
         return (
             "html,body{margin:0!important;padding:0!important;width:100%!important;height:100%!important;overflow:hidden!important}" +
             (deck.bare ? "html{background:#000}" : "") +
@@ -1221,6 +1226,8 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
             return;
         }
 
+        deck.watch?.disconnect();
+
         for (const slide of deck.slides) {
             slide.removeAttribute("data-pocket-current");
             unshow(slide);
@@ -1275,6 +1282,8 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                 view: null,
                 display: shown || "block",
                 shownInline: new Map(),
+                fit: [0, 0],
+                watch: null,
             };
 
             // A phone lays a page with no viewport out at 980 pixels wide: a deck needs the real width to fit it.
@@ -1296,6 +1305,17 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
             deckEvents.add("keydown", onDeckKey);
             deckEvents.add("resize", paintDeck);
+
+            // The page's root is as big as the window (the sheet says so): when the window gets its size after the
+            // deck started, with no resize event, the root changes size, and the slide is scaled for the new size.
+            if (typeof win.ResizeObserver === "function") {
+                deck.watch = new win.ResizeObserver(() => {
+                    if (deck && (deck.fit[0] !== win.innerWidth || deck.fit[1] !== win.innerHeight)) {
+                        paintDeck();
+                    }
+                });
+                deck.watch.observe(doc.documentElement);
+            }
         } else {
             deck.slides = slides;
             deck.index = Math.min(deck.index, slides.length - 1);

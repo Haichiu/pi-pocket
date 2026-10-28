@@ -850,7 +850,9 @@ test("a reconnect that brings the same data keeps it, and draws no session row",
         const settle = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
         const { browserModuleState } = await import("/extension-ui.js");
         // Extensions' browser modules load after the list shows, and each one that finishes draws every row again
-        // (extensionsRev). That is theirs, not the reconnect's: let them all finish before counting.
+        // (extensionsRev). A module goes on after that too: the Updates module asks the server for its status and
+        // updates its menu entry whenever the answer comes, which under load is any time. That is theirs, not the
+        // reconnect's, so the count below ignores a draw whose only new prop is extensionsRev.
         const loading = () => store.state.server.ui.some((each) => {
             const status = browserModuleState(each.module)?.status;
 
@@ -864,6 +866,26 @@ test("a reconnect that brings the same data keeps it, and draws no session row",
         await settle();
         await settle();
 
+        // Every row's props as they are now: draw them all once with a new extensionsRev, and keep what each row got.
+        const baseline = new Map();
+        const early = options.diffed;
+
+        options.diffed = (vnode) => {
+            if (vnode.type?.name === "SessionRow") {
+                baseline.set(vnode.props.session.id, { ...vnode.props });
+            }
+
+            early?.(vnode);
+        };
+        store.set((state) => ({ extensionsRev: state.extensionsRev + 1 }));
+        await settle();
+        await settle();
+        options.diffed = early;
+
+        if (baseline.size === 0) {
+            throw new Error("no session row drew for the baseline");
+        }
+
         const keys = ["me", "models", "guard", "server", "themeList", "folderFavorites", "sessions"];
         const before = Object.fromEntries(keys.map((key) => [key, store.state[key]]));
         const stream = store.state.streamId;
@@ -874,7 +896,19 @@ test("a reconnect that brings the same data keeps it, and draws no session row",
         const diffed = options.diffed;
 
         options.diffed = (vnode) => {
-            rows += vnode.type?.name === "SessionRow" ? 1 : 0;
+            if (vnode.type?.name === "SessionRow") {
+                const was = baseline.get(vnode.props.session.id);
+                const props = Object.keys(vnode.props);
+
+                // A draw counts unless extensionsRev is new and every other prop is the one it had.
+                rows +=
+                    was !== undefined &&
+                    vnode.props.extensionsRev !== was.extensionsRev &&
+                    props.every((key) => key === "extensionsRev" || vnode.props[key] === was[key])
+                        ? 0
+                        : 1;
+            }
+
             diffed?.(vnode);
         };
         // The reconnect's own list must arrive before identity and draws are checked.

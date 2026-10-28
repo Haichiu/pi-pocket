@@ -1345,7 +1345,7 @@ test(
                 shadow.appendChild(wrap);
                 stage.setAttribute("data-ready", "");
             });
-            setTimeout(function () { document.documentElement.setAttribute("data-docs-ready", ""); }, 300);
+            window.__ready = setTimeout(function () { document.documentElement.setAttribute("data-docs-ready", ""); }, 300);
             </script></body>`;
         const served = await serveFiles(
             new Map([["index.html", { type: "text/html; charset=utf-8", body: page }]]),
@@ -1379,7 +1379,10 @@ test(
             const never = await chromium.page(served.url);
 
             await never.open(served.url, { width: 800, height: 900 });
-            await never.evaluate(`document.documentElement.removeAttribute('data-docs-ready')`);
+            // In one step: the page's own timer must not set it after the test took it away (it would, on a slow machine).
+            await never.evaluate(
+                `clearTimeout(window.__ready); document.documentElement.removeAttribute('data-docs-ready')`,
+            );
             assert.equal(await waitForDocsReady(never, 300), false);
             await never.close();
         } finally {
