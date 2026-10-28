@@ -30,7 +30,7 @@ bg-badge-success-fg
 bg-badge-warning-bg
 bg-badge-warning-border
 bg-badge-warning-fg
-bg-base
+bg-bg
 bg-blue-100
 bg-blue-200
 bg-blue-300
@@ -42,6 +42,7 @@ bg-blue-700
 bg-blue-800
 bg-blue-900
 bg-blue-950
+bg-border
 bg-brand
 bg-button-danger-bg
 bg-button-danger-bg-hover
@@ -93,7 +94,6 @@ bg-danger-fill-hover
 bg-danger-line
 bg-danger-on-fill
 bg-danger-soft
-bg-default
 bg-disabled
 bg-focus
 bg-green-100
@@ -162,7 +162,6 @@ bg-orange-800
 bg-orange-900
 bg-orange-950
 bg-pressed
-bg-primary
 bg-raised
 bg-red-100
 bg-red-200
@@ -176,7 +175,6 @@ bg-red-800
 bg-red-900
 bg-red-950
 bg-scrim
-bg-secondary
 bg-segmented-fg
 bg-segmented-fg-selected
 bg-segmented-selected
@@ -199,6 +197,8 @@ bg-surface
 bg-switch-thumb-on
 bg-switch-track-off
 bg-switch-track-on
+bg-text
+bg-text-secondary
 bg-warning
 bg-warning-line
 bg-warning-soft
@@ -245,7 +245,7 @@ border-badge-success-fg
 border-badge-warning-bg
 border-badge-warning-border
 border-badge-warning-fg
-border-base
+border-bg
 border-blue-100
 border-blue-200
 border-blue-300
@@ -257,6 +257,7 @@ border-blue-700
 border-blue-800
 border-blue-900
 border-blue-950
+border-border
 border-brand
 border-button-danger-bg
 border-button-danger-bg-hover
@@ -308,7 +309,6 @@ border-danger-fill-hover
 border-danger-line
 border-danger-on-fill
 border-danger-soft
-border-default
 border-disabled
 border-focus
 border-green-100
@@ -377,7 +377,6 @@ border-orange-800
 border-orange-900
 border-orange-950
 border-pressed
-border-primary
 border-raised
 border-red-100
 border-red-200
@@ -391,7 +390,6 @@ border-red-800
 border-red-900
 border-red-950
 border-scrim
-border-secondary
 border-segmented-fg
 border-segmented-fg-selected
 border-segmented-selected
@@ -414,6 +412,8 @@ border-surface
 border-switch-thumb-on
 border-switch-track-off
 border-switch-track-on
+border-text
+border-text-secondary
 border-warning
 border-warning-line
 border-warning-soft
@@ -514,7 +514,7 @@ text-badge-success-fg
 text-badge-warning-bg
 text-badge-warning-border
 text-badge-warning-fg
-text-base
+text-bg
 text-blue-100
 text-blue-200
 text-blue-300
@@ -528,6 +528,7 @@ text-blue-900
 text-blue-950
 text-body
 text-body-lg
+text-border
 text-brand
 text-button-danger-bg
 text-button-danger-bg-hover
@@ -582,7 +583,6 @@ text-danger-fill-hover
 text-danger-line
 text-danger-on-fill
 text-danger-soft
-text-default
 text-disabled
 text-display
 text-focus
@@ -657,7 +657,6 @@ text-orange-900
 text-orange-950
 text-overline
 text-pressed
-text-primary
 text-raised
 text-red-100
 text-red-200
@@ -671,7 +670,6 @@ text-red-800
 text-red-900
 text-red-950
 text-scrim
-text-secondary
 text-segmented-fg
 text-segmented-fg-selected
 text-segmented-selected
@@ -696,6 +694,8 @@ text-surface
 text-switch-thumb-on
 text-switch-track-off
 text-switch-track-on
+text-text
+text-text-secondary
 text-title
 text-warning
 text-warning-line

@@ -120,6 +120,8 @@ export interface CompiledFiles {
     modes?: Record<string, string>;
     /** `tokens.studio.json`: one file for Tokens Studio, with a token set for each mode and a `$themes` array. */
     studio?: string;
+    /** `names.md`: every token with its variable in `tokens.css` and `tailwind.css` and its Tailwind utilities. */
+    names?: string;
 }
 
 /** A project's design system, loaded and checked. */

@@ -87,12 +87,23 @@ test("a name that Tailwind would read wrongly is kept out of its namespaces: --d
     assert.equal(names.get("z.modal"), "--z-modal", "no namespace, no change");
 });
 
-test("color roles drop the word that the utility repeats: bg-surface, text-primary, border-default; tokens.css keeps its names", () => {
+test("color roles drop the word that the utility repeats (bg-surface, text-muted); a role that is only primary or default takes its group's word; tokens.css keeps its names", () => {
     const names = tailwindNames(system);
 
     assert.equal(names.get("color.bg.surface"), "--color-surface");
-    assert.equal(names.get("color.text.primary"), "--color-primary");
-    assert.equal(names.get("color.border.default"), "--color-default");
+    assert.equal(
+        names.get("color.text.primary"),
+        "--color-text",
+        "`primary` alone is also the brand",
+    );
+    assert.equal(
+        names.get("color.text.secondary"),
+        "--color-text-secondary",
+        "the second of one name keeps its full name",
+    );
+    assert.equal(names.get("color.text.muted"), "--color-muted");
+    assert.equal(names.get("color.border.default"), "--color-border");
+    assert.equal(names.get("color.bg.base"), "--color-bg");
     assert.equal(names.get("color.accent.default"), "--color-accent", "a trailing default goes");
     assert.equal(
         names.get("color.accent.fill"),
@@ -186,12 +197,60 @@ test("the utilities of the flagship are the ones that a real Tailwind compile ma
     );
     assert.ok(
         now.includes("bg-surface") &&
-            now.includes("text-primary") &&
-            now.includes("border-default"),
+            now.includes("text-text") &&
+            now.includes("border-border") &&
+            now.includes("text-muted"),
     );
     assert.ok(
         !now.some((name) =>
-            /font-leading|font-tracking|bg-bg-|text-text-|border-border-/.test(name),
+            /font-leading|font-tracking|bg-bg-surface|text-text-muted|border-border-subtle/.test(
+                name,
+            ),
         ),
     );
+});
+
+test("dist/names.md lists every token with its variable in each file and its utilities, and says how the names come out", () => {
+    const text = system.compiled.names!;
+    const rows = text.split("\n").filter((line) => /^\| `[\w.-]+` \|/.test(line));
+    const tailwind = tailwindNames(system);
+
+    assert.equal(rows.length, system.tokens.length, "one row for each token");
+    assert.match(text, /^# Names: Pi Pocket\n/);
+    assert.match(text, /## How the names come out/);
+    assert.match(text, /`color\.border\.default` is `--color-border`/);
+
+    const row = (name: string) => rows.find((line) => line.startsWith(`| \`${name}\` |`))!;
+
+    assert.equal(
+        row("color.bg.surface"),
+        "| `color.bg.surface` | `--color-bg-surface` | `--color-surface` | `bg-surface` |",
+    );
+    assert.match(
+        row("color.text.primary"),
+        /`--color-text-primary` \| `--color-text` \| `text-text` \|$/,
+    );
+    assert.match(
+        row("color.accent.default"),
+        /`--color-accent` \| `bg-accent` `text-accent` `border-accent` \|$/,
+    );
+    assert.match(
+        row("color.accent.fill"),
+        /`bg-accent-fill` `text-accent-fill` `border-accent-fill` \|$/,
+        "only the first word of the path names the utility",
+    );
+    assert.match(
+        row("font.family.sans"),
+        /`--font-family-sans` \| `--font-sans` \| `font-sans` \|$/,
+    );
+    assert.match(row("font.weight.bold"), /`--font-weight-bold` \| `font-bold` \|$/);
+    assert.match(row("space.4"), /`--space-4` \| `--spacing-4` \| `p-4` `m-4` `gap-4` \|$/);
+    assert.match(row("radius.card"), /`rounded-card` \|$/);
+    assert.match(row("button.height"), /no utility: `var\(--button-height\)` \|$/);
+
+    // The variables in the table are the ones of the files.
+    for (const token of system.tokens) {
+        assert.ok(text.includes(`\`${tailwind.get(token.name)}\``), token.name);
+        assert.ok(system.compiled.css.includes(`${token.cssVar}:`), token.cssVar);
+    }
 });

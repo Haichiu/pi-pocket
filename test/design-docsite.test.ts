@@ -709,13 +709,13 @@ test("a ratio is written with one decimal, cut and never rounded up; cards copy 
         html,
         /<div class="copy-row" data-var="--color-bg-surface" data-tw="bg-surface" data-json="color\.bg\.surface\.\$value"><\/div>/,
     );
-    assert.match(html, /data-var="--color-text-primary" data-tw="text-primary"/);
+    assert.match(html, /data-var="--color-text-primary" data-tw="text-text"/);
     assert.doesNotMatch(
         html,
-        /data-tw="(bg-bg|text-text|border-border)-/,
+        /data-tw="(bg-bg|text-text|border-border)-(?!secondary)/,
         "the class is the compiled theme's name",
     );
-    assert.match(html, /data-var="--color-border-default" data-tw="border-default"/);
+    assert.match(html, /data-var="--color-border-default" data-tw="border-border"/);
     assert.match(
         html,
         /<footer class="foot"><strong>Pi Pocket<\/strong> · \d+ tokens · 3 modes · 10 components · generated \d{4}-\d{2}-\d{2} by Pi Pocket<\/footer>/,
