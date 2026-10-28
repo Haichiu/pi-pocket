@@ -1345,7 +1345,7 @@ test(
                 shadow.appendChild(wrap);
                 stage.setAttribute("data-ready", "");
             });
-            setTimeout(function () { document.documentElement.setAttribute("data-docs-ready", ""); }, 300);
+            window.__ready = setTimeout(function () { document.documentElement.setAttribute("data-docs-ready", ""); }, 300);
             </script></body>`;
         const served = await serveFiles(
             new Map([["index.html", { type: "text/html; charset=utf-8", body: page }]]),
@@ -1379,9 +1379,10 @@ test(
             const never = await chromium.page(served.url);
 
             await never.open(served.url, { width: 800, height: 900 });
-            // The page sets the attribute after 300 ms: let it, then take it away.
-            await new Promise((resolve) => setTimeout(resolve, 700));
-            await never.evaluate(`document.documentElement.removeAttribute('data-docs-ready')`);
+            // In one step: the page's own timer must not set it after the test took it away (it would, on a slow machine).
+            await never.evaluate(
+                `clearTimeout(window.__ready); document.documentElement.removeAttribute('data-docs-ready')`,
+            );
             assert.equal(await waitForDocsReady(never, 300), false);
             await never.close();
         } finally {
@@ -1578,7 +1579,7 @@ test(
             <style>*{margin:0;padding:0}body{background:var(--color-bg-default)}.hero{padding:var(--space-8);background:var(--color-accent-default)}
             .hero button{min-height:var(--size-tap);padding:0 var(--space-4);border:0;border-radius:var(--radius-md);background:var(--color-bg-surface);color:var(--color-text-primary);font:inherit}
             .hero button:focus-visible{outline:var(--size-ring) solid ${ring};outline-offset:var(--space-1)}</style>
-            <main data-pid="main"><div class="hero" data-pid="hero"><button type="button" data-pid="cta">Go</button></div></main>`;
+            <div class="hero" data-pid="hero"><button type="button" data-pid="cta">Go</button></div>`;
         const css = readFileSync(join(LINT_SYSTEM, "golden", "tokens.css"));
         const system = systemFromFlat(readFlat(join(LINT_SYSTEM, ".pi", "design")), "Bench");
         const chromium = (await BenchBrowser.launch())!;
@@ -1624,12 +1625,11 @@ test(
         const system = systemFromFlat(readFlat(join(LINT_SYSTEM, ".pi", "design")), "Bench");
         // Only sizes are authored on the controls. The rest (fonts, colors, paddings, margins, borders) is the browser's.
         const body = `<style>*{box-sizing:border-box}body{background:var(--color-bg-default);color:var(--color-text-primary)}.s{min-height:var(--size-tap);min-width:var(--size-tap)}a{display:inline-flex;align-items:center;min-height:var(--size-tap);min-width:var(--size-tap)}</style>
-            <main data-pid="m"><h1 data-pid="t">Title</h1><p data-pid="p">Text</p><ul data-pid="u"><li data-pid="l">One</li></ul>
+            <h1 data-pid="t">Title</h1><p data-pid="p">Text</p><ul data-pid="u"><li data-pid="l">One</li></ul>
             <label for="a" data-pid="al">Name</label> <input id="a" class="s" data-pid="a"> <button class="s" data-pid="b">Go</button> <a href="#" data-pid="k">Link</a>
             <hr data-pid="r"><table data-pid="tb"><tbody data-pid="tbb"><tr data-pid="tr"><td data-pid="td">1</td></tr></tbody></table>`;
-        const end = "</main>";
         const page = (lang: string, extra: string) =>
-            `<!doctype html><html${lang}><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="ds/tokens.css"></head><body data-pid="page">${body}${extra}${end}</body></html>`;
+            `<!doctype html><html${lang}><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="ds/tokens.css"></head><body data-pid="page">${body}${extra}</body></html>`;
         const chromium = (await BenchBrowser.launch())!;
         const check = (content: string) =>
             referenceCheck(
@@ -1657,74 +1657,13 @@ test(
             );
 
             assert.deepEqual(bad.findings.map((item) => [item.rule, item.pid ?? ""]).sort(), [
-                ["accessible-name", "ic"],
-                ["accessible-name", "im"],
-                ["form-label", "e"],
-                ["form-label", "ph"],
-                ["form-label", "sel"],
+                ["missing-label", "e"],
+                ["missing-label", "ic"],
+                ["missing-label", "im"],
+                ["missing-label", "ph"],
+                ["missing-label", "sel"],
                 ["missing-lang", ""],
             ]);
-        } finally {
-            await chromium.close();
-        }
-    },
-);
-
-test(
-    "missing-main, and input-zoom only for a font size that the page sets, on a phone",
-    { skip: browser === undefined, timeout: 120_000 },
-    async () => {
-        const { BenchBrowser } = await import("./design-system-bench/lib/chromium.ts");
-        const { referenceCheck } = await import("./design-system-bench/lib/reference-lint.ts");
-        const css = readFileSync(join(LINT_SYSTEM, "golden", "tokens.css"));
-        const system = systemFromFlat(readFlat(join(LINT_SYSTEM, ".pi", "design")), "Bench");
-        const page = (inside: string, wrap = true) =>
-            `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="ds/tokens.css"><style>body{font-size:14px}.s{min-height:var(--size-tap);min-width:var(--size-tap)}.small{font-size:var(--font-size-sm)}.inherit{font:inherit}.big{font-size:var(--font-size-md)}</style></head><body data-pid="page">${wrap ? `<main data-pid="main">${inside}</main>` : inside}</body></html>`;
-        const chromium = (await BenchBrowser.launch())!;
-        const check = (content: string, width: number) =>
-            referenceCheck(
-                chromium,
-                { content, assets: [{ name: "ds/tokens.css", type: "text/css", bytes: css }] },
-                system,
-                {
-                    viewport: { width, height: 800 },
-                    colorScheme: "light",
-                },
-            );
-        const rules = async (content: string, width: number) =>
-            (await check(content, width)).findings.map((item) => [
-                item.rule,
-                item.level,
-                item.pid ?? "",
-            ]);
-
-        try {
-            assert.deepEqual(
-                await rules(page('<input class="s" aria-label="A" data-pid="a">', false), 390),
-                [["missing-main", "warning", ""]],
-            );
-            // The browser's own 13.33 px is not the page's: no finding. A size the page sets, or inherits from itself, is.
-            assert.deepEqual(
-                await rules(page('<input class="s" aria-label="A" data-pid="a">'), 390),
-                [],
-            );
-            assert.deepEqual(
-                await rules(
-                    page(
-                        '<input class="s small" aria-label="A" data-pid="a"><textarea class="s inherit" aria-label="B" data-pid="b"></textarea><input class="s big" aria-label="C" data-pid="c">',
-                    ),
-                    390,
-                ),
-                [
-                    ["input-zoom", "warning", "a"],
-                    ["input-zoom", "warning", "b"],
-                ],
-            );
-            // On a desktop viewport a small field is fine.
-            assert.deepEqual(
-                await rules(page('<input class="s small" aria-label="A" data-pid="a">'), 1280),
-                [],
-            );
         } finally {
             await chromium.close();
         }

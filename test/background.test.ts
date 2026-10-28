@@ -1028,11 +1028,25 @@ test("a long log loses its oldest segments, and reads go on after them", { skip 
             notify: false,
         });
 
-        await until(() => segments(id, item.id).length >= 8, "a long log");
-        const first = segments(id, item.id)[0];
+        // The command's whole output is in the log. Its watch keeps the log short at each tick (and `split` names the
+        // first segment `aaaaaa`), so a wait for 8 segments to be on disk at once is a race with that trim: wait for
+        // the last line instead. (A read would do, but it moves the read position, which this test checks below.)
+        await until(
+            () => {
+                const last = segments(id, item.id).at(-1);
 
+                return (
+                    last !== undefined &&
+                    readFileSync(join(dataDir, "background", String(id), last), "utf8").endsWith(
+                        "line 400 of the log\n",
+                    )
+                );
+            },
+            "the whole output",
+            30_000,
+        );
         await app.background.sweep();
-        assert.ok(!segments(id, item.id).includes(first!), "the oldest went");
+        assert.ok(!segments(id, item.id).includes(`${item.id}.log.aaaaaa`), "the oldest went");
 
         const read = (await app.background.read(id, item.id))!;
 
