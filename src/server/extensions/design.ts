@@ -2,7 +2,9 @@
  * Design: a canvas beside the chat for interactive designs. It shows an HTML artifact in a frame at phone, tablet, and
  * desktop sizes, keeps its versions to compare and go back to, holds shared comments pinned to elements, edit and tweak
  * modes, a grid for variations, and a present mode for decks, and hands each change to Pi as a message for the person to
- * send. The agent's side (tools, prompt guide, export) is in `../design/`; this module is the workspace.
+ * send. The agent's side (tools, prompt guide, export) is in `../design/`; this module is the workspace. The System view
+ * (the project's design system: read, edit, check a design against it, publish, export) has its routes in
+ * `design/system-routes.ts`.
  */
 import { randomUUID } from "node:crypto";
 import { defineExtension } from "@earendil-works/pi-durable";
@@ -16,6 +18,7 @@ import {
     type DesignItem,
 } from "../docs.ts";
 import type { ConversationWebRequest, ExtensionWeb, PocketHost } from "../host.ts";
+import { systemRoutes } from "./design/system-routes.ts";
 
 /** An artifact as the index keeps it, with the fields of bundles (`group`, `kind`) that an older index lacks. */
 type DesignArtifact = ArtifactMeta & { group?: string; kind?: string };
@@ -599,8 +602,8 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
     // `/design-open [artifact]`: opens the workspace in the tab of the person who ran it. A command's name needs a dash,
     // so it is not `/design`.
     web.command("design-open", {
-        description: "Open the Design canvas",
-        args: "[artifact]",
+        description: "Open the Design canvas (or the design system, with `system`)",
+        args: "[artifact | system]",
         scope: "conversation",
         handler: (args, context) => {
             web.send(
@@ -615,6 +618,8 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
 
     // Export (`POST export`) is the agent side's; the file comes through core's download route.
     designRoutes(web, host);
+    // The System view: read and edit the design system, check a design against it, publish its docs, export it for code.
+    systemRoutes(web, host);
 
     return extension;
 }

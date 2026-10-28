@@ -1,5 +1,6 @@
 // The side panel of the workspace: versions, comments, text edits, and tweaks. On a wide panel it sits beside the canvas,
 // on a narrow one under it.
+import { createCheck } from "./check.js";
 import { openOf, pinNumber } from "./comments.js";
 import { nameOf } from "./edits.js";
 import { commentsMessage, editsMessage, tweaksMessage } from "./messages.js";
@@ -33,6 +34,8 @@ export function createDocks(env) {
             </button>
         </header>`;
     }
+
+    const { CheckDock } = createCheck(env, DockHead);
 
     // ─── Versions ────────────────────────────────────────────────────────────
 
@@ -619,6 +622,7 @@ export function createDocks(env) {
         comments: "Comments",
         edits: "Text edits",
         tweaks: "Tweaks",
+        check: "Check",
     };
 
     /** The dock for `s.dock`, or nothing. */
@@ -633,7 +637,9 @@ export function createDocks(env) {
                     ? html`<${EditsDock} ...${props} />`
                     : s.dock === "tweaks"
                       ? html`<${TweaksDock} ...${props} />`
-                      : null;
+                      : s.dock === "check"
+                        ? html`<${CheckDock} ...${props} />`
+                        : null;
 
         return (
             body &&
