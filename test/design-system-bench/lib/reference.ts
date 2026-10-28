@@ -257,6 +257,20 @@ export function draftFromExpected(expected: Expected): Draft {
     return { tokens: tree, modes: expected.dark.present ? { dark } : {} };
 }
 
+/** A component in a sandboxed frame, as the real page shows it: its name, then every state. */
+function componentFrame(system: DesignSystem, component: ComponentSpec): string {
+    const escape = (text: string) => text.replace(/[&<>"]/g, (char) => `&#${char.charCodeAt(0)};`);
+    const cells = component.states
+        .map(
+            (state) =>
+                `<div class="c"><p>${escape(state)}</p>${component.markup[state] ?? ""}</div>`,
+        )
+        .join("");
+    const doc = `<!doctype html><meta charset="utf-8"><style>${system.compiled.css}\nbody{margin:0;padding:16px;background:var(--color-bg-surface,#fff);color:var(--color-text-primary,#111);font:14px system-ui}.c{display:inline-block;margin:0 24px 16px 0}.c p{font:11px monospace;text-transform:uppercase;opacity:.7}${component.css}</style><body>${cells}</body>`;
+
+    return `<h3>${escape(component.name)}</h3><iframe class="comp-frame" title="${escape(component.name)}, all states" sandbox="allow-scripts" srcdoc="${escape(doc)}" style="width:100%;height:140px;border:1px solid var(--color-border-default,#ddd)"></iframe>`;
+}
+
 /** A small, complete documentation page: navigation, every section, swatches, a theme switch. */
 export function referenceDoc(system: DesignSystem): {
     html: string;
@@ -324,7 +338,7 @@ export function referenceDoc(system: DesignSystem): {
         section(
             "components",
             "Components",
-            system.components.map((component) => `<h3>${escape(component.name)}</h3>`).join("") ||
+            system.components.map((component) => componentFrame(system, component)).join("") ||
                 "<p>No components yet.</p>",
         ),
     ].join("\n");

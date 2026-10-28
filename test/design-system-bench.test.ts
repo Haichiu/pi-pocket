@@ -2,7 +2,9 @@
 // implementations as a ceiling, and a run with nothing in the tree as a floor. See test/design-system-bench/README.md.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { deflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -52,7 +54,9 @@ import {
     systemFromFlat,
 } from "./design-system-bench/lib/system.ts";
 import { makeGolden } from "./design-system-bench/lint/system/make-golden.ts";
+import { decodePng, distinctColors } from "./design-system-bench/lib/png.ts";
 import { runBench } from "./design-system-bench/run.ts";
+import { judgeTab, runShots, type Census } from "./design-system-bench/shots.ts";
 
 const browser = findBrowser();
 const fixtures = loadFixtures();
@@ -1181,3 +1185,201 @@ test("a lint folder can name the system its designs are written for (system.json
         rmSync(folder, { recursive: true, force: true });
     }
 });
+
+// ---- docs frames and the System view ------------------------------------------------------------------------------
+
+/** A PNG made by hand, with a filter on each row (0 none, 1 left, 2 up, 3 average, 4 Paeth), to test the reader. */
+function encodePng(
+    width: number,
+    height: number,
+    pixel: (x: number, y: number) => number[],
+    filters: number[],
+): Buffer {
+    const bytes = 3;
+    const rows: number[][] = [];
+
+    for (let y = 0; y < height; y++) {
+        rows.push(Array.from({ length: width }, (_, x) => pixel(x, y).slice(0, 3)).flat());
+    }
+
+    const raw: number[] = [];
+
+    for (let y = 0; y < height; y++) {
+        const filter = filters[y % filters.length]!;
+
+        raw.push(filter);
+
+        for (let x = 0; x < width * bytes; x++) {
+            const left = x >= bytes ? rows[y]![x - bytes]! : 0;
+            const up = y > 0 ? rows[y - 1]![x]! : 0;
+            const upLeft = y > 0 && x >= bytes ? rows[y - 1]![x - bytes]! : 0;
+            const estimate = left + up - upLeft;
+            const [a, b, c] = [
+                Math.abs(estimate - left),
+                Math.abs(estimate - up),
+                Math.abs(estimate - upLeft),
+            ];
+            const predictor = [
+                0,
+                left,
+                up,
+                (left + up) >> 1,
+                a <= b && a <= c ? left : b <= c ? up : upLeft,
+            ][filter]!;
+
+            raw.push((rows[y]![x]! - predictor + 256) & 255);
+        }
+    }
+
+    const chunk = (name: string, data: Buffer) => {
+        const out = Buffer.alloc(12 + data.length);
+
+        out.writeUInt32BE(data.length, 0);
+        out.write(name, 4, "latin1");
+        data.copy(out, 8);
+
+        return out;
+    };
+
+    const header = Buffer.alloc(13);
+
+    header.writeUInt32BE(width, 0);
+    header.writeUInt32BE(height, 4);
+    header[8] = 8;
+    header[9] = 2;
+
+    return Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk("IHDR", header),
+        chunk("IDAT", deflateSync(Buffer.from(raw))),
+        chunk("IEND", Buffer.alloc(0)),
+    ]);
+}
+
+test("the PNG reader decodes every row filter, and counts distinct colors", () => {
+    const pixel = (x: number, y: number) => [
+        (x * 37 + y * 11) & 255,
+        (x * 5) & 255,
+        (y * 91) & 255,
+    ];
+    const image = decodePng(encodePng(9, 10, pixel, [0, 1, 2, 3, 4]));
+
+    assert.deepEqual([image.width, image.height], [9, 10]);
+
+    for (let y = 0; y < 10; y++) {
+        for (let x = 0; x < 9; x++) {
+            assert.deepEqual(
+                [...image.rgba.subarray((y * 9 + x) * 4, (y * 9 + x) * 4 + 4)],
+                [...pixel(x, y), 255],
+                `${x},${y}`,
+            );
+        }
+    }
+
+    assert.equal(
+        distinctColors(decodePng(encodePng(8, 8, () => [255, 255, 255], [0]))),
+        1,
+        "one flat color",
+    );
+    assert.equal(
+        distinctColors(
+            decodePng(encodePng(8, 8, (x) => (x < 4 ? [0, 0, 0] : [255, 255, 255]), [0, 2])),
+        ),
+        2,
+    );
+    assert.throws(
+        () => decodePng(Buffer.from("not a png at all, not a png at all, not a png")),
+        /Not a PNG/,
+    );
+});
+
+test("a tab passes only when it renders what the system has", () => {
+    const seen = (over: Partial<Census>): Census => ({
+        tokens: 0,
+        components: 0,
+        prose: 0,
+        blank: false,
+        ...over,
+    });
+
+    assert.equal(judgeTab("Colors", 57, seen({ tokens: 23 })), undefined);
+    assert.match(judgeTab("Colors", 57, seen({}))!, /shows no token row or tile.*system has 57/);
+    assert.match(judgeTab("Colors", 57, seen({ blank: true }))!, /an empty state/);
+    assert.match(judgeTab("Components", 10, seen({ components: 3 }))!, /3 of 10 component cards/);
+    assert.equal(judgeTab("Components", 3, seen({ components: 3 })), undefined);
+    assert.match(judgeTab("Guidelines", 1, seen({}))!, /no rendered guideline/);
+    assert.equal(judgeTab("Guidelines", 1, seen({ prose: 11 })), undefined);
+    // A system with no tokens of the kind may show an empty state, but not a blank panel.
+    assert.equal(judgeTab("Motion", 0, seen({ blank: true })), undefined);
+    assert.match(judgeTab("Motion", 0, seen({}))!, /nothing at all/);
+});
+
+test(
+    "the frame check scrolls each frame into view: far down the page, only a frame with text and colors counts",
+    { skip: browser === undefined, timeout: 120_000 },
+    async () => {
+        const { BenchBrowser, serveFiles } = await import("./design-system-bench/lib/chromium.ts");
+        const { checkFrames } = await import("./design-system-bench/lib/phase-docs.ts");
+        const frame = (title: string, body: string) =>
+            `<iframe class="comp-frame" title="${title}" sandbox="allow-scripts" style="width:600px;height:120px;border:0" srcdoc="${body.replace(/"/g, "&quot;")}"></iframe>`;
+        const page = `<!doctype html><body style="margin:0;background:#eee"><div style="height:3000px"></div>
+            ${frame("Fine", '<body style="margin:0;background:#2456d6;color:#fff;font:20px sans-serif"><p>Save the draft</p><button>Go</button>')}
+            <div style="height:2500px"></div>
+            ${frame("Empty", '<body style="margin:0;background:#fff">')}
+            ${frame("Flat", '<body style="margin:0;background:#fff;color:#fff;font:20px sans-serif"><p>Invisible</p>')}</body>`;
+        const served = await serveFiles(
+            new Map([["index.html", { type: "text/html; charset=utf-8", body: page }]]),
+        );
+        const chromium = (await BenchBrowser.launch())!;
+
+        try {
+            const view = await chromium.page(served.url);
+
+            await view.open(served.url, { width: 800, height: 900 });
+            await view.resize(800, 2000);
+
+            const result = await checkFrames(view, 800);
+
+            assert.equal(result.count, 3);
+            assert.equal(result.withText, 2);
+            assert.equal(
+                result.painted,
+                1,
+                "only the frame with text in a second color is painted",
+            );
+            assert.deepEqual(result.blank.sort(), ["Empty (no text)", "Flat (one color)"]);
+            await view.close();
+        } finally {
+            await chromium.close();
+            await served.close();
+        }
+    },
+);
+
+test(
+    "the System view check runs the throwaway app and every Harbor tab shows its tokens",
+    {
+        skip: browser === undefined || !existsSync(join(BENCH, "..", "serve-design-system.ts")),
+        timeout: 240_000,
+    },
+    async () => {
+        const port = await new Promise<number>((resolve) => {
+            const probe = createServer().listen(0, "127.0.0.15", () => {
+                const { port: free } = probe.address() as { port: number };
+
+                probe.close(() => resolve(free));
+            });
+        });
+        const out = join(BENCH, "..", "..", "node_modules", ".cache", "ds-bench-shots");
+        const report = await runShots({ out, only: "harbor", port, host: "127.0.0.15" });
+
+        assert.deepEqual(report.failed, []);
+        assert.equal(report.ok, true, JSON.stringify(report.tabs.filter((tab) => !tab.ok)));
+        assert.equal(report.tabs.length, 16, "8 tabs at 2 sizes");
+        assert.ok(
+            report.tabs.every((tab) => tab.file !== undefined && existsSync(join(out, tab.file))),
+        );
+        assert.ok(report.tabs.find((tab) => tab.tab === "Components")!.components >= 3);
+        assert.ok(report.tabs.find((tab) => tab.tab === "Colors")!.tokens > 0);
+    },
+);

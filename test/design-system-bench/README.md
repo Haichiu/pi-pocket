@@ -10,6 +10,8 @@ node test/design-system-bench/run.ts                       # all phases, JSON on
 node test/design-system-bench/run.ts --out dir --only scan,lint
 node test/design-system-bench/run.ts --reference           # the ceiling: every contract from the bench's own reference code
 node test/design-system-bench/run.ts --no-browser          # skip the CSS check and the docs page
+node test/design-system-bench/run.ts --shots               # also the System view: a throwaway app, every tab, both systems, both sizes
+node test/design-system-bench/shots.ts <dir> [--only harbor|flagship]   # the same, alone
 node test/design-system-bench/run.ts --flagship <dir>      # a flagship in another place
 node test/design-system-bench/run.ts --fixtures <dir> --lint <dir>   # other fixture projects (each with expected.json) and lint designs (each a folder with index.html and expected-findings.json)
 ```
@@ -164,7 +166,13 @@ screenshotted full page at 390×844 and 1440×900 with `prefers-color-scheme` li
 0 or 1, with the share of the seven expected sections (colors, type, spacing, radii, shadows, motion, components) that have a
 heading counting as three more: it rendered in all four; no script error; **self-contained** (no request left the
 server, no 404); no horizontal scroll at 390; dark differs from light; it has a `nav`; it is substantial (over 1,500
-characters, taller than 1,800 px); it names at least five tokens. The PNGs are for the judges: the bench cannot judge beauty. They are **tiles**, `docs/docs-<viewport>-<scheme>-<NN>-<section>.png`: the first screen, then each top-level section of the page (the `section` elements of `main`, else sections with an id, else the parents of the `h2` headings), cut into parts of at most 2,000 px (`-part-N`), at scale 1 (390 px wide on the phone). Judges read images up to 2,000 × 2,000 px.
+characters, taller than 1,800 px); it names at least five tokens; **every component frame has a body with text** (read through the DevTools protocol, since a sandboxed frame is a page of its own) **and a screenshot of more than two colors** (not one flat color), and the page has a frame for each component of the system. The PNGs are for the judges: the bench cannot judge beauty. They are **tiles**, `docs/docs-<viewport>-<scheme>-<NN>-<section>.png`: the first screen, then each top-level section of the page (the `section` elements of `main`, else sections with an id, else the parents of the `h2` headings), cut into parts of at most 2,000 px (`-part-N`), at scale 1 (390 px wide on the phone). Judges read images up to 2,000 × 2,000 px.
+
+**Why frames used to be blank.** A sandboxed `iframe` is painted only while it is on screen. A screenshot of a part of the page below the viewport (`captureBeyondViewport`) leaves it blank, and so does one taken before the frame has loaded. The bench makes the viewport as tall as a tile (so the whole tile is on screen), scrolls the tile to the top (instantly; the page may smooth-scroll), waits until each frame in it has text, lets two frames paint, and only then takes the picture. Sticky bars are set to relative so that they do not cover the tops of the tiles. The page's own mode switch is used, so that its frames hear of the scheme.
+
+## 6. System view (`--shots`)
+
+`shots.ts` starts a throwaway app (`test/serve-design-system.ts`, on 127.0.0.15) and its own headless Chromium. It opens the System view of the small test system (Harbor) and of the flagship, at the desktop (1440×900) and phone (390×844) sizes, and saves a PNG of each tab, the dark and both-modes views, the token editor, the focus view, and the Check dock, to `system-view/` in `--out` (the docs tiles are in `docs/`: one folder for the judges). For each of the eight tabs it **asserts that the tab shows what the system has**, not a text length: a token row, tile, or step (`[data-token]`) for the token tabs, a card (`.dsy-component`) for each component, rendered Markdown for the guidelines. A tab that shows nothing, or an empty state while the system has tokens of that kind (counted from the system's own files), is a failure in `systemView.tabs[]`, with its reason. `scores.shots` is the share of tabs that pass; the target `system view: every tab shows its tokens` needs every tab and every shot.
 
 ## Why it is hard to game
 

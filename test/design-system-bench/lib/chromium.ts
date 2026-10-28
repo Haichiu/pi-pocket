@@ -94,6 +94,8 @@ export class BenchPage {
     readonly #session: string;
     readonly #context: string;
     readonly #origin: string;
+    /** The DevTools session of each frame that runs in a process of its own, by frame id. */
+    readonly #frames = new Map<string, string>();
 
     constructor(browser: Chromium, session: string, context: string, origin: string) {
         this.#browser = browser;
@@ -103,7 +105,7 @@ export class BenchPage {
         browser.connection.listen(session, (method, params) => this.#event(method, params));
     }
 
-    #event(method: string, params: Json): void {
+    #event(method: string, params: Json, session = this.#session): void {
         if (method === "Fetch.requestPaused") {
             const url = String(params.request.url);
             const favicon = /\/favicon\.ico$/.test(url);
@@ -117,14 +119,36 @@ export class BenchPage {
                 this.external.push(url.slice(0, 200));
             }
 
+            // The answer goes to the session that asked: the page, or a frame that runs in a process of its own.
+            const reply = (name: string, body: Record<string, unknown>) =>
+                this.#browser.connection.send(name, body, session, 20_000);
             const action = allowed
-                ? this.send("Fetch.continueRequest", { requestId: params.requestId })
-                : this.send("Fetch.failRequest", {
+                ? reply("Fetch.continueRequest", { requestId: params.requestId })
+                : reply("Fetch.failRequest", {
                       requestId: params.requestId,
                       errorReason: "BlockedByClient",
                   });
 
             action.catch(() => {});
+        } else if (method === "Target.attachedToTarget") {
+            // A sandboxed frame has no page to share with its parent: it comes as a target of its own.
+            const child = String(params.sessionId);
+
+            this.#frames.set(String(params.targetInfo?.targetId), child);
+            // The frame is held to the same rule as the page: no address but the bench's own.
+            this.#browser.connection.listen(child, (name, body) => this.#event(name, body, child));
+            this.#browser.connection
+                .send("Fetch.enable", { patterns: [{ urlPattern: "*" }] }, child, 5000)
+                .catch(() => {});
+            this.#browser.connection
+                .send("Runtime.runIfWaitingForDebugger", {}, child, 5000)
+                .catch(() => {});
+        } else if (method === "Target.detachedFromTarget") {
+            for (const [id, session] of this.#frames) {
+                if (session === params.sessionId) {
+                    this.#frames.delete(id);
+                }
+            }
         } else if (method === "Runtime.exceptionThrown") {
             this.errors.push(
                 String(
@@ -234,6 +258,97 @@ export class BenchPage {
         return Buffer.from(String(result.data), "base64");
     }
 
+    /**
+     * A PNG of one rectangle of the page (CSS pixels, from the page's top left), taken from what is **on screen**. A frame
+     * (an `iframe`, above all a sandboxed one) that is outside the viewport is not painted, so `clip` shows it blank: scroll
+     * the rectangle into the viewport first, and make the viewport tall enough to hold it.
+     */
+    async clipInView(x: number, y: number, width: number, height: number): Promise<Buffer> {
+        const result = await this.send("Page.captureScreenshot", {
+            format: "png",
+            captureBeyondViewport: false,
+            clip: { x, y, width, height, scale: 1 },
+        });
+
+        return Buffer.from(String(result.data), "base64");
+    }
+
+    /** Set the size of the page. Everything laid out again, at scale 1. */
+    async resize(width: number, height: number): Promise<void> {
+        await this.send("Emulation.setDeviceMetricsOverride", {
+            width,
+            height,
+            deviceScaleFactor: 1,
+            mobile: width < 500,
+        });
+    }
+
+    /**
+     * The text inside each `iframe` with `className`, in page order, read through the DevTools protocol (a sandboxed frame
+     * is a page of its own, so the page cannot see in). A frame that runs in its own process is asked through its own
+     * session; one that runs inside this page is read from its document. Script and style text is left out.
+     */
+    async frameTexts(className: string): Promise<{ title: string; text: string }[]> {
+        const root = await this.send("DOM.getDocument", { depth: 0 });
+        const found = await this.send("DOM.querySelectorAll", {
+            nodeId: root.root.nodeId,
+            selector: `iframe.${className}`,
+        });
+        const out: { title: string; text: string }[] = [];
+
+        for (const nodeId of found.nodeIds ?? []) {
+            const described = await this.send("DOM.describeNode", {
+                nodeId,
+                depth: -1,
+                pierce: true,
+            });
+            const node = described.node as Json;
+            const attributes: string[] = node.attributes ?? [];
+            const title = attributes[attributes.indexOf("title") + 1] ?? "";
+            const session = this.#frames.get(String(node.frameId));
+            let text = "";
+
+            if (session !== undefined) {
+                const answer = await this.#browser.connection
+                    .send(
+                        "Runtime.evaluate",
+                        {
+                            expression: "document.body ? document.body.innerText : ''",
+                            returnByValue: true,
+                        },
+                        session,
+                        5000,
+                    )
+                    .catch(() => undefined);
+
+                text = String(answer?.result?.value ?? "");
+            } else if (node.contentDocument !== undefined) {
+                const into: string[] = [];
+
+                const walk = (item: Json) => {
+                    if (item.nodeName === "SCRIPT" || item.nodeName === "STYLE") {
+                        return;
+                    }
+
+                    if (item.nodeType === 3) {
+                        into.push(String(item.nodeValue ?? ""));
+                    }
+
+                    for (const child of item.children ?? []) {
+                        walk(child);
+                    }
+                };
+
+                walk(node.contentDocument);
+                text = into.join(" ");
+            }
+
+            out.push({ title, text: text.replace(/\s+/g, " ").trim() });
+        }
+
+        return out;
+    }
+
     async close(): Promise<void> {
         this.#browser.connection.unlisten(this.#session);
         await this.#browser.connection
@@ -288,6 +403,11 @@ export class BenchBrowser {
             page.send("Runtime.enable"),
             page.send("Network.enable"),
             page.send("Fetch.enable", { patterns: [{ urlPattern: "*" }] }),
+            page.send("Target.setAutoAttach", {
+                autoAttach: true,
+                waitForDebuggerOnStart: false,
+                flatten: true,
+            }),
         ]);
 
         return page;
