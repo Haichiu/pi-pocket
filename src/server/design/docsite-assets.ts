@@ -389,6 +389,13 @@ h4 {
     color: var(--dd-muted);
 }
 
+.counts {
+    margin-top: 8px;
+    color: var(--dd-faint);
+    font: 600 12.5px var(--dd-mono);
+    letter-spacing: 0.01em;
+}
+
 .sub {
     max-width: 66ch;
     margin-bottom: 14px;

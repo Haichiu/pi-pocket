@@ -8,7 +8,7 @@ import {
     type TokenType,
 } from "./system-types.ts";
 import { parseColor, toHex, type Rgba } from "./docsite-color.ts";
-import { escapeHtml as esc, slugify } from "./docsite-markdown.ts";
+import { escapeHtml as esc, plural, slugify } from "./docsite-markdown.ts";
 
 export interface SystemDoc {
     html: string;
@@ -461,6 +461,50 @@ export function rowOf(ctx: Ctx, token: ResolvedToken, sample: string): string {
     const value = variants(ctx, (mode) => esc(plain(token.type, valueIn(token, mode)?.value)));
 
     return `<div class="spec-row c" data-q="${esc(`${token.name} ${token.description ?? ""}`.toLowerCase())}"><div class="spec-meta">${copyName(token)}${token.description === undefined ? "" : `<span class="desc">${esc(token.description)}</span>`}</div><div class="val">${value}</div><div class="sample">${sample}</div></div>`;
+}
+
+/**
+ * What a token section counts. The headline (the number in the navigation and on the overview) is the section's role
+ * tokens, the semantic tier; a section with none (a plain scale) counts its primitives. The palette (the primitives of a
+ * section that also has roles) and a component's own tokens are counted inside the section, each in its own line. The
+ * three add up to `total`, and the sections' totals add up to the system's tokens. The System view counts the same way.
+ */
+export interface SectionCount {
+    headline: number;
+    primitives: number;
+    components: number;
+    total: number;
+}
+
+export function sectionCount(ctx: Ctx, id: SectionId): SectionCount {
+    const list = ctx.sections.get(id) ?? [];
+    const semantic = list.filter((token) => token.tier === "semantic").length;
+    const primitive = list.filter((token) => token.tier === "primitive").length;
+    const components = list.filter((token) => token.tier === "component").length;
+
+    return {
+        headline: semantic > 0 ? semantic : primitive,
+        primitives: semantic > 0 ? primitive : 0,
+        components,
+        total: list.length,
+    };
+}
+
+/** The counts of a section in one line under its title: "52 roles · 97 palette colors · 62 component colors". */
+export function countsLine(ctx: Ctx, id: SectionId): string {
+    const count = sectionCount(ctx, id);
+    const hasRoles = (ctx.sections.get(id) ?? []).some((token) => token.tier === "semantic");
+    const parts = [
+        plural(count.headline, hasRoles ? "role" : "token"),
+        ...(count.primitives > 0
+            ? [plural(count.primitives, id === "color" ? "palette color" : "primitive")]
+            : []),
+        ...(count.components > 0
+            ? [plural(count.components, id === "color" ? "component color" : "component token")]
+            : []),
+    ];
+
+    return count.total === 0 ? "" : `<p class="counts">${parts.join(" · ")}</p>`;
 }
 
 export type Built = { html: string; count: number } | undefined;

@@ -17,6 +17,7 @@ import {
     plural,
     renderMarkdown,
 } from "../src/server/design/docsite-markdown.ts";
+import { sectionOf } from "../src/server/design/docsite-core.ts";
 import { renderSystemDoc } from "../src/server/design/docsite.ts";
 import { withRender } from "../src/server/design/render.ts";
 import type { PocketHost } from "../src/server/host.ts";
@@ -616,19 +617,63 @@ test(
     },
 );
 
-test("section counts follow one rule: each token once, in one section, so the counts add up", () => {
+test("section counts follow one rule: a headline of role tokens, the palette and component tokens inside, all adding up", () => {
     const system = flagship();
     const { html } = renderSystemDoc(system);
     const count = (id: string) =>
         Number(
             new RegExp(`<a href="#${id}">[^<]*<span class="count">(\\d+)</span>`).exec(html)?.[1],
         );
-    const sections = ["color", "typography", "spacing", "radii", "shadows", "motion", "other"];
-    const sum = sections.reduce((total, id) => total + (count(id) || 0), 0);
+    const ids = ["color", "typography", "spacing", "radii", "shadows", "motion", "other"] as const;
+    const sectionIds = {
+        color: "color",
+        typography: "typography",
+        spacing: "spacing",
+        radii: "radii",
+        shadows: "shadows",
+        motion: "motion",
+        other: "other",
+    } as const;
+    let total = 0;
 
-    assert.equal(sum, system.tokens.length, "the token sections add up to the token total");
+    for (const id of ids) {
+        // The section's tokens, by the rule that every token is in exactly one section (the System view's `sectionOf`).
+        const mine = system.tokens.filter((token) => sectionOf(token) === sectionIds[id]);
+        const semantic = mine.filter((token) => token.tier === "semantic").length;
+        const primitive = mine.filter((token) => token.tier === "primitive").length;
+        const component = mine.filter((token) => token.tier === "component").length;
+        // The headline is the role tokens; a section with none counts its primitives. Component tokens never count in it.
+        const headline = semantic > 0 ? semantic : primitive;
+        const inside = (semantic > 0 ? primitive : 0) + component;
+
+        assert.equal(count(id), headline, `${id}: the navigation says its role tokens`);
+        assert.equal(
+            headline + inside,
+            mine.length,
+            `${id}: the headline and what is inside add up`,
+        );
+        total += mine.length;
+
+        // Under the title, the counts of what is inside, in one line.
+        const line =
+            new RegExp(
+                `<section class="block" id="${id}"[^>]*>(?:(?!</section>)[\\s\\S])*?<p class="counts">([^<]*)</p>`,
+            ).exec(html)?.[1] ?? "";
+        const numbers = [...line.matchAll(/(\d+) /g)].map((match) => Number(match[1]));
+
+        assert.equal(numbers[0], headline, `${id}: ${line}`);
+        assert.equal(
+            numbers.reduce((sum, value) => sum + value, 0),
+            mine.length,
+            `${id}: ${line}`,
+        );
+    }
+
+    assert.equal(total, system.tokens.length, "the sections' tokens add up to the system's");
     assert.equal(count("tokens"), system.tokens.length, "the table lists every token");
     assert.equal(count("components"), system.components.length, "Components counts components");
+    assert.equal(count("color"), 52, "the flagship's Color says its 52 roles");
+    assert.match(html, /<p class="counts">52 roles · 97 palette colors · 62 component colors<\/p>/);
 
     // A token that no specimen draws is still on the page, in its section's table.
     for (const token of system.tokens) {
@@ -637,11 +682,6 @@ test("section counts follow one rule: each token once, in one section, so the co
             `${token.name} is on the page`,
         );
     }
-
-    // The same rule as the System view's: the type decides, and for sizes the words of the path.
-    const byType = system.tokens.filter((token) => token.type === "color").length;
-
-    assert.equal(count("color"), byType, "Color counts every color token, a component's too");
 });
 
 test("a ratio is written with one decimal, cut and never rounded up; cards copy a token three ways; the footer says what it is", () => {

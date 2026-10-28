@@ -33,6 +33,8 @@ import {
     colorOf,
     BASE_GROUNDS,
     BASE_TEXTS,
+    countsLine,
+    sectionCount,
     findToken,
     buildContext,
 } from "./docsite-core.ts";
@@ -241,8 +243,8 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
             id: "color",
             title: "Color",
             group: "Foundations",
-            html: color.html,
-            count: color.count,
+            html: `${countsLine(ctx, "color")}${color.html}`,
+            count: sectionCount(ctx, "color").headline,
             searchable: true,
         });
     }
@@ -252,8 +254,8 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
             id: "typography",
             title: "Typography",
             group: "Foundations",
-            html: type.html,
-            count: type.count,
+            html: `${countsLine(ctx, "typography")}${type.html}`,
+            count: sectionCount(ctx, "typography").headline,
             searchable: true,
         });
     }
@@ -263,8 +265,8 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
             id: "spacing",
             title: "Spacing",
             group: "Foundations",
-            html: spacing.html,
-            count: spacing.count,
+            html: `${countsLine(ctx, "spacing")}${spacing.html}`,
+            count: sectionCount(ctx, "spacing").headline,
             searchable: true,
         });
     }
@@ -274,8 +276,8 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
             id: "radii",
             title: "Radii",
             group: "Foundations",
-            html: radii.html,
-            count: radii.count,
+            html: `${countsLine(ctx, "radii")}${radii.html}`,
+            count: sectionCount(ctx, "radii").headline,
             searchable: true,
         });
     }
@@ -285,8 +287,8 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
             id: "shadows",
             title: "Shadows",
             group: "Foundations",
-            html: shadow.html,
-            count: shadow.count,
+            html: `${countsLine(ctx, "shadows")}${shadow.html}`,
+            count: sectionCount(ctx, "shadows").headline,
             searchable: true,
         });
     }
@@ -296,8 +298,8 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
             id: "motion",
             title: "Motion",
             group: "Foundations",
-            html: motion.html,
-            count: motion.count,
+            html: `${countsLine(ctx, "motion")}${motion.html}`,
+            count: sectionCount(ctx, "motion").headline,
             searchable: true,
         });
     }
@@ -307,8 +309,8 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
             id: "other",
             title: "Other",
             group: "Foundations",
-            html: other.html,
-            count: other.count,
+            html: `${countsLine(ctx, "other")}${other.html}`,
+            count: sectionCount(ctx, "other").headline,
             searchable: true,
         });
     }
