@@ -335,6 +335,189 @@ test("a session marked unread shows it until it is opened", real, async () => {
     await marked([], "opening it read it");
 });
 
+/** A right-click on a row at (`dx`, `dy`) inside it: whether the browser's own menu was stopped. */
+const rightClick = (id: ConversationId, keys: { shiftKey?: boolean; ctrlKey?: boolean } = {}) =>
+    inPage<{ stopped: boolean; x: number; y: number }>(`
+        const button = document.querySelector(${JSON.stringify(`${row(id)} > .session`)});
+        const box = button.getBoundingClientRect();
+        const x = Math.round(box.x + 40);
+        const y = Math.round(box.y + box.height / 2);
+        const event = new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            button: 2,
+            clientX: x,
+            clientY: y,
+            ...${JSON.stringify(keys)},
+        });
+
+        button.dispatchEvent(event);
+
+        return JSON.stringify({ stopped: event.defaultPrevented, x, y });
+    `);
+
+/** The right-click menu as it shows: its items' labels and where it is, or null when it is shut. */
+const menuShown = () =>
+    inPage<{ items: string[]; left: number; top: number } | null>(`
+        const menu = document.querySelector('.sheet-host:not(.leaving) [data-part="session-menu"]');
+
+        if (!menu) {
+            return JSON.stringify(null);
+        }
+
+        // Where it was put, not where its opening animation has it now.
+        return JSON.stringify({
+            items: [...menu.querySelectorAll('[role="menuitem"] > :first-child')].map((each) => each.textContent.trim()),
+            left: Math.round(parseFloat(menu.style.left)),
+            top: Math.round(parseFloat(menu.style.top)),
+        });
+    `);
+
+/** Click one of the right-click menu's items by its label. */
+const menuChoose = (label: string) =>
+    page.evaluate(`
+        [...document.querySelectorAll('.sheet-host:not(.leaving) [data-part="session-menu"] [role="menuitem"]')]
+            .find((each) => each.firstElementChild.textContent.trim() === ${JSON.stringify(label)})
+            .click();
+    `);
+
+async function menuOpens(id: ConversationId, what: string) {
+    const at = await rightClick(id);
+
+    assert.equal(at.stopped, true, `${what}: the browser's own menu stays shut`);
+    let shown: Awaited<ReturnType<typeof menuShown>> = null;
+
+    await until(async () => (shown = await menuShown()) !== null, what);
+
+    return { at, shown: shown! };
+}
+
+test(
+    "a right-click on a row opens its actions at the pointer, and only a plain one does",
+    real,
+    async () => {
+        const [other] = folderSessions as [ConversationId];
+
+        await fresh();
+
+        // At the pointer, with the row's actions; Esc closes it.
+        const { at, shown } = await menuOpens(active, "the menu");
+
+        assert.deepEqual([shown.left, shown.top], [at.x, at.y], "its corner at the pointer");
+
+        for (const label of [
+            "Open in new tab",
+            "Copy link",
+            "Rename",
+            "Fork",
+            "Share",
+            "Select",
+            "Archive",
+        ]) {
+            assert.ok(shown.items.includes(label), `it offers ${label}: ${shown.items.join(", ")}`);
+        }
+
+        await page.press("Escape");
+        await settled({ sheet: null, path: "/" }, "Esc closes it, and nothing opened");
+
+        // Shift keeps the browser's own menu; Ctrl (a Mac's right-click) selects instead.
+        assert.equal(
+            (await rightClick(active, { shiftKey: true })).stopped,
+            false,
+            "Shift+right-click",
+        );
+        assert.equal(
+            (await rightClick(active, { ctrlKey: true })).stopped,
+            true,
+            "Ctrl+right-click",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await settled({ sheet: null }, "neither opens the menu");
+
+        // Select, then the menu offers to let go of the selection.
+        await menuOpens(active, "the menu again");
+        await menuChoose("Select");
+        await settled({ sheet: null }, "selected, and the menu closed");
+        await until(
+            async () =>
+                (await inPage<number>(
+                    `return JSON.stringify(document.querySelectorAll(${JSON.stringify(`${list} .session-row.selected`)}).length)`,
+                )) === 1,
+            "one row selected",
+        );
+        assert.ok(
+            (await menuOpens(other, "the menu, while selecting")).shown.items.includes(
+                "Deselect all",
+            ),
+        );
+        await menuChoose("Deselect all");
+        await until(
+            async () =>
+                (await inPage<number>(
+                    `return JSON.stringify(document.querySelectorAll(${JSON.stringify(`${list} .session-row.selected`)}).length)`,
+                )) === 0,
+            "nothing selected",
+        );
+        assert.ok((await menuOpens(active, "the menu, after")).shown.items.includes("Select"));
+        await page.press("Escape");
+        await settled({ sheet: null }, "closed");
+    },
+);
+
+test(
+    "pinned sessions keep the order they were pinned in, and Move to top changes it",
+    real,
+    async () => {
+        const [other] = folderSessions as [ConversationId];
+        const pinnedRows = () =>
+            inPage<number[]>(`
+            const group = [...document.querySelectorAll(${JSON.stringify(`${list} .session-row`)})];
+            const { store } = await import("/store.js");
+            const pins = new Set(store.state.pinned);
+
+            return JSON.stringify(group.map((each) => Number(each.dataset.id)).filter((id) => pins.has(id)));
+        `);
+
+        await fresh();
+        // `other` is pinned first, though `active` is the newer: pins are in the order they were pinned in.
+        await page.evaluate(`
+        const { togglePin } = await import("/theme.js");
+        togglePin(${Number(other)});
+        togglePin(${Number(active)});
+    `);
+        await settled({ pinned: [Number(other), Number(active)] }, "both pinned");
+        await until(
+            async () =>
+                JSON.stringify(await pinnedRows()) ===
+                JSON.stringify([Number(other), Number(active)]),
+            "the Pinned group in pin order",
+        );
+
+        // Move to top shows only where it moves something, and moves it.
+        assert.ok(
+            !(await menuOpens(other, "the first pin's menu")).shown.items.includes("Move to top"),
+        );
+        await page.press("Escape");
+        await settled({ sheet: null }, "closed");
+        await menuOpens(active, "the last pin's menu");
+        await menuChoose("Move to top");
+        await settled({ sheet: null, pinned: [Number(active), Number(other)] }, "moved to the top");
+        await until(
+            async () =>
+                JSON.stringify(await pinnedRows()) ===
+                JSON.stringify([Number(active), Number(other)]),
+            "the Pinned group follows",
+        );
+
+        await page.evaluate(`
+        const { togglePin } = await import("/theme.js");
+        togglePin(${Number(other)});
+        togglePin(${Number(active)});
+    `);
+        await settled({ pinned: [] }, "unpinned again");
+    },
+);
+
 test(
     "a fold hides linked sessions at once, from the list and the numbers, but never above the open one",
     real,
