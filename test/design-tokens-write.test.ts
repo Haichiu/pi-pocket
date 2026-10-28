@@ -596,9 +596,11 @@ test("tailwind.css: a v4 theme with one variable for each token, mode blocks, an
     assert.match(css, /@theme static \{/);
     assert.match(
         css,
-        /--color-bg-page: var\(--color-gray-50\);/,
-        "color tokens are already in the namespace",
+        /--color-page: var\(--color-gray-50\);/,
+        "a role drops the word that the utility repeats: bg-page, not bg-bg-page",
     );
+    assert.match(css, /--color-primary: var\(--color-gray-900\);/, "text-primary");
+    assert.match(css, /--color-accent: var\(--color-blue-600\);/, "a trailing default goes");
     assert.match(css, /--spacing-4: 16px;/);
     assert.doesNotMatch(
         css.slice(css.indexOf("@theme")),
@@ -624,7 +626,7 @@ test("tailwind.css: a v4 theme with one variable for each token, mode blocks, an
         /--type-body/,
         "the type style has no second name",
     );
-    assert.match(css, /\[data-theme="dark"\] \{[\s\S]*--color-text-primary: #f1f2f8;/);
+    assert.match(css, /\[data-theme="dark"\] \{[\s\S]*--color-primary: #f1f2f8;/);
     assert.match(css, /@media \(prefers-color-scheme: dark\)/);
 
     // No variable is declared twice in the base block, and no variable points at itself or at a missing one.

@@ -605,8 +605,12 @@ test("a ratio is written with one decimal, cut and never rounded up; cards copy 
         String(ratios.find((text) => !/^\d+\.\d:1$/.test(text))),
     );
     assert.match(html, /data-copy="var\(--color-bg-surface\)"[^>]*>CSS var</);
-    assert.ok(html.includes('data-copy="bg-bg-surface"'), "a Tailwind class");
-    assert.ok(html.includes('data-copy="text-text-primary"'));
+    assert.ok(
+        html.includes('data-copy="bg-surface"'),
+        "a Tailwind class, as the compiled theme names it",
+    );
+    assert.ok(html.includes('data-copy="text-primary"'));
+    assert.ok(!html.includes('data-copy="bg-bg-surface"'));
     assert.match(html, /data-copy="color\.bg\.surface\.\$value"[^>]*>JSON</);
     assert.match(
         html,

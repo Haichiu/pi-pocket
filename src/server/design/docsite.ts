@@ -26,6 +26,7 @@ import {
     toOklchText,
     type Rgba,
 } from "./docsite-color.ts";
+import { tailwindNames } from "./tokens-compile.ts";
 import { DOC_BOOT_JS, DOC_CSS, DOC_JS, FRAME_JS } from "./docsite-assets.ts";
 import { escapeHtml as esc, plural, renderMarkdown, slugify } from "./docsite-markdown.ts";
 
@@ -290,6 +291,8 @@ interface Ctx {
     theme: Map<string, "light" | "dark">;
     byName: Map<string, ResolvedToken>;
     byVar: Map<string, ResolvedToken>;
+    /** The variable of each token in `tailwind.css` (`color.bg.surface` is `--color-surface`, so `bg-surface`). */
+    twVar: Map<string, string>;
     /** The tokens of each section (see `sectionOf`). */
     sections: Map<SectionId, ResolvedToken[]>;
     /** The tokens that a specimen has drawn: the rest of a section go to its table of more tokens. */
@@ -449,6 +452,7 @@ function buildContext(system: DesignSystem): Ctx {
         theme: new Map(),
         byName: new Map(tokens.map((token) => [token.name, token])),
         byVar: new Map(tokens.map((token) => [token.cssVar, token])),
+        twVar: tailwindNames({ ...system, tokens }),
         sections: new Map(),
         claimed: new Set(),
     };
@@ -484,13 +488,15 @@ function ratioPill(ratio: number, min: number | undefined, exempt?: string): str
 }
 
 /** Three ways to copy a token: as a CSS variable, as a Tailwind class (the compiled `@theme` maps `--color-*` to utilities), and as its JSON path. */
-function copyRow(token: ResolvedToken): string {
+function copyRow(ctx: Ctx, token: ResolvedToken): string {
     const button = (label: string, text: string, title: string) =>
         `<button class="mini" type="button" data-copy="${esc(text)}" title="${esc(title)}">${label}</button>`;
     const buttons = [button("CSS var", `var(${token.cssVar})`, `Copy var(${token.cssVar})`)];
 
-    if (token.cssVar.startsWith("--color-")) {
-        const rest = token.cssVar.slice("--color-".length);
+    const tailwind = ctx.twVar.get(token.name) ?? token.cssVar;
+
+    if (tailwind.startsWith("--color-")) {
+        const rest = tailwind.slice("--color-".length);
         const prefix = hasSegment(token, TEXT_SEGMENTS)
             ? "text"
             : /(^|\.)border(\.|$)/.test(token.name)
@@ -566,7 +572,7 @@ function swatchCard(ctx: Ctx, token: ResolvedToken): string {
             ? ""
             : ` <span class="pill warn">Deprecated</span>`;
 
-    return `<article class="card" data-q="${esc(query)}"><button class="sw-chip" data-copy="${esc(`var(${token.cssVar})`)}" title="Copy var(${esc(token.cssVar)})" aria-label="Copy var(${esc(token.cssVar)})">${chip}</button><div class="card-body"><div><button class="tk" data-copy="${esc(token.name)}" title="Copy the token name">${esc(token.name)}</button>${deprecated}</div>${token.description === undefined ? "" : `<p class="desc">${esc(token.description)}</p>`}<dl class="vals">${rows.join("")}</dl>${contrast}${copyRow(token)}</div></article>`;
+    return `<article class="card" data-q="${esc(query)}"><button class="sw-chip" data-copy="${esc(`var(${token.cssVar})`)}" title="Copy var(${esc(token.cssVar)})" aria-label="Copy var(${esc(token.cssVar)})">${chip}</button><div class="card-body"><div><button class="tk" data-copy="${esc(token.name)}" title="Copy the token name">${esc(token.name)}</button>${deprecated}</div>${token.description === undefined ? "" : `<p class="desc">${esc(token.description)}</p>`}<dl class="vals">${rows.join("")}</dl>${contrast}${copyRow(ctx, token)}</div></article>`;
 }
 
 /** The title of the group a color token sits in: its path without the first segment (`color`) and the name. */
@@ -1563,8 +1569,10 @@ function codeSection(ctx: Ctx): { html: string; count: number } {
     const dark = ctx.modes.find((mode) => ctx.theme.get(mode) === "dark" && mode !== first);
     const cssVar = sample?.cssVar ?? "--color-bg-surface";
     const css = `<link rel="stylesheet" href="tokens.css">\n\n.card {\n    background: var(${cssVar});\n    padding: var(${spacing?.cssVar ?? "--space-4"});\n}${dark === undefined ? "" : `\n\n<!-- ${modeLabel(dark)} mode -->\n<html data-theme="${dark}">`}`;
-    const utility = cssVar.startsWith("--color-")
-        ? `bg-${cssVar.slice("--color-".length)}`
+    const twVar =
+        (sample === undefined ? undefined : ctx.twVar.get(sample.name)) ?? "--color-surface";
+    const utility = twVar.startsWith("--color-")
+        ? `bg-${twVar.slice("--color-".length)}`
         : "bg-surface";
     const tailwind = `@import "tailwindcss";\n@import "./tailwind.css";\n\n<div class="${utility} p-4">…</div>`;
     const modeFiles = Object.entries(compiled.modes ?? {});

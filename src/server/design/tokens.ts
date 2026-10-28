@@ -26,7 +26,7 @@ import {
 } from "./tokens-base.ts";
 import { buildSystem, inferType } from "./tokens-model.ts";
 
-export { compileDesignSystem, scaleOf, type Scale } from "./tokens-compile.ts";
+export { compileDesignSystem, scaleOf, tailwindNames, type Scale } from "./tokens-compile.ts";
 export { systemSummary } from "./tokens-summary.ts";
 export { DESIGN_DIR };
 

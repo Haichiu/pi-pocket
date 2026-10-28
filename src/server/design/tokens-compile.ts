@@ -282,7 +282,47 @@ function stripLead(path: readonly string[], drop: readonly string[]): string[] {
     return path.slice(at);
 }
 
-/** The Tailwind v4 variable for a token (`--color-*`, `--font-*`, `--text-*`, `--spacing-*`, ...), if a namespace fits. */
+/** Words that name the group of a type scale: `font.leading.tight`, `type.size.lg`, `typography.tracking.wide`. */
+const TYPE_GROUPS = ["font", "fonts", "type", "typography", "text"];
+/** The Tailwind namespace of the second word of such a path. */
+const TYPE_SUB: Record<string, string> = {
+    leading: "leading",
+    lineheight: "leading",
+    lineheights: "leading",
+    tracking: "tracking",
+    letterspacing: "tracking",
+    weight: "font-weight",
+    weights: "font-weight",
+    fontweight: "font-weight",
+    size: "text",
+    sizes: "text",
+    fontsize: "text",
+    family: "font",
+    families: "font",
+    fontfamily: "font",
+    typeface: "font",
+};
+/** The first words of a color path that name the utility, not the role: `bg-surface`, `text-primary`, `border-default`. */
+const UTILITY_WORDS = [
+    "bg",
+    "background",
+    "text",
+    "fg",
+    "foreground",
+    "border",
+    "outline",
+    "ring",
+    "fill",
+    "stroke",
+];
+
+/**
+ * The Tailwind v4 variable for a token, if a namespace fits: `--color-*`, `--font-*` (families), `--text-*`,
+ * `--font-weight-*`, `--tracking-*`, `--leading-*`, `--breakpoint-*`, `--container-*`, `--spacing-*`, `--radius-*`,
+ * `--shadow-*`, `--inset-shadow-*`, `--drop-shadow-*`, `--blur-*`, `--perspective-*`, `--aspect-*`, `--ease-*`. A
+ * color role drops the word that the utility repeats (`color.bg.surface` is `--color-surface`, so `bg-surface`), and a
+ * trailing `default` (`color.accent.default` is `--color-accent`), unless that leaves nothing.
+ */
 function tailwindName(token: ResolvedToken): string | undefined {
     if (token.tailwind !== undefined) {
         return token.tailwind;
@@ -290,27 +330,49 @@ function tailwindName(token: ResolvedToken): string | undefined {
 
     const path = token.path;
     const first = norm(path[0]!);
+    const sub = TYPE_GROUPS.includes(first) ? TYPE_SUB[norm(path[1] ?? "")] : undefined;
     const join = (prefix: string, rest: readonly string[]) => `--${prefix}-${rest.join("-")}`;
+    // The path without the words of the group and its sub-group (`font.leading.tight` is `tight`).
+    const tail = (drop: readonly string[]) =>
+        stripLead(path, [...TYPE_GROUPS, ...Object.keys(TYPE_SUB), ...drop]);
 
     switch (token.type) {
-        case "color":
-            return join("color", stripLead(path, ["color", "colors", "colour", "clr"]));
+        case "color": {
+            let rest = stripLead(path, ["color", "colors", "colour", "clr"]);
+
+            if (rest.length > 1 && UTILITY_WORDS.includes(norm(rest[0]!))) {
+                rest = rest.slice(1);
+            } else if (rest.length > 1 && norm(rest.at(-1)!) === "default") {
+                rest = rest.slice(0, -1);
+            }
+
+            return join("color", rest);
+        }
+
         case "fontFamily":
-            return join(
-                "font",
-                stripLead(path, ["font", "fonts", "family", "families", "fontfamily", "typeface"]),
-            );
+            return join("font", tail(["typeface"]));
         case "fontWeight":
-            return join(
-                "font-weight",
-                stripLead(path, ["font", "weight", "weights", "fontweight"]),
-            );
+            return join("font-weight", tail(["weight", "weights", "fontweight"]));
         case "cubicBezier":
             return join(
                 "ease",
                 stripLead(path, ["motion", "ease", "easing", "easings", "timing", "transition"]),
             );
         case "shadow":
+            if (["inset", "insetshadow"].includes(first)) {
+                return join(
+                    "inset-shadow",
+                    stripLead(path, ["inset", "insetshadow", "shadow", "shadows"]),
+                );
+            }
+
+            if (["dropshadow", "drop"].includes(first)) {
+                return join(
+                    "drop-shadow",
+                    stripLead(path, ["dropshadow", "drop", "shadow", "shadows"]),
+                );
+            }
+
             return join(
                 "shadow",
                 stripLead(path, ["shadow", "shadows", "elevation", "elevations", "boxshadow"]),
@@ -321,13 +383,25 @@ function tailwindName(token: ResolvedToken): string | undefined {
                 stripLead(path, ["text", "type", "typography", "font", "fonts", "style", "styles"]),
             );
         case "number":
-            return ["leading", "lineheight", "lineheights"].includes(first)
-                ? join(
-                      "leading",
-                      stripLead(path, ["leading", "lineheight", "lineheights", "line", "height"]),
-                  )
+            if (sub === "leading" || ["leading", "lineheight", "lineheights"].includes(first)) {
+                return join(
+                    "leading",
+                    tail(["leading", "lineheight", "lineheights", "line", "height"]),
+                );
+            }
+
+            return ["aspect", "aspects", "ratio", "ratios"].includes(first)
+                ? join("aspect", stripLead(path, ["aspect", "aspects", "ratio", "ratios"]))
                 : undefined;
         case "dimension":
+            if (sub === "tracking" || ["tracking", "letterspacing"].includes(first)) {
+                return join("tracking", tail(["tracking", "letterspacing"]));
+            }
+
+            if (sub === "leading") {
+                return join("leading", tail(["leading", "lineheight", "lineheights"]));
+            }
+
             if (["space", "spacing", "spaces", "gap", "gutter"].includes(first)) {
                 return join(
                     "spacing",
@@ -353,20 +427,11 @@ function tailwindName(token: ResolvedToken): string | undefined {
 
             if (
                 ["text", "fontsize", "fontsizes", "fs", "typesize"].includes(first) ||
-                (first === "font" && norm(path[1] ?? "") === "size")
+                sub === "text"
             ) {
                 return join(
                     "text",
-                    stripLead(path, [
-                        "text",
-                        "font",
-                        "size",
-                        "sizes",
-                        "fontsize",
-                        "fontsizes",
-                        "fs",
-                        "typesize",
-                    ]),
+                    tail(["size", "sizes", "fontsize", "fontsizes", "fs", "typesize"]),
                 );
             }
 
@@ -381,8 +446,8 @@ function tailwindName(token: ResolvedToken): string | undefined {
                 return join("container", stripLead(path, ["container", "containers"]));
             }
 
-            if (["tracking", "letterspacing"].includes(first)) {
-                return join("tracking", stripLead(path, ["tracking", "letterspacing"]));
+            if (["perspective", "perspectives"].includes(first)) {
+                return join("perspective", stripLead(path, ["perspective", "perspectives"]));
             }
 
             return first === "blur" ? join("blur", stripLead(path, ["blur"])) : undefined;
@@ -390,6 +455,36 @@ function tailwindName(token: ResolvedToken): string | undefined {
             return undefined;
     }
 }
+
+/** The namespaces of Tailwind v4's theme: a variable that starts with one makes utilities, so it must be of that kind. */
+const TAILWIND_NAMESPACES = [
+    "color",
+    "font",
+    "text",
+    "tracking",
+    "leading",
+    "breakpoint",
+    "container",
+    "spacing",
+    "radius",
+    "shadow",
+    "inset-shadow",
+    "drop-shadow",
+    "blur",
+    "perspective",
+    "aspect",
+    "ease",
+    "animate",
+];
+
+/** The namespace that Tailwind reads a variable in (the longest that fits: `font-weight` before `font`). */
+const namespaceOf = (name: string) =>
+    [...TAILWIND_NAMESPACES]
+        .sort((a, b) => b.length - a.length)
+        .find((namespace) => name.startsWith(`--${namespace}-`));
+
+/** Whether a variable would be read by Tailwind as a member of one of its theme namespaces. */
+const inNamespace = (name: string) => namespaceOf(name) !== undefined;
 
 /** The scales that a dimension token can belong to, by the name of its group. */
 export type Scale = "text" | "space" | "radius" | "breakpoint" | "container" | "tracking" | "blur";
@@ -416,16 +511,20 @@ export function scaleOf(token: ResolvedToken): Scale | undefined {
  * The one variable each token has in `tailwind.css`: its Tailwind v4 namespace name (`--spacing-4`, `--text-sm`,
  * `--color-bg-surface`) when one fits and no earlier token has it, else its own (`--button-padding-x`).
  */
-function tailwindNames(system: CompileInput): Map<string, string> {
+export function tailwindNames(system: CompileInput): Map<string, string> {
     const names = new Map<string, string>();
     const claimed = new Set<string>();
     const wanted = system.tokens.map((token) => ({ token, name: tailwindName(token) }));
 
-    // A token with no namespace keeps its own name; nobody else may take it.
+    // A token with no namespace keeps its own name; nobody else may take it. A name that starts with a namespace of
+    // Tailwind's (`--font-leading-tight`) would make utilities of the wrong kind (`font-leading-tight`), so it gets
+    // `--ds-` in front.
     for (const { token, name } of wanted) {
         if (name === undefined) {
-            names.set(token.name, token.cssVar);
-            claimed.add(token.cssVar);
+            const own = inNamespace(token.cssVar) ? `--ds-${token.cssVar.slice(2)}` : token.cssVar;
+
+            names.set(token.name, own);
+            claimed.add(own);
         }
     }
 
@@ -447,10 +546,15 @@ function tailwindNames(system: CompileInput): Map<string, string> {
             names.set(token.name, name);
             claimed.add(name);
         } else {
-            let own = token.cssVar;
+            // Its own variable, when that is not in a namespace of another kind (--font-leading-tight for a leading).
+            const base =
+                !inNamespace(token.cssVar) || namespaceOf(token.cssVar) === namespaceOf(name)
+                    ? token.cssVar
+                    : name;
+            let own = base;
 
             for (let at = 2; claimed.has(own); at++) {
-                own = `${token.cssVar}-${at}`;
+                own = `${base}-${at}`;
             }
 
             names.set(token.name, own);
@@ -513,9 +617,17 @@ function tailwindCss(system: CompileInput): string {
             "For Tailwind CSS v4. Import it after Tailwind, in your main stylesheet:",
             '    @import "tailwindcss";',
             '    @import "./tailwind.css";',
-            "Each token has one variable here: in a Tailwind namespace (--color-*, --font-*, --text-*, --spacing-*, --radius-*,",
-            "--shadow-*, --ease-*) when one fits, so that it makes utilities such as bg-bg-surface or rounded-md, else under its",
-            "own name. tokens.css has the tokens under their own names (--space-4); link it too for var(--space-4) and components.",
+            "Each token has one variable here, in a namespace of Tailwind's theme when one fits: --color-*, --font-* (families),",
+            "--text-*, --font-weight-*, --tracking-*, --leading-*, --breakpoint-*, --container-*, --spacing-*, --radius-*,",
+            "--shadow-*, --inset-shadow-*, --drop-shadow-*, --blur-*, --perspective-*, --aspect-*, --ease-*. A token with no",
+            "namespace keeps its own name (--button-height); one whose name would be read as a namespace of the wrong kind",
+            "(--font-leading-tight) gets --ds- in front.",
+            "Utilities read well because a role drops the word that the utility repeats: color.bg.surface is --color-surface",
+            "(bg-surface), color.text.primary is --color-primary (text-primary), color.border.default is --color-default",
+            "(border-default), and a trailing default goes (color.accent.default is --color-accent). When two roles would",
+            "have one name, the first keeps it and the other keeps its full name (--color-text-muted).",
+            "tokens.css has every token under its own name (--color-bg-surface, --space-4); link it too for var(--space-4)",
+            "and the components.",
             'To clear Tailwind\'s default palette (bg-red-500 and the rest), set "tailwindReset": ["color"] in tokens.json\'s',
             '$extensions["com.pi-pocket"].',
         ]),
