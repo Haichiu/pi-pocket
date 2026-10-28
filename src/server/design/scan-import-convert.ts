@@ -178,7 +178,8 @@ function typographyOf(value: Obj): Obj {
         out.fontWeight = weightOf(weight);
     }
 
-    if (leading !== undefined) {
+    // Figma's `AUTO` is no number: the style has no line height of its own.
+    if (leading !== undefined && !/^\s*(?:auto|normal)\s*$/i.test(String(leading))) {
         out.lineHeight = leadingOf(leading);
     }
 
@@ -248,6 +249,11 @@ export function convert(node: Obj, inherited: string | undefined): Obj | undefin
         out = typographyOf(out);
     } else if (type === "border" && isObject(out)) {
         out = borderOf(out);
+    }
+
+    // A number that is not one (`AUTO`) is no token.
+    if (type === "number" && typeof out === "string" && !out.trim().startsWith("{")) {
+        return undefined;
     }
 
     const token: Obj = type === undefined ? { $value: out } : { $value: out, $type: type };

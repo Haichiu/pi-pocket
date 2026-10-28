@@ -711,3 +711,61 @@ test("a reference to a set that no mode turns on does not resolve, and the rest 
     assert.equal(token(system, "color.stray"), undefined);
     assert.equal(hex(system, "color.bg.page"), "#f8fafc");
 });
+
+test("Figma's own forms: AUTO line heights, textCase members that point nowhere, and paragraph spacing", () => {
+    const system = load(
+        scanTokens(
+            project({
+                "tokens.json": {
+                    global: {
+                        colors: {
+                            red: old("#ff0000", "color"),
+                            blue: old("#0000ff", "color"),
+                            ink: old("#111111", "color"),
+                        },
+                        fontFamilies: { roboto: old("Roboto", "fontFamilies") },
+                        fontWeights: {
+                            "roboto-0": old("Regular", "fontWeights"),
+                            "roboto-1": old("Bold", "fontWeights"),
+                        },
+                        lineHeights: {
+                            0: old("AUTO", "lineHeights"),
+                            1: old("125%", "lineHeights"),
+                        },
+                        fontSizes: { 0: old("12", "fontSizes"), 7: old("32", "fontSizes") },
+                        letterSpacing: { 0: old("0%", "letterSpacing") },
+                        paragraphSpacing: { 0: old("0", "paragraphSpacing") },
+                        typography: {
+                            heading: {
+                                h1: old(
+                                    {
+                                        fontFamily: "{fontFamilies.roboto}",
+                                        fontWeight: "{fontWeights.roboto-1}",
+                                        lineHeight: "{lineHeights.0}",
+                                        fontSize: "{fontSizes.7}",
+                                        letterSpacing: "{letterSpacing.0}",
+                                        paragraphSpacing: "{paragraphSpacing.0}",
+                                        textCase: "{textCase.none}",
+                                        textDecoration: "{textDecoration.none}",
+                                    },
+                                    "typography",
+                                ),
+                            },
+                        },
+                    },
+                    $themes: [],
+                    $metadata: { tokenSetOrder: ["global"] },
+                },
+            }),
+        ),
+    );
+    const h1 = token(system, "typography.heading.h1")!;
+
+    assert.equal(h1.type, "typography");
+    assert.equal(h1.modes.light!.parts!["font-size"], "32px");
+    assert.equal(h1.modes.light!.parts!["font-weight"], "700");
+    assert.equal(h1.modes.light!.parts!["line-height"], undefined, "AUTO is no line height");
+    assert.equal(token(system, "lineHeights.0"), undefined, "AUTO is no number");
+    assert.equal(css(system, "lineHeights.1"), "1.25");
+    assert.equal(css(system, "letterSpacing.0"), "0em");
+});

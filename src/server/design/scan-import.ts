@@ -1,7 +1,9 @@
 /**
  * Imports tokens that a project already keeps in a token file (stream T): W3C DTCG (`$value`), Style Dictionary
- * (`value`), and Tokens Studio (`value` and `type`, with `sizing`, `fontFamilies`, `boxShadow`...). The scan uses them
- * as they are: a project that has tokens does not need them guessed from its CSS.
+ * (`value`), and Tokens Studio (`value` and `type`, with `sizing`, `fontFamilies`, `boxShadow`...; see
+ * `scan-import-studio.ts` for token sets, themes, and math). The scan uses them as they are: a project that has tokens
+ * does not need them guessed from its CSS. Files are kept as they are read and sorted into modes by `finishImports`,
+ * once every file is in.
  */
 import { convert, isObject, type Obj } from "./scan-import-convert.ts";
 import { looksLikeSets, studioTokens, type StudioSource } from "./scan-import-studio.ts";

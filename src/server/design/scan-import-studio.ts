@@ -20,6 +20,14 @@ export interface StudioSource {
     themes: unknown[];
 }
 
+/** Members of a type style that the scan leaves out, so that a reference of theirs that fails is not a reason to drop the style. */
+const OPTIONAL_MEMBERS = new Set([
+    "textCase",
+    "textDecoration",
+    "paragraphSpacing",
+    "paragraphIndent",
+]);
+
 const LIMITS = { sets: 40, tokens: 5000, depth: 12, refs: 24, text: 400 } as const;
 
 /** A token of a set, with the type that its group gave it. */
@@ -367,6 +375,11 @@ class Mode {
                 const value = this.evaluate(member, stack);
 
                 if (value === undefined) {
+                    // A member that the engine has no use for (`textCase`) may refer to a token that is not there.
+                    if (OPTIONAL_MEMBERS.has(name)) {
+                        continue;
+                    }
+
                     return undefined;
                 }
 
