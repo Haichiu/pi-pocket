@@ -155,6 +155,7 @@ return {
     fontFaces,
     focus: focusResults,
     pids: finish(groups.pids),
+    notJudged: { count: notJudged.count, elements: notJudged.els.map(selectorOf) },
     semantics,
     labels: finish(groups.labels),
     names: finish(groups.names),

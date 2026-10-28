@@ -236,6 +236,15 @@ export interface CheckFinding {
     suggestion?: string;
     message: string;
     rect?: { x: number; y: number; width: number; height: number };
+    /**
+     * Findings of one rule with the same value, suggestion, and message are one finding: the elements, the first included
+     * (`selector`, `pid`, and `rect` are the first's). Present only when there are two or more. A pin for each.
+     */
+    elements?: {
+        selector: string;
+        pid?: string;
+        rect?: { x: number; y: number; width: number; height: number };
+    }[];
 }
 
 /** What `checkDesign` returns. */
@@ -246,12 +255,24 @@ export interface CheckReport {
     /** The system mode that the page was compared with (absent without a system). */
     mode?: string;
     findings: CheckFinding[];
+    /**
+     * Findings that a person accepted on purpose (the ids given in `CheckOptions.accepted`): reported apart, not counted as
+     * errors or warnings, and not in `byRule`.
+     */
+    accepted?: CheckFinding[];
     /** Counts by rule and level, and how many elements were checked. */
     summary: {
         errors: number;
         warnings: number;
         elements: number;
         byRule: Partial<Record<CheckRule, number>>;
+        /** How many findings were accepted (the length of `accepted`). */
+        accepted?: number;
+        /**
+         * What was not judged, so that silence can be trusted: text whose contrast was left out because what is behind it is
+         * not certain (a gradient, an image, an overlay, a filter, a faded parent). `elements` names up to 8.
+         */
+        notJudged?: { contrast: { count: number; elements: string[] } };
     };
     /** True when the system was absent, so no off-system rule ran. */
     withoutSystem: boolean;

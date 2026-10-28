@@ -71,6 +71,7 @@ export interface RawPage {
     fontFaces: (RawGroup & { family: string; why: string; failed: boolean })[];
     focus: (RawGroup & { tag: string; outlineNone: boolean })[];
     pids: (RawGroup & { tag: string })[];
+    notJudged?: { count: number; elements: string[] };
     semantics?: { lang: boolean; main: boolean; html: RawElement; body: RawElement };
     labels?: (RawGroup & { kind: string })[];
     names?: (RawGroup & { kind: string })[];

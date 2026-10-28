@@ -95,6 +95,10 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
             const large = fontSize >= 24 || (fontSize >= 18.66 && weight >= 700);
 
             group(groups.contrast, 'text|' + fg + '|' + bgc + '|' + large, () => ({ fg, bg: bgc, size: round(fontSize), large, ui: false }), el);
+        } else if (!disabled) {
+            notJudged.count++;
+
+            if (notJudged.els.length < 8) notJudged.els.push(el);
         }
     }
 

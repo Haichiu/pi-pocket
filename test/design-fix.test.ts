@@ -372,9 +372,10 @@ test(
             "off-system-color:color.text.muted",
             "off-system-font:font.body",
             "off-system-size:radius.md",
-            "off-system-size:space.4",
+            // The same literal on two elements is one finding that lists both.
             "off-system-size:space.4",
         ]);
+        assert.equal(fixable.find((item) => item.fix!.token === "space.4")!.elements?.length, 2);
         // `#7ba3f8` is near a token but not equal to it: not fixable.
         assert.equal(
             ofRule(before, "off-system-color").find((item) => item.pid === "loud")?.fix,

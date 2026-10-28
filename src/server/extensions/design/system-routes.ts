@@ -329,16 +329,10 @@ export function cleanReport(
     system?: DesignSystem,
     mode?: string,
 ): CheckReport {
-    const findings: CheckFinding[] = [];
-
-    // What is not a finding (a rule the app does not know, a null) is skipped before it counts toward the limit.
-    for (const each of (Array.isArray(report?.findings) ? report.findings : []).slice(0, 2000)) {
-        if (findings.length >= LIMITS.findings) {
-            break;
-        }
-
+    // One finding of the engine as the browser may have it: shape-checked and cut.
+    const cleanOne = (each: CheckFinding): CheckFinding | undefined => {
         if (!RULES.includes(each?.rule)) {
-            continue;
+            return undefined;
         }
 
         const rect = each.rect;
@@ -348,7 +342,7 @@ export function cleanReport(
         const fixable =
             (each as { fixable?: unknown }).fixable === true || isFixable(each, system, mode);
 
-        findings.push({
+        return {
             ...(typeof each.id === "string" ? { id: clip(each.id, 60) } : {}),
             // A fixable finding keeps what `applyExactFixes` needs; it checks the system again before it rewrites.
             ...(typeof fix === "object" &&
@@ -377,6 +371,26 @@ export function cleanReport(
                 ? { suggestion: clip(each.suggestion, 300) }
                 : {}),
             message: clip(each.message, 400),
+            ...(Array.isArray(each.elements) && each.elements.length > 1
+                ? {
+                      elements: each.elements.slice(0, 12).map((item) => ({
+                          selector: clip(item?.selector, 500),
+                          ...(typeof item?.pid === "string" && item.pid !== ""
+                              ? { pid: clip(item.pid, 200) }
+                              : {}),
+                          ...(typeof item?.rect === "object" && item.rect !== null
+                              ? {
+                                    rect: {
+                                        x: coordinate(item.rect.x),
+                                        y: coordinate(item.rect.y),
+                                        width: coordinate(item.rect.width),
+                                        height: coordinate(item.rect.height),
+                                    },
+                                }
+                              : {}),
+                      })),
+                  }
+                : {}),
             ...(fixable ? { fixable: true } : {}),
             ...(typeof rect === "object" && rect !== null
                 ? {
@@ -388,8 +402,31 @@ export function cleanReport(
                       },
                   }
                 : {}),
-        });
-    }
+        };
+    };
+
+    const cleanList = (list: unknown, limit: number): CheckFinding[] => {
+        const out: CheckFinding[] = [];
+
+        // What is not a finding (a rule the app does not know, a null) is skipped before it counts toward the limit.
+        for (const each of (Array.isArray(list) ? list : []).slice(0, 2000)) {
+            if (out.length >= limit) {
+                break;
+            }
+
+            const one = cleanOne(each);
+
+            if (one !== undefined) {
+                out.push(one);
+            }
+        }
+
+        return out;
+    };
+
+    const findings = cleanList(report?.findings, LIMITS.findings);
+    const accepted = cleanList(report?.accepted, LIMITS.findings);
+    const left = report?.summary?.notJudged?.contrast;
 
     const byRule: Partial<Record<CheckRule, number>> = {};
 
@@ -407,11 +444,25 @@ export function cleanReport(
             ? { mode: clip(report.mode, 64) }
             : {}),
         findings,
+        ...(accepted.length > 0 ? { accepted } : {}),
         summary: {
             errors: findings.filter((each) => each.level === "error").length,
             warnings: findings.filter((each) => each.level === "warning").length,
             elements: Math.max(0, Math.round(coordinate(report?.summary?.elements))),
             byRule,
+            ...(accepted.length > 0 ? { accepted: accepted.length } : {}),
+            ...(left !== undefined && coordinate(left.count) > 0
+                ? {
+                      notJudged: {
+                          contrast: {
+                              count: Math.round(coordinate(left.count)),
+                              elements: (Array.isArray(left.elements) ? left.elements : [])
+                                  .slice(0, 8)
+                                  .map((each: unknown) => clip(each, 500)),
+                          },
+                      },
+                  }
+                : {}),
         },
         withoutSystem: report?.withoutSystem === true,
     };
@@ -649,6 +700,22 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             throw web.error(400, "Choose mobile, tablet, or desktop.");
         }
 
+        // The ids of findings that a person accepted on this design (`CheckFinding.id`): up to 200, each of the engine's shape.
+        const accepted = request.body.accepted;
+
+        if (
+            accepted !== undefined &&
+            (!Array.isArray(accepted) ||
+                accepted.length > 200 ||
+                !accepted.every(
+                    (each) =>
+                        typeof each === "string" &&
+                        /^[a-z-]{3,40}-[0-9a-f]{10}(-\d{1,3})?$/.test(each),
+                ))
+        ) {
+            throw web.error(400, "Accepted findings are a list of up to 200 finding ids.");
+        }
+
         const cwd = folderOf(request);
         const system = await load(cwd);
 
@@ -668,6 +735,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             viewport: VIEWPORTS[size as keyof typeof VIEWPORTS],
             ...(colorScheme === undefined ? {} : { colorScheme }),
             ...(checked === undefined ? {} : { mode: checked }),
+            ...(accepted === undefined ? {} : { accepted: accepted as string[] }),
         };
 
         return { id, version: version as number | undefined, options, system, mode: checked };

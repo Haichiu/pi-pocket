@@ -218,6 +218,8 @@ const group = (map, key, make, el) => {
 };
 const finish = (map) => [...map.values()].map((item) => Object.assign({}, item, { el: infoOf(item.el) }));
 
+// Text whose contrast was not judged, because what is behind it is not certain.
+const notJudged = { count: 0, els: [] };
 const groups = { colors: new Map(), fonts: new Map(), sizes: new Map(), contrast: new Map(), targets: new Map(), images: new Map(), pids: new Map(), labels: new Map(), names: new Map(), zoom: new Map() };
 const headings = [];
 

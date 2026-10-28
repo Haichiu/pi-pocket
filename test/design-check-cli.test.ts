@@ -100,7 +100,10 @@ test(
         const failed = await exec([join(folder, "bad.html")]);
 
         assert.equal(failed.code, 1);
-        assert.match(failed.stdout, /error\s+image-alt\s+img\n\s+An image has no alt attribute\./);
+        assert.match(
+            failed.stdout,
+            /error\s+image-alt\s+img\s+\[image-alt-[0-9a-f]{10}\]\n\s+An image has no alt attribute\./,
+        );
         assert.match(
             failed.stdout,
             /bad\.html: \d+ errors?, \d+ warnings? in \d+ elements \(1280×800, light, no design system\)\./,
