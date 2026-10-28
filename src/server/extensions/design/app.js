@@ -231,11 +231,11 @@ export function createApp(pocket, store, shell) {
             void systemData.load({ quiet: store.get().system.status === "ready" });
         },
         /**
-         * Show a finding of the page check on the page: its pin, scrolled into view in the frame. A canvas that is zoomed in
-         * goes back to fit first, so that the frame's own scroll is the only one left and the pin is on the screen.
+         * Show a finding of the page check on the page: its pin, scrolled into view in the frame, and the room (the canvas)
+         * is brought to it too (`pocket-pin` in `canvas.js`).
          */
         focusFinding(number) {
-            store.set({ checkFocus: { number, at: Date.now() }, zoom: "fit" });
+            store.set({ checkFocus: { number, at: Date.now() } });
         },
         /** The open design's Check dock. */
         openCheck() {

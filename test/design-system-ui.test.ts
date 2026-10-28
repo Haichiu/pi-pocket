@@ -468,7 +468,13 @@ test("the picker pins the design system, and it opens as sections of tokens", re
     // The other sections draw their kinds of token.
     await section("Type");
     assert.ok((await count(".dsy-specimen")) >= 5, "type styles as specimens");
+    // The note about exempt pairs is about colors: it is on the Colors tab, and not as a row on every tab.
+    await section("Colors");
+    assert.equal(await count(".dsy-notes"), 1);
+    await section("Type");
+    assert.equal(await count(".dsy-notes"), 0);
     await section("Spacing");
+    assert.equal(await count(".dsy-notes"), 0);
     assert.equal(await count(".dsy-space"), 8);
     // Spacing is a grid of small tiles (a bar at its own scale, the name, the value), not a row a panel wide for each step.
     assert.match(await text('[data-token="space.4"]'), /4.*16px/s);
@@ -490,8 +496,8 @@ test("the picker pins the design system, and it opens as sections of tokens", re
     await section("Shadows");
     assert.equal(await count(".dsy-stage i"), 3);
     // Each shadow tile says what the shadow is, in a few characters: x y blur / alpha.
-    assert.match(await text('[data-token="shadow.sm"]'), /sm.*0 1 2 \/ 12%/s);
-    assert.match(await text('[data-token="shadow.md"]'), /md.*0 6 16 \/ 16%/s);
+    assert.match(await text('[data-token="shadow.sm"]'), /sm.*y 1 · blur 2 · 12%/s);
+    assert.match(await text('[data-token="shadow.md"]'), /md.*y 6 · blur 16 · spread -4 · 16%/s);
     await section("Motion");
     assert.equal(await count(".dsy-track"), 6);
     assert.equal(await count(".dsy-curve"), 3);
@@ -1935,7 +1941,7 @@ test(
 );
 
 test(
-    "on a phone the check is a sheet that the page shows above, and it takes three heights",
+    "on a phone the check starts as a bar with the count of findings, the page keeps the room, and a tap opens a sheet of three heights",
     bridged,
     async (t) => {
         await phone(t, 390);
@@ -1949,8 +1955,8 @@ test(
         );
         await pressed('.dsn-tab[title="Check"]');
         await waitFor(
-            "the sheet",
-            `return JSON.stringify(Boolean(document.querySelector('.dsn-dock[data-sheet="true"]')))`,
+            "the bar",
+            `return JSON.stringify(Boolean(document.querySelector('.dsn-dock[data-shut="true"] .dsy-check-bar')))`,
         );
 
         const share = () =>
@@ -1960,13 +1966,37 @@ test(
                 const canvas = document.querySelector(".dsn-canvas").getBoundingClientRect();
                 return JSON.stringify({ dock: dock.height / room.height, canvas: canvas.height, room: room.height, above: canvas.bottom <= dock.top + 1 });
             `);
+
+        // Not checked yet: the bar says so, and runs the check. The page keeps nearly all of the room (at least 60 percent).
+        assert.match(await text(".dsy-check-bar"), /Not checked yet/);
+
+        const bar = await share();
+
+        assert.ok(bar.canvas / bar.room >= 0.6 && bar.above, JSON.stringify(bar));
+        assert.equal(await count(".dsy-sheet-handle"), 0, "the bar is its own handle");
+        await pressed(".dsy-check-bar button", "Run the check");
+        await waitFor(
+            "the count",
+            `return JSON.stringify(/^\\d+ findings?/.test(document.querySelector(".dsy-check-bar strong")?.textContent ?? ""))`,
+        );
+        // The count by level, in the bar.
+        assert.match(await text(".dsy-check-bar"), /\d+ errors?/);
+        assert.match(await text(".dsy-check-bar"), /\d+ warnings?/);
+        assert.equal((await share()).dock < 0.15, true, "still a bar");
+
+        // A tap on the bar opens the sheet: the page keeps at least 40 percent, and shows above it.
+        await pressed(".dsy-check-bar-main");
+        await waitFor(
+            "the sheet",
+            `return JSON.stringify(Boolean(document.querySelector('.dsn-dock[data-shut="false"] .dsy-sheet-handle')))`,
+        );
+
         const middle = await share();
 
-        // The page keeps at least 40 percent of the room, and shows above the sheet.
         assert.ok(middle.dock > 0.45 && middle.dock <= 0.6, JSON.stringify(middle));
         assert.ok(middle.canvas / middle.room >= 0.4 && middle.above, JSON.stringify(middle));
 
-        // The handle is a control with a name, a value, and the arrow keys.
+        // The handle is a control with a name, a value, and the arrow keys: up to high, down to the middle and to the bar.
         assert.equal(await count('.dsy-sheet-handle[role="separator"][aria-valuenow="1"]'), 1);
         await inPage(`document.querySelector(".dsy-sheet-handle").focus(); return "null";`);
         await page.press("ArrowUp");
@@ -1978,18 +2008,11 @@ test(
         await page.press("ArrowDown");
         await page.press("ArrowDown");
         await waitFor(
-            "the low sheet",
-            `return JSON.stringify(document.querySelector(".dsy-sheet-handle")?.getAttribute("aria-valuetext") === "low")`,
+            "the bar again",
+            `return JSON.stringify(Boolean(document.querySelector('.dsn-dock[data-shut="true"] .dsy-check-bar')))`,
         );
-
-        const low = await share();
-
-        assert.ok(low.dock < 0.3 && low.canvas > middle.canvas, JSON.stringify(low));
-        await page.press("Enter");
-        await waitFor(
-            "the next height",
-            `return JSON.stringify(document.querySelector(".dsy-sheet-handle")?.getAttribute("aria-valuetext") === "middle")`,
-        );
+        assert.ok((await share()).canvas / bar.room >= 0.6, "the page has its room back");
+        await pressed(".dsy-check-bar-main");
         await pressed('.dsn-dock button[aria-label="Close"]');
     },
 );
@@ -2287,6 +2310,17 @@ test("focus mode hides the conversation and gives the panel the whole width", re
         "the room",
         `return JSON.stringify(document.querySelector(".dsy-main").dataset.split === "true")`,
     );
+    // The open design is fitted to the room beside the view, and centered: its frame is the pane's own size at 100%, and not a
+    // desktop page at a third of its size in a corner.
+    await waitFor(
+        "the design fitted",
+        `
+        const canvas = document.querySelector(".dsy-preview .dsn-canvas")?.getBoundingClientRect();
+        const stage = document.querySelector(".dsy-preview .dsn-stage")?.getBoundingClientRect();
+        const value = document.querySelector(".dsy-preview .dsn-zoom-value")?.textContent ?? "";
+        return JSON.stringify(Boolean(canvas && stage) && /100%/.test(value) && stage.width > canvas.width * 0.85 && stage.height > canvas.height * 0.7 && Math.abs((stage.left + stage.right) / 2 - (canvas.left + canvas.right) / 2) < 3);
+    `,
+    );
     await pressed('.dsy-bars button[aria-label="Show the conversation"]');
     await waitFor(
         "back",
@@ -2376,6 +2410,67 @@ test(
             ),
             /\u203a/,
         );
+        // The bar of sections shows whole tabs at rest, never half a letter: not at the start, and not after it is scrolled.
+        const whole = () =>
+            waitFor<boolean>(
+                "whole tabs",
+                `
+                const bar = document.querySelector(".dsy-tabs");
+                if (bar.dataset.rest !== "on") return JSON.stringify(false);
+                const box = bar.getBoundingClientRect();
+                const less = bar.scrollLeft > 2 ? 26 : 0;
+                const more = bar.scrollLeft < bar.scrollWidth - bar.clientWidth - 2 ? 26 : 0;
+                const shown = [...bar.querySelectorAll("[role=tab]")].filter((each) => getComputedStyle(each).opacity !== "0");
+                return JSON.stringify(shown.length >= 2 && shown.every((each) => {
+                    const at = each.getBoundingClientRect();
+                    return at.left >= box.left + less - 1.5 && at.right <= box.right - more + 1.5;
+                }));
+            `,
+            );
+
+        await whole();
+        await inPage(`document.querySelector(".dsy-tabs").scrollTo({ left: 150 }); return "null";`);
+        await waitFor(
+            "scrolled",
+            `return JSON.stringify(document.querySelector(".dsy-tabs").scrollLeft > 100)`,
+        );
+        await whole();
+        await inPage(`document.querySelector(".dsy-tabs").scrollTo({ left: 0 }); return "null";`);
+
+        // An editor keeps its name and its way to close at the top while it scrolls, and its contrast is above the fold.
+        await openToken("color.text.primary");
+        assert.match(await text(".dsy-ramp-editor-head .dsy-mode-chip"), /Light/);
+        await waitFor(
+            "the contrast on the screen",
+            `
+            const c = document.querySelector(".dsy-ramp-editor .dsy-contrasts").getBoundingClientRect();
+            const room = document.querySelector(".dsy-scroll").getBoundingClientRect();
+            return JSON.stringify(c.top >= room.top && c.bottom <= innerHeight);
+        `,
+        );
+        await inPage(`
+            const scroll = document.querySelector(".dsy-scroll");
+            const editor = document.querySelector(".dsy-ramp-editor").getBoundingClientRect();
+            scroll.scrollBy(0, editor.top - scroll.getBoundingClientRect().top + 90);
+            return "null";
+        `);
+        await waitFor(
+            "the head stays",
+            `
+            const head = document.querySelector(".dsy-ramp-editor-head").getBoundingClientRect();
+            const top = document.querySelector(".dsy-scroll").getBoundingClientRect().top;
+            const editor = document.querySelector(".dsy-ramp-editor").getBoundingClientRect();
+            return JSON.stringify(editor.top < top - 40 && head.top >= top - 1 && head.top < top + 20 && head.bottom <= innerHeight);
+        `,
+        );
+        assert.match(
+            await text(".dsy-ramp-editor-head"),
+            /color\.text\.\s*primary/,
+            "its name is there",
+        );
+        assert.equal(await count('.dsy-ramp-editor-head button[aria-label^="Close"]'), 1);
+        await pressed('.dsy-ramp-editor-head button[aria-label^="Close"]');
+
         // A card's tap target is at least 44 px, and so is a swatch of a strip, and a tab 34.
         assert.ok(
             await inPage<boolean>(`

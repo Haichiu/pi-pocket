@@ -251,6 +251,29 @@ export function checkPageMessage(data) {
             return { type: data.type, knobs };
         }
 
+        case "pocket-pin": {
+            // A tap on a pin, or where the element of a pin was brought to (its rectangle in the frame).
+            const rect = data.rect;
+            const finite = (value) =>
+                typeof value === "number" && Number.isFinite(value) && Math.abs(value) < 1e6;
+
+            if (!isText(data.label, 8)) {
+                return null;
+            }
+
+            if (isRecord(rect)) {
+                return finite(rect.x) && finite(rect.y) && finite(rect.width) && finite(rect.height)
+                    ? {
+                          type: data.type,
+                          label: data.label,
+                          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                      }
+                    : null;
+            }
+
+            return data.tap === true ? { type: data.type, label: data.label, tap: true } : null;
+        }
+
         case "pocket-deck":
             return isCount(data.slides, LIMITS.slides) &&
                 isCount(data.current, Math.max(data.slides - 1, 0))

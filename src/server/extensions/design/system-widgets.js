@@ -796,6 +796,12 @@ export function createSystemWidgets(env) {
                                   like=${like}
                               />`
                     }
+                    <${ContrastList}
+                        model=${model}
+                        token=${token}
+                        mode=${mode}
+                        modes=${modes.length}
+                    />
                     <div class="dsy-alias">
                         <${Ico} name="link" size=${14} />
                         ${
@@ -847,12 +853,6 @@ export function createSystemWidgets(env) {
                             </button>`
                         }
                     </div>
-                    <${ContrastList}
-                        model=${model}
-                        token=${token}
-                        mode=${mode}
-                        modes=${modes.length}
-                    />
                 </section>`;
             })}
             ${

@@ -260,6 +260,11 @@ export function createSystemSections(env, widgets) {
             html`<div class="dsy-ramp-editor" data-token=${open.name}>
                 <div class="dsy-ramp-editor-head">
                     <${CopyName} name=${open.name} />
+                    ${
+                        ctx.modes.length === 1 &&
+                        ctx.model.modes.length > 1 &&
+                        html`<span class="dsy-mode-chip">${modeTitle(ctx.modes[0])}</span>`
+                    }
                     <span class="grow"></span>
                     <button
                         type="button"

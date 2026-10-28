@@ -1,7 +1,7 @@
 // The canvas: a design's page in the artifact sandbox frame (the same frame and bridge as the artifact viewer), scaled to
 // fit, with the page's side of Design mode (inspect, edit text, tweaks, pins, slides) spoken through the bridge.
 import { useArtifactBridge } from "/artifact-bridge.js";
-import { percent, scaleOf, stepZoom } from "./devices.js";
+import { nextZoom, percent, scaleOf, stepZoom, zoomOf, zoomWord } from "./devices.js";
 import { checkOptions, pinsOfReport } from "./check.js";
 import { pinsOf } from "./comments.js";
 import { addEdit } from "./edits.js";
@@ -60,6 +60,9 @@ export function createCanvas(env) {
     /** The zoom, the size, and the backdrop: a small bar over the canvas. */
     function ZoomBar({ s, size, scale }) {
         const dark = s.backdrop === "dark" || (s.backdrop === "auto" && env.darkTheme());
+        const narrow = env.sizeClass(s) === "narrow";
+        const zoom = zoomOf(s.zoom, narrow);
+        const following = zoom === "width" || zoom === "fit";
 
         return html`<div class="dsn-zoom" role="group" aria-label="Zoom">
             <button
@@ -73,10 +76,16 @@ export function createCanvas(env) {
             <button
                 type="button"
                 class="dsn-zoom-value"
-                title=${s.zoom === "fit" ? "Fits the room. Tap for 100%." : "Fit to the room"}
-                onClick=${() => env.setZoom(s.zoom === "fit" ? 1 : "fit")}
+                title=${
+                    zoom === "width"
+                        ? "The width of the room, the page scrolls. Tap for the whole page."
+                        : zoom === "fit"
+                          ? "The whole page in the room. Tap for 100%."
+                          : "Tap to fit the room"
+                }
+                onClick=${() => env.setZoom(nextZoom(following ? zoom : 1, narrow))}
             >
-                ${s.zoom === "fit" ? "Fit " : ""}${percent(scale)}
+                ${zoomWord(zoom)}${percent(scale)}
             </button>
             <button
                 type="button"
@@ -109,7 +118,8 @@ export function createCanvas(env) {
         // The slide to go back to once a page that loads again says it is a deck (`pocket-deck`).
         const pendingSlide = useRef(0);
         // The zoom bar floats over the bottom of the room: the page fits above it.
-        const scale = scaleOf(s.zoom, size, { w: roomSize.w, h: roomSize.h - 40 });
+        const zoom = zoomOf(s.zoom, env.sizeClass(s) === "narrow");
+        const scale = scaleOf(zoom, size, { w: roomSize.w, h: roomSize.h - 40 });
         const src = frameUrl(s.conversation, design.id, version);
         const key = `${src}#${s.reload}`;
         const notes = s.notes[design.id];
@@ -167,6 +177,41 @@ export function createCanvas(env) {
                         }),
                     },
                 }));
+            } else if (message.type === "pocket-pin") {
+                if (message.tap === true) {
+                    // A tap on a pin of the check: its finding, and the sheet opens (on a phone it started shut).
+                    const number = Number(message.label);
+
+                    if (state.dock === "check" && Number.isInteger(number)) {
+                        store.set({
+                            checkFocus: { number, at: Date.now() },
+                            checkSheet: Math.max(1, state.checkSheet),
+                        });
+                    }
+                } else if (message.rect) {
+                    // Where the page brought the element of a pin to, in the frame: the room, which may be smaller than the
+                    // frame, goes there too.
+                    const box = room.current?.querySelector(".dsn-scroll");
+                    const stage = box?.querySelector(".dsn-stage");
+
+                    if (box && stage) {
+                        box.scrollTo({
+                            top: Math.max(
+                                0,
+                                stage.offsetTop +
+                                    (message.rect.y + message.rect.height / 2) * scale -
+                                    box.clientHeight / 2,
+                            ),
+                            left: Math.max(
+                                0,
+                                stage.offsetLeft +
+                                    (message.rect.x + message.rect.width / 2) * scale -
+                                    box.clientWidth / 2,
+                            ),
+                            behavior: "smooth",
+                        });
+                    }
+                }
             } else if (message.type === "pocket-tweaks") {
                 store.set({ knobs: normalizeKnobs(message.knobs), knobsKey: key });
             } else if (
