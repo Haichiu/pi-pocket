@@ -2,7 +2,8 @@
 // implementations as a ceiling, and a run with nothing in the tree as a floor. See test/design-system-bench/README.md.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { findBrowser } from "../src/server/browser/discovery.ts";
@@ -28,7 +29,7 @@ import {
     loadModules,
     runScan,
 } from "./design-system-bench/lib/modules.ts";
-import { loadLintCases, LINT_SYSTEM } from "./design-system-bench/lib/phase-lint.ts";
+import { loadLintCases, LINT_SYSTEM, lintSystemFor } from "./design-system-bench/lib/phase-lint.ts";
 import { BENCH, loadFixtures } from "./design-system-bench/lib/phase-scan.ts";
 import { draftFromExpected, referenceModules } from "./design-system-bench/lib/reference.ts";
 import {
@@ -1159,3 +1160,24 @@ test(
         }
     },
 );
+
+test("a lint folder can name the system its designs are written for (system.json)", () => {
+    const folder = mkdtempSync(join(tmpdir(), "bench-lintroot-"));
+
+    try {
+        assert.equal(lintSystemFor(folder), undefined);
+        writeFileSync(
+            join(folder, "system.json"),
+            JSON.stringify({ project: "test/design-system-bench/lint/system" }),
+        );
+        const choice = lintSystemFor(folder)!;
+
+        assert.ok(choice.system.tokens.length > 50);
+        assert.match(choice.css.toString(), /--color-bg-default: var\(--color-gray-50\)/);
+        assert.match(choice.source, /test\/design-system-bench\/lint\/system/);
+        writeFileSync(join(folder, "system.json"), "{}");
+        assert.throws(() => lintSystemFor(folder), /needs a "project"/);
+    } finally {
+        rmSync(folder, { recursive: true, force: true });
+    }
+});
