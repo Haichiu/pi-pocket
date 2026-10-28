@@ -23,6 +23,7 @@ import createArtifacts from "../src/server/extensions/artifacts.ts";
 import type { ConversationWebRequest, ExtensionWeb } from "../src/server/host.ts";
 import type { DesignSystem } from "../src/server/design/system-types.ts";
 import { bundleOf, host, page, testSystem } from "./design-lint-fixtures.ts";
+import { loadDesignSystem } from "../src/server/design/tokens.ts";
 
 const browser = { skip: findBrowser() === undefined, timeout: 120_000 };
 
@@ -707,3 +708,110 @@ test("the export tool and route take slide, tweaks, and a custom size", browser,
 async function realpath(path: string): Promise<string> {
     return (await import("node:fs/promises")).realpath(path);
 }
+
+test("design_preview and design_export take a mode of the system", browser, async () => {
+    const flagship = loadDesignSystem(
+        join(import.meta.dirname, "fixtures", "design-system", "flagship"),
+    )!;
+
+    await publish({
+        id: "modes",
+        title: "Modes",
+        content: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="ds/tokens.css"><style>body{margin:0;background:var(--color-bg-base);height:300px}</style></head><body><p data-pid="quiet" style="margin:0;padding:var(--space-4);color:#b4bee6">Quiet words</p></body></html>`,
+        assets: [{ name: "ds/tokens.css", content: flagship.compiled.css }],
+    });
+    const tools = designTools(host, { loadSystem: () => flagship });
+    const run = (name: string, args: object) =>
+        call(
+            tools.find((tool) => tool.name === name)!,
+            args,
+        );
+    const plain = textOf(await run("design_preview", { id: "modes", viewports: ["mobile"] }));
+    const high = textOf(
+        await run("design_preview", { id: "modes", viewports: ["mobile"], mode: "high-contrast" }),
+    );
+
+    assert.match(plain, /light; system "Pi Pocket", mode light/);
+    assert.match(plain, /contrast \[data-pid="quiet"\]/);
+    assert.match(high, /dark; system "Pi Pocket", mode high-contrast/, "the mode's own scheme");
+    assert.doesNotMatch(high, /contrast \[data-pid="quiet"\]/);
+    // The screenshot is in the mode too, even with the checks off.
+    const shot = await run("design_preview", {
+        id: "modes",
+        viewports: ["mobile"],
+        mode: "high-contrast",
+        checks: false,
+    });
+    const image = (shot.output ?? []).find((item) => item.type === "image") as { data: string };
+
+    assert.deepEqual(
+        (await pixel(Buffer.from(image.data, "base64"), 200, 250)).slice(0, 3),
+        [14, 14, 20],
+        "the high-contrast ground (#0e0e14)",
+    );
+    await assert.rejects(run("design_preview", { id: "modes", mode: "sepia" }), /no mode "sepia"/);
+    await assert.rejects(
+        call(
+            designTools(host, { loadSystem: () => undefined }).find(
+                (tool) => tool.name === "design_preview",
+            )!,
+            { id: "modes", mode: "dark" },
+        ),
+        /needs a design system/,
+    );
+
+    // The export draws in the mode as well: the tool, and the route.
+    const file = async (args: object) =>
+        readFile(
+            (
+                (await run("design_export", { id: "modes", format: "png", ...args })).details as {
+                    path: string;
+                }
+            ).path,
+        );
+    const light = await pixel(await file({}), 200, 250);
+    const dark = await pixel(await file({ mode: "high-contrast" }), 200, 250);
+
+    assert.deepEqual(light.slice(0, 3), [244, 245, 249], "the light ground (#f4f5f9)");
+    assert.deepEqual(dark.slice(0, 3), [14, 14, 20]);
+    await assert.rejects(
+        run("design_export", { id: "modes", format: "png", mode: "sepia" }),
+        /no mode "sepia"/,
+    );
+    let handler: ((request: ConversationWebRequest) => unknown) | undefined;
+
+    designRoutes(
+        {
+            conversationRoute: (_method: string, _path: string, handle: typeof handler) => {
+                handler = handle;
+            },
+            error: (status: number, message: string) =>
+                Object.assign(new Error(message), { status }),
+        } as unknown as ExtensionWeb,
+        host,
+        { loadSystem: () => flagship },
+    );
+    const request = (body: object) =>
+        ({
+            body,
+            conversation: { id: conversation, cwd },
+            snapshot: app.harness.snapshot.bind(app.harness),
+            signal: new AbortController().signal,
+            context,
+        }) as unknown as ConversationWebRequest;
+    const saved = (await handler!(
+        request({ id: "modes", format: "png", mode: "high-contrast" }),
+    )) as {
+        path: string;
+    };
+
+    assert.deepEqual((await pixel(await readFile(saved.path), 200, 250)).slice(0, 3), [14, 14, 20]);
+    await assert.rejects(
+        async () => handler!(request({ id: "modes", format: "png", mode: "sepia" })),
+        /no mode "sepia"/,
+    );
+    await assert.rejects(
+        async () => handler!(request({ id: "modes", format: "png", mode: 5 })),
+        /name of a mode/,
+    );
+});

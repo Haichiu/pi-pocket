@@ -184,6 +184,8 @@ export interface CheckReport {
     /** The viewport the page was checked at. */
     viewport: { width: number; height: number };
     colorScheme: "light" | "dark";
+    /** The system mode that the page was compared with (absent without a system). */
+    mode?: string;
     findings: CheckFinding[];
     /** Counts by rule and level, and how many elements were checked. */
     summary: {
