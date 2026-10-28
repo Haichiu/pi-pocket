@@ -32,6 +32,24 @@ Hands-on findings for U: the Check dock checks Light while the canvas shows Dark
 
 V's lint fixes (root cause: the DOM walk skipped `<body>`, so text was judged on white; findings now one per `data-pid` scope; tap targets per the plan; authored literals read). Bench lint 0.772 → **1.0**. Held-out lint 0.734 → **1.0** (precision 1, recall 1, 0 findings on clean designs): the fix generalizes. V's duplicate color math now imports T's `color.ts`.
 
+### Judges after round 2 (tree at about ab20007; scan fix not merged)
+
+| Line | Judge A (sonnet-5-5) | Judge B (glm-5.3-flash) | Score |
+|---|---|---|---|
+| 1 Token model | 8 | 9 | **8** |
+| 2 Import (scan) | 4 | 4 | **4** |
+| 3 Enforcement | 7 | 9 | **7** |
+| 4 Accessibility | 7 | 9 | **7** |
+| 5 Agent experience | 7 | 8 | **7** |
+| 6 People experience | 6 | 7 | **6** |
+| 7 Documentation output | 8 | 8 | **8** |
+| 8 Code handoff | 6 | 8 | **6** |
+| 9 Engineering | 6 | 6 | **6** |
+
+Shared top items: the scan does not generalize; Check checks Light while the canvas shows Dark (and has no high-contrast choice); phone layout (tabs, warnings box, Check dock); Colors opens on primitives; `tailwind.css` doubles every variable and `tokens.css` adds a `--dim-*` layer; docs copy errors; `features.md` and `map.md` out of date; the suite was red at the time of judging.
+
+Round 3 assignments: U (people experience), G (docs page, flagship naming, guide), V (role-aware suggestions, 15+ real pages, stable ids), T (scan, then handoff outputs), integrator (docs).
+
 Round 2 started at once on the bench's weakest phases: V on lint, T on scan, B on a held-out set outside the repo (`/mnt/games/Development/ds-holdout/`, never shown to T or V).
 
 Baseline (0.27.0-beta.1, before round 1): no token model, no compile, no lint, no System view, no docs page. Scan read 16 files of this repo and returned one flat list of 60 variables in walk order. Every rubric line is at 0 to 2.
