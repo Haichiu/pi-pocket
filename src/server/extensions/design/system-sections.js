@@ -11,6 +11,7 @@ import {
     pixelsOf,
     safeCss,
     shadowOf,
+    shadowSummary,
     showValue,
     tails,
     themeCss,
@@ -585,21 +586,27 @@ export function createSystemSections(env, widgets) {
                     group=${group}
                     bare=${groups.length === 1}
                 >
-                    <ul class="dsy-rows">
-                        ${group.tokens.map((token) => {
+                    <${Tiles}
+                        ctx=${ctx}
+                        group=${group}
+                        size="space"
+                        tile=${(token) => {
                             const now = ctx.model.value(token.name, mode);
                             const px = pixelsOf(now.value);
 
-                            return html`<${TokenRow}
-                                key=${token.name}
-                                ctx=${ctx}
-                                token=${token}
-                                visual=${html`<span class="dsy-space"><i style=${`width:${px === null ? 0 : Math.max(2, Math.min(100, (px / widest) * 100))}%`}></i></span>`}
-                                sub=${px === null ? null : html`<span class="mono">${`${Math.round((px / 16) * 1000) / 1000}rem at 16px`}</span>`}
-                                value=${html`<span class="dsy-hex mono">${showValue(token, now)}</span>`}
-                            />`;
-                        })}
-                    </ul>
+                            return html`<span class="dsy-space"
+                                    ><i
+                                        style=${`width:${px === null ? 0 : Math.max(2, Math.min(100, (px / widest) * 100))}%`}
+                                    ></i
+                                ></span>
+                                <span class="dsy-tile-name mono"
+                                    >${tails(group.tokens).get(token.name)}</span
+                                >
+                                <span class="dsy-tile-hex dsy-hex mono"
+                                    >${showValue(token, now)}</span
+                                >`;
+                        }}
+                    />
                 <//>`,
         )}`;
     }
@@ -719,6 +726,14 @@ export function createSystemSections(env, widgets) {
                                 </span>
                                 <span class="dsy-tile-name mono"
                                     >${tails(group.tokens).get(token.name)}</span
+                                >
+                                <span class="dsy-tile-hex mono"
+                                    >${ctx.modes
+                                        .map((mode) =>
+                                            shadowSummary(ctx.model.value(token.name, mode).value),
+                                        )
+                                        .filter((text, at, all) => all.indexOf(text) === at)
+                                        .join(" · ")}</span
                                 >`}
                     />
                 <//>`,
