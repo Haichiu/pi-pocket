@@ -1356,6 +1356,84 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         }
     };
 
+    // ---------------------------------------------------------------------------------------------------------------
+    // The height of the page's content, told to the app: a Check shortens a frame that has more room than its page.
+
+    const SIZE_SCAN = 1500;
+    let sizeWatch = null;
+    let sizeTimer = null;
+    let sizeSent = -1;
+
+    /** The lowest edge of anything on the page, or null when the page is too big to scan (the frame then keeps its room). */
+    const contentBottom = () => {
+        const body = doc.body;
+
+        if (!body) {
+            return null;
+        }
+
+        const all = body.querySelectorAll("*");
+
+        if (all.length > SIZE_SCAN) {
+            return null;
+        }
+
+        const scrolled = win.scrollY || 0;
+        let bottom = Math.max(doc.documentElement.getBoundingClientRect().bottom, body.getBoundingClientRect().bottom) + scrolled;
+
+        for (const el of all) {
+            if (el.localName !== "pocket-overlay") {
+                bottom = Math.max(bottom, el.getBoundingClientRect().bottom + scrolled);
+            }
+        }
+
+        return bottom;
+    };
+
+    const reportSize = () => {
+        sizeTimer = null;
+
+        const bottom = contentBottom();
+        const height = bottom === null ? 0 : Math.ceil(bottom);
+
+        if (Math.abs(height - sizeSent) >= 2) {
+            sizeSent = height;
+            send({ type: "pocket-size", height });
+        }
+    };
+
+    const sizeLater = () => {
+        if (sizeTimer === null) {
+            sizeTimer = later(reportSize, 150);
+        }
+    };
+
+    const watchSize = () => {
+        sizeSent = -1;
+        sizeLater();
+
+        if (sizeWatch === null && typeof win.ResizeObserver === "function") {
+            sizeWatch = new win.ResizeObserver(sizeLater);
+            sizeWatch.observe(doc.documentElement);
+
+            if (doc.body) {
+                sizeWatch.observe(doc.body);
+            }
+        }
+    };
+
+    const unwatchSize = () => {
+        if (sizeTimer !== null) {
+            unlater(sizeTimer);
+            sizeTimer = null;
+        }
+
+        if (sizeWatch !== null) {
+            sizeWatch.disconnect();
+            sizeWatch = null;
+        }
+    };
+
     // What the app asked for, so a replaced document (a reply's HTML run again) can be given it again.
     const desired = { inspect: false, edit: false, targets: [], tweaks: {} };
     // The app may speak before the page is parsed (it says hello as the page starts): what needs the page waits.
@@ -1404,6 +1482,12 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
         syncDeck();
         start();
+
+        if (!standalone) {
+            watchSize();
+            addListener("load", sizeLater, { once: true });
+        }
+
         ready = true;
 
         for (const data of backlog.splice(0)) {
@@ -1470,6 +1554,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
             pickedEl = null;
             pins = [];
             unwatchLayout();
+            unwatchSize();
             inspectOn = false;
             editOn = false;
             ready = false;

@@ -1463,7 +1463,19 @@ button.dsy-chip:disabled {
 }
 
 .dsy-check-options .dsn-seg button {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* A long mode name ("High contrast") is cut with dots (its title has the whole name), never run into its icon. */
+.dsn-seg button > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dsn-seg button > svg {
+    flex: none;
 }
 
 .dsy-checking {
@@ -1775,11 +1787,92 @@ button.dsy-pin-button[aria-pressed="true"] {
 }
 
 .dsy-check-bar-main strong {
+    flex: none;
+    white-space: nowrap;
+}
+
+.dsy-check-bar-main {
+    gap: 6px;
+}
+
+/* The counts by level keep their words on one line; the bar gives way in the title ("10 findings"), not in them. */
+.dsy-check-bar-main .dsy-tag {
+    flex: none;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
+}
+
+.dsy-check-bar .button {
+    flex: none;
     white-space: nowrap;
 }
 
 .dsy-check-bar-up {
     display: inline-flex;
     transform: rotate(180deg);
+    color: var(--muted);
+}
+
+/* ─── Accepted findings: a button on each finding, and a folded group below the list ─── */
+
+.dsy-finding-actions {
+    display: flex;
+    margin-top: 6px;
+}
+
+.dsy-accept {
+    flex: none;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 7px;
+    background: var(--dsn-fill);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+@media (hover: hover) {
+    .dsy-accept:hover {
+        background: var(--dsn-fill-2);
+        color: var(--text);
+    }
+}
+
+.dsn[data-size="narrow"] .dsy-accept {
+    min-height: 36px;
+    padding: 0 12px;
+}
+
+.dsy-accepted {
+    margin-top: 12px;
+    border-top: 1px solid var(--dsn-hair);
+}
+
+.dsy-accepted-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 4px;
+    text-align: left;
+}
+
+.dsy-accepted-head > svg {
+    flex: none;
+    color: var(--muted);
+    transition: transform 0.15s;
+}
+
+.dsy-accepted-head[aria-expanded="false"] > svg {
+    transform: rotate(-90deg);
+}
+
+.dsy-finding.accepted {
+    opacity: 0.85;
+}
+
+.dsy-finding.accepted p {
     color: var(--muted);
 }

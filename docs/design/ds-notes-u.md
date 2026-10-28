@@ -152,6 +152,17 @@ Left alone: `docs/map.md` (the description of the `design/` folder there says th
 6. **The notes bar** (`1 note, no action needed`) is on the Colors tab only; it is about contrast pairs.
 7. **The Ferry fixture's image** is a small inline SVG picture (no alt text, as the check needs). The bench's phone Check shot follows the bar (and takes the sheet as a second picture, `check-sheet`); its flagship run now starts the copy with `--flagship` (before, the system was swapped in after the design was published with Harbor's CSS, so the flagship's variables did not exist in it and the page's text was white on white in the focus shot).
 
+## Round 6 (people experience 8)
+
+1. **Spacing and Radii are grouped as the docs page groups them** (`groupsOf` in `system.js`; the roots are `SPACE_ROOT`, `SIZE_ROOT`, `RADIUS_ROOT`, copied from `docsite-space.ts`, and a test reads the page to check that both agree): Steps, Roles, Sizes, Component tokens; and for radii the Scale first (what other radii point at), then Roles, each tile under the step it uses. A tile whose last word says little alone (`in`, `out`, `md`) shows its whole path (`layout.gap.in`). The tab counts the role tokens.
+2. **Shadows** show every layer on its own line with a color swatch, and a copy button for the whole CSS value.
+3. **Phone Check:** a finding of the whole page (`html`, `body`, no `data-pid`) has no pin; it is listed with "the whole page". The frame shows no more than the page fills (`pocket-size` from the frame; B's `artifact-inspect.ts` and `artifact-bridge.js`, in `ds-u-bridge.patch`). The bar says "Fix 2 exact".
+4. **Desktop Check:** a long mode name is cut with dots, not run into its icon.
+5. **Accepted findings:** `Accept` on a finding stores its id per design (`DesignItem.accepted` in `docs.ts`: who, when, rule, message; routes in `design.ts`), for everyone, with Undo. They show in a folded "Accepted (N)" group and are not in the counts. **For V:** please add `CheckOptions.accepted?: readonly string[]` (the engine moves those ids to `report.accepted`, counts only the open ones, and `applyExactFixes` skips them). The route already passes the ids and splits by id when the engine does not (`cleanReport`, `fixExactMatches`).
+6. **Section tabs:** a tab that is not whole goes at once (no fade-out), and the chevron has no box behind it.
+
+Left undone: a route test for accept and undo, a bridge test for `pocket-size`, and the new bench shots.
+
 ## The engines (round 2: the real ones)
 
 `system-api.ts` re-exports `loadDesignSystem` and `writeDesignSystem` (T), `checkDesign` (V), and `renderSystemDoc` (G). The stand-ins are gone. With the real engines six tests of this stream failed. The causes, and what was done:

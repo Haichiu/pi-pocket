@@ -206,7 +206,7 @@ function checkKnob(raw) {
 }
 
 /**
- * What the frame's inspector said, as clean data the app may use, or null when it is not one of the four messages or
+ * What the frame's inspector said, as clean data the app may use, or null when it is not one of the messages or
  * has the wrong shape. A new object is built from the known fields only, whatever else the message had.
  */
 export function checkPageMessage(data) {
@@ -273,6 +273,10 @@ export function checkPageMessage(data) {
 
             return data.tap === true ? { type: data.type, label: data.label, tap: true } : null;
         }
+
+        case "pocket-size":
+            // The height of the page's content, in the frame's pixels (0: the page was too big to measure).
+            return isCount(data.height, 100_000) ? { type: data.type, height: data.height } : null;
 
         case "pocket-deck":
             return isCount(data.slides, LIMITS.slides) &&

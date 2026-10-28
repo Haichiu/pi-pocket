@@ -4,7 +4,7 @@
 // project with no system, a phone, and focus mode.
 import { type App, cleanUp, openApp, owner, root, scriptedModel, until } from "./helpers.ts";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -42,6 +42,8 @@ let viewerToken = "";
 let faintSession: ConversationId;
 /** A session whose system has three modes: light, dark, and high-contrast. */
 let threeSession: ConversationId;
+/** A session with Pi Pocket's own system (the flagship): scales, roles, sizes, and layered shadows. */
+let richSession: ConversationId;
 
 const evaluate = async <T>(target: BrowserPage, script: string) =>
     JSON.parse(await target.evaluate(script)) as T;
@@ -366,6 +368,18 @@ body { margin: 0; padding: 24px; background: ${hex("color.bg.canvas")}; font: 16
         title: "Ferry booking",
         content: ferryPage(loadDesignSystem(three)!.compiled.css, true),
     });
+
+    const rich = mkdtempSync(join(root, "rich-"));
+
+    cpSync(
+        new URL("../docs/examples/design-system/pocket/.pi", import.meta.url),
+        join(rich, ".pi"),
+        {
+            recursive: true,
+        },
+    );
+    richSession = (await app.commands.createSession(owner(app), { cwd: rich })).id;
+    await publishAll(app, richSession);
     server = createServer(
         createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} }),
     );
@@ -510,6 +524,101 @@ test("the picker pins the design system, and it opens as sections of tokens", re
     );
     await section("Colors");
 });
+
+test(
+    "spacing, radii, and shadows group as the documentation page does: steps, roles, sizes; the scale and its roles; every layer",
+    real,
+    async () => {
+        try {
+            await swap(richSession);
+            await openSystem();
+
+            const titles = () =>
+                inPage<string[]>(
+                    `return JSON.stringify([...document.querySelectorAll(".dsy-group-title")].map((each) => each.textContent.trim()))`,
+                );
+
+            // Spacing: the steps of the scale, the roles that use a step, the sizes, and a component's own, folded.
+            await section("Spacing");
+            assert.deepEqual(await titles(), ["Steps", "Roles", "Sizes", "Component tokens"]);
+            assert.equal(await count(".dsy-tiles .dsy-card-tile"), 21);
+            // A role whose last word says little alone shows its whole path; a role sits under the step it uses.
+            assert.equal(
+                await text('[data-token="layout.gap.in"] .dsy-tile-name'),
+                "layout.gap.in",
+            );
+            assert.equal(await text('[data-token="size.icon.md"] .dsy-tile-name'), "size.icon.md");
+            assert.match(
+                await inPage<string>(
+                    `return JSON.stringify(document.querySelector('[data-token="layout.gap.in"]').closest(".dsy-by-step").querySelector(".dsy-by-step-head").textContent.replace(/\\s+/g, " ").trim())`,
+                ),
+                /^space\.1\s*4px$/,
+            );
+            // The sizes are squares of their own size, and the steps are bars.
+            assert.ok((await count(".dsy-size")) >= 8);
+            // The tab counts the 21 that the sections open shows.
+            assert.match(await text(".dsy-tabs [role=tab].on"), /Spacing\s*21/);
+
+            // Radii: the scale first, then the roles, each under the step that it points at (roles may share one).
+            await section("Radii");
+            assert.deepEqual(await titles(), ["Scale", "Roles", "Component tokens"]);
+            assert.equal(
+                await inPage<number>(
+                    `return JSON.stringify(document.querySelector(".dsy-group .dsy-tiles").querySelectorAll(".dsy-card-tile").length)`,
+                ),
+                6,
+                "the scale has its six steps",
+            );
+            assert.deepEqual(
+                await inPage<string[]>(`
+                const sets = [...document.querySelectorAll(".dsy-by-step")].find((each) => each.querySelector(".dsy-by-step-head").textContent.trim().startsWith("lg"));
+                return JSON.stringify([...sets.querySelectorAll("[data-token]")].map((each) => each.getAttribute("data-token")));
+            `),
+                ["radius.card", "radius.window"],
+            );
+            assert.match(
+                await text(".dsy-tabs [role=tab].on"),
+                /Radii\s*10/,
+                "the tab counts the roles",
+            );
+
+            // Shadows: every layer on a line of its own with its color, and a button that copies the whole value.
+            await section("Shadows");
+            assert.equal(
+                await count('[data-token="shadow.float"] .dsy-shadow-line'),
+                2,
+                "both layers are told",
+            );
+            assert.equal(
+                await count('[data-token="shadow.float"] .dsy-shadow-line i'),
+                2,
+                "and each has its color",
+            );
+            assert.match(
+                await text('[data-token="shadow.float"] .dsy-shadow-lines'),
+                /y 24 · blur 60 · spread -16 · 14%.*spread 1 · 17%/s,
+            );
+            await inPage(
+                `window.__copied = ""; navigator.clipboard.writeText = async (text) => { window.__copied = text; }; return "null";`,
+            );
+            await pressed('button[aria-label="Copy the CSS value of shadow.float"]');
+            await waitFor(
+                "the copy",
+                `return JSON.stringify(window.__copied.startsWith("0px 24px 60px -16px"))`,
+            );
+            assert.match(
+                await inPage<string>(`return JSON.stringify(window.__copied)`),
+                /^0px 24px 60px -16px .+, 0px 0px 0px 1px .+/,
+                "the whole value, both layers",
+            );
+            // The copy is a button of its own beside the tile (a button does not hold a button), and a tap on it opens no editor.
+            assert.equal(await count(".dsy-card-tile .dsy-copy"), 0);
+            assert.equal(await count('[data-token="shadow.float"].on'), 0);
+        } finally {
+            await swap(session);
+        }
+    },
+);
 
 test("/design-open system and the launcher open the panel on the design system", real, async () => {
     await inPage(
@@ -1825,6 +1934,141 @@ test(
 );
 
 test(
+    "a finding is accepted for the design: it leaves the counts, a folded group says who and when, everyone sees it, and an undo brings it back",
+    bridged,
+    async () => {
+        await swap(session);
+        await openDesign();
+        await pressed(".dsn-picker");
+        await pressed(".dsn-list-item", "Ferry booking");
+        await waitFor(
+            "the design",
+            `return JSON.stringify(document.querySelector(".dsn-picker-title")?.textContent === "Ferry booking")`,
+        );
+
+        if (!(await count('.dsn-dock[data-dock="check"]'))) {
+            await pressed('.dsn-tab[title="Check"]');
+        }
+
+        await waitFor(
+            "the dock",
+            `return JSON.stringify(Boolean(document.querySelector(".dsn-dock-foot")))`,
+        );
+        await pressed(".dsn-dock-foot button", "Run the check");
+        await waitFor(
+            "the report",
+            `return JSON.stringify(Boolean(document.querySelector(".dsy-check-summary")) && !document.querySelector(".dsy-checking"))`,
+        );
+
+        // (an earlier test may have left the list on one level)
+        await pressed(".dsy-check-filter button", "All");
+
+        const open = () => count(".dsy-finding:not(.accepted)");
+        const api = (path: string, method: string, body?: unknown, target = page) =>
+            evaluate<{ status: number; body: any }>(
+                target,
+                `
+                const response = await fetch("/api/x/design/c/${session}/designs/ferry${path}", {
+                    method: ${JSON.stringify(method)},
+                    headers: { "X-Pocket": "1", "content-type": "application/json" },
+                    ${body === undefined ? "" : `body: ${JSON.stringify(JSON.stringify(body))},`}
+                });
+                return JSON.stringify({ status: response.status, body: await response.json().catch(() => ({})) });
+            `,
+            );
+        const before = await open();
+
+        assert.ok(before >= 3 && (await count(".dsy-accepted")) === 0, "nothing accepted yet");
+        assert.ok((await count(".dsy-finding .dsy-accept")) >= before, "each finding has Accept");
+
+        try {
+            // A finding that names no element of the page (the whole page) has no pin: the list holds it.
+            assert.match(
+                await text(".dsy-finding:not(.placed) .dsy-finding-target"),
+                /the whole page/,
+            );
+            assert.equal(await text(".dsy-finding:not(.placed) .dsn-pin"), "·");
+
+            const first = await text(".dsy-finding strong");
+
+            await pressed(".dsy-finding .dsy-accept");
+            await waitFor(
+                "the accept",
+                `return JSON.stringify(Boolean(document.querySelector(".dsy-accepted")))`,
+            );
+            // It is out of the list, the counts, and the tab; a folded group says so.
+            assert.equal(await open(), before - 1);
+            assert.match(await text(".dsn-tab.on"), new RegExp(`Check\\s*${before - 1}$`));
+            assert.match(
+                await text(".dsy-check-filter button.on"),
+                new RegExp(`All\\s*${before - 1}`),
+            );
+            assert.equal(
+                await inPage<string>(
+                    `return JSON.stringify(document.querySelector(".dsy-accepted-head").getAttribute("aria-expanded"))`,
+                ),
+                "false",
+            );
+            assert.equal(await count(".dsy-accepted-list"), 0, "folded");
+            assert.match(await text(".dsy-accepted-head"), /Accepted\s*1\s*not in the counts/);
+            await pressed(".dsy-accepted-head");
+            assert.match(await text(".dsy-accepted-list"), /Accepted by Owner · /);
+            assert.equal(await count(".dsy-accepted .dsy-accept"), 1, "and an undo");
+
+            // The server keeps it for the design, for everyone, with who and when; a viewer sees it and cannot change it.
+            const noted = await api("", "GET");
+            const [id, note] = Object.entries<any>(noted.body.accepted)[0]!;
+
+            assert.match(id, /^[a-z-]+-[0-9a-f]{10}/);
+            assert.equal(note.byName, "Owner");
+            assert.ok(Math.abs(Date.now() - note.at) < 120_000);
+
+            const viewer = await browsers.open(2);
+
+            try {
+                await viewer.setViewport({ width: 1440, height: 900, scale: 1, mobile: false });
+                await viewer.navigate(`${base}/login?token=${encodeURIComponent(viewerToken)}`);
+                await go(session, viewer, false);
+                assert.deepEqual(
+                    Object.keys((await api("", "GET", undefined, viewer)).body.accepted),
+                    [id],
+                );
+                // (a viewer's write is refused, as a 403 or as a route that is not there for them)
+                assert.ok(
+                    [403, 404].includes((await api("/accepted", "POST", { id }, viewer)).status),
+                );
+                assert.ok(
+                    [403, 404].includes(
+                        (await api(`/accepted/${id}`, "DELETE", undefined, viewer)).status,
+                    ),
+                );
+            } finally {
+                viewer.close();
+            }
+
+            // Not an id that the check makes: refused.
+            assert.equal((await api("/accepted", "POST", { id: "__proto__" })).status, 400);
+
+            // Undo: the finding is counted again, in its place, and the group is gone.
+            await pressed(".dsy-accepted .dsy-accept");
+            await waitFor(
+                "the undo",
+                `return JSON.stringify(!document.querySelector(".dsy-accepted"))`,
+            );
+            assert.equal(await open(), before);
+            assert.equal(await text(".dsy-finding strong"), first);
+            assert.deepEqual((await api("", "GET")).body.accepted, {});
+        } finally {
+            await api("", "GET").then(async ({ body }) => {
+                for (const id of Object.keys(body.accepted ?? {})) {
+                    await api(`/accepted/${id}`, "DELETE");
+                }
+            });
+        }
+    },
+);
+
+test(
     "the check offers every mode of the system, follows the canvas, and checks again when the canvas changes",
     bridged,
     async () => {
@@ -1868,6 +2112,18 @@ test(
             all: ["Light", "Dark", "High contrast"],
             on: ["Dark"],
         });
+        // A long name ("High contrast") is not run into its icon, nor out of its button: it is cut with dots, and its title is whole.
+        assert.deepEqual(
+            await inPage<{ apart: boolean; inside: boolean }>(`
+                const buttons = [...document.querySelectorAll('.dsy-check-options [aria-label="Mode"] button')];
+                const rects = (button) => ({ box: button.getBoundingClientRect(), icon: button.querySelector("svg")?.getBoundingClientRect(), word: button.querySelector("span")?.getBoundingClientRect() });
+                return JSON.stringify({
+                    apart: buttons.every((button) => { const at = rects(button); return !at.icon || !at.word || at.icon.right <= at.word.left + 0.5; }),
+                    inside: buttons.every((button) => { const at = rects(button); return at.word.right <= at.box.right + 0.5 && button.scrollWidth <= button.clientWidth + 1; }),
+                });
+            `),
+            { apart: true, inside: true },
+        );
 
         await pressed(".dsn-dock-foot button", "Run the check");
         await waitFor(
@@ -1979,9 +2235,33 @@ test(
             "the count",
             `return JSON.stringify(/^\\d+ findings?/.test(document.querySelector(".dsy-check-bar strong")?.textContent ?? ""))`,
         );
-        // The count by level, in the bar.
+        // The count by level, in the bar, and a button that says what it fixes (a screen reader gets the whole of it).
         assert.match(await text(".dsy-check-bar"), /\d+ errors?/);
         assert.match(await text(".dsy-check-bar"), /\d+ warnings?/);
+        assert.match(await text(".dsy-check-bar .button"), /^Fix \d+ exact$/);
+        assert.match(
+            await inPage<string>(
+                `return JSON.stringify(document.querySelector(".dsy-check-bar .button").getAttribute("aria-label"))`,
+            ),
+            /^Fix \d+ exact matche?s?$/,
+        );
+        // The counts keep their words on one line, and the bar's contents fit it.
+        assert.equal(
+            await inPage<boolean>(`
+                const main = document.querySelector(".dsy-check-bar-main");
+                return JSON.stringify(main.scrollWidth <= main.clientWidth + 1 && [...main.querySelectorAll(".dsy-tag")].every((tag) => tag.getBoundingClientRect().height < 22));
+            `),
+            true,
+        );
+        // The page is shorter than the phone, and the frame shows no more of it than that: not an empty phone below the content.
+        await waitFor(
+            "the frame cut to the page",
+            `
+            const stage = document.querySelector(".dsn-stage");
+            const inner = document.querySelector(".dsn-stage-in");
+            return JSON.stringify(stage.getBoundingClientRect().height < inner.getBoundingClientRect().height * 0.75);
+        `,
+        );
         assert.equal((await share()).dock < 0.15, true, "still a bar");
 
         // A tap on the bar opens the sheet: the page keeps at least 40 percent, and shows above it.
@@ -2410,13 +2690,12 @@ test(
             ),
             /\u203a/,
         );
-        // The bar of sections shows whole tabs at rest, never half a letter: not at the start, and not after it is scrolled.
+        // The bar of sections shows whole tabs, never half a letter: not at the start, and not after it is scrolled.
         const whole = () =>
             waitFor<boolean>(
                 "whole tabs",
                 `
                 const bar = document.querySelector(".dsy-tabs");
-                if (bar.dataset.rest !== "on") return JSON.stringify(false);
                 const box = bar.getBoundingClientRect();
                 const less = bar.scrollLeft > 2 ? 26 : 0;
                 const more = bar.scrollLeft < bar.scrollWidth - bar.clientWidth - 2 ? 26 : 0;
@@ -2428,6 +2707,15 @@ test(
             `,
             );
 
+        await whole();
+        // A tab that is not whole is gone at once, with no fade-out that would show half of it, and the mark is not a box.
+        assert.equal(
+            await inPage<boolean>(`
+                const cut = document.querySelector(".dsy-tabs .dsn-tab[data-cut]");
+                return JSON.stringify(Boolean(cut) && getComputedStyle(cut).transitionDuration === "0s" && getComputedStyle(cut).opacity === "0");
+            `),
+            true,
+        );
         await whole();
         await inPage(`document.querySelector(".dsy-tabs").scrollTo({ left: 150 }); return "null";`);
         await waitFor(
