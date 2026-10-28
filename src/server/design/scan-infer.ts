@@ -577,7 +577,12 @@ function categorize(
             return "space";
         }
 
-        if (/font-size|^text-|-text-|^fs-|^type-|(?:^|-)step-\d/.test(name)) {
+        // A line height written as a length is not a size.
+        if (/line-height|leading|(?:^|-)lh$/.test(name)) {
+            return undefined;
+        }
+
+        if (/font-size|typescale|type-scale|^text-|-text-|^fs-|^type-|(?:^|-)step-\d/.test(name)) {
             return px(text) !== undefined && px(text)! >= 8 && px(text)! <= 160 ? "text" : "size";
         }
 
