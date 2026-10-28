@@ -9,6 +9,7 @@ import {
     callBuiltin,
     colorFromText,
     equal,
+    itemsOf,
     list,
     num,
     str,
@@ -26,7 +27,7 @@ type Tok =
     | { k: "num"; n: number; unit: string; ws: boolean }
     | { k: "str"; parts: Part[]; ws: boolean }
     | { k: "color"; text: string; ws: boolean }
-    | { k: "var"; name: string; ws: boolean }
+    | { k: "var"; name: string; ns?: string; ws: boolean }
     | { k: "ident"; parts: Part[]; ws: boolean }
     | { k: "interp"; source: string; ws: boolean }
     | { k: "op"; op: string; ws: boolean }
@@ -36,6 +37,7 @@ type Tok =
 type Part = string | { interp: string };
 
 const OPERATORS = [
+    "...",
     "==",
     "!=",
     "<=",
@@ -198,7 +200,14 @@ function tokenize(source: string): Tok[] {
             out.push({ k: "color", text: match[0], ws });
             at += match[0].length;
         } else if ((match = at_(VARIABLE, source, at)) !== null) {
-            out.push({ k: "var", name: match[1]!.replace(/^[\w-]+\./, ""), ws });
+            const dot = match[1]!.indexOf(".");
+
+            out.push({
+                k: "var",
+                name: match[1]!.slice(dot + 1),
+                ...(dot === -1 ? {} : { ns: match[1]!.slice(0, dot) }),
+                ws,
+            });
             at += match[1]!.length;
         } else if (
             (match = at_(NUMBER_AT, source, at)) !== null &&
@@ -255,7 +264,8 @@ export type Node =
     | { k: "num"; n: number; unit: string }
     | { k: "str"; parts: Part[]; quoted: boolean }
     | { k: "color"; text: string }
-    | { k: "var"; name: string }
+    | { k: "var"; name: string; ns?: string }
+    | { k: "spread"; value: Node }
     | { k: "call"; name: string; args: Node[]; named: [string, Node][] }
     | { k: "list"; items: Node[]; sep: "comma" | "space"; bracket: boolean }
     | { k: "map"; entries: [Node, Node][] }
@@ -493,7 +503,9 @@ class Parser {
             case "color":
                 return { k: "color", text: token.text };
             case "var":
-                return { k: "var", name: token.name };
+                return token.ns === undefined
+                    ? { k: "var", name: token.name }
+                    : { k: "var", name: token.name, ns: token.ns };
             case "interp":
                 return { k: "interp", source: token.source };
             case "ident":
@@ -550,10 +562,16 @@ class Parser {
                 if (here.k === "var" && this.isOp(":", after)) {
                     this.at += 2;
                     named.push([here.name.replace(/^\$/, ""), this.spaceList()]);
-                } else if (here.k === "op" && here.op === ".") {
-                    throw new Unsupported("rest arguments");
                 } else {
-                    args.push(this.spaceList());
+                    const value = this.spaceList();
+
+                    // `$list...`: the items of a list are arguments; the pairs of a map are keyword arguments.
+                    if (this.isOp("...")) {
+                        this.at += 1;
+                        args.push({ k: "spread", value });
+                    } else {
+                        args.push(value);
+                    }
                 }
 
                 if (this.isOp(",")) {
@@ -652,9 +670,11 @@ export function parseExpression(source: string): Node {
 
 /** What an evaluation needs from its surroundings. */
 export interface Env {
-    get(name: string): Value | undefined;
+    get(name: string, namespace?: string): Value | undefined;
     /** A user function, or undefined. */
     call(name: string, positional: Value[], named: Map<string, Value>): Value | undefined;
+    /** The built-in name of a call through a namespace of a Sass module (`c.adjust` for `@use "sass:color" as c` is `color.adjust`). */
+    builtin?(name: string): string;
     /** Counts an operation; throws when the budget is spent. */
     tick(): void;
 }
@@ -719,8 +739,11 @@ export function evaluate(node: Node, env: Env): Value {
             return value.t === "str" ? str(value.s, false) : str(text(value));
         }
 
+        case "spread":
+            throw new Unsupported("spread outside a call");
+
         case "var": {
-            const value = env.get(node.name.replace(/^\$/, ""));
+            const value = env.get(node.name.replace(/^\$/, ""), node.ns);
 
             if (value === undefined) {
                 throw new Unsupported(`undefined ${node.name}`);
@@ -831,17 +854,41 @@ export function evaluate(node: Node, env: Env): Value {
                 return NULL;
             }
 
-            const positional = node.args.map((arg) => evaluate(arg, env));
-            const named = new Map(
-                node.named.map(([key, value]) => [key, evaluate(value, env)] as const),
-            );
+            const positional: Value[] = [];
+            const named = new Map<string, Value>();
+
+            for (const arg of node.args) {
+                if (arg.k !== "spread") {
+                    positional.push(evaluate(arg, env));
+
+                    continue;
+                }
+
+                const spread = evaluate(arg.value, env);
+
+                if (spread.t === "map") {
+                    for (const [key, value] of spread.entries) {
+                        named.set(text(key), value);
+                    }
+                } else {
+                    positional.push(...(spread.t === "list" ? spread.items : itemsOf(spread)));
+                }
+            }
+
+            for (const [key, value] of node.named) {
+                named.set(key, evaluate(value, env));
+            }
+
             const user = env.call(name, positional, named);
 
             if (user !== undefined) {
                 return user;
             }
 
-            const built = callBuiltin(name.replace(/^(?:sass:)?/, ""), { positional, named });
+            const built = callBuiltin((env.builtin?.(name) ?? name).replace(/^(?:sass:)?/, ""), {
+                positional,
+                named,
+            });
 
             if (built !== undefined) {
                 return built;

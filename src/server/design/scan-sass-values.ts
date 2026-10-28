@@ -409,6 +409,24 @@ function recolor(
     return out;
 }
 
+/** Whether a function has a built-in name (`color.adjust`, `math.div`). */
+export const hasBuiltin = (name: string) => name in ALIASES;
+
+/** A constant of a built-in module: `math.$pi`. */
+export function builtinConstant(library: string, name: string): Value | undefined {
+    const constants: Record<string, number> = {
+        pi: Math.PI,
+        e: Math.E,
+        epsilon: 2 ** -10,
+        "max-safe-integer": Number.MAX_SAFE_INTEGER,
+        "min-safe-integer": Number.MIN_SAFE_INTEGER,
+    };
+
+    return library === "math" && constants[name.replace(/^\$/, "")] !== undefined
+        ? num(constants[name.replace(/^\$/, "")]!, "")
+        : undefined;
+}
+
 /**
  * A call of a Sass function that is built in, or undefined when it is not one that is here (or its arguments are not
  * what it takes): the caller then writes the call as CSS.

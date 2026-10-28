@@ -3,7 +3,13 @@
  * are to hold the design (a stylesheet called `theme.css` before a deep component file), and reads each one bounded.
  * The walk never follows a symlink, so a project cannot lead it out of the folder.
  */
-import { sdConfigIn } from "./scan-import-sd.ts";
+import {
+    SD_CONFIG_NAME,
+    type SdConfig,
+    sdConfigOfJson,
+    sdConfigsIn,
+} from "./scan-import-sd-config.ts";
+import { isObject } from "./scan-import-convert.ts";
 import { closeSync, constants, fstatSync, openSync, readdirSync, readSync } from "node:fs";
 import { extname, join, relative, sep } from "node:path";
 
@@ -63,7 +69,7 @@ const DOT_STYLE_FOLDERS = new Set([".storybook", ".vitepress", ".vuepress", ".do
 const STYLE =
     /\.(?:css|scss|sass|less|styl|stylus|pcss|postcss|html?|vue|svelte|astro|mdx|tsx|jsx|ts|js|mjs|cjs|mts|cts)$/i;
 const TOKEN_JSON =
-    /(?:^|\/)(?:design-?tokens?|tokens?|properties|brands?|themes?|style-?dictionary|dictionary)\/(?:[^/]+\/)*[^/]+\.json$|(?:^|\/)(?:config|[\w.-]*config|\.styledictionaryrc)\.json$|(?:^|\/)(?:[^/]*tokens?[^/]*|[^/]*theme[^/]*|[^/]*(?:figma|studio|design-?system|material|m3)[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
+    /(?:^|\/)(?:design-?tokens?|tokens?|properties|brands?|themes?|style-?dictionary|dictionary)\/(?:[^/]+\/)*[^/]+\.json$|(?:^|\/)(?:config|[\w.-]*config|[\w.-]*[.-]config[.-][\w-]+|config[.-][\w-]+|\.styledictionaryrc)\.json$|(?:^|\/)(?:[^/]*tokens?[^/]*|[^/]*theme[^/]*|[^/]*(?:figma|studio|design-?system|material|m3)[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
 
 export const LIMITS = {
     /** Files read. */
@@ -276,9 +282,7 @@ export function collectFiles(root: string): {
 
     // A Style Dictionary config names its token files by globs: the folders they start in are read too.
     for (const rel of [...found].filter((each) =>
-        /(?:^|\/)(?:config|sd[.-]config|style-?dictionary[.-]config|[\w.-]*[.-]config|build|\.styledictionaryrc)(?:\.json|\.[cm]?[jt]s)?$/i.test(
-            each,
-        ),
+        SD_CONFIG_NAME.test((each.split("/").at(-1) ?? "").replace(/\.(?:json|[cm]?[jt]s)$/i, "")),
     )) {
         let text = "";
 
@@ -288,24 +292,39 @@ export function collectFiles(root: string): {
             continue;
         }
 
-        const config = sdConfigIn(rel.slice(0, Math.max(0, rel.lastIndexOf("/"))), text);
+        const dir = rel.slice(0, Math.max(0, rel.lastIndexOf("/")));
+        let configs: SdConfig[] = [];
 
-        for (const glob of config === undefined
-            ? []
-            : [...config.include, ...config.source].slice(0, 12)) {
-            const fixed = glob
-                .replace(/^\.\//, "")
-                .split("/")
-                .filter((_, at, all) => at < all.length - 1)
-                .filter((part, at, all) =>
-                    all.slice(0, at + 1).every((each) => !/[*?{]/.test(each)),
-                );
+        if (rel.endsWith(".json")) {
+            try {
+                const root: unknown = JSON.parse(text);
 
-            for (const base of new Set([config!.dir, ""])) {
-                const dir = [base, ...fixed].filter(Boolean).join("/");
+                if (isObject(root) && Array.isArray(root.source) && isObject(root.platforms)) {
+                    configs = [sdConfigOfJson(dir, rel, root)];
+                }
+            } catch {
+                // Not JSON, or cut short: not a config that can be read.
+            }
+        } else {
+            configs = sdConfigsIn(dir, rel, text);
+        }
 
-                if (dir !== "" || fixed.length === 0) {
-                    studioSets(root, dir, 0, found);
+        for (const config of configs.slice(0, 8)) {
+            for (const glob of [...config.include, ...config.source].slice(0, 12)) {
+                const fixed = glob
+                    .replace(/^\.\//, "")
+                    .split("/")
+                    .filter((_, at, all) => at < all.length - 1)
+                    .filter((part, at, all) =>
+                        all.slice(0, at + 1).every((each) => !/[*?{$]/.test(each)),
+                    );
+
+                for (const base of new Set([config.dir, ""])) {
+                    const folder = [base, ...fixed].filter(Boolean).join("/");
+
+                    if (folder !== "" || fixed.length === 0) {
+                        studioSets(root, folder, 0, found);
+                    }
                 }
             }
         }
