@@ -403,6 +403,55 @@ test("the picker pins the design system, and it opens as sections of tokens", re
     await section("Colors");
 });
 
+test("/design-open system and the launcher open the panel on the design system", real, async () => {
+    await inPage(
+        `const { closeExtPanel } = await import("/extension-ui.js"); closeExtPanel(); return "null";`,
+    );
+    await waitFor("the panel closed", `return JSON.stringify(!document.querySelector(".dsn"))`);
+
+    const commandId = app.webs.commands().find((each) => each.name === "design-open")?.id;
+
+    assert.ok(commandId);
+
+    const done = await app.extensionCommands.run(session, owner(app), {
+        commandId,
+        args: "system",
+        requestId: crypto.randomUUID(),
+    });
+
+    assert.equal(done.status, "done");
+    await waitFor(
+        "the system",
+        `return JSON.stringify(document.querySelector(".dsn-picker-title")?.textContent === "Design system" && Boolean(document.querySelector(".dsy-rows")))`,
+    );
+
+    // The launcher (Ctrl+K) has an action for it, from a design too.
+    await pressed(".dsn-picker");
+    await pressed(".dsn-list-item", "Coffee landing page");
+    await waitFor("a design", `return JSON.stringify(!document.querySelector(".dsy-main"))`);
+    await inPage(
+        `const { closeExtPanel } = await import("/extension-ui.js"); closeExtPanel(); return "null";`,
+    );
+    await waitFor("the panel closed", `return JSON.stringify(!document.querySelector(".dsn"))`);
+    await inPage(
+        `const { store } = await import("/store.js"); store.set({ launcher: true }); return "null";`,
+    );
+    await waitFor(
+        "the launcher",
+        `return JSON.stringify(Boolean(document.querySelector(".launcher input")))`,
+    );
+    await filled(".launcher input", "design system");
+    await waitFor(
+        "the action",
+        `return JSON.stringify([...document.querySelectorAll(".launcher-item")].some((row) => row.textContent.includes("Open the design system")))`,
+    );
+    await pressed(".launcher-item", "Open the design system");
+    await waitFor(
+        "the system again",
+        `return JSON.stringify(Boolean(document.querySelector(".dsy-main")) && Boolean(document.querySelector(".dsy-rows")))`,
+    );
+});
+
 test("a token's name copies with one tap", real, async () => {
     await openSystem();
     await section("Colors");

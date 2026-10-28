@@ -843,8 +843,7 @@ export function createSystemSections(env, widgets) {
                     <header>
                         <h3>${component.name}</h3>
                         <span class="dsy-chip-static mono"
-                            >${component.states.length}
-                            state${component.states.length === 1 ? "" : "s"}</span
+                            >${`${component.states.length} state${component.states.length === 1 ? "" : "s"}`}</span
                         >
                         <span class="grow"></span>
                         <${CopyName} name=${component.slug} copy=${component.slug} />

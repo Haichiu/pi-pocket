@@ -313,10 +313,14 @@ export default function setup(pocket) {
         pocket.openPanel("design");
     };
 
-    // `/design-open [artifact]` and `/design-system`, run on the server, ask this tab to open the panel.
+    // `/design-open [artifact | system]`, run on the server, asks this tab to open the panel; `system` is the design system.
     const stopOpen = pocket.on("open", (event) => {
         if (event?.conversation === store.get().conversation) {
-            ask(event.artifact, null, event.system === true);
+            const word = String(event.artifact ?? "")
+                .trim()
+                .toLowerCase();
+
+            ask(event.artifact, null, word === "system");
         }
     });
 

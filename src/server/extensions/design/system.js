@@ -697,14 +697,31 @@ export const tokenEdit = (mode, token, raw) => ({ kind: "token", mode, token, ra
 
 export const guidelinesEdit = (text) => ({ kind: "guidelines", text });
 
-/** The history after `op`: a step of its own, or the same step again when it edits the thing the last one did, a moment later. */
-export function push(history, op, now = Date.now()) {
+/** The steps of undo that are kept: past it, a step that a later one makes no difference to goes first. */
+const MAX_STEPS = 500;
+
+/**
+ * The history after `op`: a step of its own, or (with `coalesce`) the same step again when it edits the thing the last one
+ * did, a moment later.
+ */
+export function push(history, op, now = Date.now(), coalesce = true) {
     const last = history.past.at(-1);
     const again =
-        last !== undefined && editKey(last) === editKey(op) && now - (last.at ?? 0) < COALESCE_MS;
-    const past = again ? history.past.slice(0, -1) : history.past;
+        coalesce &&
+        last !== undefined &&
+        editKey(last) === editKey(op) &&
+        now - (last.at ?? 0) < COALESCE_MS;
+    let past = [...(again ? history.past.slice(0, -1) : history.past), { ...op, at: now }];
 
-    return { past: [...past, { ...op, at: now }], future: [] };
+    // A long session of edits keeps its newest steps: the first step whose thing a later one sets again is the one to go.
+    if (past.length > MAX_STEPS) {
+        const keys = past.map(editKey);
+        const shadowed = keys.findIndex((key, at) => keys.indexOf(key, at + 1) !== -1);
+
+        past = past.filter((_, at) => at !== (shadowed === -1 ? 0 : shadowed));
+    }
+
+    return { past, future: [] };
 }
 
 export function undo(history) {

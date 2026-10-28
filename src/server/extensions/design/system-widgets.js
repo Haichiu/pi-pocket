@@ -626,8 +626,7 @@ export function createSystemWidgets(env) {
                 ${
                     dependents.length > 0 &&
                     html`<span class="muted small"
-                        >Used by ${dependents.length}
-                        token${dependents.length === 1 ? "" : "s"}</span
+                        >${`Used by ${dependents.length} token${dependents.length === 1 ? "" : "s"}`}</span
                     >`
                 }
                 <span class="grow"></span>

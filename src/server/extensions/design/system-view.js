@@ -586,10 +586,8 @@ export function createSystemView(env, canvas, sections) {
                     <${Ico} name="book" size=${15} />
                     <span>
                         This project has a Markdown design system
-                        (<code>.pi/design-system.md</code>,
-                        ${legacy < 1024 ? `${legacy} bytes` : `${(legacy / 1024).toFixed(1)} KB`}).
-                        Pi still reads it for its designs. Turn it into tokens to see and edit it
-                        here.
+                        (<code>.pi/design-system.md</code>${`, ${legacy < 1024 ? `${legacy} bytes` : `${(legacy / 1024).toFixed(1)} KB`}). `}Pi
+                        still reads it for its designs. Turn it into tokens to see and edit it here.
                     </span>
                 </p>`
             }

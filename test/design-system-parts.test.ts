@@ -363,6 +363,29 @@ test("undo and redo walk the edits, a repeat of one edit is one step, and an edi
     history = sys.undo(sys.undo(history));
     history = sys.push(history, edit("#555555"), 99_000);
     assert.equal(history.future.length, 0, "a new edit ends the redo");
+    // A step that is asked for as a step of its own is never merged, however soon it comes.
+    const own = sys.push(
+        sys.push(sys.emptyHistory(), edit("#111111"), 1000),
+        edit("#222222"),
+        1100,
+        false,
+    );
+
+    assert.equal(own.past.length, 2);
+    // A long history keeps the newest steps, and drops first the ones that a later step makes no difference to.
+    let long = sys.emptyHistory();
+
+    for (let at = 0; at < 600; at += 1) {
+        long = sys.push(
+            long,
+            sys.tokenEdit("light", `a.t${at % 40}`, { value: String(at) }),
+            at * 5000,
+        );
+    }
+
+    assert.equal(long.past.length, 500);
+    assert.equal(long.past.at(-1).raw.value, "599");
+    assert.equal(sys.editsOf(long).size, 40, "every thing that was edited is still edited");
     // Nothing to undo or redo leaves the history as it is.
     assert.equal(sys.undo(sys.emptyHistory()).past.length, 0);
     assert.equal(sys.redo(sys.emptyHistory()).future.length, 0);
