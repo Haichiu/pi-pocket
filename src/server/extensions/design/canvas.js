@@ -115,7 +115,7 @@ export function createCanvas(env) {
         const notes = s.notes[design.id];
         const comments = notes?.comments ?? [];
         const checking = s.dock === "check";
-        const check = checkOptions(s, env.darkTheme());
+        const check = checkOptions(s, env.canvasDark(s));
         const pins = s.mode === "comment" || s.dock === "comments" ? pinsOf(comments, version) : [];
         // The pins of a page check are its findings'; those of comments, the open comments'.
         const targets = checking
@@ -330,6 +330,7 @@ export function createCanvas(env) {
                         key=${key}
                         class=${`dsn-frame wait ${loaded ? "loaded" : ""}`}
                         src=${src}
+                        style=${s.backdrop === "auto" ? undefined : `color-scheme:${s.backdrop}`}
                         sandbox=${SANDBOX}
                         allow=${ALLOW}
                         title=${design.title}

@@ -4,9 +4,8 @@ import { downloadFile } from "./data.js";
 import { changeOf } from "./system.js";
 import { emptyHistory } from "./system.js";
 
-/** The key a check is kept under: the design's version, and the color scheme and size it ran at. */
-export const checkKey = (artifact, version, scheme, size) =>
-    `${artifact}@${version}:${scheme}:${size}`;
+/** The key a check is kept under: the design's version, and the mode of the system and the size it ran at. */
+export const checkKey = (artifact, version, mode, size) => `${artifact}@${version}:${mode}:${size}`;
 
 export function createSystemData(pocket, store, data) {
     const conversationOf = () => store.get().conversation;
@@ -207,9 +206,9 @@ export function createSystemData(pocket, store, data) {
         },
 
         /** Check a design against the system (it renders the page on the server). */
-        async check({ artifact, version, scheme, size }) {
+        async check({ artifact, version, mode, scheme, size }) {
             const conversation = conversationOf();
-            const key = checkKey(artifact, version, scheme, size);
+            const key = checkKey(artifact, version, mode, size);
             const put = (value) => store.set((s) => ({ checks: { ...s.checks, [key]: value } }));
 
             put({ status: "running" });
@@ -219,6 +218,8 @@ export function createSystemData(pocket, store, data) {
                     id: artifact,
                     version,
                     colorScheme: scheme,
+                    // A mode of the system is only named when there is a system (the route refuses one it does not have).
+                    ...(mode === undefined ? {} : { mode }),
                     viewport: size,
                 });
 
