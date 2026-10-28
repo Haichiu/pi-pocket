@@ -60,6 +60,24 @@ Round 3 merged so far: G (flagship names, docs page phone layout and copy, guide
 
 Scan after T's rounds 3b and 3c (`ds/tokens` 995c1d8, not merged yet): held-out scan **0.994** (0.869 → 0.978 → 0.994). Bench 0.998; T's own 37 blind projects 0.975. The held-out set has now guided several fixes (described as general classes, with a synthetic example for the last two), so it is no longer fully independent: a fresh held-out set is needed before the final judging.
 
+### Judges after round 3 (0262a6c)
+
+| Line | R2 | R3 judge A | R3 judge B | **R3** |
+|---|---|---|---|---|
+| 1 Token model | 8 | 8 | 9 | **8** |
+| 2 Import (scan) | 4 | 7 | 8 | **7** (judged at held-out 0.869; now 0.994) |
+| 3 Enforcement | 7 | 8 | 9 | **8** |
+| 4 Accessibility | 7 | 8 | 9 | **8** |
+| 5 Agent experience | 7 | 8 | 9 | **8** |
+| 6 People experience | 6 | 7 | 8 | **7** |
+| 7 Documentation output | 8 | 8 | 8 | **8** |
+| 8 Code handoff | 6 | 7 | 9 | **7** |
+| 9 Engineering | 6 | 8 | 9 | **8** |
+
+Every line rose or held. Disputed: the docs page's component frames are blank in the bench tiles and Harbor's Radii and Shadows shots timed out. Judge A traced both to capture (frames not painted off-screen; the shots script waited for 40 characters); judge B suspected real defects. Round 4 settles it with assertions.
+
+Merged after judging: T 995c1d8 (scan 0.994 held-out), U 00433fa and 49b3174 (shadow parts, inherited modes, all contrast pairs, exempt badges, lazy start), G f633029 (exempt pair, notes, use-it blocks).
+
 Round 3 assignments: U (people experience), G (docs page, flagship naming, guide), V (role-aware suggestions, 15+ real pages, stable ids), T (scan, then handoff outputs), integrator (docs).
 
 Round 2 started at once on the bench's weakest phases: V on lint, T on scan, B on a held-out set outside the repo (`/mnt/games/Development/ds-holdout/`, never shown to T or V).
