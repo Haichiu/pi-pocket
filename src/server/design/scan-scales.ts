@@ -50,6 +50,8 @@ export interface Inferred {
     imported: number;
     /** Tokens the engine refused, dropped from the draft. */
     dropped: string[];
+    /** What the scan read as it is, not as a guess: a Material 3 export, for the top of the report. */
+    sources: string[];
     /** The scales that are a thin guess, one line each, for the top of the report. */
     review: string[];
 }

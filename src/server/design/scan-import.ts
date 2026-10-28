@@ -6,6 +6,7 @@
  * once every file is in.
  */
 import { isObject, type Obj } from "./scan-import-convert.ts";
+import { materialTokens, type MaterialInput, type MaterialResult } from "./scan-import-material.ts";
 import {
     sdConfigIn,
     styleDictionaryTokens,
@@ -33,6 +34,10 @@ export interface Imported {
     certain: boolean;
     /** Style Dictionary configs: the globs of their token files. */
     configs: SdConfig[];
+    /** Stylesheets that hold Material 3 properties, kept until every file is read. */
+    materialCss: MaterialInput["css"];
+    /** The Material 3 colors, when the files held them: they replace the scan's colors. */
+    material?: MaterialResult;
     /** Token files read and not yet sorted into modes (`finishImports` does that, once, when every file has been read). */
     pending: Pending[];
     /** What the Tokens Studio files said that the scan did not take (a theme that was not read). */
@@ -277,7 +282,22 @@ export function finishImports(into: Imported): void {
         }
     }
 
+    // Material 3: stylesheets with --md-sys-color-* properties, and the Theme Builder's JSON.
+    into.material = materialTokens({
+        css: into.materialCss,
+        json: pending
+            .filter((item) => isMaterialJson(item.root))
+            .map((item) => ({ file: item.file, root: item.root as Obj })),
+    });
+    into.materialCss = [];
     into.pending = [];
+}
+
+/** Keeps a stylesheet that holds Material 3 properties; it is read once every file is in. */
+export function importMaterial(into: Imported, file: string, text: string): void {
+    if (into.materialCss.length < 24 && /--md-(?:sys-color|ref-palette)-/.test(text)) {
+        into.materialCss.push({ file, text: text.slice(0, 200_000) });
+    }
 }
 
 /** How many tokens a tree has. */

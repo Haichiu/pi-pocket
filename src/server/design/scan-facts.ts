@@ -221,6 +221,7 @@ export function newFacts(): Facts {
             files: [],
             certain: false,
             configs: [],
+            materialCss: [],
             pending: [],
             notes: [],
             done: false,
