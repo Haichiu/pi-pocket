@@ -261,8 +261,8 @@ before(async () => {
         id: "dark",
         title: "Dark",
         content: page(
-            "p{color:#7ba3f8}@media (prefers-color-scheme: dark){body{background:#101218}p{color:#e6e8f0}}",
-            `<p data-pid="t" style="margin:0;padding:8px">Text</p>`,
+            "",
+            `<p data-pid="t" style="margin:0;padding:var(--space-2);color:#e6e8f0;background:var(--color-bg-page)">Text</p>`,
         ),
     });
 });
@@ -367,8 +367,12 @@ test(
 
         assert.match(light, /light; system "Test system", mode light/);
         assert.match(dark, /dark; system "Test system", mode dark/);
-        assert.doesNotMatch(dark, /off-system-color/, "dark values are on the dark mode");
-        assert.match(light, /off-system-color/, "and off the light one");
+        assert.doesNotMatch(
+            dark,
+            /- error off-system-color/,
+            "the dark value is a system color in dark",
+        );
+        assert.match(light, /- error off-system-color/, "and not one in light");
         // Another page of the bundle.
         const about = textOf(
             await call(preview(), { id: "lint", viewports: ["mobile"], page: "about.html" }),

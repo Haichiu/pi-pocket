@@ -11,12 +11,12 @@ import type { PocketHost } from "../host.ts";
 import type { DesignBundle } from "./bundle.ts";
 import {
     colorDistance,
-    contrastRatio,
+    contrastOf,
     familyList,
     formatColor,
     isGenericFamily,
     type LengthKind,
-    type Rgba,
+    type RgbaTuple,
     tokenSet,
     type TokenSet,
 } from "./lint-color.ts";
@@ -73,8 +73,8 @@ const RULE_ORDER: CheckRule[] = [
     "heading-order",
     "missing-pid",
 ];
-/** Two colors this close (see `colorDistance`) are the same. About 2 steps of 8 bits. */
-const SAME_COLOR = 1.5;
+/** Two colors this close (see `colorDistance`) are the same: a little over 2 steps of 8 bits. */
+const SAME_COLOR = 1;
 /** A nearest token farther than this is no help as a suggestion. */
 const FAR_COLOR = 20;
 /** Lengths this close, in pixels, are the same. */
@@ -112,7 +112,7 @@ function elementOf(raw: RawElement | undefined): {
     };
 }
 
-const rgbaOf = (value: unknown): Rgba | undefined =>
+const rgbaOf = (value: unknown): RgbaTuple | undefined =>
     Array.isArray(value) && value.length === 4 && value.every((item) => Number.isFinite(item))
         ? [value[0], value[1], value[2], value[3]]
         : undefined;
@@ -178,7 +178,7 @@ const ROLE_NAMES: Record<string, RegExp> = {
  * (how the page uses the color), tokens named for another role are left out (a border is not a background), and one
  * named for this role counts as a little nearer.
  */
-function nearestColor(set: TokenSet, color: Rgba, role?: string): Nearest | undefined {
+function nearestColor(set: TokenSet, color: RgbaTuple, role?: string): Nearest | undefined {
     const own = role === undefined ? undefined : ROLE_NAMES[role];
     const others = Object.entries(ROLE_NAMES)
         .filter(([name]) => name !== role)
@@ -223,7 +223,12 @@ const lengthsOf = (set: TokenSet, kind: LengthKind) =>
     );
 
 /** A color token that reaches `needed` contrast on `back`, as near to `fg` as any. */
-function nearestPassing(set: TokenSet, fg: Rgba, back: [number, number, number], needed: number) {
+function nearestPassing(
+    set: TokenSet,
+    fg: RgbaTuple,
+    back: [number, number, number],
+    needed: number,
+) {
     let best: { token: TokenSet["colors"][number]; distance: number; ratio: number } | undefined;
 
     for (const token of set.colors) {
@@ -231,7 +236,7 @@ function nearestPassing(set: TokenSet, fg: Rgba, back: [number, number, number],
             continue;
         }
 
-        const ratio = contrastRatio(token.rgba, back);
+        const ratio = contrastOf(token.rgba, back);
 
         if (ratio < needed) {
             continue;
@@ -287,7 +292,9 @@ export function analyze(
 
             const nearest = nearestColor(tokens, rgba);
 
-            if (nearest !== undefined && nearest.distance < SAME_COLOR) {
+            const onSystem = nearest !== undefined && nearest.distance < SAME_COLOR;
+
+            if (onSystem && group.literal !== true) {
                 continue;
             }
 
@@ -304,15 +311,19 @@ export function analyze(
             add(
                 {
                     rule: "off-system-color",
-                    level: "error",
+                    level: onSystem ? "warning" : "error",
                     ...elementOf(group.el),
                     value,
                     ...(near === undefined ? {} : { suggestion: tokenRef(near.token) }),
-                    message:
-                        `${value} is not a system color (${roles}).` +
-                        (near === undefined
-                            ? " No token is close: pick a role from the system."
-                            : ` Use ${tokenRef(near.token)} (${formatColor(near.token.rgba!)}).`),
+                    message: onSystem
+                        ? `${value} is written as a literal (${roles}), so it does not follow the system.` +
+                          (near === undefined
+                              ? ""
+                              : ` Use ${tokenRef(near.token)} (${formatColor(near.token.rgba!)}).`)
+                        : `${value} is not a system color (${roles}).` +
+                          (near === undefined
+                              ? " No token is close: pick a role from the system."
+                              : ` Use ${tokenRef(near.token)} (${formatColor(near.token.rgba!)}).`),
                 },
                 num(group.count),
             );
@@ -326,7 +337,9 @@ export function analyze(
         for (const group of raw.fonts ?? []) {
             const family = clip(group.family, 120);
 
-            if (family === "" || allowed.has(family)) {
+            const onSystem = allowed.has(family);
+
+            if (family === "" || (onSystem && group.literal !== true)) {
                 continue;
             }
 
@@ -336,12 +349,14 @@ export function analyze(
             add(
                 {
                     rule: "off-system-font",
-                    level: "error",
+                    level: onSystem ? "warning" : "error",
                     ...elementOf(group.el),
                     value: list,
                     ...(token === undefined ? {} : { suggestion: tokenRef(token) }),
                     message:
-                        `Font ${list} is not a system font (${plural(num(group.count), "element")}).` +
+                        (onSystem
+                            ? `Font ${list} is written as a literal (${plural(num(group.count), "element")}), so it does not follow the system.`
+                            : `Font ${list} is not a system font (${plural(num(group.count), "element")}).`) +
                         (token === undefined ? "" : ` Use ${tokenRef(token)}.`),
                 },
                 num(group.count),
@@ -366,7 +381,9 @@ export function analyze(
                 continue;
             }
 
-            if (scale.some((token) => Math.abs(token.px - px) <= SAME_LENGTH)) {
+            const equal = scale.find((token) => Math.abs(token.px - px) <= SAME_LENGTH);
+
+            if (equal !== undefined && group.literal !== true) {
                 continue;
             }
 
@@ -378,6 +395,7 @@ export function analyze(
             const props = (Array.isArray(group.props) ? group.props : [])
                 .map((prop) => clip(prop, 30))
                 .join(", ");
+            const step = equal ?? nearest;
 
             add(
                 {
@@ -385,8 +403,11 @@ export function analyze(
                     level: "warning",
                     ...elementOf(group.el),
                     value: `${px}px`,
-                    suggestion: tokenRef(nearest),
-                    message: `${props === "" ? kind : props} ${px}px is not on ${names[kind]} (${plural(num(group.count), "use")}). Nearest: ${tokenRef(nearest)} (${nearest.px}px).`,
+                    suggestion: tokenRef(step),
+                    message:
+                        equal === undefined
+                            ? `${props === "" ? kind : props} ${px}px is not on ${names[kind]} (${plural(num(group.count), "use")}). Nearest: ${tokenRef(nearest)} (${nearest.px}px).`
+                            : `${props === "" ? kind : props} ${px}px is written as a literal (${plural(num(group.count), "use")}), so it does not follow the system. Use ${tokenRef(equal)}.`,
                 },
                 num(group.count),
             );
@@ -403,7 +424,7 @@ export function analyze(
         }
 
         const ratio =
-            group.ui && typeof group.ratio === "number" ? group.ratio : contrastRatio(fg, bg);
+            group.ui && typeof group.ratio === "number" ? group.ratio : contrastOf(fg, bg);
         const needed = group.ui || group.large ? 3 : 4.5;
 
         if (ratio >= needed) {
@@ -413,6 +434,21 @@ export function analyze(
         const shown = `${(Math.floor(ratio * 100) / 100).toFixed(2)}:1`;
 
         if (group.ui) {
+            // A system that sets a field's border and fill owns that look: its contrast pairs are checked in the system.
+            const edges = (group.edges ?? []).map(rgbaOf);
+
+            if (
+                tokens !== undefined &&
+                edges.length > 0 &&
+                edges.every((edge) => {
+                    const near = edge === undefined ? undefined : nearestColor(tokens, edge);
+
+                    return near !== undefined && near.distance < SAME_COLOR;
+                })
+            ) {
+                continue;
+            }
+
             add(
                 {
                     rule: "contrast",
@@ -431,7 +467,7 @@ export function analyze(
         const pass =
             tokens === undefined
                 ? undefined
-                : nearestPassing(tokens, [...fg, 1] as Rgba, bg, needed);
+                : nearestPassing(tokens, [...fg, 1] as RgbaTuple, bg, needed);
 
         add(
             {
@@ -466,7 +502,7 @@ export function analyze(
                 value: `${width}×${height}px`,
                 message:
                     level === "error"
-                        ? `A <${clip(group.tag, 20)}> target is ${width}×${height} px, under the 24×24 px minimum of WCAG 2.2, and other targets are too close${more(num(group.count))}. Add padding or space.`
+                        ? `A <${clip(group.tag, 20)}> target is ${width}×${height} px, under the 24×24 px minimum of WCAG 2.2${more(num(group.count))}. Add padding or a larger size.`
                         : `A <${clip(group.tag, 20)}> target is ${width}×${height} px; 44×44 px is easier to hit on a phone${more(num(group.count))}.`,
             },
             num(group.count),
@@ -624,7 +660,7 @@ export async function checkPage(
         tokenColors: tokens?.colors.map((token) => token.css) ?? [],
         tokenLengths: tokens?.lengths.map((token) => ({ css: token.css, kind: token.kind })) ?? [],
         deck,
-        touch: view.viewport.width < 768,
+        literals: tokens !== undefined,
     };
     const raw = (await page.evaluateIsolated(`(${PAGE_SCRIPT})(${JSON.stringify(input)})`)) as
         RawPage | undefined;

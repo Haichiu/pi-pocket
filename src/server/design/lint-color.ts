@@ -1,11 +1,13 @@
 /**
- * Color math and token sets for the design checks (`lint.ts`): perceptual distance in OKLab, WCAG contrast, and the
- * values of a design system's tokens in one mode, ready to compare with what a page uses.
+ * What the design checks (`lint.ts`) need besides `color.ts`: perceptual distance in OKLab, and the values of a design
+ * system's tokens in one mode, ready to compare with what a page uses. Parsing, luminance, contrast, and the CSS of a
+ * DTCG color are `color.ts`'s.
  */
+import { colorObjectCss, contrastRatio, toHex } from "./color.ts";
 import type { DesignSystem, ModeValue, ResolvedToken } from "./system-types.ts";
 
 /** Red, green, blue (0 to 255) and alpha (0 to 1), as the browser resolves a color. */
-export type Rgba = [number, number, number, number];
+export type RgbaTuple = [number, number, number, number];
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
@@ -35,7 +37,7 @@ export function toOklab(red: number, green: number, blue: number): [number, numb
  * How far apart two colors look: the OKLab distance times 100 (about 1 for the smallest step a person sees, 0.4 for
  * one 8-bit step), plus the alpha difference in percent.
  */
-export function colorDistance(a: Rgba, b: Rgba): number {
+export function colorDistance(a: RgbaTuple, b: RgbaTuple): number {
     const [l1, a1, b1] = toOklab(a[0], a[1], a[2]);
     const [l2, a2, b2] = toOklab(b[0], b[1], b[2]);
     const lab = Math.hypot(l1 - l2, a1 - a2, b1 - b2) * 100;
@@ -43,41 +45,30 @@ export function colorDistance(a: Rgba, b: Rgba): number {
     return lab + Math.abs(a[3] - b[3]) * 100;
 }
 
-/** WCAG relative luminance of an opaque color. */
-export function luminance(red: number, green: number, blue: number): number {
-    const linear = (channel: number) => {
-        const value = channel / 255;
+/** WCAG contrast ratio (1 to 21) of two opaque colors given as 0 to 255 channels. */
+export function contrastOf(a: readonly number[], b: readonly number[]): number {
+    const color = (value: readonly number[]) => ({
+        r: value[0]! / 255,
+        g: value[1]! / 255,
+        b: value[2]! / 255,
+        a: 1,
+    });
 
-        return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-    };
-
-    return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
+    return contrastRatio(color(a), color(b));
 }
-
-/** WCAG contrast ratio (1 to 21) of two opaque colors. */
-export function contrastRatio(a: readonly number[], b: readonly number[]): number {
-    const first = luminance(a[0]!, a[1]!, a[2]!);
-    const second = luminance(b[0]!, b[1]!, b[2]!);
-
-    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
-}
-
-const hex2 = (value: number) =>
-    Math.round(clamp(value, 0, 255))
-        .toString(16)
-        .padStart(2, "0");
 
 /** `#7aa2f7`, or `rgb(255 255 255 / 0.1)` when the color is not opaque. */
 export function formatColor(color: readonly number[]): string {
     const alpha = color[3] ?? 1;
+    const channels = [color[0]!, color[1]!, color[2]!].map((value) =>
+        Math.round(clamp(value, 0, 255)),
+    );
 
     if (alpha >= 0.995) {
-        return `#${hex2(color[0]!)}${hex2(color[1]!)}${hex2(color[2]!)}`;
+        return toHex({ r: channels[0]! / 255, g: channels[1]! / 255, b: channels[2]! / 255, a: 1 });
     }
 
-    return `rgb(${Math.round(color[0]!)} ${Math.round(color[1]!)} ${Math.round(color[2]!)} / ${
-        Math.round(alpha * 100) / 100
-    })`;
+    return `rgb(${channels.join(" ")} / ${Math.round(alpha * 100) / 100})`;
 }
 
 /** The text of a DTCG color value as CSS, for the browser to resolve. `undefined` when the value is not a color. */
@@ -86,54 +77,15 @@ export function colorCss(value: unknown): string | undefined {
         return value.startsWith("{") || value.length > 200 ? undefined : value;
     }
 
-    if (typeof value !== "object" || value === null) {
-        return undefined;
+    const css = colorObjectCss(value);
+
+    if ("css" in css) {
+        return css.css;
     }
 
-    const { colorSpace, components, alpha, hex } = value as {
-        colorSpace?: unknown;
-        components?: unknown;
-        alpha?: unknown;
-        hex?: unknown;
-    };
-    const fallback = typeof hex === "string" ? hex : undefined;
+    const hex = (value as { hex?: unknown } | null)?.hex;
 
-    if (
-        typeof colorSpace !== "string" ||
-        !Array.isArray(components) ||
-        components.length !== 3 ||
-        !components.every((item) => item === "none" || typeof item === "number")
-    ) {
-        return fallback;
-    }
-
-    const [c1, c2, c3] = components.map((item) => (item === "none" ? "none" : String(item)));
-    const tail = typeof alpha === "number" && alpha < 1 ? ` / ${alpha}` : "";
-
-    switch (colorSpace) {
-        case "srgb":
-            return `color(srgb ${c1} ${c2} ${c3}${tail})`;
-        case "hsl":
-            return `hsl(${c1} ${c2}% ${c3}%${tail})`;
-        case "hwb":
-            return `hwb(${c1} ${c2}% ${c3}%${tail})`;
-        case "lab":
-        case "lch":
-        case "oklab":
-        case "oklch":
-            return `${colorSpace}(${c1} ${c2} ${c3}${tail})`;
-        case "srgb-linear":
-        case "display-p3":
-        case "a98-rgb":
-        case "prophoto-rgb":
-        case "rec2020":
-        case "xyz":
-        case "xyz-d50":
-        case "xyz-d65":
-            return `color(${colorSpace} ${c1} ${c2} ${c3}${tail})`;
-        default:
-            return fallback;
-    }
+    return typeof hex === "string" ? hex : undefined;
 }
 
 /** The CSS length of a DTCG dimension: `16px`, `1rem`, `{ value: 16, unit: "px" }`, or a bare number (pixels). */
@@ -214,7 +166,7 @@ export interface TokenColor {
     tier: ResolvedToken["tier"];
     css: string;
     /** Filled in after the browser resolves `css`. */
-    rgba?: Rgba;
+    rgba?: RgbaTuple;
 }
 
 export interface TokenFont {
