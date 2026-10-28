@@ -42,6 +42,7 @@ export function testSystem(): DesignSystem {
     return {
         name: "Test system",
         modes: ["light", "dark"],
+        schemes: { light: "light", dark: "dark" },
         components: [],
         guidelines: "",
         problems: [],

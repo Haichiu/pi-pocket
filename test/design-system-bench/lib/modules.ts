@@ -141,6 +141,14 @@ export async function loadModules(skip: string[] = []): Promise<Modules> {
 
         if (typeof scan.scanTokens === "function") {
             out.legacyScan = scan.scanTokens as Fn;
+
+            // Stream T's structured scan: `scanTokens(root).draft` is the DTCG draft (`{ tokens, modes }`).
+            if (out.scan === undefined) {
+                const legacy = scan.scanTokens as Fn;
+                const probe = (root: string) => (legacy(root) as { draft?: unknown }).draft;
+
+                out.scan = { name: "scanTokens().draft", run: probe as Fn };
+            }
         }
 
         if (out.scan === undefined) {

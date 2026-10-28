@@ -164,6 +164,9 @@ export function systemFromFlat(flat: FlatSystem, name: string): DesignSystem {
     return {
         name,
         modes: modeNames,
+        schemes: Object.fromEntries(
+            modeNames.map((mode) => [mode, /dark/i.test(mode) ? "dark" : "light"] as const),
+        ),
         tokens,
         components: [],
         guidelines: "",

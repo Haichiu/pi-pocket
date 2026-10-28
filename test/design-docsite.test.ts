@@ -217,6 +217,7 @@ function hostile(): DesignSystem {
         name: `Hostile ${bad}`,
         description: `About ${closer}`,
         modes: ["light", `dark"><script>alert(6)</script>`],
+        schemes: { light: "light", [`dark"><script>alert(6)</script>`]: "dark" },
         tokens: [
             token(
                 "color.bg.base",
@@ -313,6 +314,7 @@ test("an empty system, a system with one mode, and a system with no components s
     const empty: DesignSystem = {
         name: "",
         modes: [],
+        schemes: {},
         tokens: [],
         components: [],
         guidelines: "",
@@ -357,6 +359,7 @@ test("a system too big for an artifact shrinks its token table until the page fi
     const { html } = renderSystemDoc({
         name: "Big",
         modes: ["light", "dark"],
+        schemes: { light: "light", dark: "dark" },
         tokens,
         components: [],
         guidelines: "",
