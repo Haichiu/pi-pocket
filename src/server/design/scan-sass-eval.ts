@@ -1205,6 +1205,28 @@ export function expandSassFiles(files: { rel: string; text: string }[]): Map<str
 
     const out = new Map<string, string>();
 
+    // A stylesheet that calls a function of the project's, or a mixin that loops or calculates, needs its text worked out.
+    const names = (list: Iterable<string>) =>
+        [...list]
+            .slice(0, 300)
+            .map((name) => name.replace(/[^\w-]/g, "\\$&"))
+            .join("|");
+    const heavy = [...project.mixins].filter(([, mixin]) =>
+        mixin.body.some((stmt) => NEEDS_EVAL.test(stmt.raw)),
+    );
+    const callsProject = new RegExp(
+        [
+            project.functions.size === 0
+                ? ""
+                : String.raw`(?<![\w$@-])(?:${names(project.functions.keys())})\(`,
+            heavy.length === 0
+                ? ""
+                : String.raw`@include\s+(?:[\w-]+\.)?(?:${names(heavy.map(([name]) => name))})\b`,
+        ]
+            .filter((part) => part !== "")
+            .join("|") || "(?!)",
+    );
+
     for (const file of ordered) {
         const copies = [...project.modules.values()].filter(
             (module) => module.rel === file.rel && !project.failed.has(module),
@@ -1217,6 +1239,7 @@ export function expandSassFiles(files: { rel: string; text: string }[]): Map<str
         if (
             chosen !== undefined &&
             (NEEDS_EVAL.test(file.text) ||
+                callsProject.test(file.text.replace(/@(?:function|mixin)\s+[\w-]+/g, "")) ||
                 (configured !== undefined && /!default\b/.test(file.text)))
         ) {
             out.set(file.rel, chosen.text);
