@@ -9,74 +9,7 @@
  */
 import { readLiteral, type Literal, type Scope } from "./scan-parse.ts";
 import { addVar, type Category, type Facts } from "./scan-facts.ts";
-
-/** The index after the brace that closes the one at `open`, or undefined. */
-function closeOf(text: string, open: number): number | undefined {
-    let depth = 0;
-    let quote = "";
-
-    for (let at = open; at < Math.min(text.length, open + 80_000); at++) {
-        const char = text[at]!;
-
-        if (quote !== "") {
-            quote = char === "\\" ? ((at += 1), quote) : char === quote ? "" : quote;
-        } else if (char === '"' || char === "'" || char === "`") {
-            quote = char;
-        } else if (char === "{") {
-            depth += 1;
-        } else if (char === "}" && --depth === 0) {
-            return at + 1;
-        }
-    }
-
-    return undefined;
-}
-
-/** The `{` that opens the object around `index`, or undefined. */
-function openAround(text: string, index: number): number | undefined {
-    let depth = 0;
-
-    for (let at = index - 1; at >= Math.max(0, index - 20_000); at--) {
-        const char = text[at]!;
-
-        if (char === "}") {
-            depth += 1;
-        } else if (char === "{") {
-            if (depth === 0) {
-                return at;
-            }
-
-            depth -= 1;
-        }
-    }
-
-    return undefined;
-}
-
-/** The raw text of a key at the top level of the object that starts at `open` (nested objects are skipped), or undefined. */
-function topLevelValue(text: string, open: number, end: number, key: string): string | undefined {
-    let depth = 0;
-
-    for (let at = open; at < end; at++) {
-        const char = text[at]!;
-
-        if (char === "{" || char === "[" || char === "(") {
-            depth += 1;
-        } else if (char === "}" || char === "]" || char === ")") {
-            depth -= 1;
-        } else if (depth === 1 && text.startsWith(key, at) && !/[\w$.]/.test(text[at - 1] ?? "")) {
-            const after = /^\s*:\s*([^,\n]+(?:\([^)]*\))?[^,\n]*)/.exec(
-                text.slice(at + key.length, at + key.length + 200),
-            );
-
-            if (after !== null && /^\s*:/.test(text.slice(at + key.length, at + key.length + 4))) {
-                return after[1];
-            }
-        }
-    }
-
-    return undefined;
-}
+import { closeOf, openAround, topLevelValue } from "./scan-braces.ts";
 
 /** How a seed token is read: the name of the variable, and what it is. */
 function seed(

@@ -7,12 +7,8 @@
  */
 import { isObject, type Obj } from "./scan-import-convert.ts";
 import { materialTokens, type MaterialInput, type MaterialResult } from "./scan-import-material.ts";
-import {
-    sdConfigIn,
-    styleDictionaryTokens,
-    orderByConfig,
-    type SdConfig,
-} from "./scan-import-sd.ts";
+import { orderByConfig, styleDictionaryTokens } from "./scan-import-sd.ts";
+import { type SdConfig, sdConfigOfJson, sdConfigsIn } from "./scan-import-sd-config.ts";
 import { looksLikeSets, studioTokens, type StudioSource } from "./scan-import-studio.ts";
 
 /** A token file that was read: its path, what it parsed to, and whether its name says it holds tokens. */
@@ -232,31 +228,28 @@ export function finishImports(into: Imported): void {
     // Token folders: Style Dictionary sources, and token files of any one project, merged in source order.
     const rest = pending.filter((item) => !taken.has(item) && isObject(item.root));
     const configs = [...into.configs, ...configsIn(rest)];
-    const config = configs.find((each) => {
-        const matched = orderByConfig(
-            rest.map((item) => ({ file: item.file, root: item.root as Obj })),
-            each,
-        );
-
-        return matched !== undefined;
-    });
+    const asFiles = (list: Pending[]) =>
+        list.map((item) => ({ file: item.file, root: item.root as Obj }));
     const wanted = rest.filter((item) => !isConfigFile(item.root) && !isMaterialJson(item.root));
-    const files = (
-        config === undefined
+    // The configs whose globs match files: each one's files are read, a mode config's over the base config's.
+    const matched = configs
+        .filter((each) => orderByConfig(asFiles(wanted), each) !== undefined)
+        .slice(0, 8);
+    const listed = new Set(
+        matched.flatMap((each) => orderByConfig(asFiles(wanted), each)!.map((item) => item.file)),
+    );
+    const files = asFiles(
+        matched.length === 0
             ? wanted.filter((item) => item.named)
-            : (
-                  orderByConfig(
-                      wanted.map((item) => ({ file: item.file, root: item.root as Obj })),
-                      config,
-                  ) ?? []
-              ).map((matched) => wanted.find((item) => item.file === matched.file)!)
-    ).map((item) => ({ file: item.file, root: item.root as Obj }));
+            : wanted.filter((item) => listed.has(item.file)),
+    );
+    const config = matched[0];
 
     if (files.length > 0) {
-        const found = styleDictionaryTokens(files, config);
+        const found = styleDictionaryTokens(files, matched);
 
         if (found.count > 0) {
-            into.certain = into.certain || config !== undefined;
+            into.certain = into.certain || matched.length > 0;
             addTo(into.default, found.default);
             addTo(into.dark, found.dark);
 
@@ -317,20 +310,11 @@ function isConfigFile(root: unknown): boolean {
 
 /** The Style Dictionary configs among JSON files: `config.json` with `source` and `platforms`. */
 function configsIn(items: Pending[]): SdConfig[] {
-    return items.flatMap((item) => {
-        const root = item.root as Obj;
-
-        if (!isConfigFile(root)) {
-            return [];
-        }
-
-        const list = (value: unknown) =>
-            Array.isArray(value)
-                ? value.filter((each): each is string => typeof each === "string").slice(0, 40)
-                : [];
-
-        return [{ dir: dirOf(item.file), include: list(root.include), source: list(root.source) }];
-    });
+    return items.flatMap((item) =>
+        isConfigFile(item.root)
+            ? [sdConfigOfJson(dirOf(item.file), item.file, item.root as Obj)]
+            : [],
+    );
 }
 
 /** The Material Theme Builder's JSON: `{ "schemes": { "light": { "primary": … }, "dark": … } }`. */
@@ -342,11 +326,11 @@ function isMaterialJson(root: unknown): boolean {
     );
 }
 
-/** Reads the text of a Style Dictionary config written in JavaScript (`sd.config.js`, `config.mjs`). */
+/** Reads the text of a Style Dictionary config written in JavaScript (`sd.config.js`, `config.mjs`): it can hold several. */
 export function importConfig(into: Imported, file: string, text: string): void {
-    const config = sdConfigIn(dirOf(file), text);
-
-    if (config !== undefined && into.configs.length < 8) {
-        into.configs.push(config);
+    for (const config of sdConfigsIn(dirOf(file), file, text)) {
+        if (into.configs.length < 8) {
+            into.configs.push(config);
+        }
     }
 }

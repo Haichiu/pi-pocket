@@ -128,10 +128,11 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
     // A Style Dictionary config in JavaScript names the token files by globs.
     if (
         /^\.(?:[cm]?[jt]s)$/.test(extension) &&
-        /\bplatforms\b/.test(text) &&
-        /\bsource\b/.test(text)
+        /\bplatforms\b/.test(raw) &&
+        /\bsource\b/.test(raw)
     ) {
-        importConfig(facts.imported, rel, text);
+        // The raw text: a glob (`tokens/**/*.json`) holds `/**/`, which the comment stripper takes for a comment.
+        importConfig(facts.imported, rel, raw);
     }
 
     if (extension === ".json") {

@@ -8,6 +8,7 @@
  * `font`, `time`...) and their value.
  */
 import { parseColor } from "./color.ts";
+import { type SdConfig, sdConfigsIn } from "./scan-import-sd-config.ts";
 import { isObject, type Obj } from "./scan-import-convert.ts";
 import {
     DARK,
@@ -26,14 +27,6 @@ import {
 export interface SdFile {
     file: string;
     root: Obj;
-}
-
-/** What a Style Dictionary config says about its token files: the `source` and `include` globs, in order. */
-export interface SdConfig {
-    /** The folder of the config: its globs are relative to it, or to the project's root. */
-    dir: string;
-    include: string[];
-    source: string[];
 }
 
 // --- The config -----------------------------------------------------------------------------------------------------------
@@ -84,29 +77,9 @@ export function globToRegExp(glob: string): RegExp | undefined {
     }
 }
 
-/** The strings of a list in a config: `["tokens/**\/*.json", 'brands/a/*.json']`. */
-const stringsIn = (text: string) =>
-    [...text.matchAll(/["'`]([^"'`\n]{1,200})["'`]/g)].map((match) => match[1]!).slice(0, 40);
-
-/**
- * A Style Dictionary config in JavaScript or JSON text: its `source` and `include` lists. A config is a file that has
- * `platforms` and `source`; a list that is not written out (built in code) is not read.
- */
-export function sdConfigIn(dir: string, text: string): SdConfig | undefined {
-    if (!/\bplatforms\b/.test(text) || !/["']?\bsource\b["']?\s*:\s*\[/.test(text)) {
-        return undefined;
-    }
-
-    const list = (name: string) => {
-        const match = new RegExp(`["']?\\b${name}\\b["']?\\s*:\\s*\\[([^\\]]*)\\]`).exec(text);
-
-        return match === null ? [] : stringsIn(match[1]!);
-    };
-
-    const source = list("source");
-
-    return source.length === 0 ? undefined : { dir, include: list("include"), source };
-}
+/** The first Style Dictionary config in a config's text, or undefined (`sdConfigsIn` has all of them). */
+export const sdConfigIn = (dir: string, text: string): SdConfig | undefined =>
+    sdConfigsIn(dir, "", text)[0];
 
 // --- The files ------------------------------------------------------------------------------------------------------------
 
@@ -270,14 +243,44 @@ export function orderByConfig(files: SdFile[], config: SdConfig): SdFile[] | und
     return ordered.length > 0 ? ordered : undefined;
 }
 
+/** The config that builds the default mode: one that names no mode, else the light one, else the first. */
+function baseOf(configs: SdConfig[]): SdConfig | undefined {
+    return (
+        configs.find((config) => config.mode === undefined) ??
+        configs.find((config) => config.mode !== undefined && hasWord(config.mode, LIGHT)) ??
+        configs[0]
+    );
+}
+
+/**
+ * The files that a mode config reads: the base config's files under it, then its own (`include` and `source`), each in
+ * the config's order. A file of another mode's folder is left out.
+ */
+function filesOfMode(files: SdFile[], config: SdConfig, base: SdFile[]): SdFile[] {
+    const own = orderByConfig(files, config) ?? [];
+    const have = new Set(own.map((item) => item.file));
+    const fits = (item: SdFile) => {
+        const mode = modeOfFile(item.file);
+
+        return (
+            mode === undefined ||
+            mode === config.mode ||
+            (hasWord(mode, DARK) && hasWord(config.mode ?? "", DARK))
+        );
+    };
+
+    return [...base.filter((item) => !have.has(item.file)), ...own].filter(fits);
+}
+
 /** The tokens of a token folder: the default mode, the dark mode, other modes, how many there are, and what happened. */
 export function styleDictionaryTokens(
     files: SdFile[],
-    config?: SdConfig,
+    configs: SdConfig[] = [],
 ): { default: Obj; dark: Obj; extra: Record<string, Obj>; count: number; notes: string[] } {
     const notes: string[] = [];
+    const baseConfig = baseOf(configs);
     const ordered =
-        (config === undefined ? undefined : orderByConfig(files, config)) ??
+        (baseConfig === undefined ? undefined : orderByConfig(files, baseConfig)) ??
         [...files].sort((a, b) => a.file.localeCompare(b.file));
     const budget = { left: LIMITS.tokens };
     const base: SdFile[] = [];
@@ -334,8 +337,8 @@ export function styleDictionaryTokens(
         );
     }
 
-    for (const name of names.filter((each) => each !== firstName).slice(0, 4)) {
-        const second = tokensOf(read([...base, ...modes.get(name)!]));
+    const addMode = (name: string, list: SdFile[]) => {
+        const second = tokensOf(read(list));
         const { tree, skipped } = changesBetween(first.flat, second.flat);
 
         if (skipped > 0) {
@@ -347,6 +350,30 @@ export function styleDictionaryTokens(
         } else {
             result.extra[name] = tree;
         }
+    };
+
+    for (const name of names.filter((each) => each !== firstName).slice(0, 4)) {
+        addMode(name, [...base, ...modes.get(name)!]);
+    }
+
+    // A config for a mode (`config.dark.json`): the base config's files, with its own `source` over them.
+    const done = new Set([firstName, ...names]);
+    const fromConfigs = configs
+        .filter(
+            (config) =>
+                config !== baseConfig && config.mode !== undefined && !done.has(config.mode),
+        )
+        .slice(0, 4);
+
+    for (const config of fromConfigs) {
+        done.add(config.mode);
+        addMode(config.mode!, filesOfMode(files, config, ordered));
+    }
+
+    if (fromConfigs.length > 0) {
+        notes.push(
+            `Style Dictionary configs for modes: ${fromConfigs.map((config) => config.mode).join(", ")} (each one's source over the base config's).`,
+        );
     }
 
     return result;
