@@ -1863,3 +1863,197 @@ test("a one-off used once is left out of a large palette, kept in a small one; a
     assert.ok(count(big) <= 14, `${count(big)} colors out of 20 one-offs`);
     assert.deepEqual(big.inferred.spacing.steps, [8], "6px used once is no step");
 });
+
+// --- Round 3c: classes of input, not one project --------------------------------------------------------------------------
+
+test("a shadow is found by its value, whatever the name: elev, elevation, depth, lift, z1, raise, with layers, inset, a variable color, a color first", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root {
+  --elev-1: 0 1px 2px rgba(0,0,0,.2);
+  --elevation-2: 0 4px 8px -2px rgba(0,0,0,.25), 0 2px 4px rgba(0,0,0,.1);
+  --depth-3: inset 0 1px 0 rgba(255,255,255,.1), 0 12px 24px rgba(0,0,0,.3);
+  --lift-1: 0 2px 6px #00000033;
+  --z1: 0 1px 3px hsl(220 20% 10% / .3);
+  --raise: 0 0 0 1px rgb(0 0 0 / 0.08), 0 4px 12px rgb(0 0 0 / 0.1);
+  --soft: 0 2px 4px var(--ink);
+  --first: rgba(0,0,0,.2) 0 4px 12px;
+  --pad: 8px 8px 8px 8px;
+  --margin-ish: 12px 16px;
+  --none: none;
+  --t-quick: 120ms; --t-slow: 0.4s;
+  --curve-out: cubic-bezier(0.2, 0, 0, 1); --ease-x: ease-in-out;
+  --voice: "Inter", system-ui, sans-serif;
+}`,
+        }),
+    );
+    const system = load(scan);
+    const shadows = system.tokens.filter((each) => each.type === "shadow");
+
+    assert.equal(shadows.length, 8, shadows.map((each) => each.name).join(", "));
+    assert.ok(
+        !system.tokens.some((each) => each.type === "shadow" && /pad|margin/.test(each.name)),
+        "a padding is no shadow",
+    );
+    assert.deepEqual(
+        system.tokens
+            .filter((each) => each.type === "duration")
+            .map((each) => each.modes.light!.css),
+        ["120ms", "0.4s"],
+    );
+    assert.equal(system.tokens.filter((each) => each.type === "cubicBezier").length, 2);
+    assert.ok(system.tokens.some((each) => each.type === "fontFamily"));
+});
+
+test("status words: good ok positive pass valid are success; bad error critical negative invalid fail are danger; warn caution attention are warning", () => {
+    const forms: [string, string, string, string][] = [
+        ["good", "bad", "warn", "note"],
+        ["ok", "error", "caution", "notice"],
+        ["positive", "negative", "attention", "info"],
+        ["pass", "critical", "warning", "note"],
+        ["valid", "invalid", "caution", "notice"],
+        ["success", "fail", "warn", "info"],
+    ];
+
+    for (const [good, bad, warn, note] of forms) {
+        const scan = scanTokens(
+            project({
+                "a.css": `:root { --bg: #fff; --text: #111; --${good}: #16a34a; --${bad}: #dc2626; --${warn}: #d97706; --${note}: #2563eb }
+[data-bs-theme="dark"] { --bg: #0b0c10; --text: #eee; --${good}: #4ade80; --${bad}: #f87171; --${warn}: #fbbf24; --${note}: #60a5fa }
+.x { color: var(--${good}) }`,
+            }),
+        );
+        const { roles } = scan.inferred;
+
+        assert.equal(roles.success!.value, "#16a34a", `${good} is success`);
+        assert.equal(roles.success!.dark, "#4ade80", `${good}'s dark value follows its name`);
+        assert.equal(roles.danger!.value, "#dc2626", `${bad} is danger`);
+        assert.equal(roles.danger!.dark, "#f87171");
+        assert.equal(roles.warning!.value, "#d97706", `${warn} is warning`);
+        assert.equal(roles.warning!.dark, "#fbbf24");
+        assert.equal(roles.accent, undefined, `${note} is a notice, not the brand`);
+    }
+});
+
+test("a status named only in the other mode: the light color is the used one of its hue, and the dark value is the name's", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root { --bg: #fff; --text: #111 }
+.dark { --bg: #0b0c10; --text: #eee; --success: #4ade80; --danger: #f87171 }
+.ok { color: #16a34a } .bad { color: #dc2626 } .ok2 { border-color: #16a34a }`,
+        }),
+    );
+    const { roles } = scan.inferred;
+
+    assert.equal(roles.success!.value, "#16a34a");
+    assert.equal(roles.success!.dark, "#4ade80");
+    assert.equal(roles.danger!.value, "#dc2626");
+    assert.equal(roles.danger!.dark, "#f87171");
+    assert.equal(roles.accent, undefined, "the used green is the success, not the brand");
+});
+
+test("variables that supply one mode (--light-*, --dark-*, --*-dark, --*-light) stay out of the palette in every form", () => {
+    const forms: Record<string, Record<string, string>> = {
+        "role variables behind light- and dark- twins": {
+            "a.css": `:root { --light-bg: #f6f7fa; --light-ink: #14161c; --light-good: #16a34a; --dark-bg: #0b0c10; --dark-ink: #e8e9ee; --dark-good: #4ade80;
+  --bg: var(--light-bg); --ink: var(--light-ink); --good: var(--light-good) }
+.dark { --bg: var(--dark-bg); --ink: var(--dark-ink); --good: var(--dark-good) }
+body { background: var(--bg); color: var(--ink) } .ok { color: var(--good) }`,
+        },
+        "twins with a suffix and no role variable": {
+            "a.css": `:root { --bg-light: #f6f7fa; --bg-dark: #0b0c10; --ink-light: #14161c; --ink-dark: #e8e9ee; --good-light: #16a34a; --good-dark: #4ade80 }
+body { background: var(--bg-light); color: var(--ink-light) } .ok { color: var(--good-light) }
+@media (prefers-color-scheme: dark) { body { background: var(--bg-dark); color: var(--ink-dark) } .ok { color: var(--good-dark) } }`,
+        },
+        "one twin with a role variable": {
+            "a.css": `:root { --bg: #f6f7fa; --ink: #14161c; --good: #16a34a; --dark-good: #4ade80 }
+.dark { --bg: #0b0c10; --ink: #e8e9ee; --good: var(--dark-good) } body { background: var(--bg); color: var(--ink) } .ok { color: var(--good) }`,
+        },
+        "Sass variables behind interpolation": {
+            "_v.scss": `$light-bg: #f6f7fa; $light-ink: #14161c; $light-good: #16a34a; $dark-bg: #0b0c10; $dark-ink: #e8e9ee; $dark-good: #4ade80;
+:root { --bg: #{$light-bg}; --ink: #{$light-ink}; --good: #{$light-good}; }
+[data-mantine-color-scheme="dark"] { --bg: #{$dark-bg}; --ink: #{$dark-ink}; --good: #{$dark-good}; }`,
+        },
+    };
+
+    for (const [form, files] of Object.entries(forms)) {
+        const scan = scanTokens(project(files));
+        const system = load(scan);
+        const { roles } = scan.inferred;
+
+        assert.equal(roles.background!.value, "#f6f7fa", form);
+        assert.equal(roles.background!.dark, "#0b0c10", form);
+        assert.equal(roles.text!.dark, "#e8e9ee", form);
+        assert.equal(roles.success!.dark, "#4ade80", form);
+        assert.deepEqual(
+            system.tokens
+                .filter((each) =>
+                    /^color\.(?:dark|light)\b|^color\.[\w-]*-(?:dark|light)$/.test(each.name),
+                )
+                .map((each) => each.name),
+            [],
+            `${form}: no color group for the twins`,
+        );
+
+        // A role refers to a palette step: the same hex. Two tokens that hold it as a value are a copy.
+        const hexes = system.tokens
+            .filter((each) => each.type === "color" && each.modes.light!.alias === undefined)
+            .map((each) => each.modes.light!.hex);
+
+        assert.equal(new Set(hexes).size, hexes.length, `${form}: each color once`);
+    }
+});
+
+test("a vendor's theme attribute or class marks the dark mode, with plain literals or Sass interpolation", () => {
+    const selectors = [
+        '[data-bs-theme="dark"]',
+        '[data-color-mode="dark"]',
+        '[data-mantine-color-scheme="dark"]',
+        '[data-joy-color-scheme="dark"]',
+        '[data-theme*="dark"]',
+        "[data-theme^=dark]",
+        '[data-md-color-scheme="slate"]',
+        ".dark-theme",
+        ".theme--dark",
+        ".v-theme--dark",
+        ".ThemeDark",
+        ":root.dark-mode",
+        "html.theme-dark",
+        "[data-bs-theme=dark] body",
+        'html[data-color-mode="dark"][data-dark-theme="dark"]',
+    ];
+
+    for (const selector of selectors) {
+        const literal = scanTokens(
+            project({
+                "a.css": `:root { --bg: #f6f7fa; --text: #14161c } ${selector} { --bg: #0b0c10; --text: #e8e9ee }`,
+            }),
+        );
+        const sass = scanTokens(
+            project({
+                "a.scss": `$bg-l: #f6f7fa; $bg-d: #0b0c10; $t-l: #14161c; $t-d: #e8e9ee;
+:root { --bg: #{$bg-l}; --text: #{$t-l}; } ${selector} { --bg: #{$bg-d}; --text: #{$t-d}; }`,
+            }),
+        );
+
+        for (const scan of [literal, sass]) {
+            assert.equal(scan.inferred.roles.background!.value, "#f6f7fa", selector);
+            assert.equal(scan.inferred.roles.background!.dark, "#0b0c10", selector);
+            assert.equal(scan.inferred.roles.text!.dark, "#e8e9ee", selector);
+        }
+    }
+});
+
+test("interpolation inside a value or with arithmetic is resolved through the Sass variables", () => {
+    const scan = scanTokens(
+        project({
+            "_v.scss": `$ink: rgba(20, 22, 28, .2); $space: 8px; $radius: 6px;
+:root { --shadow-1: 0 1px 2px #{$ink}; --gap: #{$space * 2}; --round: #{$radius}; }
+.card { box-shadow: var(--shadow-1); padding: var(--gap); border-radius: var(--round) }`,
+        }),
+    );
+
+    assert.equal(scan.inferred.shadows, 1);
+    assert.ok(scan.inferred.spacing.steps.includes(16), "the gap is 8px * 2");
+    assert.ok(scan.inferred.radii.some((radius) => radius.endsWith("6px")));
+});

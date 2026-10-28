@@ -251,7 +251,7 @@ const SURFACEISH = new Set(
 );
 const OTHER_ROLE = new Set(
     w(
-        "accent danger error warning success info brand destructive critical secondary tertiary link border outline divider",
+        "accent danger error warning success info brand destructive critical secondary tertiary link border outline divider bad good ok positive negative note notice caution warn pass fail",
     ),
 );
 /** A name made only of the role's own words, and short: `border`, `border-default`; not `divider-light-1`. */
@@ -523,15 +523,28 @@ export function nameScore(role: RoleName, segs: string[]): number {
         case "success": {
             const table = {
                 danger: [
-                    w("danger error destructive critical negative invalid alert err"),
+                    w(
+                        "danger error destructive critical negative invalid alert err bad fail failed failure wrong fatal severe",
+                    ),
                     ["red"],
                 ],
                 warning: [
-                    ["warning", "warn", "caution", "attention"],
+                    ["warning", "warn", "caution", "attention", "alertness", "moderate"],
                     ["amber", "orange", "yellow"],
                 ],
                 success: [
-                    ["success", "positive", "valid", "ok", "confirm", "safe"],
+                    [
+                        "success",
+                        "positive",
+                        "valid",
+                        "ok",
+                        "confirm",
+                        "safe",
+                        "good",
+                        "pass",
+                        "passed",
+                        "done",
+                    ],
                     ["green", "emerald"],
                 ],
             } as const;
@@ -601,6 +614,8 @@ const hueOk = (role: RoleName, color: ColorEntry): boolean => {
 export function chooseRoles(
     colors: Map<string, ColorEntry>,
     named: VarColor[],
+    /** The hue of a status color that the other mode names (`--success` in the dark scope), to find its pair here. */
+    hints: Partial<Record<"danger" | "warning" | "success", number>> = {},
 ): Partial<Record<RoleName, RoleChoice>> {
     const chosen: Partial<Record<RoleName, RoleChoice>> = {};
     const entries = [...colors.values()];
@@ -928,6 +943,31 @@ export function chooseRoles(
 
     const chroma = entries.filter((color) => color.c >= 0.07 && color.rgba.a > 0.9);
 
+    // A status color that the other mode names has its pair in this mode: the used color of the same hue, before the
+    // most used chromatic color is taken for the accent.
+    for (const role of ["danger", "warning", "success"] as const) {
+        const hue = hints[role];
+
+        if (hue === undefined || chosen[role] !== undefined) {
+            continue;
+        }
+
+        const pair = byUse(
+            chroma.filter(
+                (color) =>
+                    !used(color.hex) &&
+                    color.c >= 0.1 &&
+                    color.uses >= 1 &&
+                    Math.abs(((color.h - hue + 540) % 360) - 180) <= 30,
+            ),
+            (color) => color.uses,
+        )[0];
+
+        if (pair !== undefined) {
+            set(role, pair.hex, "use", `used ${pair.uses}× with the hue of the dark ${role}`, 32);
+        }
+    }
+
     if (chosen.accent === undefined) {
         const statusSingles = new Set(
             chroma
@@ -950,6 +990,16 @@ export function chooseRoles(
             chroma.filter(
                 (color) =>
                     !used(color.hex) &&
+                    // A color that a variable names for a status or a notice (`--invalid`, `--note`) is not the brand.
+                    !color.names.some(
+                        (each) =>
+                            (["danger", "warning", "success"] as const).some(
+                                (role) => nameScore(role, words(each.name)) >= 48,
+                            ) ||
+                            words(each.name).some((word) =>
+                                ["info", "note", "notice"].includes(word),
+                            ),
+                    ) &&
                     !(
                         statusSingles >= 2 &&
                         color.uses <= 1 &&

@@ -41,9 +41,9 @@ export const MAX_MAP = 8000;
 export const COMMENTS =
     /(?<![\w.*"'`/-])\/\*[\s\S]*?(?:\*\/|$)|<!--[\s\S]*?(?:-->|$)|(?<![:\w"'`(/\\])\/\/[^\n]*/g;
 
-const DARK_WORD = String.raw`(?:dark|dark[-_]theme|dark[-_]mode|darkmode|dark[-_]scheme|theme[-_]{1,2}dark|mode[-_]{1,2}dark|scheme[-_]dark|color[-_]scheme[-_]dark|is[-_]dark|has[-_]dark|ui[-_]dark|app[-_]dark|body[-_]dark|v-theme--dark|chakra-ui-dark|ant-dark|night|night[-_]mode|nightmode|theme[-_]night)`;
+const DARK_WORD = String.raw`(?:dark|dark[-_]theme|dark[-_]mode|darkmode|dark[-_]scheme|theme[-_]{0,2}dark|mode[-_]{0,2}dark|scheme[-_]{0,2}dark|color[-_]scheme[-_]dark|is[-_]?dark|has[-_]?dark|ui[-_]dark|app[-_]dark|body[-_]dark|v-theme--dark|chakra-ui-dark|ant-dark|night|night[-_]mode|nightmode|theme[-_]night|dark[-_]?(?:theme|mode|scheme)(?:[-_]active|[-_]on|[-_]enabled)?)`;
 // A class or attribute that selects the dark theme: `.dark`, `[data-theme="dark"]`, `[data-mantine-color-scheme=dark]`...
-const DARK_PART = String.raw`(?:\.${DARK_WORD}(?![\w-])|\[(?:data-[\w-]*)?(?:theme|mode|color-mode|color-scheme|colorscheme|appearance|scheme)\s*[~|^$*]?=\s*["']?(?:dark|night|dark[-_]mode|darkmode)["']?\s*\])`;
+const DARK_PART = String.raw`(?:\.${DARK_WORD}(?![\w-])|\[(?:data-[\w-]*)?(?:theme|mode|color-mode|color-scheme|colorscheme|appearance|scheme)\s*[~|^$*]?=\s*["']?(?:dark|night|slate|dark[-_]mode|darkmode)["']?\s*\])`;
 const DARK_ANY = new RegExp(DARK_PART, "i");
 // A root-like compound that ends in the dark class: `html.dark`, `:root[data-theme=dark]`, `body.dark`, `.dark`.
 const DARK_ROOT = new RegExp(
@@ -56,6 +56,11 @@ const LIGHT_ROOT = new RegExp(
     String.raw`^(?:html|body|:root|\*|:host)?(?:${LIGHT_PART})+(?::root)?$`,
     "i",
 );
+// A root-like element under the dark class: `[data-bs-theme=dark] body`, `.dark :root`.
+const DARK_DESC = new RegExp(
+    String.raw`^(?:html|body|:root|\*|:host)?(?:${DARK_PART})+\s+(?:body|html|:root|\*|main|#root|#app|\.app|\.App)$`,
+    "i",
+);
 // What a custom property on the default scope is set on.
 const ROOT_ONLY =
     /^(?:html|body|:root|\*|:host|#root|#app|#__next|\.app|\.theme|main)(?:\[data-(?:bs-)?(?:theme|mode)\])*$|^\[data-(?:bs-)?(?:theme|mode|color-scheme)\]$/i;
@@ -66,7 +71,7 @@ export const isDarkSelector = (selector: string) => DARK_ANY.test(selector);
 
 /** The scope of one selector of the rule: dark, light (explicitly), the default, or none of them. */
 function partScope(part: string, dark: boolean, light = false): Scope {
-    if (DARK_ROOT.test(part)) {
+    if (DARK_ROOT.test(part) || DARK_DESC.test(part)) {
         return "dark";
     }
 
