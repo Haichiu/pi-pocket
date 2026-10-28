@@ -33,7 +33,7 @@ test("the icon is drawn in the palette's colors", () => {
     assert.match(svg, /fill="#b9b9b9"/, "the π is the palette's orange");
     assert.doesNotMatch(
         svg,
-        /#ff9e64|#33ccff|#00ff99|#1a1b26/,
+        /#ff9e64|#33ccff|#00ff99|#1a1b26|#13141c/,
         "no color of the app's own icon is left",
     );
 });
@@ -42,18 +42,37 @@ test("two palettes give two icons", () => {
     assert.notEqual(iconSvg(tokyo), iconSvg(vantablack));
 });
 
-test("a maskable icon fills the square and keeps the art inside the safe zone", () => {
-    const svg = iconSvg(vantablack, { maskable: true });
+test("a palette that lacks a color keeps the app's own icon color there", () => {
+    const svg = iconSvg({ ...vantablack, "--o-orange": undefined as unknown as string });
 
-    assert.match(
-        svg,
-        /<rect width="512" height="512" fill="#070707"/,
-        "the whole square has the frame's color",
+    assert.match(svg, /fill="#ff9e64"/, "the π falls back to the app's orange");
+    assert.doesNotMatch(svg, /undefined/);
+});
+
+test("the drawing is that of icon.svg, so the two do not drift", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const file = await readFile(new URL("../web/icon.svg", import.meta.url), "utf8");
+    // The shapes of the file, with its colors taken out: what is left must be in the drawing too.
+    const shapes = [...file.matchAll(/<(rect|text)\b([^>]*)>/g)].map(
+        ([, tag, attrs]) =>
+            `${tag} ${(attrs ?? "")
+                .replace(/\s(fill|stroke)="[^"]*"/g, "")
+                .replace(/\s+/g, " ")
+                .trim()}`,
     );
-    assert.match(
-        svg,
-        /translate\(80 80\) scale\(0\.6875\)/,
-        "352 of 512 pixels, as the 80-pixel margins leave",
-    );
-    assert.doesNotMatch(iconSvg(vantablack), /scale\(/, "the plain icon is not scaled");
+    const drawn = iconSvg(tokyo)
+        .replace(/\s(fill|stroke)="[^"]*"/g, "")
+        .replace(/\s+/g, " ");
+
+    assert.ok(shapes.length >= 3, "the file has its three shapes");
+
+    for (const shape of shapes) {
+        const [tag, ...attrs] = shape.split(" ");
+
+        for (const attr of attrs.filter(
+            (each) => !each.startsWith("font-family") && each.includes("="),
+        )) {
+            assert.ok(drawn.includes(attr), `${tag} keeps ${attr}`);
+        }
+    }
 });

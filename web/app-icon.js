@@ -1,60 +1,53 @@
-// The app's icons in the colors in use: the tab's icon, the iPhone and iPad home-screen icon, and the icons in the web
-// app manifest (Android's home screen and install). The files in this folder (`icon.svg` and its PNGs) stay as the first
-// load's icons, and as what shows when this module cannot draw (no canvas, no fetch).
+// The app's icons in the colors in use: the tab's icon and the home-screen icon (`apple-touch-icon`, which iOS and
+// Android's "add to home screen" shortcut read). The files in this folder (`icon.svg` and its PNGs) stay as the first
+// load's icons, and as what shows when this module cannot draw (no canvas, no decoding). The web app manifest keeps its
+// own icons: an installed Android app needs a manifest at an address the browser can fetch again, which a page cannot
+// make per palette.
 
 const SIZE = 512;
-const PAD = 80;
 const APPLE = 180;
-const TARGETS = [
-    { size: 192, maskable: false },
-    { size: 512, maskable: false },
-    { size: 512, maskable: true },
-];
+// What a palette lacks keeps the app's own icon color.
+const DEFAULTS = {
+    "--o-bg": "#1a1b26",
+    "--o-bg-darker": "#13141c",
+    "--o-orange": "#ff9e64",
+    "--o-cyan": "#33ccff",
+    "--o-green": "#00ff99",
+};
 
-/**
- * The icon as SVG text, from the palette's variables (`themeVars`): the same drawing as `icon.svg`, in the palette's
- * colors. `maskable` fills the whole square and draws the artwork inside the safe zone, for icons the OS crops itself.
- */
-export function iconSvg(vars, { maskable = false } = {}) {
-    const outer = vars["--o-bg-darker"];
-    const card = vars["--o-bg"];
-    const art = `
-        <rect x="40" y="40" width="432" height="432" rx="75" fill="${card}" stroke="url(#ring)" stroke-width="12" />
-        <text x="256" y="350" font-family="Georgia, 'Times New Roman', serif" font-size="280" text-anchor="middle" fill="${vars["--o-orange"]}">π</text>`;
-    const inset = (SIZE - 2 * PAD) / SIZE;
+/** The icon as SVG text, from the palette's variables (`themeVars`): the drawing of `icon.svg` in the palette's colors. */
+export function iconSvg(vars) {
+    const color = (name) => vars[name] ?? DEFAULTS[name];
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}">
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}" viewBox="0 0 ${SIZE} ${SIZE}">
         <defs>
             <linearGradient id="ring" x1="0" y1="1" x2="1" y2="0">
-                <stop offset="0" stop-color="${vars["--o-cyan"]}" />
-                <stop offset="1" stop-color="${vars["--o-green"]}" />
+                <stop offset="0" stop-color="${color("--o-cyan")}" />
+                <stop offset="1" stop-color="${color("--o-green")}" />
             </linearGradient>
         </defs>
-        <rect width="${SIZE}" height="${SIZE}" fill="${outer}" />
-        ${maskable ? `<g transform="translate(${PAD} ${PAD}) scale(${inset})">${art}</g>` : art}
+        <rect width="${SIZE}" height="${SIZE}" fill="${color("--o-bg-darker")}" />
+        <rect x="40" y="40" width="432" height="432" rx="75" fill="${color("--o-bg")}" stroke="url(#ring)" stroke-width="12" />
+        <text x="256" y="350" font-family="Georgia, 'Times New Roman', serif" font-size="280" text-anchor="middle" fill="${color("--o-orange")}">π</text>
     </svg>`;
 }
 
 const svgUrl = (svg) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
-/** The icon as a PNG data URL of `size` pixels, or null when this browser cannot draw it. */
-async function iconPng(vars, size, maskable) {
-    try {
-        const image = new Image();
+/** The icon as a PNG data URL of `size` pixels. */
+async function iconPng(vars, size) {
+    const image = new Image();
 
-        image.src = svgUrl(iconSvg(vars, { maskable }));
-        await image.decode();
+    image.src = svgUrl(iconSvg(vars));
+    await image.decode();
 
-        const canvas = document.createElement("canvas");
+    const canvas = document.createElement("canvas");
 
-        canvas.width = size;
-        canvas.height = size;
-        canvas.getContext("2d").drawImage(image, 0, 0, size, size);
+    canvas.width = size;
+    canvas.height = size;
+    canvas.getContext("2d").drawImage(image, 0, 0, size, size);
 
-        return canvas.toDataURL("image/png");
-    } catch {
-        return null;
-    }
+    return canvas.toDataURL("image/png");
 }
 
 function setLink(rel, href, type) {
@@ -73,54 +66,14 @@ function setLink(rel, href, type) {
     link.href = href;
 }
 
-/**
- * The manifest as the server serves it, with this palette's icons and colors. Its addresses become absolute: a manifest
- * at a `blob:` address has no origin to resolve them against.
- */
-async function manifestFor(vars, icons) {
-    const response = await fetch("/manifest.webmanifest", { credentials: "include" });
-
-    if (!response.ok) {
-        return null;
-    }
-
-    const manifest = await response.json();
-    const absolute = (path) => new URL(path, location.origin).href;
-
-    return {
-        ...manifest,
-        id: absolute(manifest.id ?? manifest.start_url ?? "/"),
-        start_url: absolute(manifest.start_url ?? "/"),
-        scope: absolute(manifest.scope ?? "/"),
-        background_color: vars["--o-bg-darker"],
-        theme_color: vars["--o-bg"],
-        ...(manifest.share_target
-            ? {
-                  share_target: {
-                      ...manifest.share_target,
-                      action: absolute(manifest.share_target.action),
-                  },
-              }
-            : {}),
-        icons,
-    };
-}
-
 let applied = "";
-let manifestUrl = "";
 
 /**
- * Put the icons for `vars` on the page: the tab's at once, the home-screen and manifest ones when drawn. The same colors
- * again do nothing. A step that fails leaves the app's own icon in that place.
+ * Put the icons for `vars` on the page: the tab's at once, the home-screen one when drawn. The same colors again do
+ * nothing. A home-screen icon that cannot be drawn leaves the app's own, and is tried again with the next call.
  */
 export async function applyIcons(vars) {
-    const key = JSON.stringify([
-        vars["--o-bg"],
-        vars["--o-bg-darker"],
-        vars["--o-orange"],
-        vars["--o-cyan"],
-        vars["--o-green"],
-    ]);
+    const key = JSON.stringify(Object.keys(DEFAULTS).map((name) => vars[name]));
 
     if (key === applied) {
         return;
@@ -129,48 +82,17 @@ export async function applyIcons(vars) {
     applied = key;
     setLink("icon", svgUrl(iconSvg(vars)), "image/svg+xml");
 
-    const [apple, ...pngs] = await Promise.all([
-        iconPng(vars, APPLE, false),
-        ...TARGETS.map((target) => iconPng(vars, target.size, target.maskable)),
-    ]);
-
-    if (key !== applied) {
-        return;
-    }
-
-    if (apple) {
-        setLink("apple-touch-icon", apple);
-    }
-
-    if (pngs.some((png) => !png)) {
-        return;
-    }
-
     try {
-        const manifest = await manifestFor(
-            vars,
-            TARGETS.map((target, at) => ({
-                src: pngs[at],
-                sizes: `${target.size}x${target.size}`,
-                type: "image/png",
-                ...(target.maskable ? { purpose: "maskable" } : {}),
-            })),
-        );
+        const apple = await iconPng(vars, APPLE);
 
-        if (manifest && key === applied) {
-            const next = URL.createObjectURL(
-                new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" }),
-            );
-
-            document.querySelector('link[rel="manifest"]')?.setAttribute("href", next);
-
-            if (manifestUrl) {
-                URL.revokeObjectURL(manifestUrl);
-            }
-
-            manifestUrl = next;
+        if (key === applied) {
+            setLink("apple-touch-icon", apple);
         }
-    } catch {
-        // The server's own manifest stays.
+    } catch (error) {
+        console.warn("Pi Pocket: the home-screen icon could not be drawn in these colors.", error);
+
+        if (key === applied) {
+            applied = "";
+        }
     }
 }
