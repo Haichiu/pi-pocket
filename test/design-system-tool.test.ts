@@ -78,6 +78,56 @@ test("the schema offers every action, with a description for each field", () => 
     );
 });
 
+test("the schema is one object, and the description gives one short example call for each action", async () => {
+    const schema = tool.parameters as {
+        type?: string;
+        anyOf?: unknown;
+        oneOf?: unknown;
+        properties: object;
+    };
+
+    assert.equal(schema.type, "object", "some providers refuse a top-level union");
+    assert.equal(schema.anyOf, undefined);
+    assert.equal(schema.oneOf, undefined);
+
+    const lines = tool.description.split("\n");
+    const shown = lines.filter((line) => /^- [a-z]+: /.test(line));
+
+    assert.deepEqual(
+        shown.map((line) => /^- ([a-z]+):/.exec(line)![1]),
+        ["read", "scan", "init", "set", "component", "guidelines", "validate", "compile"],
+        "one line for each action, write left out",
+    );
+
+    for (const line of shown) {
+        assert.ok(line.length < 260, `short: ${line}`);
+
+        const action = /^- ([a-z]+):/.exec(line)![1]!;
+        const calls = [...line.matchAll(/\{"action":[^]*?(?=\} or \{"action"|\}$|\}\s*\()/g)].map(
+            (match) => `${match[0]}}`,
+        );
+
+        assert.ok(calls.length >= 1, `an example call: ${line}`);
+
+        for (const call of calls) {
+            // The `…` stands for a long value; `{…}` for an object.
+            const args = JSON.parse(call.replace(/\{…\}/g, "{}")) as Record<string, unknown>;
+
+            assert.equal(args.action, action);
+
+            // The call is not refused for a parameter that belongs to another action.
+            const outcome = await run(project(), args).then(
+                () => "",
+                (error: Error) => error.message,
+            );
+
+            assert.doesNotMatch(outcome, /is a parameter of/, call);
+        }
+    }
+
+    assert.ok(tool.description.length < 4500, String(tool.description.length));
+});
+
 test("init saves tokens and modes, compiles dist, and says what was made", async () => {
     const dir = project();
     const reply = await say(

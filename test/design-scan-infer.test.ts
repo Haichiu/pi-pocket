@@ -2057,3 +2057,82 @@ test("interpolation inside a value or with arithmetic is resolved through the Sa
     assert.ok(scan.inferred.spacing.steps.includes(16), "the gap is 8px * 2");
     assert.ok(scan.inferred.radii.some((radius) => radius.endsWith("6px")));
 });
+
+test("a dark-first page whose --dark-* variables feed the roles: no token for the twins, the status role from its name in both modes", () => {
+    const twins: [string, (name: string) => string][] = [
+        ["--dark-*", (name) => `dark-${name}`],
+        ["--*-dark", (name) => `${name}-dark`],
+        ["--d-*", (name) => `d-${name}`],
+        ["--*-dk", (name) => `${name}-dk`],
+    ];
+    const statuses = ["ok", "good", "positive", "pass", "valid"];
+    const switches = [
+        ':root[data-mode="light"]',
+        ".light",
+        '[data-theme="light"]',
+        "html.theme-light",
+    ];
+
+    for (const [form, twin] of twins) {
+        for (const [at, status] of statuses.entries()) {
+            const selector = switches[at % switches.length]!;
+            const scan = scanTokens(
+                project({
+                    "a.css": `:root {
+  --${twin("paper")}: #101216; --${twin("ink")}: #e6e8ee; --${twin(status)}: #3c9a6a;
+  --paper: var(--${twin("paper")}); --ink: var(--${twin("ink")}); --${status}: var(--${twin(status)});
+}
+${selector} { --paper: #fafafa; --ink: #15171c; --${status}: #0d6b3f; }
+.badge--${status} { color: var(--${status}); }
+body { background: var(--paper); color: var(--ink) }`,
+                }),
+            );
+            const system = load(scan);
+            const { roles } = scan.inferred;
+            const label = `${form}, ${status}, ${selector}`;
+
+            assert.equal(scan.inferred.modes.default, "dark", `${label}: dark first`);
+            assert.equal(roles.success!.value, "#3c9a6a", label);
+            assert.equal(
+                roles.success!.dark,
+                "#0d6b3f",
+                `${label}: the light value, from the same name`,
+            );
+            assert.equal(roles.success!.basis, "name", `${label}: found by the name, not by use`);
+            assert.equal(roles.success!.source, status, label);
+            assert.equal(roles.text!.value, "#e6e8ee", label);
+            assert.equal(roles.text!.dark, "#15171c", label);
+            assert.deepEqual(
+                system.tokens
+                    .filter((each) => /(?:^|[.-])(?:dark|dk|d|light)(?:[.-]|$)/.test(each.name))
+                    .map((each) => each.name),
+                [],
+                `${label}: the twins make no token`,
+            );
+            assert.ok(
+                !system.tokens.some((each) => each.name === `color.${status}`),
+                `${label}: and the role is not there twice`,
+            );
+        }
+    }
+});
+
+test("a light-first page with the same twins: the roles take the dark values from the twins", () => {
+    const scan = scanTokens(
+        project({
+            "a.css": `:root { --light-paper: #fafafa; --light-ink: #15171c; --light-ok: #0d6b3f;
+  --paper: var(--light-paper); --ink: var(--light-ink); --ok: var(--light-ok) }
+.dark { --paper: #101216; --ink: #e6e8ee; --ok: #3c9a6a }
+.badge--ok { color: var(--ok) } body { background: var(--paper); color: var(--ink) }`,
+        }),
+    );
+    const system = load(scan);
+
+    assert.equal(scan.inferred.roles.success!.value, "#0d6b3f");
+    assert.equal(scan.inferred.roles.success!.dark, "#3c9a6a");
+    assert.equal(scan.inferred.roles.success!.basis, "name");
+    assert.deepEqual(
+        system.tokens.filter((each) => /light/.test(each.name)).map((each) => each.name),
+        [],
+    );
+});
