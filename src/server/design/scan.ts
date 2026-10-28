@@ -20,6 +20,7 @@ import {
     renderProject,
 } from "./scan-render.ts";
 import { ingestStyles } from "./scan-facts-use.ts";
+import { shapeThemes } from "./scan-theme-shapes.ts";
 import { indentedToBraces } from "./scan-parse.ts";
 import { LIMITS, collectFiles, readHead, type Skipped } from "./scan-files.ts";
 import { colorsIn, darkMixinsIn } from "./scan-parse.ts";
@@ -210,6 +211,16 @@ export function readFacts(root: string, rendered?: Rendered): Facts {
         } catch {
             // One file that cannot be read as styles must not end the scan.
         }
+    }
+
+    // Theme objects by their shape: ramps, role objects, modes, across the scripts' imports. Read after the files, so a
+    // value a file states for itself wins.
+    facts.rank = files.length;
+
+    try {
+        shapeThemes(facts, root, files);
+    } catch {
+        // A script that cannot be read as a theme must not end the scan.
     }
 
     // What a browser showed of the project's pages is read last: it fills what the files did not say.
