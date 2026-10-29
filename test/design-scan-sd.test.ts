@@ -1,7 +1,7 @@
 // Style Dictionary sources and other token folders in the scan: files in several folders, in the classic form
 // (`value`, references with `.value`) and the DTCG form (`$value`), merged in source order, with brands and themes as modes.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -698,4 +698,18 @@ test("hostile configs run in bounded time: thousands of `source: [`, templates w
         ["dark", "light"],
     );
     assert.ok(Date.now() - started < 3000, `${Date.now() - started} ms`);
+});
+
+test("a config's source glob does not lead out of the project: not by `../`, not by a folder link", () => {
+    const outside = project({
+        "private.json": { font: { family: { $type: "fontFamily", $value: "OUTSIDE_SENTINEL" } } },
+    });
+
+    for (const glob of ["../out/*.json", "external/*.json"]) {
+        const dir = project({ "app/config.json": { source: [glob], platforms: { css: {} } } });
+
+        symlinkSync(outside, join(dir, "out"));
+        symlinkSync(outside, join(dir, "app", "external"));
+        assert.ok(!scanReport(scanTokens(join(dir, "app"))).includes("OUTSIDE_SENTINEL"), glob);
+    }
 });

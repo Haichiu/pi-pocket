@@ -10,7 +10,7 @@
  */
 import { readdirSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
-import { readHead } from "./scan-files.ts";
+import { folderInside, readHead } from "./scan-files.ts";
 import { type Literal, UNKNOWN } from "./scan-parse.ts";
 
 const LIMITS = { files: 90, bytes: 300_000, nodes: 30_000, depth: 14, steps: 400_000 };
@@ -60,6 +60,10 @@ export class JsProject {
 
     /** The text of a file of the project, or undefined (not a file of it, too large, not readable). */
     textOf(rel: string): string | undefined {
+        if (!folderInside(this.root, rel.split("/").slice(0, -1).join("/"))) {
+            return undefined;
+        }
+
         try {
             return readHead(join(this.root, ...rel.split("/")), LIMITS.bytes);
         } catch {
@@ -190,6 +194,10 @@ export class JsProject {
             }
 
             for (const dir of ["packages", "libs", "apps", "modules"]) {
+                if (!folderInside(this.root, dir)) {
+                    continue;
+                }
+
                 try {
                     for (const entry of readdirSync(join(this.root, dir), {
                         withFileTypes: true,
