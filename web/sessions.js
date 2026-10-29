@@ -1799,6 +1799,7 @@ function Rail({ foldable = false, folded = false }) {
  */
 const RAIL_KEYS = [
     "sessions",
+    "users",
     "server",
     "me",
     "pinned",

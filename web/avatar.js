@@ -1,6 +1,7 @@
 // People's avatars: their initials in a color of the theme, the same color for the same person everywhere; and the
 // colors of folders, which mark their sessions the same way.
 
+import { store } from "./store.js";
 import { html } from "./ui.js";
 
 // The theme's own colors, so people keep their colors in every theme and each one fits it.
@@ -71,9 +72,11 @@ export function initials(name) {
 
 /** The address of a person's picture, or undefined without one. Its version keeps a changed picture from showing stale. */
 export function avatarSrc(person) {
-    return person?.avatar
-        ? `/api/avatar/${encodeURIComponent(person.id)}?v=${person.avatar}`
-        : undefined;
+    // Presence and a few other lists carry no picture: the people list is where its version is.
+    const version =
+        person?.avatar ?? store.state.users.find((each) => each.id === person?.id)?.avatar;
+
+    return version ? `/api/avatar/${encodeURIComponent(person.id)}?v=${version}` : undefined;
 }
 
 /** A picture file as the small square PNG that is sent: its middle, cropped, at 192px. */
@@ -114,11 +117,15 @@ export function Avatar({ person, size = 24 }) {
           ? `${person.name} (away)`
           : person.name;
 
+    const src = avatarSrc(person);
+    // Initials grow with a big avatar; small ones keep the stylesheet's size.
+    const font = size > 30 ? `;font-size:${Math.round(size * 0.4)}px` : "";
+
     return html`<span
         class=${`avatar ${state}`}
-        style=${`--who:${personColor(person.id)};width:${size}px;height:${size}px`}
+        style=${`--who:${personColor(person.id)};width:${size}px;height:${size}px${font}`}
         title=${title}
     >
-        ${avatarSrc(person) ? html`<img class="avatar-img" src=${avatarSrc(person)} alt="" />` : initials(person.name)}
+        ${src ? html`<img class="avatar-img" src=${src} alt="" />` : initials(person.name)}
     </span>`;
 }

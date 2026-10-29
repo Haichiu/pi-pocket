@@ -1,9 +1,11 @@
 // Profile pictures: set, shown to others by version, refused when not a picture, removed.
-import { cleanUp, openApp, root, scriptedModel } from "./helpers.ts";
+import { cleanUp, newSession, openApp, root, scriptedModel } from "./helpers.ts";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { dataDir } from "../src/server/config.ts";
 import { createHandler } from "../src/server/http.ts";
 
 let app: Awaited<ReturnType<typeof openApp>>;
@@ -72,4 +74,33 @@ test("only pictures of an allowed type and size are kept", async () => {
 
     assert.equal((await call(guest.token, "/api/me/avatar", "POST", big)).status, 413);
     assert.equal((await people()).find((each) => each.id === guest.id)?.avatar, undefined);
+});
+
+test("a picture is for people who share a session with its owner, and for people signed in", async () => {
+    assert.equal((await call(guest.token, "/api/me/avatar", "POST", PNG)).status, 200);
+    const mine = await newSession(app);
+    const other = await newSession(app);
+    const sam = app.config.addUser("Sam", "guest", [String(mine)]);
+    const eve = app.config.addUser("Eve", "guest", [String(other)]);
+
+    app.config.updateUser(guest.id, { sessions: [String(other)] });
+
+    assert.equal((await call(eve.token, `/api/avatar/${guest.id}`, "GET")).status, 200);
+    // Sam shares no session with the owner of the picture: it is as if the person did not exist.
+    assert.equal((await call(sam.token, `/api/avatar/${guest.id}`, "GET")).status, 404);
+    assert.equal((await fetch(`${base}/api/avatar/${guest.id}`)).status, 401);
+    assert.equal((await fetch(`${base}/api/me/avatar`, { method: "POST", body: PNG })).status, 401);
+    app.config.updateUser(guest.id, { sessions: undefined });
+    await call(guest.token, "/api/me/avatar", "DELETE");
+});
+
+test("removing a person removes their picture", async () => {
+    const gone = app.config.addUser("Gone", "guest");
+
+    assert.equal((await call(gone.token, "/api/me/avatar", "POST", PNG)).status, 200);
+    const file = join(dataDir(), "avatars", gone.user.id);
+
+    assert.equal(existsSync(file), true);
+    app.removeUser(app.config.userById(app.config.users[0]!.id)!, gone.user.id);
+    assert.equal(existsSync(file), false);
 });

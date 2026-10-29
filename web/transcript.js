@@ -406,6 +406,8 @@ function UserEntry({ entry, view, users }) {
               ? "var(--muted)"
               : personColor(authorId);
 
+    const picture = avatarSrc({ id: authorId });
+
     // Who it is from, for themes: you, someone else, a linked session, or no one the app knows (Pi's schedule, the main
     // agent, a watch or a webhook).
     const from =
@@ -446,16 +448,7 @@ function UserEntry({ entry, view, users }) {
                     style=${`--who:${mark}`}
                     aria-hidden="true"
                 >
-                    ${
-                        avatarSrc(store.state.users.find((each) => each.id === authorId))
-                            ? html`<img
-                                  src=${avatarSrc(store.state.users.find((each) => each.id === authorId))}
-                                  alt=""
-                              />`
-                            : name
-                              ? initials(name)
-                              : "›"
-                    }
+                    ${picture ? html`<img src=${picture} alt="" />` : name ? initials(name) : "›"}
                 </span>
                 ${name && html`<b class="prompt-author" data-part="prompt-author">${name}</b>`}
                 ${entry.at && html`<span class="prompt-time">${clock(entry.at)}</span>`}

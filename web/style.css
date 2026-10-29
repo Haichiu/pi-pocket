@@ -8152,14 +8152,11 @@ body.plain-page {
     color: var(--who, var(--accent));
     border: 0;
     border-radius: 50%;
+    overflow: hidden;
     font-size: 0.62rem;
     font-weight: 600;
     line-height: 1;
     letter-spacing: 0;
-}
-
-.avatar {
-    overflow: hidden;
 }
 
 .avatar-img,
@@ -8168,6 +8165,10 @@ body.plain-page {
     height: 100%;
     object-fit: cover;
     display: block;
+    /* A pale picture keeps its edge on a pale theme. */
+    outline: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    outline-offset: -1px;
+    border-radius: 50%;
 }
 
 .avatar.typing {
@@ -8177,6 +8178,7 @@ body.plain-page {
 @keyframes avatar-typing {
     50% {
         background: var(--accent-soft);
+        box-shadow: 0 0 0 2px var(--accent-soft);
     }
 }
 
@@ -17578,10 +17580,6 @@ pre.gallery-code {
 .my-photo {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0;
-}
-
-.my-photo .person-actions {
-    margin-left: auto;
+    gap: 0.5rem;
+    padding: 0 0 1rem;
 }

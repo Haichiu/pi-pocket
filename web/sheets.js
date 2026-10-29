@@ -378,10 +378,10 @@ function sheetBody(sheet) {
                 title="Your name"
                 label="Shown on your messages to others"
                 initial=${me?.name ?? ""}
-                footer=${html`<${MyPhoto} />
-                    <button class="button ghost wide sheet-footer signout" onClick=${signOut}>
-                        <${Icon} name="logout" size=${16} /> Sign out
-                    </button>`}
+                header=${html`<${MyPhoto} />`}
+                footer=${html`<button class="button ghost wide sheet-footer signout" onClick=${signOut}>
+                    <${Icon} name="logout" size=${16} /> Sign out
+                </button>`}
                 submit=${async (value) => {
                     await api("me", { name: value });
                     const hello = await api("me");

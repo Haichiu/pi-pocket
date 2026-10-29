@@ -324,13 +324,13 @@ export function MyPhoto() {
     return html`<div class="my-photo">
         <${Avatar} person=${person} size=${48} />
         <input ref=${input} type="file" accept="image/*" hidden onChange=${choose} />
-        <button class="button small" onClick=${() => input.current.click()}>
+        <button class="button" onClick=${() => input.current.click()}>
             ${person.avatar ? "Change photo" : "Add photo"}
         </button>
         ${
             person.avatar &&
             html`<button
-                class="button small ghost"
+                class="button ghost"
                 onClick=${() => attempt(() => api("me/avatar", undefined, { method: "DELETE" }))}
             >
                 Remove photo
