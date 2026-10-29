@@ -31,8 +31,9 @@ export const SVG_ATTRIBUTES =
     );
 
 /** Presentation attributes whose value may name another element of the picture, as `url(#id)` and nothing else. */
-export const URL_ATTRIBUTES =
-    "fill stroke clip-path mask filter marker-start marker-mid marker-end".split(" ");
+const URL_ATTRIBUTES = "fill stroke clip-path mask filter marker-start marker-mid marker-end".split(
+    " ",
+);
 
 export const SANITIZER_JS = `
 var HTML_NS = "http://www.w3.org/1999/xhtml";

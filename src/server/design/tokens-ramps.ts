@@ -2,7 +2,7 @@
 import { parseColor, toOklch } from "./color.ts";
 import type { ResolvedToken } from "./system-types.ts";
 
-export interface RampProblem {
+interface RampProblem {
     group: string;
     mode: string;
     first: string;

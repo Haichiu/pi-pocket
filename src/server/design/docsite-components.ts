@@ -32,7 +32,7 @@ export function codeBlock(id: string, label: string, code: string, kind: "state"
     return `<div class="snip-wrap" data-panel="${esc(label)}" data-kind="${kind}"><button class="copy" type="button" data-copy-from="${esc(id)}" data-copy="">Copy</button><pre class="snip" id="${esc(id)}"><code>${esc(code)}</code></pre></div>`;
 }
 
-export function componentArticle(ctx: Ctx, spec: ComponentSpec, index: number): string {
+function componentArticle(ctx: Ctx, spec: ComponentSpec, index: number): string {
     const id = `comp-${idOf(spec.slug)}`;
     const states = spec.states.slice(0, MAX_STATES);
     const usage = spec.usage;

@@ -5,7 +5,7 @@ import type { ComponentSpec, SystemProblem } from "./system-types.ts";
 export const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const STATE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
 
-export interface KnownTokens {
+interface KnownTokens {
     byVar: ReadonlyMap<string, string>;
     names: ReadonlySet<string>;
 }

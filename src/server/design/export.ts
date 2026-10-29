@@ -24,7 +24,7 @@ export const EXPORT_TYPES = {
     html: { extension: "zip", mime: "application/zip" },
 } as const;
 
-export type SaveDesignOptions = {
+type SaveDesignOptions = {
     id: string;
     format: ExportFormat;
     cwd: string;
@@ -38,7 +38,7 @@ export type SaveDesignOptions = {
     signal?: AbortSignal;
 };
 
-export type ExportView = {
+type ExportView = {
     tweaks?: TweakValues;
     slide?: number | "all";
     colorScheme?: "light" | "dark";
@@ -46,7 +46,7 @@ export type ExportView = {
 };
 
 /** The pixel ratio of PPTX slide images: 2, but no side over 4096 pixels. */
-export function pptxScale(slide: DesignViewport): number {
+function pptxScale(slide: DesignViewport): number {
     return Math.max(1, Math.min(2, 4096 / Math.max(slide.width, slide.height)));
 }
 

@@ -17,7 +17,7 @@ import {
     moreTokens,
 } from "./docsite-core.ts";
 
-export const FONT_ROOTS = /^(fonts?|type|typography|text)$/i;
+const FONT_ROOTS = /^(fonts?|type|typography|text)$/i;
 
 export function typographySection(ctx: Ctx): { html: string; count: number } | undefined {
     const { limit, note } = limiter();

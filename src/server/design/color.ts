@@ -462,12 +462,6 @@ export function toOklch(color: Rgba): { l: number; c: number; h: number } {
     return { l: lightness, c: chroma, h: hue };
 }
 
-export function toOklchCss(color: Rgba): string {
-    const { l, c, h } = toOklch(color);
-
-    return `oklch(${num(l, 3)} ${num(c, 3)} ${num(h, 1)}${color.a < 1 ? ` / ${num(color.a, 3)}` : ""})`;
-}
-
 const OBJECT_SPACES: Record<string, { css: string; scale: readonly string[] }> = {
     srgb: { css: "srgb", scale: ["", "", ""] },
     "srgb-linear": { css: "srgb-linear", scale: ["", "", ""] },
@@ -484,7 +478,7 @@ const OBJECT_SPACES: Record<string, { css: string; scale: readonly string[] }> =
     "xyz-d50": { css: "xyz-d50", scale: ["", "", ""] },
 };
 
-export const COLOR_SPACES = Object.keys(OBJECT_SPACES);
+const COLOR_SPACES = Object.keys(OBJECT_SPACES);
 
 export function colorObjectCss(value: unknown): { css: string } | { error: string } {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {

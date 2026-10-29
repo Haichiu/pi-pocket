@@ -21,7 +21,7 @@ export interface RawElement {
     rect: { x: number; y: number; width: number; height: number };
 }
 
-export interface RawGroup {
+interface RawGroup {
     count: number;
     el: RawElement;
 }

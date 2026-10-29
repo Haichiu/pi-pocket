@@ -17,7 +17,7 @@ export const MAX_TOKENS = 3000;
 export const MAX_COMPONENTS = 60;
 export const MAX_ROLES = 240;
 export const MAX_PALETTE = 480;
-export const MAX_SPECIMENS = 120;
+const MAX_SPECIMENS = 120;
 export const MAX_STATES = 16;
 /** The most bytes of page: an artifact holds 2 MB, and the page keeps room under that. */
 export const MAX_PAGE = 1_800_000;
@@ -42,7 +42,7 @@ export function modeLabel(mode: string): string {
     return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-export const SEGMENT_TITLES: Record<string, string> = {
+const SEGMENT_TITLES: Record<string, string> = {
     bg: "Background",
     fg: "Foreground",
     bgcolor: "Background",
@@ -125,7 +125,7 @@ export function colorValueText(value: unknown): string | undefined {
     return color === undefined ? undefined : toHex(color);
 }
 
-export function shadowText(value: unknown): string {
+function shadowText(value: unknown): string {
     const layers = Array.isArray(value) ? value : [value];
 
     return layers
@@ -235,10 +235,9 @@ export function limiter(): { limit: <T>(list: T[]) => T[]; note: () => string } 
 // ── The page's model ───────────────────────────────────────────────────────────────────────────────────────────────
 
 /** The sections that count tokens. A token is in exactly one; their counts add up to the system's token count. */
-export type SectionId =
-    "color" | "typography" | "spacing" | "radii" | "shadows" | "motion" | "other";
+type SectionId = "color" | "typography" | "spacing" | "radii" | "shadows" | "motion" | "other";
 
-export const SECTION_HINTS: [SectionId, RegExp][] = [
+const SECTION_HINTS: [SectionId, RegExp][] = [
     ["typography", /^(font|type|text|typography|line|leading|letter|tracking)$/],
     ["spacing", /^(space|spacing|gap|size|sizes|padding|margin|inset|stack|layout)$/],
     ["radii", /^(radius|radii|round|rounded|corner|corners)$/],
@@ -407,7 +406,7 @@ export function textToken(ctx: Ctx): ResolvedToken | undefined {
 }
 
 /** Whether a mode is dark: by its ground color when the system has one, else by its name. */
-export function themeOfMode(ctx: Ctx, mode: string): "light" | "dark" {
+function themeOfMode(ctx: Ctx, mode: string): "light" | "dark" {
     const ground = colorOf(groundToken(ctx), mode);
 
     if (ground !== undefined) {
@@ -485,7 +484,7 @@ export function rowOf(ctx: Ctx, token: ResolvedToken, sample: string): string {
  * section that also has roles) and a component's own tokens are counted inside the section, each in its own line. The
  * three add up to `total`, and the sections' totals add up to the system's tokens. The System view counts the same way.
  */
-export interface SectionCount {
+interface SectionCount {
     headline: number;
     primitives: number;
     components: number;
@@ -545,7 +544,7 @@ export function moreTokens(ctx: Ctx, id: SectionId): string {
 
 export const rootOf = (token: ResolvedToken) => token.path[0]!.toLowerCase();
 
-export function valueCell(ctx: Ctx, token: ResolvedToken): string {
+function valueCell(ctx: Ctx, token: ResolvedToken): string {
     const text = variants(ctx, (mode) =>
         esc(clip(plain(token.type, valueIn(token, mode)?.value), 160)),
     );
@@ -560,7 +559,7 @@ export function anchor(id: string, label: string): string {
     return `<a class="anchor" href="#${esc(id)}" aria-label="Link to ${esc(label)}"></a>`;
 }
 
-function modeCell(ctx: Ctx, token: ResolvedToken, mode: string, across = 1): string {
+function modeCell(token: ResolvedToken, mode: string, across = 1): string {
     const value = valueIn(token, mode)?.value;
     const text =
         token.type === "shadow" ? shadowLayers(value) : esc(clip(plain(token.type, value), 160));
@@ -585,7 +584,7 @@ function sameCell(ctx: Ctx, token: ResolvedToken): string | undefined {
     });
 
     return texts.every((text) => text === texts[0])
-        ? modeCell(ctx, token, ctx.modes[0]!, ctx.modes.length)
+        ? modeCell(token, ctx.modes[0]!, ctx.modes.length)
         : undefined;
 }
 
@@ -597,7 +596,7 @@ export function tableRows(ctx: Ctx, tokens: ResolvedToken[], columns = false): s
                     ? ""
                     : ` <span class="pill warn">Deprecated${typeof token.deprecated === "string" ? `: ${esc(clip(token.deprecated, 80))}` : ""}</span>`;
 
-            return `<tr data-q="${esc(`${token.name} ${token.cssVar} ${token.type} ${token.tier} ${token.description ?? ""}`.toLowerCase())}"><td data-label="Token"><span class="${deprecated === "" ? "" : "dep"}">${copyName(token)}</span>${token.cssVar === `--${token.path.join("-")}` ? "" : `<button class="tk">${esc(token.cssVar)}</button>`}${deprecated}${token.description === undefined ? "" : `<div class="desc">${esc(token.description)}</div>`}</td><td data-label="Type"><span>${esc(token.type)}</span> <span class="pill">${esc(token.tier)}</span></td>${columns ? (sameCell(ctx, token) ?? ctx.modes.map((mode) => modeCell(ctx, token, mode)).join("")) : `<td data-label="Value" class="num wrap">${valueCell(ctx, token)}</td>`}</tr>`;
+            return `<tr data-q="${esc(`${token.name} ${token.cssVar} ${token.type} ${token.tier} ${token.description ?? ""}`.toLowerCase())}"><td data-label="Token"><span class="${deprecated === "" ? "" : "dep"}">${copyName(token)}</span>${token.cssVar === `--${token.path.join("-")}` ? "" : `<button class="tk">${esc(token.cssVar)}</button>`}${deprecated}${token.description === undefined ? "" : `<div class="desc">${esc(token.description)}</div>`}</td><td data-label="Type"><span>${esc(token.type)}</span> <span class="pill">${esc(token.tier)}</span></td>${columns ? (sameCell(ctx, token) ?? ctx.modes.map((mode) => modeCell(token, mode)).join("")) : `<td data-label="Value" class="num wrap">${valueCell(ctx, token)}</td>`}</tr>`;
         })
         .join("");
 }

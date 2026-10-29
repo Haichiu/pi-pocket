@@ -25,7 +25,7 @@ const Member = Type.Union([
 
 const Composite = Type.Record(Type.String(), Member);
 
-export const TokenValue: TSchema = Type.Union([
+const TokenValue: TSchema = Type.Union([
     Type.String(),
     Type.Number(),
     Type.Array(Type.Union([Type.String(), Type.Number(), Composite])),

@@ -62,7 +62,7 @@ function lstatOf(path: string): ReturnType<typeof lstatSync> | undefined {
     }
 }
 
-export function hasDesignFolder(cwd: string): boolean {
+function hasDesignFolder(cwd: string): boolean {
     const pi = kindOf(join(cwd, ".pi"), "The project's .pi folder");
 
     if (pi === undefined) {
@@ -327,7 +327,7 @@ function ensureFolder(path: string, label: string): void {
     }
 }
 
-export interface WriteResult {
+interface WriteResult {
     written: string[];
     removed: string[];
 }

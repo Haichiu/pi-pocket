@@ -11,7 +11,6 @@ import {
     parseColor,
     toHex,
     toOklch,
-    toOklchCss,
 } from "../src/server/design/color.ts";
 
 const hex = (text: string) => {
@@ -112,9 +111,7 @@ test("oklch of a color, and its CSS text", () => {
 
     assert.ok(Math.abs(blue.l - 0.719) < 0.002);
     assert.ok(Math.abs(blue.h - 264.2) < 0.5);
-    assert.equal(toOklchCss(parseColor("#7aa2f7")!), "oklch(0.719 0.132 264.2)");
     assert.equal(toOklch(parseColor("#808080")!).h, 0, "a gray has no hue");
-    assert.equal(toOklchCss(parseColor("rgb(0 0 0 / 0.5)")!), "oklch(0 0 0 / 0.5)");
 });
 
 test("the DTCG color object becomes CSS, and a bad one says how to fix it", () => {

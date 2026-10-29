@@ -18,7 +18,7 @@ import {
     moreTokens,
 } from "./docsite-core.ts";
 
-export function curvePath(value: unknown): string | undefined {
+function curvePath(value: unknown): string | undefined {
     if (
         !Array.isArray(value) ||
         value.length !== 4 ||

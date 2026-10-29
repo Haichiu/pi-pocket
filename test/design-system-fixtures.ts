@@ -323,7 +323,7 @@ ${Object.entries(states)
     .join("\n")}
 `;
 
-export const COMPONENTS: Record<string, string> = {
+const COMPONENTS: Record<string, string> = {
     button: component(
         {
             name: "Button",

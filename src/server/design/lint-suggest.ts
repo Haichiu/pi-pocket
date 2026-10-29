@@ -17,9 +17,9 @@ const NEUTRAL_TOKEN = 0.07;
 const HUE_LIMIT = 25;
 
 export type Token = TokenSet["colors"][number];
-export type Nearest = { token: Token; distance: number; exact: boolean };
+type Nearest = { token: Token; distance: number; exact: boolean };
 
-export type ColorRole = "text" | "background" | "border";
+type ColorRole = "text" | "background" | "border";
 
 const ROLE_WORDS: [ColorRole, RegExp][] = [
     ["border", /^(border|borders|line|lines|divider|dividers|stroke|outline|ring|rule|separator)$/],

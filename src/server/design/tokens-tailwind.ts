@@ -58,7 +58,7 @@ const UTILITY_WORDS = [
 
 // A color role drops the word that the utility repeats (`color.bg.surface` is `--color-surface`, so `bg-surface`). A role of another group loses a trailing `default` (`color.accent.default` is `--color-accent`).
 // When two roles want one name the first keeps it and the other keeps its full name (`--color-text-secondary`).
-export function tailwindName(token: ResolvedToken): string | undefined {
+function tailwindName(token: ResolvedToken): string | undefined {
     if (token.tailwind !== undefined) {
         return token.tailwind;
     }
@@ -196,7 +196,7 @@ export function tailwindName(token: ResolvedToken): string | undefined {
 }
 
 /** The namespaces of Tailwind v4's theme: a variable that starts with one makes utilities, so it must be of that kind. */
-export const TAILWIND_NAMESPACES = [
+const TAILWIND_NAMESPACES = [
     "color",
     "font",
     "font-weight",

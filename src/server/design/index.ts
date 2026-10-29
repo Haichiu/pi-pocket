@@ -40,7 +40,7 @@ const formatSchema = Type.Union([
     Type.Literal("html"),
 ]);
 
-export interface DesignToolDeps {
+interface DesignToolDeps {
     loadSystem?: (cwd: string) => DesignSystem | undefined;
 }
 

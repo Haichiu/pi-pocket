@@ -145,7 +145,7 @@ export function isGenericFamily(name: string): boolean {
 
 export type LengthKind = "font-size" | "space" | "radius";
 
-export interface TokenColor {
+interface TokenColor {
     name: string;
     cssVar: string;
     tier: ResolvedToken["tier"];
@@ -153,13 +153,13 @@ export interface TokenColor {
     rgba?: RgbaTuple;
 }
 
-export interface TokenFont {
+interface TokenFont {
     name: string;
     cssVar: string;
     families: string[];
 }
 
-export interface TokenLength {
+interface TokenLength {
     kind: LengthKind;
     name: string;
     cssVar: string;

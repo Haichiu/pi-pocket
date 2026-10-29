@@ -125,7 +125,7 @@ const rgbOf = (value: unknown): [number, number, number] | undefined =>
         ? [value[0], value[1], value[2]]
         : undefined;
 
-export interface ModeView {
+interface ModeView {
     mode: string;
     scheme: "light" | "dark";
     theme?: string;
