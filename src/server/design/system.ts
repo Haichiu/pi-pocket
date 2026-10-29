@@ -1,4 +1,4 @@
-// The 0.26 file is bounded UTF-8 text. A write never follows a symlink to the file itself and replaces it atomically:
+// The design-system.md file is bounded UTF-8 text. A write never follows a symlink to the file itself and replaces it atomically:
 // the new bytes go to a temporary file next to it, and a rename puts them in place. A read never follows a symlink either.
 import { randomUUID } from "node:crypto";
 import {
