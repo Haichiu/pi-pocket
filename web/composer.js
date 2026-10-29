@@ -677,6 +677,8 @@ export function Composer() {
         if (command.args || command.template) {
             update(`/${command.name} `);
             focusEnd();
+        } else if (store.state.replyQuote) {
+            notify("info", "A quote cannot go with a command. Remove the quote to run it.");
         } else {
             runCommand({ command, arg: "" }, `/${command.name}`);
         }
