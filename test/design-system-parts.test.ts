@@ -246,11 +246,9 @@ test("a token can be pointed at another, and pointing at one that leads back is 
 
     // `bg.canvas` points at `gray.50`: pointing `gray.50` at `bg.canvas` would loop.
     assert.ok(
-        system.tokens.every((token) =>
-            model
-                .targets("color.gray.50")
-                .every((each: { name: string }) => each.name !== "color.bg.canvas"),
-        ),
+        model
+            .targets("color.gray.50")
+            .every((each: { name: string }) => each.name !== "color.bg.canvas"),
     );
     assert.ok(
         model.targets("color.bg.canvas").every((each: { type: string }) => each.type === "color"),
