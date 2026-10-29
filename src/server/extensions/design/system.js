@@ -964,8 +964,6 @@ const editKey = (op) => (op.kind === "guidelines" ? GUIDELINES : keyOf(op.mode, 
 
 export const tokenEdit = (mode, token, raw) => ({ kind: "token", mode, token, raw });
 
-export const inheritEdit = (mode, token) => tokenEdit(mode, token, { inherit: true });
-
 export const guidelinesEdit = (text) => ({ kind: "guidelines", text });
 
 // Past this, the oldest step that a later one shadows goes first.
@@ -1224,19 +1222,6 @@ export function shadowLines(value) {
     return (Array.isArray(value) ? value : [value])
         .filter(isObject)
         .map((layer) => ({ words: layerWords(layer), color: layer.color }));
-}
-
-export function shadowSummary(value) {
-    const lines = shadowLines(value);
-
-    if (lines.length === 0) {
-        return "";
-    }
-
-    return [
-        lines[0].words,
-        ...(lines.length > 1 ? [`+${lines.length - 1} layer${lines.length === 2 ? "" : "s"}`] : []),
-    ].join(" · ");
 }
 
 export const unsavedCount = (system, history) => (system ? changeOf(system, history).count : 0);

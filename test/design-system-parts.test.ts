@@ -703,7 +703,7 @@ test("a mode's token is its own or the default's: the engine says which, an edit
 
     const history = sys.push(
         sys.emptyHistory(),
-        sys.inheritEdit("dark", "color.bg.canvas"),
+        sys.tokenEdit("dark", "color.bg.canvas", { inherit: true }),
         1,
         false,
     );
@@ -728,7 +728,7 @@ test("a mode's token is its own or the default's: the engine says which, an edit
         assert.equal(
             sys.changeOf(
                 system,
-                sys.push(sys.emptyHistory(), sys.inheritEdit(mode, token), 1, false),
+                sys.push(sys.emptyHistory(), sys.tokenEdit(mode, token, { inherit: true }), 1, false),
             ).count,
             0,
             `${mode} ${token}`,
@@ -845,41 +845,6 @@ test("a color lists all its contrast pairs, and a pair that is exempt is a note 
     );
 });
 
-test("a shadow is told in words for its tile: y, blur, alpha, and x and spread only when they are not 0", () => {
-    const model = sys.createModel(system);
-    const of = (name: string) => sys.shadowSummary(model.value(name, "light").value);
-
-    assert.equal(of("shadow.sm"), "y 1 · blur 2 · 12%");
-    assert.equal(of("shadow.md"), "y 6 · blur 16 · spread -4 · 16%");
-    assert.equal(of("shadow.lg"), "y 16 · blur 48 · spread -12 · 40%");
-    assert.equal(
-        sys.shadowSummary([
-            { color: "#112233", offsetX: "2px", offsetY: "2px", blur: "4px", spread: "0px" },
-            { color: "#00000040", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "1px" },
-            { color: "#00000040", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "2px" },
-        ]),
-        "x 2 · y 2 · blur 4 · +2 layers",
-    );
-    assert.equal(
-        sys.shadowSummary([
-            { color: "#112233", offsetX: "0px", offsetY: "2px", blur: "4px" },
-            { color: "#00000040", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "1px" },
-        ]),
-        "y 2 · blur 4 · +1 layer",
-    );
-    assert.equal(
-        sys.shadowSummary({
-            color: "#00000080",
-            offsetX: "0px",
-            offsetY: "1px",
-            blur: "2px",
-            inset: true,
-        }),
-        "inset y 1 · blur 2 · 50%",
-    );
-    assert.equal(sys.shadowSummary(null), "");
-});
-
 test("the Ferry page's image has a real source (a small picture, not a broken icon) and still has no alt text, which the check needs", () => {
     const html = ferryPage("");
     const image = /<img data-pid="photo"[^>]*>/.exec(html)![0];
@@ -985,11 +950,4 @@ test("every layer of a shadow is told with its color, and the one-line summary n
         { words: "inset y 0 · blur 0 · spread 1 · 17%", color: "#ffffff2b" },
     ]);
     assert.deepEqual(sys.shadowLines(null), []);
-    assert.equal(
-        sys.shadowSummary([
-            { color: "#00000024", offsetX: "0px", offsetY: "24px", blur: "60px", spread: "-16px" },
-            { color: "#ffffff2b", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "1px" },
-        ]),
-        "y 24 · blur 60 · spread -16 · 14% · +1 layer",
-    );
 });
