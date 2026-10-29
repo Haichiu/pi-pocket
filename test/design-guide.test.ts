@@ -96,6 +96,39 @@ test("the section gives all of the design instructions", async () => {
     }
 });
 
+test("the section gives Claude Design's order of work, and redesigns a screen from itself", async () => {
+    const { text } = await render(folder());
+
+    for (const part of [
+        "Work in this order",
+        "one round of questions, all together",
+        "Start from what exists",
+        "mocking from scratch is the last resort",
+        "ask for it rather than invent a look",
+        "Show a first version early",
+        "caveats and next steps",
+        "Find its code first",
+        "do not rely on memory",
+        "Version 1 is the screen as it is today",
+        "a sheet over the app stays a sheet over the app",
+        "screenshot of the real screen",
+        "within what the code supports",
+        "named in your reply",
+        "Do not add sections, features, or content that the person did not ask for",
+        "a new artifact in the same group, not a new version over the last one",
+        "Research feeds the design and never replaces it",
+        "its values (type sizes, spacing, density, control heights, corners) win over these defaults",
+        "the source files of the screen that the design changes",
+    ]) {
+        assert.match(text, new RegExp(part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+
+    assert.ok(
+        text.indexOf("Work in this order") < text.indexOf("Make each design"),
+        "the order of work comes before the rules of a single design",
+    );
+});
+
 test("with no design system file, the section says so, and stays the same while nothing changed", async () => {
     const dir = folder();
 
