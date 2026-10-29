@@ -1386,7 +1386,10 @@ function TurnOnDialog({ title, declares, found, installed, busy, onCancel, onOff
                                   <span class="ext-reach-text">${row.text}</span>
                               </li>`,
                           )}
-                      </ul>`
+                      </ul>
+                      <p class="ext-quiet">
+                          The scan reads text, so the code can still reach more.
+                      </p>`
                     : found
                       ? html`<p class="ext-quiet">
                             The scan of its code found no address, key, program, or file, and it declares no hooks.
