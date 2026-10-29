@@ -1,0 +1,336 @@
+/**
+ * A Figma `.fig` container (design system scan): a ZIP of `canvas.fig` and `images/`, or a bare container of a header, a
+ * version, and chunks (a kiwi schema, then the file's data, each raw deflate or zstd). This module opens the container and
+ * hands the schema and the data to `scan-fig-kiwi.ts`.
+ *
+ * Nothing is executed, and every read is bounded: the file's size, the size after decompression (a ZIP entry's claim is
+ * checked before it is inflated, and the inflate itself has a ceiling), and the entries of the archive. A file this module
+ * cannot read throws `FigError` with a reason for a person.
+ */
+import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
+import { inflateRawSync, inflateSync, zstdDecompressSync } from "node:zlib";
+import {
+    type Budget,
+    type FigLimits,
+    FIG_LIMITS,
+    type FigSchema,
+    type Obj,
+    fail,
+    readMessage,
+    readSchema,
+} from "./scan-fig-kiwi.ts";
+
+/** The container headers that Figma writes: a file of layers, a deck, a site, a slide deck. */
+const HEADERS = new Set(["fig-kiwi", "fig-jam.", "fig-deck", "fig-make", "fig-site", "fig-buzz"]);
+
+/** The first 4 bytes of a zstd frame, as a chunk holds them. */
+const ZSTD_MAGIC = [0x28, 0xb5, 0x2f, 0xfd];
+
+/** A ZIP's end of central directory (`PK\x05\x06`), one of its entries (`PK\x01\x02`), and a local header. */
+const EOCD = 0x06054b50;
+const CENTRAL = 0x02014b50;
+const LOCAL = 0x04034b50;
+
+// --- The container --------------------------------------------------------------------------------------------------
+
+/** One entry of a ZIP's central directory. */
+interface ZipEntry {
+    name: string;
+    method: number;
+    compressed: number;
+    uncompressed: number;
+    offset: number;
+}
+
+export interface FigDecoded {
+    container: "zip" | "kiwi";
+    version: number;
+    schema: FigSchema;
+    message: Obj;
+    /** The file's nodes (`nodeChanges`): the layers, the variable collections, the variables, and the styles. */
+    nodes: Obj[];
+    /** The names of the ZIP's entries (`canvas.fig`, `meta.json`, `images/…`), bounded and not read. */
+    entries: string[];
+}
+
+/** The chunks that hold the schema and the data, from a bare container. */
+function kiwiChunks(bytes: Buffer, limits: FigLimits): { version: number; chunks: Buffer[] } {
+    const header = bytes.subarray(0, 8).toString("latin1");
+
+    if (!HEADERS.has(header)) {
+        return fail(
+            `it is not a Figma file: its first bytes are "${header.slice(0, 4).replace(/[^\x20-\x7e]/g, "?")}" and not "fig-kiwi"`,
+        );
+    }
+
+    if (bytes.length < 12) {
+        return fail("it ends before its version and its chunks");
+    }
+
+    const version = bytes.readUInt32LE(8);
+    const chunks: Buffer[] = [];
+    let at = 12;
+    let total = 0;
+
+    while (at + 4 <= bytes.length) {
+        const length = bytes.readUInt32LE(at);
+
+        at += 4;
+
+        if (length > bytes.length - at) {
+            return fail(
+                `a chunk claims ${length} bytes, more than the ${bytes.length - at} left in the file`,
+            );
+        }
+
+        total += length;
+
+        if (total > limits.raw) {
+            return fail(
+                `its chunks claim ${total} bytes, more than the ${limits.raw} this scan reads`,
+            );
+        }
+
+        chunks.push(bytes.subarray(at, at + length));
+        at += length;
+    }
+
+    return { version, chunks };
+}
+
+/** The central directory of a ZIP: its entries, without inflating anything. */
+function zipEntries(bytes: Buffer, limits: FigLimits): ZipEntry[] {
+    const floor = Math.max(0, bytes.length - 65_557);
+    let end = -1;
+
+    for (let at = bytes.length - 22; at >= floor; at--) {
+        if (bytes.readUInt32LE(at) === EOCD) {
+            end = at;
+
+            break;
+        }
+    }
+
+    if (end < 0) {
+        return fail("it is a ZIP without a central directory, so its files cannot be listed");
+    }
+
+    const count = bytes.readUInt16LE(end + 10);
+    const start = bytes.readUInt32LE(end + 16);
+
+    if (count === 0xffff || start === 0xffffffff) {
+        return fail("it is a ZIP64 file, which this scan does not read");
+    }
+
+    if (count > limits.entries) {
+        return fail(`it is a ZIP of ${count} files, more than the ${limits.entries} a .fig has`);
+    }
+
+    const entries: ZipEntry[] = [];
+    let at = start;
+
+    for (let index = 0; index < count; index++) {
+        if (at + 46 > bytes.length || bytes.readUInt32LE(at) !== CENTRAL) {
+            return fail("its ZIP central directory is broken");
+        }
+
+        const method = bytes.readUInt16LE(at + 10);
+        const compressed = bytes.readUInt32LE(at + 20);
+        const uncompressed = bytes.readUInt32LE(at + 24);
+        const nameLength = bytes.readUInt16LE(at + 28);
+        const extraLength = bytes.readUInt16LE(at + 30);
+        const commentLength = bytes.readUInt16LE(at + 32);
+        const offset = bytes.readUInt32LE(at + 42);
+
+        if (at + 46 + nameLength > bytes.length) {
+            return fail("its ZIP central directory ends in the middle of a name");
+        }
+
+        entries.push({
+            name: bytes.subarray(at + 46, at + 46 + nameLength).toString("utf8"),
+            method,
+            compressed,
+            uncompressed,
+            offset,
+        });
+        at += 46 + nameLength + extraLength + commentLength;
+    }
+
+    return entries;
+}
+
+/** One entry's bytes, inflated with a ceiling on what it may produce. */
+function zipBytes(bytes: Buffer, entry: ZipEntry, limits: FigLimits): Buffer {
+    if (entry.uncompressed > limits.raw) {
+        return fail(
+            `"${entry.name}" claims ${entry.uncompressed} bytes after decompression, more than the ${limits.raw} this scan reads`,
+        );
+    }
+
+    const ceiling = Math.min(limits.raw, entry.uncompressed + 1);
+
+    if (entry.offset + 30 > bytes.length || bytes.readUInt32LE(entry.offset) !== LOCAL) {
+        return fail(`its ZIP entry "${entry.name}" has no local header`);
+    }
+
+    const nameLength = bytes.readUInt16LE(entry.offset + 26);
+    const extraLength = bytes.readUInt16LE(entry.offset + 28);
+    const start = entry.offset + 30 + nameLength + extraLength;
+
+    if (start > bytes.length || entry.compressed > bytes.length - start) {
+        return fail(`its ZIP entry "${entry.name}" is cut short`);
+    }
+
+    const data = bytes.subarray(start, start + entry.compressed);
+
+    if (entry.method === 0) {
+        return data;
+    }
+
+    if (entry.method !== 8) {
+        return fail(
+            `its ZIP entry "${entry.name}" uses compression ${entry.method}, which is not deflate`,
+        );
+    }
+
+    return inflate(data, ceiling, entry.name);
+}
+
+/** Deflate or zstd, whichever the chunk is, with a ceiling on what it may make. */
+function inflate(data: Buffer, ceiling: number, what: string): Buffer {
+    const zstd =
+        data.length >= 4 &&
+        ZSTD_MAGIC.every((byte, at) => data[at] === byte) &&
+        typeof zstdDecompressSync === "function";
+
+    if (zstd) {
+        try {
+            return zstdDecompressSync(data, { maxOutputLength: ceiling }) as Buffer;
+        } catch (error) {
+            return fail(`"${what}" is zstd that cannot be decompressed (${reasonOf(error)})`);
+        }
+    }
+
+    for (const decompress of [inflateRawSync, inflateSync]) {
+        try {
+            return decompress(data, { maxOutputLength: ceiling }) as Buffer;
+        } catch {
+            // A chunk of either form: the next one is tried, and its error is the one reported.
+        }
+    }
+
+    return fail(
+        `"${what}" is not deflate data, or it is bigger than the ${ceiling} bytes this scan reads`,
+    );
+}
+
+const reasonOf = (error: unknown): string =>
+    error instanceof Error ? error.message.replace(/\s+/g, " ").slice(0, 160) : "unknown";
+
+/** The schema chunk and the data chunk of a `.fig`, from either container. */
+function container(
+    bytes: Buffer,
+    limits: FigLimits,
+): { container: "zip" | "kiwi"; version: number; schema: Buffer; data: Buffer; entries: string[] } {
+    const zip = bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+
+    if (!zip) {
+        const { version, chunks } = kiwiChunks(bytes, limits);
+
+        if (chunks.length < 2) {
+            return fail(`it holds ${chunks.length} chunk of data and not the 2 that a .fig has`);
+        }
+
+        return {
+            container: "kiwi",
+            version,
+            schema: inflate(chunks[0]!, limits.raw, "its schema"),
+            data: inflate(chunks[1]!, limits.raw, "its data"),
+            entries: [],
+        };
+    }
+
+    const entries = zipEntries(bytes, limits);
+    const canvas =
+        entries.find((entry) => entry.name.toLowerCase() === "canvas.fig") ??
+        entries.filter((entry) => /\.fig$/i.test(entry.name)).at(-1);
+
+    if (canvas === undefined) {
+        return fail("it is a ZIP with no canvas.fig in it, so it is not a Figma file");
+    }
+
+    const inner = zipBytes(bytes, canvas, limits);
+    const { version, chunks } = kiwiChunks(inner, limits);
+
+    if (chunks.length < 2) {
+        return fail(`its ${canvas.name} holds ${chunks.length} chunk of data and not 2`);
+    }
+
+    return {
+        container: "zip",
+        version,
+        schema: inflate(chunks[0]!, limits.raw, "its schema"),
+        data: inflate(chunks[1]!, limits.raw, "its data"),
+        entries: entries.map((entry) => entry.name),
+    };
+}
+
+/** Decodes a `.fig` in memory: its message, its nodes, and the names of its ZIP entries. */
+export function decodeFig(bytes: Buffer, limits: FigLimits = FIG_LIMITS): FigDecoded {
+    if (bytes.length === 0) {
+        return fail("the file is empty");
+    }
+
+    const budget: Budget = { limits, started: Date.now(), values: 0 };
+    const opened = container(bytes, limits);
+
+    if (opened.schema.length + opened.data.length > limits.raw) {
+        return fail(`it is more than ${limits.raw} bytes after decompression`);
+    }
+
+    const schema = readSchema(opened.schema, budget);
+    const message = readMessage(schema, opened.data, budget);
+    const changes = message.nodeChanges;
+    const nodes = Array.isArray(changes)
+        ? changes.filter((node): node is Obj => typeof node === "object" && node !== null)
+        : [];
+
+    return {
+        container: opened.container,
+        version: opened.version,
+        schema,
+        message,
+        nodes,
+        entries: opened.entries,
+    };
+}
+
+/** The bytes of a `.fig`, never through a link, and never more than the limit. */
+export function readFigBytes(path: string, limit: number = FIG_LIMITS.file): Buffer {
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+
+    try {
+        const size = fstatSync(fd).size;
+
+        if (size > limit) {
+            fail(`it is ${size} bytes, more than the ${limit} bytes this scan reads`);
+        }
+
+        const buffer = Buffer.alloc(size);
+        let read = 0;
+
+        while (read < size) {
+            const got = readSync(fd, buffer, read, size - read, null);
+
+            if (got <= 0) {
+                break;
+            }
+
+            read += got;
+        }
+
+        return buffer.subarray(0, read);
+    } finally {
+        closeSync(fd);
+    }
+}
