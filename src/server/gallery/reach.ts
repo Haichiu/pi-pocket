@@ -254,9 +254,30 @@ const CHILD_PROCESS = /\bchild_process\b/;
 /** Code that can start a program or load native code without naming it: as unknown as a program built at run time. */
 const UNNAMED_CODE =
     /\beval\s*\(|\bnew\s+Function\b|\bFunction\s*\(|\bgetBuiltinModule\b|\bprocess\s*\.\s*(?:binding|dlopen)\b|\bimport\s*\((?!\s*(?:["']|`(?!(?:\\.|[^`\\])*\$\{)))|\brequire\s*\((?!\s*(?:["']|`(?!(?:\\.|[^`\\])*\$\{)))/;
+/** Loader starts, closing parentheses, and quoted native filenames, read once rather than across overlapping gaps. */
+const NATIVE_FILE_TOKEN =
+    /\b(require|dlopen|createRequire)\s*\(|\)(\s*\()?|(?=["'`]([^"'`\n]*\.node)["'`])/g;
+
 /** A native filename needs a loader call or a path separator, not just text such as `.node` or `versions.node`. */
-const NATIVE_FILE =
-    /(?:\b(?:require|dlopen)\s*\(|\bcreateRequire\s*\([^)]*\)\s*\()[^)]*?["'`][^"'`\n]*\.node["'`]|["'`][^"'`\n]*[/\\][^"'`\n]*\.node["'`]/;
+function hasNativeFile(code: string): boolean {
+    let loader = false;
+    let create = false;
+
+    for (const match of code.matchAll(NATIVE_FILE_TOKEN)) {
+        if (match[1] === "createRequire") {
+            create = true;
+        } else if (match[1]) {
+            loader = true;
+        } else if (match[0].startsWith(")")) {
+            loader = create && match[2] !== undefined;
+            create = false;
+        } else if (loader || /[/\\]/.test(match[3]!)) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 function programsOf(code: string): string[] {
     const programs = new Set<string>();
@@ -280,7 +301,7 @@ function programsOf(code: string): string[] {
     if (
         (programs.size === 0 && CHILD_PROCESS.test(code)) ||
         UNNAMED_CODE.test(code) ||
-        NATIVE_FILE.test(code)
+        hasNativeFile(code)
     ) {
         listed.push(DYNAMIC_PROGRAM);
     }
