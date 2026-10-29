@@ -1,4 +1,4 @@
-export const CSS_PHONE = `/* ── Phone and small screens ───────────────────────────── */
+export const CSS_PHONE = `
 
 @media (max-width: 959px) {
     .layout {
@@ -76,7 +76,6 @@ export const CSS_PHONE = `/* ── Phone and small screens ──────�
         max-width: 38vw;
     }
 
-    /* Rows that fill: three to a row where they fit, and the last row's cards grow to the width. */
     .stats {
         display: flex;
         flex-wrap: wrap;
@@ -106,7 +105,6 @@ export const CSS_PHONE = `/* ── Phone and small screens ──────�
         padding: 12px;
     }
 
-    /* An odd last card takes the whole row, so none stands alone at half width. */
     .tile:last-child:nth-child(odd) {
         grid-column: 1 / -1;
     }
@@ -146,7 +144,6 @@ export const CSS_PHONE = `/* ── Phone and small screens ──────�
         font-size: 48px;
     }
 
-    /* Color cards become rows on a phone: the chip on the left, the facts on the right. */
     .cards {
         grid-template-columns: minmax(0, 1fr);
         gap: 10px;
@@ -204,7 +201,6 @@ export const CSS_PHONE = `/* ── Phone and small screens ──────�
         font-size: 13px;
     }
 
-    /* A mode's value says which mode it is, in line. */
     .ref td.num::before {
         display: inline;
         margin: 0 4px 0 0;
