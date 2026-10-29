@@ -44,7 +44,7 @@
         "start": "node bin/pi-pocket.js",
         "dev": "node bin/pi-pocket.js --cwd .",
         "check": "tsc --noEmit -p . && node test/types-file.ts && node docs-site/check-reference.mjs",
-        "test": "node --test test/*.test.ts",
+        "test": "node --test --test-concurrency=4 test/*.test.ts",
         "design:check": "node src/server/design/check-cli.ts",
         "site:publish": "gh workflow run pages.yml",
         "format": "eslint --fix . && prettier --write .",
