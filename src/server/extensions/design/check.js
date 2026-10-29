@@ -16,7 +16,7 @@ const schemeOf = (s, mode) =>
     s.system.data?.schemes?.[mode] ?? (mode === "dark" ? "dark" : "light");
 
 /** The mode for the canvas's color scheme (`dark`): the mode named for it, else the first of that scheme, else the default. */
-export function canvasMode(s, dark) {
+function canvasMode(s, dark) {
     const modes = modesOf(s);
     const want = dark ? "dark" : "light";
 
@@ -78,12 +78,11 @@ export const RULES = {
 };
 
 /** A finding about the page as a whole (a missing `lang` or `main`, a viewport tag): it has no pin, the list holds it. */
-export const pageLevel = (finding) =>
+const pageLevel = (finding) =>
     !finding.pid &&
     /^(?:|html|body|:root|html\s*>\s*body)$/i.test(String(finding.selector ?? "").trim());
 
-export const placedOn = (finding) =>
-    Boolean(finding.pid || finding.selector) && !pageLevel(finding);
+const placedOn = (finding) => Boolean(finding.pid || finding.selector) && !pageLevel(finding);
 
 export function pinsOfReport(report, focus = null) {
     return (report?.findings ?? []).flatMap((finding, index) =>

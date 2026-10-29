@@ -171,7 +171,7 @@ export function initialState() {
  * The System view's part of the state. `system` is what the server has (`status` idle, loading, ready, or failed), and
  * `history` the person's unsaved edits to it (`system.js`). `previewVars` is what the open design is told to show them.
  */
-export function systemState() {
+function systemState() {
     return {
         system: { status: "idle", data: null, legacy: null, error: "" },
         history: emptyHistory(),
