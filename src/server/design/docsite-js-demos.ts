@@ -1,4 +1,4 @@
-export const JS_DEMOS = `    // Motion demos.
+export const JS_DEMOS = `
     var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce) { root.classList.add("reduce"); $$("[data-reduce-note]").forEach(function (note) { note.hidden = false; }); }
     $$(".demo .play").forEach(function (button) {
@@ -8,7 +8,6 @@ export const JS_DEMOS = `    // Motion demos.
         });
     });
 
-    // Code tabs: one panel at a time, when script runs.
     $$("[data-tabs]").forEach(function (group) {
         var buttons = $$("button", group);
         var panels = $$("[data-panel]", group.parentNode);

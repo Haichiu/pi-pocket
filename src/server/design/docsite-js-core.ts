@@ -37,7 +37,6 @@ export const JS_CORE = `
         return Promise.resolve(fallback());
     }
 
-    // A token name (a "tk" chip) copies its own text; a button with data-copy copies that.
     document.addEventListener("click", function (event) {
         var target = event.target && event.target.closest ? event.target.closest("[data-copy], .tk") : null;
         if (!target) { return; }
@@ -54,7 +53,6 @@ export const JS_CORE = `
         });
     });
 
-    // The copy buttons of a color card, made from the three values the card carries.
     $$(".copy-row").forEach(function (row) {
         [["CSS var", "var(" + row.getAttribute("data-var") + ")"], ["Tailwind", row.getAttribute("data-tw")], ["JSON", row.getAttribute("data-json")]].forEach(function (pair) {
             if (!pair[1]) { return; }

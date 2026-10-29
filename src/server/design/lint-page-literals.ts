@@ -1,5 +1,5 @@
 // Plain JavaScript in a string: one part of the page script of `lint-page.ts`. The parts form one function body, so they share its locals.
-export const PAGE_LITERALS = String.raw`// ---------------------------------------------------------------------------------------------------------------------
+export const PAGE_LITERALS = String.raw`
 // Authored literals. With a system, a color, length, or font written as a literal in the page's own CSS is hard-coded
 // even when its value equals a token: it does not follow the token. The page's rules say which values were authored (a
 // computed value cannot): the colors, lengths, and font families that they set without var().
@@ -96,10 +96,6 @@ const partsOf = (cssText) => {
     return any ? parts : null;
 };
 
-// Every style rule of the page (not only those with literals): its selector, what it holds, and which properties it
-// sets. With them, "did the author set this property on this element" has an answer: a rule that matches the element
-// sets it, or its style attribute does. The rules are indexed by the id, a class, or the tag of the last compound of
-// each selector, so that an element is tried only against the rules that could match it.
 const allRules = [];
 const byId = new Map();
 const byClass = new Map();
@@ -165,7 +161,6 @@ if (input.literals === true) {
     unreadableSheet = sheetsUnreadable;
 }
 
-// Whether the rules are all known: the answer of "did the author set it" then comes from them, not from the browser's defaults.
 const declarationsKnown = input.literals === true && !unreadableSheet && !capHit;
 const matchedCache = new Map();
 const matchedRules = (el) => {
@@ -241,7 +236,6 @@ const settersOf = (prop) => {
     return names;
 };
 
-// Did a rule that matches the element, or its style attribute, set this property?
 const declaredMemo = new Map();
 const declaredOwn = (el, prop) => {
     const memo = declaredMemo.get(el) || {};

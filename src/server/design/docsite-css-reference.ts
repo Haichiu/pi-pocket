@@ -1,4 +1,4 @@
-export const CSS_REFERENCE = `/* ── Guidelines (rendered Markdown) ────────────────────── */
+export const CSS_REFERENCE = `
 
 .prose {
     max-width: 72ch;
@@ -66,7 +66,6 @@ export const CSS_REFERENCE = `/* ── Guidelines (rendered Markdown) ───
     max-width: none;
 }
 
-/* ── Reference table ───────────────────────────────────── */
 
 .ref td {
     vertical-align: top;
@@ -76,7 +75,6 @@ export const CSS_REFERENCE = `/* ── Guidelines (rendered Markdown) ───
     margin: 0 6px 4px 0;
 }
 
-/* On a wide screen a name and its variable fit on one line, and the type and tier on another. */
 @media (min-width: 641px) {
     .ref td:first-child {
         min-width: 380px;
@@ -87,7 +85,6 @@ export const CSS_REFERENCE = `/* ── Guidelines (rendered Markdown) ───
     }
 }
 
-/* The layers of a shadow: a small table, one row for each layer. */
 .sh-layers {
     display: grid;
     gap: 3px;
@@ -133,7 +130,6 @@ export const CSS_REFERENCE = `/* ── Guidelines (rendered Markdown) ───
         repeating-conic-gradient(#b9bccb 0 25%, #fff 0 50%) 0 0 / 8px 8px;
 }
 
-/* A value that is the same in every mode is one cell across the mode columns, said once. */
 .ref td.same {
     text-align: left;
 }
@@ -144,7 +140,6 @@ export const CSS_REFERENCE = `/* ── Guidelines (rendered Markdown) ───
     gap: 12px;
 }
 
-/* The words "in every mode" and a rule that runs to the end of the mode columns, so the empty columns read as covered. */
 .ref .all {
     display: flex;
     flex: 1;
@@ -204,7 +199,6 @@ export const CSS_REFERENCE = `/* ── Guidelines (rendered Markdown) ───
 }
 
 
-/* ── Links to headings, the token table's toolbar, and code blocks ─────── */
 
 .anchor {
     display: inline-grid;
@@ -295,7 +289,6 @@ tr.more button {
     font-weight: 600;
 }
 
-/* The "use it" cards take the height of their code, each its own: a short snippet has no dead area under it. */
 .uses {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
     align-items: start;
@@ -308,13 +301,10 @@ tr.more button {
     white-space: pre;
 }
 
-/* The copy button sits in the corner, so the code starts near the top and keeps clear of the button on the right. */
 .sx pre.snip {
     padding: 14px 76px 14px 16px;
 }
 
-/* Code color. The classes come from the page script's tokenizer; the colors are the system's own code tokens (set on
-   .sx by the page, so they follow the mode), and the page's own colors when the system has none. */
 .sx pre.snip {
     background: var(--sx-bg, var(--dd-sunken));
     color: var(--sx-text, var(--dd-text));

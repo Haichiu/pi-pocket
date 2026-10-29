@@ -1,4 +1,4 @@
-export const CSS_CONTENT = `/* ── Overview ──────────────────────────────────────────── */
+export const CSS_CONTENT = `
 
 .hero {
     position: relative;
@@ -169,7 +169,6 @@ details.notes ul {
     font-size: 14px;
 }
 
-/* ── Cards and swatches ────────────────────────────────── */
 
 .cards {
     display: grid;
@@ -370,7 +369,6 @@ details.notes ul {
     display: block;
 }
 
-/* ── Tables ────────────────────────────────────────────── */
 
 .table-wrap {
     margin-top: 14px;

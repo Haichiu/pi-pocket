@@ -1,6 +1,5 @@
 // Plain JavaScript in a string: one part of the page script of `lint-page.ts`. The parts form one function body, so they share its locals.
-export const PAGE_VALUES = String.raw`// ---------------------------------------------------------------------------------------------------------------------
-// Colors: any CSS color the browser knows, as red, green, blue, and alpha.
+export const PAGE_VALUES = String.raw`
 
 const canvas = doc.createElement('canvas');
 canvas.width = canvas.height = 1;
@@ -86,7 +85,6 @@ const mix = (back, front, alpha) => [
     front[2] * alpha + back[2] * (1 - alpha),
 ];
 
-// WCAG contrast of two opaque colors (0 to 255 channels).
 const contrastOf = (a, b) => {
     const lum = (c) => c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
     const [la, lb] = [lum(a), lum(b)].map((c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]);
@@ -98,8 +96,6 @@ const rootStyle = getComputedStyle(root);
 const darkCanvas = /dark/.test(rootStyle.colorScheme) && win.matchMedia('(prefers-color-scheme: dark)').matches;
 const canvasRgb = darkCanvas ? [18, 18, 18] : [255, 255, 255];
 
-// ---------------------------------------------------------------------------------------------------------------------
-// The system's values, as the browser resolves them.
 
 const probe = doc.createElement('div');
 probe.style.cssText = 'position:absolute;visibility:hidden;left:-9999px;top:0;height:0;border:0;padding:0';
@@ -121,8 +117,6 @@ const resolvedLengths = input.tokenLengths.map((token) => {
 });
 probe.remove();
 
-// ---------------------------------------------------------------------------------------------------------------------
-// What an element is: a short selector (as the inspector names it), its pid, and where it sits.
 
 const unique = (selector) => {
     try {
@@ -185,7 +179,6 @@ const infoOf = (el) => {
     };
 };
 
-// Groups of equal values: the first element and a count; the selector is worked out once, at the end.
 // Equal values are one group for each data-pid scope: a finding can then name the element a person comments on.
 const owners = new Map();
 const ownerId = (el) => {
@@ -215,13 +208,11 @@ const group = (map, key, make, el) => {
 };
 const finish = (map) => [...map.values()].map((item) => Object.assign({}, item, { el: infoOf(item.el) }));
 
-// Text whose contrast was not judged, because what is behind it is not certain.
 const notJudged = { count: 0, els: [] };
 const groups = { colors: new Map(), fonts: new Map(), sizes: new Map(), contrast: new Map(), targets: new Map(), images: new Map(), pids: new Map(), labels: new Map(), names: new Map(), zoom: new Map() };
 const headings = [];
 
 
-// ---------------------------------------------------------------------------------------------------------------------
 // What the author set. A value that the browser gives an element by itself (a button's border and padding, a heading's
 // size, black text) is not the page's, and is not judged. Each tag's defaults are read from a probe of the same tag in
 // a shadow tree, where the page's style sheets do not reach.
@@ -248,7 +239,6 @@ const defaultsOf = (el, parentPx) => {
 
         if (el.localName === 'input') probe.setAttribute('type', el.type);
 
-        // A link is only a link (blue, underlined) with an address.
         if (el.hasAttribute('href')) probe.setAttribute('href', '#');
 
         probeRoot.append(probe);
@@ -291,8 +281,6 @@ const authoredOwn = (el, prop, style) => {
     return true;
 };
 
-// A property that is inherited (color, font size, font family): set by the author where it changes from the parent's
-// to something that the tag does not have by default, or where it is inherited from such a place.
 const inheritedMemo = new Map();
 const inheritedAuthored = (el, prop) => {
     const style = getComputedStyle(el);

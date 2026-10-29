@@ -18,7 +18,6 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
     const disabled = el.matches(':disabled');
     const parentStyle = el.parentElement ? getComputedStyle(el.parentElement) : null;
 
-    // Colors in use: where each is used (text, background, border, outline).
     const used = new Set();
     const useColor = (css, role) => {
         const rgba = toRgba(css);
@@ -54,7 +53,6 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
 
     if (pxOf(style.outlineWidth) > 0 && !/^(none|hidden)$/.test(style.outlineStyle) && authoredOwn(el, 'outlineColor', style)) useColor(style.outlineColor, 'outline');
 
-    // Fonts and font sizes, and the text's contrast with what is behind it.
     // Text made invisible on purpose (a screen-reader-only label) is not judged.
     const hiddenText = /^rect\(0(px)?,? ?0(px)?,? ?0(px)?,? ?0(px)?\)$/.test(style.clip) || /^inset\((50|100)%/.test(style.clipPath) || pxOf(style.textIndent) <= -500 || (/^(hidden|clip)$/.test(style.overflowX) && rect.height <= 1);
 
@@ -99,7 +97,6 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
         }
     }
 
-    // A form control's edge against what it sits on (WCAG 1.4.11).
     if (!disabled && (tag === 'select' || tag === 'textarea' || (tag === 'input' && !/^(hidden|checkbox|radio|range|color|file|button|submit|reset|image)$/.test(el.type))) && !state.uncertain) {
         const around = state.before;
         const own = state.back;
@@ -137,7 +134,6 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
         }
     }
 
-    // Spacing and radii.
     if (box) {
         const space = (value, prop, auto, uaProp) => {
             const px = Math.abs(pxOf(value));
@@ -204,7 +200,6 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
         }
     }
 
-    // Targets that a finger or a pointer must hit.
     if (!input.deck && el.matches(pointed) && !disabled && el.getAttribute('aria-hidden') !== 'true' && !el.parentElement.closest(pointed)) {
         let width = rect.width;
         let height = rect.height;
@@ -233,15 +228,12 @@ export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
         if (!inline && !bare && !unstyled && width > 0 && height > 0) targets.push({ el, left, top, width, height, tag });
     }
 
-    // Overflow: elements that end past the viewport and are not clipped or fixed.
     if (!input.deck && el !== root && el !== body && !state.clip && !state.fixed && rect.right > viewWidth + 1) offenders.push({ el, right: rect.right, content: (el.textContent || '').trim() !== '' || el.matches(pointed + ',img,video,canvas,svg') });
 
-    // Headings in order.
     const level = /^h[1-6]$/.test(tag) ? Number(tag[1]) : el.getAttribute('role') === 'heading' ? Number(el.getAttribute('aria-level')) : 0;
 
     if (level >= 1 && level <= 6 && (el.textContent || '').trim() !== '') headings.push({ el, level });
 
-    // Elements that comments and pins need a data-pid on.
     if (/^(header|nav|main|footer|section|article|aside|form|h[1-6]|button|img|a|input|select|textarea)$/.test(tag) && !el.hasAttribute('data-pid') && !(tag === 'a' && !el.hasAttribute('href'))) {
         group(groups.pids, tag, () => ({ tag }), el);
     }

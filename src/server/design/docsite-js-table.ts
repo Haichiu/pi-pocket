@@ -1,8 +1,6 @@
-export const JS_TABLE = `    // The table of tokens. Its search, type filter, and tier filter hide rows; on a phone only the first rows are in the
-    // page, and more come as the person scrolls (or taps), so that a long table costs a phone nothing until it is read.
+export const JS_TABLE = `
     var tbody = $("#tokens tbody");
     var tableRows = tbody ? $$("tr", tbody) : [];
-    // A row's type and tier are in its second cell; its CSS variable is its name with hyphens, unless the row says so.
     tableRows.forEach(function (row) {
         var spans = $$("span", row.cells[1]);
         row.__type = spans[0].textContent;

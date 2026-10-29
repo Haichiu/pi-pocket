@@ -1,4 +1,4 @@
-export const CSS_SPECIMENS = `/* ── Specimens ─────────────────────────────────────────── */
+export const CSS_SPECIMENS = `
 
 .spec {
     display: grid;
@@ -272,7 +272,6 @@ export const CSS_SPECIMENS = `/* ── Specimens ──────────
     background: var(--dd-panel);
 }
 
-/* ── Components ────────────────────────────────────────── */
 
 .comp {
     margin-top: 32px;
