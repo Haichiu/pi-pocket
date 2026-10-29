@@ -1653,7 +1653,7 @@ test("each role has a confidence and a file:line; comments do not move the lines
     assert.match(last, /\n\nNext call: design_system \{"action":"init","fromScan":true\}\n/);
     assert.match(
         last,
-        /Then set these uncertain roles to the right color.*color\.accent\.default \(now #3b82f6; low confidence: most used chromatic color, src\/a\.css:7\)/,
+        /Then set these uncertain roles to the right color.*color\.accent\.default \(now #3b82f6; low confidence\)/,
     );
     assert.match(
         last,

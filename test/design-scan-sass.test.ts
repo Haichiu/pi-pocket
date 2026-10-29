@@ -2,6 +2,7 @@
 // run as Sass runs them (the expected colors are Dart Sass's own output), across files, with the text left as it was where
 // it cannot be run.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -559,4 +560,32 @@ test("a project of many stylesheets is run for a fixed time, and what is not run
 
     assert.ok(Date.now() - started < 9000, `${Date.now() - started} ms`);
     assert.ok(made.size >= 1, "the files that were run are written");
+});
+
+test("a Sass file that ends with `{` ends (it filled the heap before: run in a child)", () => {
+    const module = new URL("../src/server/design/scan-sass-stmt.ts", import.meta.url).href;
+    const code = `import { statementsOf } from "${module}"; statementsOf("@for $i from 1 through 3 {", 1);`;
+    const child = spawnSync(process.execPath, ["--max-old-space-size=64", "--input-type=module"], {
+        input: `${code} console.log("ended");`,
+        encoding: "utf8",
+        timeout: 20_000,
+    });
+
+    assert.equal(child.stdout.trim(), "ended");
+});
+
+test("a Sass variable that points at itself (`$a: $a * 2`) does not stop the scan", () => {
+    const dir = project({ "a.scss": "$a: 4px;\n$a: $a * 2;\n.x { color: red; width: $a; }" });
+
+    assert.doesNotThrow(() => scanTokens(dir));
+});
+
+test("a chain of 25 Sass variables that each use the last one twice is read fast (minutes before)", () => {
+    const sass = Array.from({ length: 25 }, (_, i) => `$v${i + 1}: $v${i} + $v${i};`).join("\n");
+    const dir = project({ "a.scss": `$v0: 1px;\n${sass}\n.x { width: $v25; }` });
+    const scan = new URL("../src/server/design/scan.ts", import.meta.url).href;
+    const input = `import { scanTokens } from "${scan}"; scanTokens(${JSON.stringify(dir)});`;
+    const child = spawnSync(process.execPath, ["--input-type=module"], { input, timeout: 9e3 });
+
+    assert.equal(child.status, 0, "the scan ends in 9 s");
 });
