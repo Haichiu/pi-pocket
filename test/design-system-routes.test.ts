@@ -596,6 +596,34 @@ body { margin: 0; padding: 24px; background: ${hexOf("color.bg.canvas")}; font: 
     assert.equal((await call("Vic", "system/fix", { ...body, key: "fix-key-0005" })).status, 404);
 });
 
+test("a fix gives the new version the system's ds/ files as they are now, not the snapshot it was published with", async () => {
+    const system = loadDesignSystem(folder)!;
+    const hex = system.tokens.find((each) => each.name === "color.text.primary")!.modes.light!.hex;
+    const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Stale</title><link rel="stylesheet" href="ds/tokens.css"><style>h1 { color: ${hex}; }</style></head><body><main data-pid="m"><h1 data-pid="t">Stale</h1></main></body></html>`;
+    // Published when the system had none of its tokens yet: its ds/tokens.css is an empty snapshot.
+    const stale = Buffer.from(":root {}\n");
+    const hash = "0".repeat(64);
+
+    await publishDesign(app, session, { id: "stale", title: "Stale", content: page });
+    await app.harness.commit(async (tx) => {
+        await tx.doc(ArtifactAssetDoc, hash, { base64: stale.toString("base64") });
+        (await tx.doc(ArtifactsDoc, session)).items.stale!.versions[0]!.assets = {
+            "ds/tokens.css": { hash, size: stale.length, type: "text/css" },
+        };
+    }, BACKGROUND_CONTEXT);
+
+    const body = { id: "stale", mode: "light", viewport: "mobile", key: "fix-key-stale" };
+    const fixed = await call("owner", "system/fix", body);
+
+    assert.equal(fixed.status, 200, JSON.stringify(fixed.data));
+
+    const index = await app.harness.snapshot(ArtifactsDoc, session, BACKGROUND_CONTEXT);
+    const asset = index!.items.stale!.versions.at(-1)!.assets!["ds/tokens.css"]!;
+    const stored = await app.harness.snapshot(ArtifactAssetDoc, asset.hash, BACKGROUND_CONTEXT);
+
+    assert.equal(Buffer.from(stored!.base64, "base64").toString(), system.compiled.css);
+});
+
 test("a report from the check is cut to its fixed shape: the page's words are data", () => {
     const hostile = {
         viewport: { width: Number.NaN, height: 1e12 },
