@@ -1,13 +1,4 @@
-/**
- * A reader for the values of JavaScript and TypeScript modules (stream T): `export const blue = ['#eef5ff', …]`,
- * `const light = { background: gray[0], primary: blue[6] }`, `export const themes = { light, dark }`, across files
- * (`import { blue, gray } from './colors'`, `export * from`, `export { a as b } from`, `require('./x')`, `@/` and `~/`
- * aliases, workspace package names). It evaluates what a theme is made of and nothing else: object and array literals,
- * strings, templates, numbers, names, member access (`gray[0]`, `colors.brand.primary`, `palette['blue']`), spreads,
- * string `+`, `as const` and `satisfies`, and the calls that wrap an object (`defineConfig({…})`, `Object.freeze({…})`,
- * `createTheme({…})`, `rgb(1, 2, 3)`). A function body, a condition, or a call to anything else is not known. Nothing runs.
- * Every read is bounded in size, depth, and number of files.
- */
+// Nothing runs: only literals, names, and the calls that wrap an object are evaluated, and every read is bounded in size, depth, and number of files.
 import { readdirSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { folderInside, readHead } from "./scan-files.ts";
@@ -15,32 +6,24 @@ import { type Literal, UNKNOWN } from "./scan-parse.ts";
 
 const LIMITS = { files: 90, bytes: 300_000, nodes: 30_000, depth: 14, steps: 400_000 };
 
-/** A name a module exports, as a way to get its value. */
 interface Binding {
     value: () => Literal;
 }
 
-/** What a module declares: its constants, what it imports, and what it exports. */
 interface ModuleInfo {
     file: string;
     text: string;
-    /** `const name = …`: where the expression starts. */
     decls: Map<string, number>;
-    /** Names bound by `import`: the file they come from, and the name in it (`*` for the whole module, `default`). */
     imports: Map<string, { from: string; name: string }>;
-    /** Names the module exports: a local name, or a name of another module. */
     exports: Map<string, { local?: string; from?: string; name?: string; start?: number }>;
-    /** `export * from`. */
     stars: string[];
 }
 
 const ID = String.raw`[A-Za-z_$][\w$]*`;
 const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".json"];
 
-/** Wrappers whose first object argument is the value: `defineConfig({…})`, `createTheme({…})`, `Object.freeze({…})`. */
 const WRAPPER =
     /^(?:define\w*|create\w*|extend\w*|make\w*|with\w*|freeze|identity|theme|tokens|config|css\w*|style\w*|as\w*)$/i;
-/** Wrappers that merge their object arguments: `Object.assign({}, a, b)`, `merge(a, b)`, `deepmerge`. */
 const MERGER = /^(?:assign|merge|deepmerge|defaultsDeep|mergeDeep|extend|mixin)$/i;
 
 export class JsProject {
@@ -58,7 +41,6 @@ export class JsProject {
         this.rels = new Set(rels);
     }
 
-    /** The text of a file of the project, or undefined (not a file of it, too large, not readable). */
     textOf(rel: string): string | undefined {
         if (!folderInside(this.root, rel.split("/").slice(0, -1).join("/"))) {
             return undefined;
@@ -71,7 +53,6 @@ export class JsProject {
         }
     }
 
-    /** The file a specifier names, from a file: relative, an alias (`@/`, `~/`, a `paths` entry), or a workspace package. */
     resolve(from: string, spec: string): string | undefined {
         const tries: string[] = [];
 
@@ -126,7 +107,6 @@ export class JsProject {
         return undefined;
     }
 
-    /** The `paths` of a tsconfig or jsconfig, and the usual `@/` and `~/` for `src`. */
     private aliasList(): [string, string][] {
         if (this.aliases !== undefined) {
             return this.aliases;
@@ -157,7 +137,6 @@ export class JsProject {
         return this.aliases;
     }
 
-    /** The names of the project's own packages (a monorepo's `packages/*`), by the folder of each. */
     private packageNames(): Map<string, string> {
         if (this.names !== undefined) {
             return this.names;
@@ -214,9 +193,7 @@ export class JsProject {
                             out.set(name, `${dir}/${entry.name}`);
                         }
                     }
-                } catch {
-                    // No such folder.
-                }
+                } catch {}
             }
         }
 
@@ -224,8 +201,6 @@ export class JsProject {
 
         return out;
     }
-
-    // --- Modules ---------------------------------------------------------------------------------------------------------
 
     module(file: string): ModuleInfo | undefined {
         if (this.modules.has(file)) {
@@ -306,7 +281,6 @@ export class JsProject {
             }
         }
 
-        // CommonJS: `const { a, b } = require('./x')`, `const x = require('./x')`.
         for (const match of text.matchAll(
             new RegExp(
                 String.raw`^(?:const|let|var)\s+(\{[^}]*\}|${ID})\s*=\s*require\(\s*["']([^"']+)["']\s*\)`,
@@ -400,7 +374,7 @@ export class JsProject {
         return info;
     }
 
-    /** Every name a module exports, with a way to get its value. Each file is read once in a walk (`seen`), so cycles end. */
+    /** Each file is read once in a walk (`seen`), so cycles end. */
     exportsOf(file: string, depth = 0, seen = new Set<string>()): Map<string, Binding> {
         const out = new Map<string, Binding>();
         const info = this.module(file);
@@ -438,7 +412,6 @@ export class JsProject {
         return out;
     }
 
-    /** The value that a module exports under a name (`*` is an object of all of them). */
     imported(file: string, name: string): Literal {
         const all = this.exportsOf(file);
 
@@ -455,7 +428,6 @@ export class JsProject {
         return all.get(name)?.value() ?? UNKNOWN;
     }
 
-    /** The value of a constant that a module declares. */
     declared(info: ModuleInfo, name: string): Literal {
         const key = `${info.file}\0${name}`;
 
@@ -482,7 +454,6 @@ export class JsProject {
         }
     }
 
-    /** What a name means in a module: its own constant, or an import. */
     lookup(info: ModuleInfo, name: string): Literal {
         if (info.decls.has(name)) {
             return this.declared(info, name);
@@ -511,8 +482,6 @@ export class JsProject {
         }
     }
 }
-
-// --- The expression reader -------------------------------------------------------------------------------------------------
 
 class Stop extends Error {}
 
@@ -562,7 +531,6 @@ class Parser {
         return this.text[this.at] ?? "";
     }
 
-    /** Skips to the end of an expression that cannot be read: the next `,` `;` `)` `]` `}` outside brackets. */
     private skipExpression(): Literal {
         let depth = 0;
 
@@ -655,7 +623,6 @@ class Parser {
         return unknown ? UNKNOWN : out;
     }
 
-    /** An expression: a primary, its member accesses and calls, string `+`, and a TypeScript cast after it. */
     expression(depth = 0): Literal {
         this.tick();
 
@@ -705,7 +672,6 @@ class Parser {
         }
     }
 
-    /** Skips a TypeScript type after `as` or `satisfies`: `const`, `Theme`, `Record<string, string>`, `{ a: string }`. */
     private skipType(): void {
         this.skip();
 
@@ -813,7 +779,6 @@ class Parser {
         return UNKNOWN;
     }
 
-    /** The arguments of a call, evaluated; the `)` is read. */
     private arguments(depth: number): Literal[] {
         const out: Literal[] = [];
 
@@ -862,7 +827,6 @@ class Parser {
         }
 
         if (char === "(") {
-            // An arrow function (`(mode) => ({…})`), or a parenthesised expression.
             const close = this.matching(this.at);
 
             if (
@@ -951,7 +915,6 @@ class Parser {
             return this.skipExpression();
         }
 
-        // `name<Type>(`: a call with type arguments.
         if (this.text[this.at] === "<") {
             const generic = this.matchingAngle(this.at);
 
@@ -960,7 +923,6 @@ class Parser {
             }
         }
 
-        // A dotted callee: `Object.freeze`, `theme.extend`, `utils.merge`.
         let callee = word;
 
         for (;;) {
@@ -1046,7 +1008,6 @@ class Parser {
         return undefined;
     }
 
-    /** An arrow function: its body is known when it is an object (`() => ({…})`) or a plain expression of no parameters. */
     private arrow(arrowFrom: number): Literal {
         this.at = arrowFrom;
         this.skip();
@@ -1060,7 +1021,6 @@ class Parser {
         this.at += 2;
 
         if (this.peek() === "{") {
-            // A block body: not known.
             const close = this.matching(this.at);
 
             this.at = close === undefined ? this.text.length : close + 1;
@@ -1203,14 +1163,12 @@ class Parser {
                     out[key] = value;
                 }
             } else if ((after === "," || after === "}") && key !== undefined) {
-                // Shorthand: `{ blue, gray }`.
                 const found = this.project.lookup(this.info, key);
 
                 if (found !== UNKNOWN) {
                     out[key] = found;
                 }
             } else if (after === "(" || after === "<") {
-                // A method.
                 const close = this.matching(this.text.indexOf("(", this.at));
 
                 this.at = close === undefined ? this.text.length : close + 1;

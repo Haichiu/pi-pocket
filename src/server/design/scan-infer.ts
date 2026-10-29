@@ -1,9 +1,3 @@
-/**
- * The inference of the design system scan (stream T): turns the facts about a project into a DTCG draft. It keeps the
- * project's own variables (named by what they hold), decides the color roles, names a palette by hue and lightness, and
- * reads the type scale, the spacing scale, the radii, the shadows, and the motion from how the project uses them. The
- * draft is run through the tokens engine, and any token it rejects is dropped, so the result always loads.
- */
 import { px } from "./scan-parse.ts";
 import { type Category, type Facts } from "./scan-facts.ts";
 import {
@@ -32,7 +26,6 @@ import { pageIsDark, prepare, resolveDeferred } from "./scan-prepare.ts";
 
 export type { Draft, Inferred };
 
-/** Runs the scan's inference. `folder` names the system. */
 export function infer(facts: Facts, folder: string): Inferred {
     const result: Inferred = {
         draft: { tokens: {}, modes: {} },
@@ -101,11 +94,8 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     const context: InferContext = { facts, prep, classified, alt, result, book, aliasOf, uses };
 
-    // 2. Colors: the variables' values and the literal uses, merged; then the roles.
-    // 3. The palette: scales the project names, then the role colors, then the colors it uses most.
     paletteTokens(context, chooseColorRoles(context));
 
-    // 4. The other categories: the project's own variables first.
     const explicit = new Set<Category>();
 
     // A bare `--radius` has no name of its own: it takes the fallback after the variables that are named (`--radius-md`).
@@ -149,7 +139,6 @@ export function infer(facts: Facts, folder: string): Inferred {
         }
     }
 
-    // 5. What the project does not name, read from how it uses it.
     fontScale(facts, book, explicit, result);
     sizeScale(facts, book, explicit, result);
     detailScales(facts, book, explicit);
@@ -161,7 +150,6 @@ export function infer(facts: Facts, folder: string): Inferred {
     dedupeScales(book);
     result.review = reviewScales(facts, explicit, result);
 
-    // 6. Assemble, add the contrast pairs, and keep only what the engine accepts.
     const renamed = new Map<string, string>();
     const tokens = assemble([...book.tokens.values()], renamed);
     const darkTree = assemble([...book.dark.values()], renamed);
@@ -194,10 +182,7 @@ export function infer(facts: Facts, folder: string): Inferred {
     );
 }
 
-/**
- * Two names for one size (`radius.lg` and `radius.base`, both 8px) are one step of the scale: the plainer name stays, and
- * the `base` that only names where a scale starts goes.
- */
+// Two names for one size (`radius.lg` and `radius.base`, both 8px) are one step: the plainer name stays, and a `base` that only names where a scale starts goes.
 function dedupeScales(book: Book): void {
     for (const group of ["text", "space", "radius", "breakpoint"]) {
         const seen = new Map<number, string>();
@@ -226,7 +211,6 @@ function dedupeScales(book: Book): void {
     }
 }
 
-/** Adds a contrast pair to a token of the tree, if both exist. */
 function pair(tree: Obj, path: string[], on: string): void {
     let node: unknown = tree;
 
@@ -250,9 +234,6 @@ function pair(tree: Obj, path: string[], on: string): void {
     }
 }
 
-// --- Validation ----------------------------------------------------------------------------------------------------
-
-/** Runs the draft through the tokens engine; a token it refuses is dropped, so the result always loads. */
 function validate(result: Inferred): Inferred {
     for (let pass = 0; pass < 4; pass++) {
         const system = buildSystem({

@@ -1,7 +1,3 @@
-/**
- * The palette and the role tokens of the scan (stream T): the scales that the project names, then the role colors, then
- * the colors it uses most, with each mode's values.
- */
 import { contrastRatio, parseColor } from "./color.ts";
 import {
     type ColorEntry,
@@ -20,13 +16,11 @@ import { type Variable } from "./scan-variables.ts";
 import { pathOf } from "./scan-tree.ts";
 import { type ColorRoles, type InferContext } from "./scan-roles.ts";
 
-/** Adds the color tokens (palette steps, roles, the project's own color variables) to the draft. */
 export function paletteTokens(context: InferContext, roles: ColorRoles): void {
     const { facts, classified, alt, result, book, aliasOf, uses } = context;
     const { lightColors, darkColors, lightRoles, darkRoles } = roles;
     const colorVars = classified.filter((entry) => entry.category === "color");
 
-    // 3. The palette: scales the project names, then the role colors, then the colors it uses most.
     const scales = new Map<string, Classified[]>();
 
     for (const entry of colorVars) {
@@ -168,7 +162,6 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
         }
     }
 
-    // Roles.
     const roleVars = new Set<string>();
     const pendingDark: { path: string[]; hex: string }[] = [];
     // The light color each color token holds, so that two files that name one token agree on which color it is.
@@ -243,12 +236,10 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
         };
     }
 
-    // Text on the accent color: whichever of the page, the text, white, and black reads best.
     const accent =
         lightRoles.accent === undefined ? undefined : lightColors.get(lightRoles.accent.hex);
 
     if (accent !== undefined) {
-        // Text on the accent is a color the project already has: its page, its text, white, or black.
         const poolOf = (
             roles: Partial<Record<RoleName, RoleChoice>>,
             entries: Map<string, ColorEntry>,
@@ -327,7 +318,6 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
         }
     }
 
-    // The colors the project uses most that no variable or role holds yet.
     const known = [...hexPath.keys()].map((hex) => lightColors.get(hex) ?? entryOf(hex)!);
     const candidates = [...lightColors.values()].filter(
         (entry) =>
@@ -361,7 +351,6 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
         palette(entry.hex, asValue(entry.hex, lightColors));
     }
 
-    // The rest of the project's own color variables, under their own names, as aliases of the palette.
     const roleNames = new Set([...roleVars].map(kebab));
     // A Sass variable that a custom property is set from (`--bg: #{$dark-bg}`) is that property: one token, not two.
     const sources = new Set(
@@ -384,7 +373,6 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
             !scaleVars.has(entry) &&
             !sources.has(vkey(entry.variable)) &&
             !roleVars.has(entry.variable.name) &&
-            // The same variable from another file (`inkSubtle` in a theme, `--ink-subtle` in a stylesheet).
             !roleNames.has(kebab(entry.variable.name)),
     );
 
@@ -415,8 +403,6 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
         const target = entry.via === undefined ? undefined : aliasOf.get(vkey(entry.via));
         const darkHex = hexOf(entry.darkColor);
 
-        // A dark-first project keeps the colors that change as they are in the default mode, as the roles are (the light
-        // mode's file changes them), so its palette has no dark-only primitive.
         if (alt === "light" && target === undefined && darkHex !== undefined && darkHex !== hex) {
             changing.add(hex);
             book.add(path, { $value: asValue(hex, lightColors), $type: "color" });
