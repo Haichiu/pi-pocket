@@ -197,6 +197,11 @@ test("the scan reports code that can load or run unnamed programs", () => {
     assert.deepEqual(scanCode('require("a.node"); createRequire(url)("b.node")').programs, dynamic);
     assert.deepEqual(scanCode("import(`./l/${x}.js`); require(`${x}`)").programs, dynamic);
     assert.deepEqual(scanCode('fetch(`${base}/x`); "https://a.dev"').network, network);
+
+    const start = performance.now();
+
+    ['require("'.repeat(25_000), '"' + "/".repeat(100_000)].forEach(scanCode);
+    assert.ok(performance.now() - start < 500);
 });
 
 test("the scan names the files the code writes and the places it reads from", () => {
