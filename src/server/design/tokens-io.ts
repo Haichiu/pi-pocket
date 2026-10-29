@@ -412,7 +412,11 @@ export function writeFiles(cwd: string, files: Map<string, string | null>): Writ
 
         // The same bytes again: leave the file (and its time) alone.
         try {
-            if (present?.isFile() === true && readFileSync(path).equals(bytes)) {
+            if (
+                present?.isFile() === true &&
+                present.size === bytes.length &&
+                readFileSync(path).equals(bytes)
+            ) {
                 continue;
             }
         } catch {
