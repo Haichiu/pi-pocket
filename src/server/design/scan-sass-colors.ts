@@ -1,13 +1,8 @@
-/** The colors of Sass and CSS in a value (stream T): `mix()`, `lighten()`, `rgba($c, .5)`, hsl, and the rest, evaluated to a hex. */
 import { commaParts } from "./scan-parse.ts";
 import { mixColors, parseColor, type Rgba } from "./color.ts";
 import { channelColor, type Variable } from "./scan-variables.ts";
 import { clamp } from "./scan-util.ts";
 
-/**
- * A color from CSS text: a color, a channel triple, a `var()`, or a `color-mix()` of those. A variable is looked up in
- * the mode being read, and in the default scope where the mode does not set it.
- */
 export function evalColor(
     text: string,
     name: string,
@@ -22,7 +17,6 @@ export function evalColor(
         return direct;
     }
 
-    // A Sass or Less variable (`$black`, `v.$dark-text`, `@primary`).
     const sassVar = /^(?:[\w-]+\.)?[$@]([\w-]+)$/.exec(trimmed);
 
     if (sassVar !== null) {
@@ -96,7 +90,6 @@ export function evalColor(
     }
 
     const operands = args.map((arg) => {
-        // `color 40%` or `40% color`.
         const match = /^(?:(\d*\.?\d+)%\s+([\s\S]+)|([\s\S]+?)\s+(\d*\.?\d+)%)$/.exec(arg.trim());
         const colorText = match === null ? arg : (match[2] ?? match[3]!);
         const percent = match === null ? undefined : Number(match[1] ?? match[4]);
@@ -130,7 +123,6 @@ export const SASS_COLOR = new Set([
     "adjust-hue",
 ]);
 
-/** HSL of an sRGB color: hue in degrees, saturation and lightness 0 to 1. */
 function toHsl({ r, g, b }: Rgba): [number, number, number] {
     const [x, y, z] = [r, g, b];
     const high = Math.max(x, y, z);
@@ -170,7 +162,6 @@ function fromHsl(hue: number, saturation: number, lightness: number, a: number):
     return { r: r + offset, g: g + offset, b: b + offset, a };
 }
 
-/** The Sass color functions that change one color or mix two (`rgba($c, .5)`, `darken($c, 10%)`, `mix(a, b, 30%)`). */
 function sassColor(
     fn: string,
     color: Rgba,
@@ -239,7 +230,6 @@ function sassColor(
                 : mixWith(second, clamp(weight));
         }
 
-        // Bootstrap: `tint-color($c, 20%)` mixes in white, `shade-color($c, 20%)` mixes in black.
         case "tint-color":
             return value === undefined
                 ? undefined
@@ -262,7 +252,6 @@ function sassColor(
     }
 }
 
-/** `weight` of `target` mixed into `color` (Bootstrap's `mix($target, $color, $weight)`). */
 function fromMix(color: Rgba, target: Rgba, weight: number): Rgba {
     const w = clamp(weight);
 

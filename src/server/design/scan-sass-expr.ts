@@ -1,8 +1,3 @@
-/**
- * Sass expressions (stream T): `mix(white, $c, $i * 10%)`, `map.get($palette, "a-#{$i}")`, `($a + $b) / 2`, `(k: v, k2: v2)`,
- * `$a == dark and not $b`. A tokenizer and a recursive descent parser make a tree, and `evaluate` reads the tree in an
- * environment. Anything it does not understand throws `Unsupported`, and the caller leaves that text as it was.
- */
 import {
     NULL,
     bool,
@@ -21,8 +16,6 @@ import {
 
 export class Unsupported extends Error {}
 
-// --- Tokens ---------------------------------------------------------------------------------------------------------------
-
 type Tok =
     | { k: "num"; n: number; unit: string; ws: boolean }
     | { k: "str"; parts: Part[]; ws: boolean }
@@ -33,7 +26,6 @@ type Tok =
     | { k: "op"; op: string; ws: boolean }
     | { k: "end"; ws: boolean };
 
-/** A piece of a string or a name: text, or `#{expression}` as source. */
 type Part = string | { interp: string };
 
 const OPERATORS = [
@@ -57,7 +49,6 @@ const OPERATORS = [
     ":",
 ];
 
-/** The end of a `#{...}` that starts at `at` (the index of `#`): the index after its `}`. */
 function interpEnd(source: string, at: number): number {
     let depth = 0;
     let index = at + 1;
@@ -81,7 +72,6 @@ function interpEnd(source: string, at: number): number {
     throw new Unsupported("unclosed interpolation");
 }
 
-/** The index of the quote that closes the one at `at`. */
 function quoteEnd(source: string, at: number): number {
     const quote = source[at];
 
@@ -98,7 +88,6 @@ function quoteEnd(source: string, at: number): number {
     throw new Unsupported("unclosed string");
 }
 
-/** Parts of a string or a name: the text between `#{...}` and the `#{...}` themselves. */
 function partsOf(source: string): Part[] {
     const parts: Part[] = [];
     let buffer = "";
@@ -175,9 +164,7 @@ function tokenize(source: string): Tok[] {
             const end = interpEnd(source, at);
             const next = source[end];
 
-            // `#{...}` that runs into a name (`--color-#{$k}`) is part of that name; a lone one is a value.
             if (next !== undefined && /[\w-]/.test(next)) {
-                // Walk the name with its interpolations.
                 let index = at;
 
                 while (index < source.length) {
@@ -221,7 +208,6 @@ function tokenize(source: string): Tok[] {
             });
             at += match[0].length;
         } else if (at_(NAME_START, source, at) !== null) {
-            // A name, with `module.` in front of a function and `#{}` inside.
             let index = at;
 
             while (index < source.length) {
@@ -257,8 +243,6 @@ function tokenize(source: string): Tok[] {
 
     return out;
 }
-
-// --- The tree -------------------------------------------------------------------------------------------------------------
 
 export type Node =
     | { k: "num"; n: number; unit: string }
@@ -303,7 +287,6 @@ class Parser {
         this.at += 1;
     }
 
-    /** The whole text as one expression (a comma list at the top). */
     parse(): Node {
         const node = this.commaList();
 
@@ -336,7 +319,6 @@ class Parser {
         return { k: "list", items, sep: "comma", bracket: false };
     }
 
-    /** Values side by side are a list; an operator or a comma ends it. */
     spaceList(): Node {
         const items = [this.or()];
 
@@ -347,7 +329,6 @@ class Parser {
         return items.length === 1 ? items[0]! : { k: "list", items, sep: "space", bracket: false };
     }
 
-    /** Whether the next token begins another value of a space list. */
     startsValue(): boolean {
         const token = this.peek();
 
@@ -356,7 +337,6 @@ class Parser {
         }
 
         if (token.k === "op") {
-            // A `-` or `+` with space before and none after (`$a -$b`) starts a new value; so does `(` and `[`.
             return (
                 token.op === "(" ||
                 token.op === "[" ||
@@ -435,7 +415,6 @@ class Parser {
                 return left;
             }
 
-            // `$a -$b` is two values, not a subtraction.
             if (
                 token.ws &&
                 !this.tokens[this.at + 1]!.ws &&
@@ -539,7 +518,6 @@ class Parser {
         }
     }
 
-    /** A name: a function call when `(` follows with no space, else a word (`white`, `solid`, `true`). */
     identifier(token: Extract<Tok, { k: "ident" }>): Node {
         const word =
             token.parts.length === 1 && typeof token.parts[0] === "string"
@@ -565,7 +543,6 @@ class Parser {
                 } else {
                     const value = this.spaceList();
 
-                    // `$list...`: the items of a list are arguments; the pairs of a map are keyword arguments.
                     if (this.isOp("...")) {
                         this.at += 1;
                         args.push({ k: "spread", value });
@@ -597,7 +574,6 @@ class Parser {
         return { k: "str", parts: token.parts, quoted: false };
     }
 
-    /** `( … )`: grouping, a list, or a map. */
     parenthesized(): Node {
         if (this.isOp(")")) {
             this.at += 1;
@@ -666,20 +642,13 @@ export function parseExpression(source: string): Node {
     return new Parser(source).parse();
 }
 
-// --- Evaluation -----------------------------------------------------------------------------------------------------------
-
-/** What an evaluation needs from its surroundings. */
 export interface Env {
     get(name: string, namespace?: string): Value | undefined;
-    /** A user function, or undefined. */
     call(name: string, positional: Value[], named: Map<string, Value>): Value | undefined;
-    /** The built-in name of a call through a namespace of a Sass module (`c.adjust` for `@use "sass:color" as c` is `color.adjust`). */
     builtin?(name: string): string;
-    /** Counts an operation; throws when the budget is spent. */
     tick(): void;
 }
 
-/** A string or name with its interpolations evaluated. */
 export function interpolate(parts: Part[], env: Env): string {
     return parts
         .map((part) => {
@@ -702,7 +671,6 @@ const numeric = (value: Value): Num => {
     return value;
 };
 
-/** The sum, difference, product, and quotient of two numbers, with their units (a missing unit takes the other's). */
 function arithmetic(op: string, a: Num, b: Num): Value {
     switch (op) {
         case "+":
@@ -894,7 +862,6 @@ export function evaluate(node: Node, env: Env): Value {
                 return built;
             }
 
-            // A CSS function (`var()`, `calc()`, `url()`): its arguments are written out.
             if (
                 /^(?:var|calc|url|min|max|clamp|env|attr|translate|rotate|scale|linear-gradient|radial-gradient|cubic-bezier|rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark|repeat|minmax|format|local)$/.test(
                     name,

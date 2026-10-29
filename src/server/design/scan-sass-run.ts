@@ -1,11 +1,3 @@
-/**
- * A run of one stylesheet (stream T): its statements, `@each` and `@for` loops, `@if`, `@function`, `@mixin`, maps, and color
- * functions, written as the stylesheet that Sass would make, on the same lines as the source: the variables as they end
- * (`$palette: (primary-500: #3b82f6, …)`), the custom properties a loop makes (`--color-brand-300: #93c5fd`), and the rules
- * and declarations with their values worked out. Whatever cannot be evaluated is left as it was written. The code runs in
- * the module (`scan-sass-modules.ts`) of the stylesheet; `@use`, `@forward`, and `@import` load the others through the
- * project (`scan-sass-eval.ts`).
- */
 import { Unsupported, evaluate, parseExpression, type Env } from "./scan-sass-expr.ts";
 import {
     type Fn,
@@ -29,7 +21,6 @@ import {
     type Value,
 } from "./scan-sass-values.ts";
 
-/** The Sass modules that come with it: a namespace of one of them is a call to a built-in function. */
 const BUILTIN_MODULES = new Set(["color", "math", "map", "list", "string", "meta", "selector"]);
 
 class Scope {
@@ -55,7 +46,6 @@ class Scope {
         return module.lookup<Value>("vars", name, flat);
     }
 
-    /** Sets a variable and says whether it is the module's own (a global one). */
     set(name: string, value: Value, module: Module, forceGlobal: boolean): boolean {
         if (forceGlobal || this.parent === undefined) {
             module.setVar(name, value);
@@ -63,7 +53,6 @@ class Scope {
             return true;
         }
 
-        // An assignment reaches a variable that exists in this scope or in the control flow around it.
         let scope: Scope = this;
 
         for (;;) {
@@ -93,10 +82,8 @@ class Scope {
     }
 }
 
-/** What a run of one stylesheet makes. */
 export class Run implements Env {
     project: Project;
-    /** The module whose code runs: a function from another module runs in its own. */
     module: Module;
     scope: Scope;
     ticks = 0;
@@ -147,7 +134,6 @@ export class Run implements Env {
         return this.scope.get(name, this.module);
     }
 
-    /** The built-in name of a call: `c.adjust` for `@use "sass:color" as c`, `div` for `@use "sass:math" as *`. */
     builtin(name: string): string {
         const dot = name.indexOf(".");
 
@@ -166,7 +152,6 @@ export class Run implements Env {
         return name;
     }
 
-    /** A function or a mixin: by its bare name, or through a namespace (`p.fn`); a name through a built-in namespace is none. */
     find(kind: "functions" | "mixins", name: string): Fn | undefined {
         const dot = name.indexOf(".");
 
@@ -201,7 +186,6 @@ export class Run implements Env {
         const saved = [this.scope, this.returned, this.returnFlag, this.module] as const;
         const away = fn.module !== undefined && fn.module !== this.module;
 
-        // The body sees the members of the module that declared it.
         if (away) {
             this.module = fn.module!;
         }
@@ -260,7 +244,6 @@ export class Run implements Env {
         });
     }
 
-    /** Writes text on the line the statement had. */
     write(textOut: string, line: number): void {
         if (this.repeating > 0 && line < this.outLine) {
             line = this.outLine;
@@ -277,7 +260,6 @@ export class Run implements Env {
         }
     }
 
-    /** `#{…}` in a piece of text, evaluated. */
     interpolated(source: string): string {
         let out = "";
         let at = 0;
@@ -313,7 +295,7 @@ export class Run implements Env {
         return out;
     }
 
-    /** Runs the statements of a block. `emit` says whether rules and declarations are written. */
+    /** `emit` says whether rules and declarations are written. */
     block(stmts: Stmt[], emit: boolean): void {
         for (let at = 0; at < stmts.length; at++) {
             if (this.returnFlag) {
@@ -322,7 +304,6 @@ export class Run implements Env {
 
             const stmt = stmts[at]!;
 
-            // `@if` and the `@else`s after it are one statement.
             if (/^@if\b/.test(stmt.head)) {
                 let end = at + 1;
 
@@ -359,7 +340,6 @@ export class Run implements Env {
         }
     }
 
-    /** A statement that cannot be run is written as it was, with the variables it loses forgotten. */
     fallback(stmt: Stmt, emit: boolean): void {
         const assign = /^\$([\w-]+)\s*:/.exec(stmt.head);
 
@@ -385,7 +365,6 @@ export class Run implements Env {
 
         const head = stmt.head;
 
-        // A variable: `$name: expression [!default] [!global];`
         const assign = /^\$([\w-]+)\s*:\s*([\s\S]*)$/.exec(head);
 
         if (assign !== null && stmt.body === undefined) {
@@ -417,7 +396,6 @@ export class Run implements Env {
         const isGlobal = /!global\b/.test(rawValue);
         const source = rawValue.replace(flags, "").trim();
 
-        // A `!default` variable of a module that `@use … with (…)` configured takes the configured value.
         const configured =
             isDefault && this.scope.parent === undefined && !this.module.applied.has(name)
                 ? this.module.config?.get(name)
@@ -444,7 +422,6 @@ export class Run implements Env {
                 throw error;
             }
 
-            // Left as it was written: the value of the variable is unknown here, but the text may still be read.
             if (emit) {
                 this.write(`$${name}: ${this.interpolatedSafe(source)};`, stmt.line);
             }
@@ -459,7 +436,6 @@ export class Run implements Env {
 
         // A variable that a loop or a function keeps for itself is not the stylesheet's: only globals and a rule's own are written.
         if (emit && value.t !== "null" && (global || !this.scope.flow)) {
-            // An alias (`$a: $b`) or a plain value keeps its text: the scan follows an alias by itself.
             const plain =
                 /^\$[\w-]+$/.test(source) ||
                 (!/[\w-]\(|[+*/%]|#\{/.test(source) && !/\$/.test(source));
@@ -617,7 +593,6 @@ export class Run implements Env {
                 break;
         }
 
-        // Another at-rule (`@media`, `@supports`, `@layer`, `@keyframes`, `@font-face`) is written with its block.
         if (stmt.body !== undefined) {
             const before = this.scope;
 
@@ -644,7 +619,6 @@ export class Run implements Env {
         }
     }
 
-    /** The values of `with ($a: 1, $b: red !default)`, evaluated here; a `!default` entry may be overridden by an outer configuration. */
     configOf(entries: string[], outer?: Map<string, Value>): Map<string, Value> | undefined {
         const config = new Map<string, Value>(outer ?? []);
 
@@ -669,7 +643,6 @@ export class Run implements Env {
         return config.size === 0 ? undefined : config;
     }
 
-    /** `@use "path" as ns with (…)`: the module under its namespace. A path that is no file of the project is read as it was. */
     useRule(rest: string): void {
         const rule = parseModuleRule(rest);
 
@@ -704,7 +677,6 @@ export class Run implements Env {
         }
     }
 
-    /** `@forward "path" as list-* show a, $b`: the module's members, handed on to whoever `@use`s this one. */
     forwardRule(rest: string): void {
         const rule = parseModuleRule(rest);
 
@@ -730,7 +702,6 @@ export class Run implements Env {
         });
     }
 
-    /** `@import "a", "b"`: the files' members are the importer's own. */
     importRule(rest: string): void {
         for (const match of rest.matchAll(/["']([^"'\n]{1,300})["']/g)) {
             const rel = resolveModule(this.module.rel, match[1]!, this.project.files.keys());
@@ -785,7 +756,6 @@ export class Run implements Env {
         const mixin = match?.[1] === undefined ? undefined : this.find("mixins", match[1]);
 
         if (match === null || mixin === undefined || mixin.layout) {
-            // A mixin that is not here: its content block is kept, and the call is written as it was.
             if (emit && stmt.body !== undefined) {
                 this.write(`@include ${this.interpolatedSafe(rest)} {`, stmt.line);
                 this.block(stmt.body, emit);
@@ -840,7 +810,6 @@ export class Run implements Env {
         this.contentScope = this.scope;
         this.contentModule = this.module;
 
-        // The body sees the members of the module that declared the mixin.
         if (away) {
             this.module = mixin.module!;
         }
@@ -857,7 +826,6 @@ export class Run implements Env {
         }
     }
 
-    /** `@if`, `@else if`, `@else`: the body of the first whose condition holds. */
     conditional(chain: Stmt[], emit: boolean): void {
         for (const stmt of chain) {
             const head = stmt.head.replace(/^@(?:else\s+)?(?:if)?\s*/, "");
@@ -961,7 +929,6 @@ export class Run implements Env {
         }
     }
 
-    /** The body of a loop once for each step, in a scope of control flow. */
     loop(stmt: Stmt, steps: ((scope: Scope) => void)[], emit: boolean): void {
         const before = this.scope;
 
@@ -988,7 +955,6 @@ export class Run implements Env {
         }
     }
 
-    /** The maps and lists that a loop built, written once when the loop ends. */
     flush(stmt: Stmt): void {
         if (this.repeating > 0) {
             return;
