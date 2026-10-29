@@ -179,7 +179,9 @@ function SessionMenu({ title, groups, at }) {
 
     useLayoutEffect(() => {
         const menu = box.current;
-        const { width, height } = menu.getBoundingClientRect();
+        // Unscaled: the opening animation scales the menu, and a scaled size is a little short.
+        const width = menu.offsetWidth;
+        const height = menu.offsetHeight;
         const left = at.x + width + 8 > innerWidth ? Math.max(8, at.x - width) : at.x;
         const top = at.y + height + 8 > innerHeight ? Math.max(8, at.y - height) : at.y;
 
