@@ -728,7 +728,12 @@ test("a mode's token is its own or the default's: the engine says which, an edit
         assert.equal(
             sys.changeOf(
                 system,
-                sys.push(sys.emptyHistory(), sys.tokenEdit(mode, token, { inherit: true }), 1, false),
+                sys.push(
+                    sys.emptyHistory(),
+                    sys.tokenEdit(mode, token, { inherit: true }),
+                    1,
+                    false,
+                ),
             ).count,
             0,
             `${mode} ${token}`,
