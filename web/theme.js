@@ -619,7 +619,6 @@ export function apply() {
         tiling: p.tiling ? "on" : "off",
         motion: motionLevel(),
         rail: p.sidebar === "rail" ? "on" : "off",
-        sessionTabs: p.sessionTabs ? "on" : "off",
         density: p.density,
         width: WIDTHS[p.width] ? p.width : "comfortable",
     };

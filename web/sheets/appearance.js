@@ -681,7 +681,7 @@ export function AppearanceSheet() {
             }
             <${SettingRow}
                 title="Switch sessions with"
-                detail="Tabs: a strip above the session, one segment for each of the first nine sessions. The sidebar folds to its rail, and unfolds when you go back to the list"
+                detail="Tabs: a strip above the session, one segment for each of the first nine sessions. Choosing Tabs folds the sidebar to its rail, and Sidebar unfolds it"
             >
                 <div class="segmented">
                     ${[

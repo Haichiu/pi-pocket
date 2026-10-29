@@ -62,11 +62,11 @@ after(async () => {
 /** The tabs as they show: each one's session id, selection, and name. */
 const strip = () =>
     inPage<{ tabs: { selected: string; name: string }[]; rail: string | undefined }>(`
-        const tabs = [...document.querySelectorAll('.tabstrip [role="tab"]')];
+        const tabs = [...document.querySelectorAll('.tabstrip .tabstrip-tab')];
 
         return JSON.stringify({
             tabs: tabs.map((tab) => ({
-                selected: tab.getAttribute("aria-selected"),
+                selected: tab.getAttribute("aria-current"),
                 name: tab.querySelector(".tabstrip-name").textContent,
             })),
             rail: document.documentElement.dataset.rail,
@@ -86,14 +86,14 @@ test(
         const before = await strip();
 
         assert.equal(before.rail, "on", "the sidebar is folded to its rail");
-        assert.equal(before.tabs.filter((tab) => tab.selected === "true").length, 1);
+        assert.equal(before.tabs.filter((tab) => tab.selected === "page").length, 1);
 
-        const other = before.tabs.findIndex((tab) => tab.selected !== "true");
+        const other = before.tabs.findIndex((tab) => tab.selected !== "page");
 
-        await page.click({ selector: `.tabstrip [role="tab"]:nth-of-type(${other + 1})` });
-        await until(async () => (await strip()).tabs[other]?.selected === "true", "the tapped tab");
+        await page.click({ selector: `.tabstrip .tabstrip-tab:nth-of-type(${other + 1})` });
+        await until(async () => (await strip()).tabs[other]?.selected === "page", "the tapped tab");
         assert.equal(
-            (await strip()).tabs.filter((tab) => tab.selected === "true").length,
+            (await strip()).tabs.filter((tab) => tab.selected === "page").length,
             1,
             "only the tapped one is selected",
         );

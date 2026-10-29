@@ -5,16 +5,17 @@ export const TAB_MAX = 9;
 
 /**
  * The sessions the strip shows: the first `max` in workspace order, and the open session in the last place when it is
- * further down, so the strip always shows where you are. `order` is not changed.
+ * further down (or archived: `all` has every session), so the strip always shows where you are. `order` is not changed.
  */
-export function tabSessions(order, openId, max = TAB_MAX) {
+export function tabSessions(order, openId, max = TAB_MAX, all = order) {
     const first = order.slice(0, max);
 
     if (openId === null || first.some((session) => session.id === openId)) {
         return first;
     }
 
-    const open = order.find((session) => session.id === openId);
+    // An archived session is not in the order, but you are in it: it takes the place too.
+    const open = all.find((session) => session.id === openId);
 
     return open === undefined ? first : [...first.slice(0, max - 1), open];
 }

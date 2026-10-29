@@ -12,20 +12,19 @@ const STATE_WORDS = { waiting: ", needs you", working: ", working", unread: ", u
 function Tabs() {
     const { conversationId } = store.state;
     const order = workspaceOrder();
-    const tabs = tabSessions(order, conversationId);
+    const tabs = tabSessions(order, conversationId, TAB_MAX, store.state.sessions);
     const strip = useRef(null);
 
     // A strip that scrolls (a phone, many tabs) keeps the open one in view.
     useEffect(() => {
         strip.current
-            ?.querySelector('[aria-selected="true"]')
+            ?.querySelector('[aria-current="page"]')
             ?.scrollIntoView({ inline: "center", block: "nearest" });
     }, [conversationId]);
 
     return html`<nav
         class="tabstrip"
         data-part="tabstrip"
-        role="tablist"
         aria-label="Sessions"
         ref=${strip}
     >
@@ -40,8 +39,7 @@ function Tabs() {
                 class=${`tabstrip-tab ${open ? "on" : ""}`}
                 data-part="tabstrip-tab"
                 data-state=${state}
-                role="tab"
-                aria-selected=${open}
+                aria-current=${open ? "page" : undefined}
                 aria-label=${`${title}${STATE_WORDS[state]}`}
                 title=${`${title}${number <= TAB_MAX ? ` (Alt+${number})` : ""}`}
                 style=${`--folder:${folderColor(session.cwd)}`}
