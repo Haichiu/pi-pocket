@@ -2176,7 +2176,13 @@ test("a theme object shared on 5 levels (30 keys each) is walked within a budget
     const keys = (i: number) => Array.from({ length: 30 }, (_, j) => `k${j}: c${i - 1}`).join();
     const levels = [1, 2, 3, 4, 5].map((i) => `const c${i} = { ${keys(i)} };`).join("\n");
     const colors = `const c0 = { primary: "#123", border: "#456", muted: "#789" };\n${levels}`;
-    const dir = project({ "tailwind.config.js": `${colors}\nmodule.exports = { colors: c5 };` });
+    // A mode block over a fan of leaves that give nothing: `leaves` (the mode blocks' reader) walks it too.
+    const flags = `const c0 = { a: true, b: null };\n${levels}`;
+    const modes = `export const x = { dark: { k0: c5, k1: c5 }, light: { p: "#111", q: "#222", r: "#333" } };`;
+    const dir = project({
+        "tailwind.config.js": `${colors}\nmodule.exports = { colors: c5 };`,
+        "theme.js": `${flags}\n${modes}`,
+    });
     const scan = import.meta.resolve("../src/server/design/scan.ts");
     const input = `import { scanTokens } from "${scan}"; scanTokens(${JSON.stringify(dir)});`;
 
