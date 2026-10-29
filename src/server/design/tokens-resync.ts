@@ -3,11 +3,16 @@
  * losing what people wrote (docs/features.md).
  *
  * The rule, in the default mode and in each mode:
- * - A token path that the system has is KEPT as it is: its value, `$type`, `$description`, `$extensions`, and what it
- *   refers to. A person may have changed it on purpose. Its value is compared with the scan's, and listed when the two
- *   differ.
- * - A token path that the scan finds and the system lacks is ADDED, with the scan's type, value, and tier.
- * - A token path that the system has and the scan no longer finds is LISTED as not in the code now, and never deleted.
+ * - A token path that the system's files have is KEPT as it is: its value, `$type`, `$description`, `$extensions`, and
+ *   what it refers to. A person may have changed it on purpose. A path counts when `tokens.json` or a mode file declares
+ *   it, even when the engine drops the token because it does not resolve. Its value is compared with the scan's, and
+ *   listed when the two differ.
+ * - A token path that the scan finds and the system lacks is ADDED, with the scan's type, value, and tier. When the
+ *   system's default mode is not the scan's own, the token is still the scan's default node: only its value comes from
+ *   the scan's value for that mode.
+ * - A token path that the system has and the scan no longer finds is LISTED as not in the code now, and never deleted. A
+ *   path that the engine drops (it fails in a mode) is kept the same way and is not listed: there is no resolved token to
+ *   compare with the code.
  * - Guidelines and components are never touched.
  *
  * `planResync` is pure. `resyncChange` builds the one `SystemChange` that `writeDesignSystem` applies, so the checks run
@@ -16,7 +21,7 @@
  */
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
 import type { DesignSystem, ModeValue, ResolvedToken, SystemChange } from "./system-types.ts";
-import { EXT, clip, isObject, plain, type Obj } from "./tokens-base.ts";
+import { EXT, clip, isObject, plain, type Obj, type RawSystem } from "./tokens-base.ts";
 import { refName } from "./tokens-values.ts";
 import { buildSystem } from "./tokens-model.ts";
 import type { Draft } from "./scan-scales.ts";
@@ -103,13 +108,61 @@ function nodeAt(tree: unknown, path: string[]): Obj | undefined {
     return isObject(node) && Object.hasOwn(node, "$value") ? node : undefined;
 }
 
-/** Every group path of a system's tokens: a new token may become a token there, but never take the group's name. */
-function groupPaths(tokens: ResolvedToken[]): Set<string> {
+/** Every token path in one raw token file, as the engine collects them: a node with a `$value`, and a group's `$root`. */
+function pathsIn(tree: unknown, path: string[] = [], found = new Set<string>()): Set<string> {
+    if (!isObject(tree)) {
+        return found;
+    }
+
+    for (const [key, child] of Object.entries(tree)) {
+        if (!isObject(child)) {
+            continue;
+        }
+
+        if (key === "$root") {
+            if (Object.hasOwn(child, "$value")) {
+                found.add(path.join("."));
+            }
+        } else if (key.startsWith("$")) {
+            continue;
+        } else if (Object.hasOwn(child, "$value")) {
+            found.add([...path, key].join("."));
+        } else {
+            pathsIn(child, [...path, key], found);
+        }
+    }
+
+    return found;
+}
+
+/**
+ * The token paths that a system's files hold: `tokens.json` and each mode file, plus every path the engine resolved. A
+ * token that fails in a mode is left out of `system.tokens`, and it must still count as one the system has: resync keeps
+ * it as it is instead of writing the scan's token over it.
+ */
+function declaredPaths(system: DesignSystem, raw: RawSystem): Set<string> {
+    const paths = pathsIn(raw.tokens);
+
+    for (const tree of raw.modes.values()) {
+        pathsIn(tree, [], paths);
+    }
+
+    for (const token of system.tokens) {
+        paths.add(token.name);
+    }
+
+    return paths;
+}
+
+/** Every group path of a set of token names: a new token may become a token there, but never take the group's name. */
+function groupPaths(names: Iterable<string>): Set<string> {
     const groups = new Set<string>();
 
-    for (const token of tokens) {
-        for (let at = 1; at < token.path.length; at++) {
-            groups.add(token.path.slice(0, at).join("."));
+    for (const name of names) {
+        const path = name.split(".");
+
+        for (let at = 1; at < path.length; at++) {
+            groups.add(path.slice(0, at).join("."));
         }
     }
 
@@ -117,17 +170,13 @@ function groupPaths(tokens: ResolvedToken[]): Set<string> {
 }
 
 /** Why a new token path cannot be added, or undefined when it can. */
-function blocking(
-    have: Map<string, ResolvedToken>,
-    groups: Set<string>,
-    path: string[],
-): string | undefined {
+function blocking(existing: Set<string>, groups: Set<string>, path: string[]): string | undefined {
     const name = path.join(".");
 
     for (let at = 1; at < path.length; at++) {
         const parent = path.slice(0, at).join(".");
 
-        if (have.has(parent)) {
+        if (existing.has(parent)) {
             return `the system has a token at ${parent}, so ${name} has no group there`;
         }
     }
@@ -191,13 +240,19 @@ function planAdded(
     scanDefault: string,
     modes: string[],
 ): AddedToken {
-    // The value for the system's default mode: the scan's own when both default modes are the same, else the scan's
-    // value for that mode, and the scan's default value when the code has no such mode.
-    const base =
+    // The node is the code's own, so its `$type`, `$description`, and `$extensions` come with it. The value for the
+    // system's default mode is the scan's own when both default modes are the same, else the scan's value for that mode,
+    // and the scan's default value when the code has no such mode.
+    const own = addedNode(node, token);
+    const value =
         defaultMode === scanDefault
-            ? node
-            : (nodeAt(draft.modes[defaultMode] ?? {}, token.path) ?? node);
-    const own = addedNode(base, token);
+            ? undefined
+            : nodeAt(draft.modes[defaultMode] ?? {}, token.path)?.$value;
+
+    if (value !== undefined) {
+        own.$value = value;
+    }
+
     const others: AddedToken["modes"] = [];
 
     for (const mode of modes) {
@@ -215,15 +270,17 @@ function planAdded(
         token: token.name,
         node: own,
         modes: others,
-        css: reads(token.modes[defaultMode]),
+        // A mode the code lacks has the code's default value there.
+        css: reads(token.modes[defaultMode] ?? token.modes[scanDefault]),
     };
 }
 
 /**
  * The plan of a resync: what the code has and the system lacks, what the two differ about, and what the system has and
- * the code no longer defines. Writes nothing.
+ * the code no longer defines. `raw` is the system's files as they were read, whose paths are the ones the plan keeps.
+ * Writes nothing.
  */
-export function planResync(system: DesignSystem, draft: Draft): ResyncPlan {
+export function planResync(system: DesignSystem, draft: Draft, raw: RawSystem): ResyncPlan {
     const scanned = buildSystem({
         folder: system.name,
         tokens: draft.tokens,
@@ -234,8 +291,9 @@ export function planResync(system: DesignSystem, draft: Draft): ResyncPlan {
     });
     const defaultMode = system.modes[0] ?? "light";
     const scanDefault = scanned.modes[0] ?? defaultMode;
-    const have = new Map(system.tokens.map((token) => [token.name, token]));
-    const groups = groupPaths(system.tokens);
+    const existing = declaredPaths(system, raw);
+    const resolved = new Map(system.tokens.map((token) => [token.name, token]));
+    const groups = groupPaths(existing);
     const found = new Set(scanned.tokens.map((token) => token.name));
     const added: AddedToken[] = [];
     const blocked: BlockedToken[] = [];
@@ -243,24 +301,30 @@ export function planResync(system: DesignSystem, draft: Draft): ResyncPlan {
     let kept = 0;
 
     for (const token of scanned.tokens) {
-        const existing = have.get(token.name);
-
-        if (existing !== undefined) {
+        if (existing.has(token.name)) {
             kept += 1;
 
-            for (const mode of system.modes) {
-                const mine = shown(existing.modes[mode]);
-                const theirs = shown(token.modes[mode]);
+            const mine = resolved.get(token.name);
 
-                if (mine !== undefined && theirs !== undefined && mine !== theirs) {
-                    differs.push({ token: token.name, mode, system: mine, scan: theirs });
+            // A token that the engine left out (it fails in a mode) is kept, and there is no value to compare.
+            if (mine === undefined) {
+                continue;
+            }
+
+            for (const mode of system.modes) {
+                const ours = shown(mine.modes[mode]);
+                // A mode the code lacks holds the code's default value, so the two are compared there.
+                const theirs = shown(token.modes[mode] ?? token.modes[scanDefault]);
+
+                if (ours !== undefined && theirs !== undefined && ours !== theirs) {
+                    differs.push({ token: token.name, mode, system: ours, scan: theirs });
                 }
             }
 
             continue;
         }
 
-        const why = blocking(have, groups, token.path);
+        const why = blocking(existing, groups, token.path);
 
         if (why !== undefined) {
             blocked.push({ token: token.name, why });
@@ -280,7 +344,7 @@ export function planResync(system: DesignSystem, draft: Draft): ResyncPlan {
 
     // A token that is added can refer to a token that the plan cannot add (a name that is in the way in the system), and
     // then the reference does not resolve: the write refuses the change whole. Move those to blocked, until stable.
-    const known = new Set([...have.keys(), ...added.map((token) => token.token)]);
+    const known = new Set([...existing, ...added.map((token) => token.token)]);
     let again = true;
 
     while (again) {

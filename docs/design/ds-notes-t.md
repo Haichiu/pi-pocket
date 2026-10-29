@@ -310,24 +310,33 @@ system's, mode by mode:
 
 - **A path the system has is kept**: its value, `$type`, `$description`, `$extensions`, and its references. Its value is
   compared with the scan's `hex` (a color) or its `literal` (every other type, references followed), and listed when the
-  two differ. The list shows the system's value and the code's.
+  two differ. The list shows the system's value and the code's. The paths are the ones the files declare (`tokens.json`
+  and the mode files, as `loadDesignSystemWithRaw` reads them), so a token that the engine drops because it fails in a mode
+  is kept too, instead of being written over by the scan's token. A mode that the code lacks holds the code's default
+  value, and that is what the system's mode is compared with.
 - **A path the scan has and the system lacks is added**: the scan's whole token node (its value, description, contrast
   extension, and tailwind name), with `$type` and `$extensions["com.pi-pocket"].tier` made explicit, since the group
   that held the tier may not exist in the system. Its values in the system's other modes come from the scan's mode
   files; a value that equals the default's writes no override.
-- **A path the system has and the scan dropped is listed**, never deleted. A new path whose parent is a token of the
-  system is listed as not added (the write would throw).
+- **A token the system resolved and the scan dropped is listed**, never deleted. A new path whose parent is a token of
+  the system is listed as not added (the write would throw).
 - Guidelines and components are never written. A mode the code has and the system lacks is named in the report: resync
   adds no mode.
 
-`apply` writes through one `writeDesignSystem` call, so the checks run first and an added error writes nothing. The
-provenance is the new optional `SystemChange.source`, written as `$extensions["com.pi-pocket"].source` =
-`{ path, scannedAt, tokens }` on the root of `tokens.json`; the rest of that block (the name, the mode, the format, the
-reset) stays. The engine never reads `source`, so the validator ignores it and load → write → load is unchanged.
+`apply` writes through one `writeDesignSystem` call, so the checks run first and an added error writes nothing. That write
+is not a transaction: `writeFiles` puts the files in one at a time, so an I/O error partway through leaves the files
+before it written (the tool description says so). `apply` also reads `.pi/design/` a second time, after the scan
+(`resyncPlan`), because the scan runs in between and the folder can change while it does: an edit made then is in the
+plan, so the write keeps it. The provenance is the new optional `SystemChange.source`, written as
+`$extensions["com.pi-pocket"].source` = `{ path, scannedAt, tokens }` on the root of `tokens.json`; the rest of that
+block (the name, the mode, the format, the reset) stays. The engine never reads `source`, so the validator ignores it and
+load → write → load is unchanged.
 `resyncReport` puts the counts first, then up to 40 lines for each list (added, differ, not in the code, not added),
 then one "Not synced" note, all fenced as `<scan_data>` like the scan's report.
 
 Weak spots: a system whose default mode differs from the scan's (a light system, now a dark-first project) takes the
 scan's value for the system's default from the scan's mode file of that name, and the scan's default value when the code
-has no such mode (one call each, then the lists show the rest); only the modes the system already has receive values.
-Tests are in `test/design-resync.test.ts` (9).
+has no such mode (one call each, then the lists show the rest); the token keeps the scan's own `$description` and
+`$extensions`, and only its value is swapped. Only the modes the system already has receive values. A write is not a
+transaction: an I/O error partway through can leave some of the files written.
+Tests are in `test/design-resync.test.ts` (15).

@@ -28,13 +28,21 @@ import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
 import { boundedText } from "./tokens-base.ts";
 import { checkTokensBlock, scanProject, scanReport, scanRoot } from "./scan.ts";
+import type { Draft } from "./scan-scales.ts";
 import { DtcgTree, valueOrToken } from "./system-schema.ts";
 import type { DesignSystem, SystemChange } from "./system-types.ts";
 import { readDesignFile } from "./tokens-io.ts";
-import { planResync, resyncChange, resyncReport, scanPathLabel } from "./tokens-resync.ts";
+import {
+    planResync,
+    resyncChange,
+    resyncReport,
+    scanPathLabel,
+    type ResyncPlan,
+} from "./tokens-resync.ts";
 import {
     defaultModeName,
     loadDesignSystem,
+    loadDesignSystemWithRaw,
     problemLine,
     systemSummary,
     writeDesignSystem,
@@ -280,6 +288,23 @@ function checkParameters(action: string, args: Record<string, unknown>): void {
             "path is a parameter of init only with fromScan: true (the folder to scan), or of scan.",
         );
     }
+}
+
+/**
+ * The plan of a resync for a scan's draft, and the system as the folder has it now. It reads `.pi/design/` again because
+ * the scan runs in between and the folder can change while it does: an edit made in that time is in the plan, so a write
+ * keeps it instead of writing the scan's token over it.
+ */
+export function resyncPlan(cwd: string, draft: Draft): { system: DesignSystem; plan: ResyncPlan } {
+    const loaded = loadDesignSystemWithRaw(cwd);
+
+    if (loaded === undefined || loaded.system.tokens.length === 0) {
+        throw new Error(
+            "The design system changed while the scan ran: .pi/design/ is gone or has no tokens now, so resync has nothing to keep. Run resync again.",
+        );
+    }
+
+    return { system: loaded.system, plan: planResync(loaded.system, draft, loaded.raw) };
 }
 
 /** The `design_system` tool. */
@@ -584,10 +609,12 @@ export function designSystemTool(): ToolRegistration {
                     }
 
                     const scan = await scanProject(scanRoot(cwd, args.path));
-                    const plan = planResync(system, scan.draft);
+                    // The scan runs between the two loads, and the folder can change while it does: resyncPlan reads
+                    // the system again, so an edit made in that time is in the plan and the write keeps it.
+                    const { system: current, plan } = resyncPlan(cwd, scan.draft);
                     const path = scanPathLabel(args.path);
                     const report = resyncReport({
-                        name: system.name,
+                        name: current.name,
                         path,
                         files: scan.files.length,
                         saved: args.apply === true,

@@ -4,8 +4,12 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { designSystemTool } from "../src/server/design/system.ts";
-import { loadDesignSystem, writeDesignSystem } from "../src/server/design/tokens.ts";
+import { designSystemTool, resyncPlan } from "../src/server/design/system.ts";
+import {
+    loadDesignSystem,
+    loadDesignSystemWithRaw,
+    writeDesignSystem,
+} from "../src/server/design/tokens.ts";
 import type { ResyncPlan } from "../src/server/design/tokens-resync.ts";
 import { planResync, resyncChange, resyncReport } from "../src/server/design/tokens-resync.ts";
 import type { Draft } from "../src/server/design/scan-scales.ts";
@@ -329,9 +333,9 @@ test("a token whose reference the plan cannot add is blocked too, so the write g
         }),
     );
 
-    const system = loadDesignSystem(dir);
+    const loaded = loadDesignSystemWithRaw(dir);
 
-    assert.ok(system !== undefined, "the system saved");
+    assert.ok(loaded !== undefined, "the system saved");
 
     const draft: Draft = {
         tokens: {
@@ -343,7 +347,7 @@ test("a token whose reference the plan cannot add is blocked too, so the write g
         },
         modes: {},
     };
-    const plan = planResync(system, draft);
+    const plan = planResync(loaded.system, draft, loaded.raw);
 
     assert.deepEqual(plan.added, [], "neither token can be added");
     assert.deepEqual(plan.blocked.map((token) => token.token).sort(), [
@@ -351,7 +355,7 @@ test("a token whose reference the plan cannot add is blocked too, so the write g
         "color.brand.dark",
     ]);
     assert.match(
-        resyncReport({ name: system.name, path: ".", files: 1, saved: false, plan }),
+        resyncReport({ name: loaded.system.name, path: ".", files: 1, saved: false, plan }),
         /color\.accent\.hover: its reference \{color\.brand\.dark\} is not in the system/,
         "the report says why",
     );
@@ -401,4 +405,187 @@ test("the report fences token names and values from the project, and shows at mo
     assert.match(long, /… and 5 more/);
     // A page with no match gives null here and 0 lines, so the count is not 40 and the assertion fails.
     assert.equal((long.match(/^ {2}space\.\d+$/gm) ?? []).length, 40, "40 lines, then a count");
+});
+
+test("a token whose reference is broken is kept, not written over by the scan's own", async () => {
+    // The engine leaves a token out of the system when it fails in a mode: here, a reference that does not exist. The
+    // paths come from the files instead, so the code's color.accent.default does not replace the token.
+    const dir = project({
+        ".pi/design/tokens.json": JSON.stringify({
+            $extensions: { "com.pi-pocket": { name: "Broken", mode: "light" } },
+            color: {
+                $type: "color",
+                bg: { page: { $value: "#ffffff" } },
+                accent: { default: { $value: "{color.missing.500}", $description: "By hand" } },
+            },
+        }),
+        "src/styles.css": ":root{--bg:#ffffff;--accent:#3b82f6}",
+    });
+
+    assert.equal(loadDesignSystem(dir)?.tokens.length, 1, "the engine drops the broken token");
+
+    const reply = await say(run(dir, { action: "resync", apply: true }));
+
+    // Before this fix the plan added color.accent.default (2 kept as they are, not 3), and the write replaced the
+    // person's node.
+    assert.match(reply, /3 added, 2 kept as they are/);
+    assert.equal(
+        file(dir, "tokens.json").color.accent.default.$value,
+        "{color.missing.500}",
+        "the token's own value stays",
+    );
+    assert.equal(
+        file(dir, "tokens.json").color.accent.default.$description,
+        "By hand",
+        "and so does what people wrote on it",
+    );
+});
+
+test("a system edited while the scan ran is read again, so the plan does not write over the edit", async () => {
+    const dir = await saved();
+    const draft: Draft = {
+        tokens: { color: { $type: "color", plum: { $value: "#7c3aed" } } },
+        modes: {},
+    };
+    const loaded = loadDesignSystemWithRaw(dir);
+
+    assert.ok(loaded !== undefined, "the system saved");
+    assert.deepEqual(
+        planResync(loaded.system, draft, loaded.raw).added.map((token) => token.token),
+        ["color.plum"],
+        "a plan made before the edit adds the code's token",
+    );
+
+    // An edit made while the scan ran: the person wrote the token with a value and a description of their own.
+    await say(
+        run(dir, {
+            action: "set",
+            changes: [{ token: "color.plum", value: "#111111", description: "By hand" }],
+        }),
+    );
+
+    // resyncPlan is what resync calls after its scan: it reads `.pi/design/` again.
+    const { system, plan } = resyncPlan(dir, draft);
+
+    assert.deepEqual(plan.added, [], "the edit is in the plan");
+    assert.equal(plan.kept, 1, "the code's token is kept");
+    assert.deepEqual(
+        plan.differs.map((token) => [token.token, token.mode, token.system, token.scan]),
+        [
+            ["color.plum", "light", "#111111", "#7c3aed"],
+            // The code has no dark mode here, so its default value is what dark is compared with.
+            ["color.plum", "dark", "#111111", "#7c3aed"],
+        ],
+        "the person's value is compared with the code's, in each mode",
+    );
+
+    writeDesignSystem(
+        dir,
+        resyncChange(plan, { path: ".", scannedAt: new Date().toISOString(), tokens: 1 }),
+    );
+    assert.equal(
+        file(dir, "tokens.json").color.plum.$value,
+        "#111111",
+        "the write keeps the value the person wrote",
+    );
+    assert.equal(file(dir, "tokens.json").color.plum.$description, "By hand");
+    assert.match(
+        resyncReport({ name: system.name, path: ".", files: 1, saved: true, plan }),
+        /0 added, 1 kept as they are, 2 differ from the code/,
+    );
+});
+
+test("a new token keeps the code's own description and extensions when the default modes differ", async () => {
+    // A dark-first system (its default mode is dark) over a light-first project: the value for the system's default
+    // mode comes from the code's dark mode, but the token stays the code's default node.
+    const dir = project();
+
+    await say(
+        run(dir, {
+            action: "init",
+            tokens: {
+                $extensions: { "com.pi-pocket": { mode: "dark" } },
+                color: { $type: "color", bg: { page: { $value: "#0b0d12" } } },
+            },
+            modes: { light: { color: { $type: "color", bg: { page: { $value: "#ffffff" } } } } },
+        }),
+    );
+
+    const loaded = loadDesignSystemWithRaw(dir);
+
+    assert.ok(loaded !== undefined, "the system saved");
+    assert.deepEqual(loaded.system.modes, ["dark", "light"], "dark is the default mode");
+
+    const draft: Draft = {
+        tokens: {
+            color: {
+                $type: "color",
+                bg: { page: { $value: "#ffffff" } },
+                brand: {
+                    $value: "{color.bg.page}",
+                    $description: "Brand ground",
+                    $extensions: { "com.pi-pocket": { tailwind: "--color-brand" } },
+                },
+            },
+        },
+        modes: {
+            dark: {
+                color: { $type: "color", brand: { $value: "#7aa2f7", $description: "Dark only" } },
+            },
+        },
+    };
+    const plan = planResync(loaded.system, draft, loaded.raw);
+    const added = plan.added.find((token) => token.token === "color.brand");
+
+    assert.ok(added !== undefined, "the code's new token is added");
+    assert.equal(
+        added.node.$value,
+        "#7aa2f7",
+        "the value for the system's dark default comes from the code's dark mode",
+    );
+    assert.equal(
+        added.node.$description,
+        "Brand ground",
+        "the code's own description stays, not the mode file's",
+    );
+    // A missing $extensions gives undefined here, so the assertion fails.
+    const extensions = added.node.$extensions as Record<string, Record<string, unknown>>;
+
+    assert.equal(
+        extensions["com.pi-pocket"]?.tailwind,
+        "--color-brand",
+        "and so do the code's extensions",
+    );
+});
+
+test("a mode the code does not have is compared with the code's default value", () => {
+    // The system has a high-contrast mode; the code has no such mode, so its value there is its default value.
+    const dir = project({
+        ".pi/design/tokens.json": JSON.stringify({
+            $extensions: { "com.pi-pocket": { name: "Modes", mode: "light" } },
+            color: { $type: "color", accent: { default: { $value: "#3b82f6" } } },
+        }),
+        ".pi/design/tokens.high-contrast.json": JSON.stringify({
+            color: { $type: "color", accent: { default: { $value: "#0033cc" } } },
+        }),
+    });
+    const loaded = loadDesignSystemWithRaw(dir);
+
+    assert.ok(loaded !== undefined, "the system loaded");
+
+    const draft: Draft = {
+        tokens: { color: { $type: "color", accent: { default: { $value: "#3b82f6" } } } },
+        modes: {},
+    };
+    const plan = planResync(loaded.system, draft, loaded.raw);
+
+    // Before this fix the differ list was empty: the code has no high-contrast value to compare with.
+    assert.deepEqual(plan.differs, [
+        {
+            token: "color.accent.default",
+            mode: "high-contrast",
+            system: "#0033cc",
+            scan: "#3b82f6",
+        },
+    ]);
 });
