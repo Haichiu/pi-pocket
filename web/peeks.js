@@ -492,7 +492,12 @@ function PeekAsk({ approval, compact, who }) {
         <div class=${`peek-ask-what mono ${wholeOnTile(approval) ? "whole" : ""}`}>
             ${approval.subject}
         </div>
-        ${!compact && approval.reason && html`<div class="peek-ask-why">${approval.reason}</div>`}
+        ${
+            // A question (a form) is in its reason, its title alone says little: a compact tile shows it too.
+            (!compact || approval.form) &&
+            approval.reason &&
+            html`<div class="peek-ask-why">${approval.reason}</div>`
+        }
     </div>`;
 }
 

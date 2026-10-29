@@ -5946,6 +5946,7 @@ div.group-head {
     font-size: 12px;
     line-height: 1.35;
     color: var(--muted);
+    overflow-wrap: anywhere;
 }
 
 .need-foot {
