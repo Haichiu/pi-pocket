@@ -445,9 +445,22 @@ function staleResolved(cwd: string, modes: string[]): string[] {
     }
 }
 
-/** The problems as one key each, to tell which an edit adds. A "did you mean" is optional, so it is no part of the key. */
-const keyOf = (problem: SystemProblem) =>
-    `${problem.file ?? ""}|${problem.token ?? ""}|${problem.message.replace(/ (?:Did you mean .*|Add it to tokens\.json first\.)$/, "")}`;
+/** The optional suggestion that `buildSystem` adds to a missing token or reference, in exactly the shapes it writes. */
+const SUGGESTION = [
+    /^("[^"]*" is not in tokens\.json, so it has no default value\.) (?:Add it to tokens\.json first\.|Did you mean "[^"]*"\?)$/,
+    /^(The reference \{[^]*\} does not exist\.) Did you mean \{[^{}]*\}\?$/,
+];
+
+/** The problems as one key each, to tell which an edit adds. A suggestion is optional, so it is no part of the key. */
+const keyOf = (problem: SystemProblem) => {
+    let message = problem.message;
+
+    for (const shape of SUGGESTION) {
+        message = message.replace(shape, "$1");
+    }
+
+    return `${problem.file ?? ""}|${problem.token ?? ""}|${message}`;
+};
 
 /**
  * Applies `change`, checks the result, and writes the files and a fresh `dist/`. Throws a `DesignSystemError` and
