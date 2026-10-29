@@ -2013,7 +2013,7 @@ defineItem("status", {
             class=${`guard ${guard.enabled && !failed ? "" : "off"}`}
             aria-label=${`Lancet Guard ${state}`}
             title=${guard.detail}
-            onClick=${() => openSheet({ type: "extensions", tab: "installed" })}
+            onClick=${() => openSheet({ type: "extensions", tab: "installed", show: "built-in" })}
         >
             <${Icon} name="shield" size=${11} />
             <span><span class="word">guard${" "}</span>${state}</span>

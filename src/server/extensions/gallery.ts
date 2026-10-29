@@ -71,6 +71,21 @@ export default function createGallery(host: PocketHost, web: ExtensionWeb) {
     );
     web.route(
         "GET",
+        "reach",
+        handle(() => {
+            // A server from before this route: its next start has it.
+            if ((gallery as Partial<typeof gallery>).reach === undefined) {
+                throw web.error(
+                    503,
+                    "Restart the server (menu → Restart server) to see what extensions reach",
+                );
+            }
+
+            return gallery.reach();
+        }),
+    );
+    web.route(
+        "GET",
         "source/:name",
         handle((request) => gallery.source(name(request), request.signal)),
     );

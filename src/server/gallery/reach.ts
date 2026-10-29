@@ -1,0 +1,410 @@
+/**
+ * What a gallery entry can reach, read off its code: the hosts it names, the keys it reads, the programs it starts, and
+ * the files it writes; for a theme, its palette. The scan is by literal patterns, on the code with its comments taken
+ * out, so it tells what the code says and not what it does: a host built at run time is only said to be built. The
+ * results are kept in the gallery's folder, by entry and pinned files, so the code is downloaded once.
+ */
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { parseColors } from "../omarchy.ts";
+import { sha256 } from "./entry.ts";
+
+/** What the scan found, as short words for people. */
+export interface Scanned {
+    network: string[];
+    keys: string[];
+    programs: string[];
+    files: string[];
+}
+
+/** A theme's palettes, by `colors.toml`'s keys, or null where it has no such file. */
+export interface Palette {
+    colors: Record<string, string> | null;
+    colorsLight: Record<string, string> | null;
+}
+
+/** What the reading of one entry gives: what it reaches, or why it could not be read. */
+export type Reach =
+    | { kind: "extension"; commit: string; scanned: Scanned }
+    | { kind: "theme"; commit: string; palette: Palette }
+    | { kind: "extension" | "theme"; commit: string; error: string };
+
+/** Raise it when the scan changes, so results kept from an older scan are made again. */
+export const SCAN_VERSION = 1;
+
+/** The files the scan reads: code that runs. Other files are not downloaded. */
+export const SCAN_FILE = /\.(?:[cm]?[jt]s)$/i;
+/** A theme's palette files, as they are named inside its folder. */
+export const PALETTE_FILES = ["colors.toml", "colors-light.toml"];
+
+const DYNAMIC_ADDRESS = "addresses it builds at run time";
+const DYNAMIC_PROGRAM = "programs it names at run time";
+const DATA_FOLDER = "its data folder";
+const HOME_FOLDER = "your home folder";
+
+// ─── Comments ──────────────────────────────────────────────────────────────────────
+
+/** What can come before a `/` that starts a regular expression and not a division. */
+const BEFORE_REGEX = /[(,=:[!&|?{};+\-*%<>~^]/;
+
+/**
+ * The code without its comments. Strings and regular expressions are kept as they are, so a `//` in an address is not
+ * taken for a comment. Line breaks stay, so lines still count.
+ */
+export function stripComments(code: string): string {
+    let out = "";
+    let at = 0;
+    let last = "";
+
+    while (at < code.length) {
+        const char = code[at]!;
+        const next = code[at + 1];
+
+        if (char === "/" && next === "/") {
+            while (at < code.length && code[at] !== "\n") {
+                at++;
+            }
+
+            continue;
+        }
+
+        if (char === "/" && next === "*") {
+            const end = code.indexOf("*/", at + 2);
+            const stop = end === -1 ? code.length : end + 2;
+
+            out += code.slice(at, stop).replace(/[^\n]/g, " ");
+            at = stop;
+            continue;
+        }
+
+        if (char === '"' || char === "'" || char === "`") {
+            let stop = at + 1;
+
+            while (stop < code.length && code[stop] !== char) {
+                if (code[stop] === "\\") {
+                    stop++;
+                } else if (code[stop] === "\n" && char !== "`") {
+                    break;
+                }
+
+                stop++;
+            }
+
+            out += code.slice(at, stop + 1);
+            at = stop + 1;
+            last = char;
+            continue;
+        }
+
+        if (char === "/" && (last === "" || BEFORE_REGEX.test(last))) {
+            let stop = at + 1;
+            let inClass = false;
+
+            while (stop < code.length && code[stop] !== "\n") {
+                if (code[stop] === "\\") {
+                    stop++;
+                } else if (code[stop] === "[") {
+                    inClass = true;
+                } else if (code[stop] === "]") {
+                    inClass = false;
+                } else if (code[stop] === "/" && !inClass) {
+                    break;
+                }
+
+                stop++;
+            }
+
+            if (code[stop] === "/") {
+                out += code.slice(at, stop + 1);
+                at = stop + 1;
+                last = "/";
+                continue;
+            }
+        }
+
+        out += char;
+        at++;
+
+        if (!/\s/.test(char)) {
+            last = char;
+        }
+    }
+
+    return out;
+}
+
+// ─── The scan ────────────────────────────────────────────────────────────────────
+
+const URL_LITERAL = /\b(?:https?|wss?):\/\/([^\s"'`\\/?#:<>()[\]{}$]*)(?::\d+)?([^\s"'`\\]*)/gi;
+const HOST = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/;
+/** Hosts that name no outside service: this machine, standards' namespaces, and examples. */
+const QUIET_HOST =
+    /^(?:localhost|127\.[\d.]+|(?:[a-z0-9-]+\.)*(?:w3\.org|example\.com|example\.org|schema\.org|json-schema\.org))$/;
+/** A repository's page on GitHub: `/<owner>/<repo>`, and the pages under it that people read. */
+const REPO_PAGE =
+    /^\/[\w.-]+\/[\w.-]+(?:\/(?:tree|blob|issues|pull|pulls|releases|wiki|commit|commits|discussions|actions|tags)(?:\/.*)?)?\/?$/;
+const CALLS_OUT =
+    /(?<![\w$])(?:fetch|fetchPublic)\s*\(|\bnew\s+WebSocket\s*\(|\bhttps?\.request\s*\(/;
+
+function networkOf(code: string): string[] {
+    const hosts = new Set<string>();
+
+    for (const match of code.matchAll(URL_LITERAL)) {
+        const host = match[1]!.toLowerCase();
+        const path = match[2]!.replace(/[?#].*$/, "");
+
+        if (
+            !HOST.test(host) ||
+            QUIET_HOST.test(host) ||
+            ((host === "github.com" || host === "www.github.com") && REPO_PAGE.test(path))
+        ) {
+            continue;
+        }
+
+        hosts.add(host);
+    }
+
+    if (hosts.size === 0 && CALLS_OUT.test(code)) {
+        return [DYNAMIC_ADDRESS];
+    }
+
+    // A host that is another one with more after it ("github.com.helper", from a git config key) names no service.
+    return [...hosts]
+        .filter((host) => ![...hosts].some((other) => host.startsWith(`${other}.`)))
+        .sort();
+}
+
+const SECRET_NAME = /KEY|TOKEN|SECRET/i;
+const PI_KEY_CALL =
+    /(?<![\w$])(?:getApiKey|getApiKeyForProvider|getAuth|apiKeyFor)\s*\(\s*(["'`])([\w.-]{1,60})\1/g;
+const ENV_READ = /\benv(?:\??\.|\[\s*["'`])([A-Za-z_][A-Za-z0-9_]*)/g;
+const ENV_DESTRUCTURE = /\{([^{}]*)\}\s*=\s*(?:process\.)?env\b/g;
+
+function keysOf(code: string): string[] {
+    const keys = new Set<string>();
+
+    for (const match of code.matchAll(PI_KEY_CALL)) {
+        keys.add(`${match[2]} key from Pi`);
+    }
+
+    const names = new Set<string>();
+
+    for (const match of code.matchAll(ENV_READ)) {
+        names.add(match[1]!);
+    }
+
+    for (const match of code.matchAll(ENV_DESTRUCTURE)) {
+        for (const part of match[1]!.split(",")) {
+            const name = /^\s*([A-Za-z_][A-Za-z0-9_]*)/.exec(part)?.[1];
+
+            if (name !== undefined) {
+                names.add(name);
+            }
+        }
+    }
+
+    for (const name of [...names].sort()) {
+        // A name that ends in "_" is the start of one built at run time (`GIT_CONFIG_KEY_${n}`), not a key it reads.
+        if (SECRET_NAME.test(name) && !name.endsWith("_")) {
+            keys.add(`environment variable ${name}`);
+        }
+    }
+
+    if (/auth\.json/.test(code)) {
+        keys.add("Pi's auth.json");
+    }
+
+    return [...keys].sort();
+}
+
+/** A call that starts a program, with the literal that opens its arguments. */
+const PROGRAM_CALL =
+    /(?<![\w$.])(?:(?:child_process|childProcess|cp)\.)?(spawn|spawnSync|execFile|execFileSync|exec|execSync)\s*\(\s*(["'`])((?:\\.|(?!\2)[^\\\n])*)\2/g;
+const CHILD_PROCESS = /\bchild_process\b/;
+
+function programsOf(code: string): string[] {
+    const programs = new Set<string>();
+
+    for (const match of code.matchAll(PROGRAM_CALL)) {
+        const literal = match[3]!.split("${")[0]!;
+        // A command line (`exec`) starts with its program; the others are given it alone.
+        const program = (
+            match[1]!.startsWith("exec") && !match[1]!.startsWith("execFile")
+                ? literal.trim().split(/\s+/)[0]
+                : literal.trim()
+        )?.slice(0, 80);
+
+        if (program !== undefined && program !== "") {
+            programs.add(program);
+        }
+    }
+
+    if (programs.size === 0 && CHILD_PROCESS.test(code)) {
+        return [DYNAMIC_PROGRAM];
+    }
+
+    return [...programs].sort();
+}
+
+const WRITES =
+    /(?<![\w$])(?:writeFile|writeFileSync|mkdir|mkdirSync|rm|rmSync|appendFile|appendFileSync)\s*\(/;
+const AGENT_PATH = /(?:~\/|\$HOME\/|\$\{HOME\}\/)?\.pi\/agent((?:\/[A-Za-z0-9_.-]+)*)/g;
+const AGENT_JOIN = /["'`]\.pi["'`]\s*,\s*["'`]agent["'`]/;
+
+function filesOf(code: string): string[] {
+    const files: string[] = [];
+    const paths = new Set<string>();
+
+    if (WRITES.test(code)) {
+        files.push(DATA_FOLDER);
+    }
+
+    for (const match of code.matchAll(AGENT_PATH)) {
+        paths.add(`~/.pi/agent${match[1]}`);
+    }
+
+    if (AGENT_JOIN.test(code) || /\bagentDir\b/.test(code)) {
+        paths.add("~/.pi/agent");
+    }
+
+    files.push(...[...paths].sort());
+
+    if (paths.size === 0 && /(?<![\w$])homedir\s*\(/.test(code)) {
+        files.push(HOME_FOLDER);
+    }
+
+    return files;
+}
+
+/** What the code of these files says it can reach, as one program: each file has its comments taken out first. */
+export function scanFiles(files: readonly { name: string; text: string }[]): Scanned {
+    return scanStripped(files.map((file) => stripComments(file.text)).join("\n"));
+}
+
+/** What one file's code says it can reach. */
+export function scanCode(text: string): Scanned {
+    return scanStripped(stripComments(text));
+}
+
+function scanStripped(code: string): Scanned {
+    return {
+        network: networkOf(code),
+        keys: keysOf(code),
+        programs: programsOf(code),
+        files: filesOf(code),
+    };
+}
+
+// ─── Themes ──────────────────────────────────────────────────────────────────────
+
+/** A palette file's colors, or null when there is no file or it holds none. */
+function colorsOf(text: string | undefined): Record<string, string> | null {
+    if (text === undefined) {
+        return null;
+    }
+
+    const colors = parseColors(text);
+
+    return Object.keys(colors).length === 0 ? null : colors;
+}
+
+/** A theme's palettes from its two palette files' text. The light one is a light palette, as the theme list reads it. */
+export function themePalette(colors: string | undefined, light: string | undefined): Palette {
+    const lightColors = colorsOf(light);
+
+    return {
+        colors: colorsOf(colors),
+        colorsLight: lightColors === null ? null : { ...lightColors, mode: "light" },
+    };
+}
+
+// ─── Keeping results ───────────────────────────────────────────────────────────────
+
+/** What identifies a result: the entry, its commit, and its pinned files, so a changed pin is read again. */
+export function reachKey(
+    kind: string,
+    name: string,
+    commit: string,
+    files: readonly { name: string; sha256: string }[],
+): string {
+    const pins = sha256(
+        new TextEncoder().encode(
+            `${SCAN_VERSION}\n${files.map((file) => `${file.name} ${file.sha256}`).join("\n")}`,
+        ),
+    );
+
+    return `${kind}:${name}@${commit}:${pins}`;
+}
+
+const CACHE_FILE = "reach.json";
+
+/** The results kept in the gallery's folder, by `reachKey`. */
+export async function loadReach(folder: string): Promise<Record<string, Reach>> {
+    try {
+        const saved = JSON.parse(await readFile(join(folder, CACHE_FILE), "utf8")) as {
+            format?: unknown;
+            results?: unknown;
+        };
+
+        if (
+            saved.format !== SCAN_VERSION ||
+            typeof saved.results !== "object" ||
+            saved.results === null ||
+            Array.isArray(saved.results)
+        ) {
+            return {};
+        }
+
+        return saved.results as Record<string, Reach>;
+    } catch {
+        return {};
+    }
+}
+
+export async function saveReach(folder: string, results: Record<string, Reach>): Promise<void> {
+    const path = join(folder, CACHE_FILE);
+
+    await mkdir(folder, { recursive: true });
+    await writeFile(`${path}.tmp`, `${JSON.stringify({ format: SCAN_VERSION, results })}\n`);
+    await rename(`${path}.tmp`, path);
+}
+
+/** Whether a kept result still tells about this entry: its kind and commit, and not an error. */
+export function usable(value: unknown, kind: string, commit: string): value is Reach {
+    if (typeof value !== "object" || value === null) {
+        return false;
+    }
+
+    const reach = value as Record<string, unknown>;
+
+    return (
+        reach.kind === kind &&
+        reach.commit === commit &&
+        reach.error === undefined &&
+        (kind === "theme"
+            ? typeof reach.palette === "object" && reach.palette !== null
+            : typeof reach.scanned === "object" && reach.scanned !== null)
+    );
+}
+
+/** Run `work` on each item, `limit` at a time; the results are in the order of the items. */
+export async function mapLimit<T, R>(
+    items: readonly T[],
+    limit: number,
+    work: (item: T) => Promise<R>,
+): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let next = 0;
+
+    await Promise.all(
+        Array.from({ length: Math.min(limit, items.length) }, async () => {
+            while (next < items.length) {
+                const at = next++;
+
+                results[at] = await work(items[at]!);
+            }
+        }),
+    );
+
+    return results;
+}
