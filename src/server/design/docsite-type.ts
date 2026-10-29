@@ -1,6 +1,3 @@
-/**
- * The Typography section of the documentation page: typefaces, weights, text styles, and the size scale. (Split from `docsite.ts`; see it for how the page is built and kept safe.)
- */
 import { type ResolvedToken } from "./system-types.ts";
 import { escapeHtml as esc, plural } from "./docsite-markdown.ts";
 import {
@@ -19,8 +16,6 @@ import {
     tokensOf,
     moreTokens,
 } from "./docsite-core.ts";
-
-// ── Typography ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export const FONT_ROOTS = /^(fonts?|type|typography|text)$/i;
 

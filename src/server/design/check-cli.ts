@@ -1,16 +1,3 @@
-/**
- * The design checks for a CI job: run `checkDesign` on an HTML file, with a design system if there is one, and exit 1
- * when there is an error.
- *
- *   node src/server/design/check-cli.ts <page.html> [--system <folder>] [--mode <name>] [--viewport <preset|WxH>]
- *                                       [--scheme light|dark] [--accept <id>]… [--json]
- *
- * It renders the page in Chromium (or Chrome, Brave, Edge; `PI_POCKET_BROWSER` names one), so one must be installed:
- * without it the exit code is 2. `--help` prints the usage. `--system` is a project folder that has `.pi/design/` (or that folder itself). The files next to the page (its folder,
- * without links, dot folders, or `node_modules`) are its bundle, so `ds/tokens.css` and images load as they do in the
- * app; with a system, `ds/tokens.css` and `ds/components.css` are added when the folder has none. Exit code: 0 with no
- * error (warnings are printed), 1 with an error, 2 when the arguments or the files cannot be used.
- */
 import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { findBrowser } from "../browser/discovery.ts";
@@ -67,7 +54,6 @@ interface Io {
     error: (text: string) => void;
 }
 
-/** The files of a folder as a bundle's assets: bounded, no links, no dot folders, no `node_modules`. */
 function assetsOf(folder: string, page: string): DesignBundle["assets"] {
     const assets: DesignBundle["assets"] = [];
     let total = 0;
@@ -112,7 +98,6 @@ function assetsOf(folder: string, page: string): DesignBundle["assets"] {
     return assets;
 }
 
-/** The project folder of a `--system` argument: the folder with `.pi/design/`, or that `.pi/design` itself. */
 function projectOf(path: string): string {
     const full = resolve(path);
 
@@ -121,7 +106,6 @@ function projectOf(path: string): string {
         : full;
 }
 
-/** Run the check. Returns the exit code. */
 export async function runCheck(args: string[], io: Io): Promise<number> {
     const values: Record<string, string> = {};
     const flags = new Set<string>();
@@ -231,7 +215,6 @@ export async function runCheck(args: string[], io: Io): Promise<number> {
             content: readFileSync(page, "utf8"),
             assets,
         };
-        // Offline: a page that asks for the network gets nothing, as in the app's private renders.
         const host = {
             fetchPublic: async () => {
                 throw new Error("The check is offline.");

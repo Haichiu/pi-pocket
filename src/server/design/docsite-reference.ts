@@ -1,6 +1,3 @@
-/**
- * The reference parts of the documentation page: the table of every token, the validator notes, and the code to use it. (Split from `docsite.ts`; see it for how the page is built and kept safe.)
- */
 import { escapeHtml as esc, plural } from "./docsite-markdown.ts";
 import type { ResolvedToken } from "./system-types.ts";
 import {
@@ -16,10 +13,6 @@ import {
     tableRows,
 } from "./docsite-core.ts";
 
-/**
- * The table of every token: a column for each mode, and above it a search of names and values and a filter by type and
- * by tier. (The page's script filters the rows, and on a phone draws them a screenful at a time.)
- */
 export function referenceSection(ctx: Ctx, max: number): { html: string; count: number } {
     const all = ctx.system.tokens;
     const tokens = all.slice(0, max);
@@ -59,7 +52,6 @@ export function problemsHtml(ctx: Ctx): string {
         .join("")}</ul></details>`;
 }
 
-/** Notes that need no action (an exempt contrast pair, for one): a small area of their own, apart from problems. */
 export function notesHtml(ctx: Ctx): string {
     const notes = ctx.system.notes ?? [];
 
@@ -79,10 +71,6 @@ export function notesHtml(ctx: Ctx): string {
 /** The most of a generated file that the page prints: the files are large, and the page is one file too. */
 const FILE_PREVIEW = 3_000;
 
-/**
- * A short, real piece of `tokens.studio.json`: the first mode's set with one token, the first theme, and the order of
- * the sets, cut from the generated file, so that what is shown is what the file holds.
- */
 function studioSnippet(ctx: Ctx, sample: ResolvedToken | undefined): string {
     let file: Record<string, unknown> | undefined;
 
@@ -104,7 +92,6 @@ function studioSnippet(ctx: Ctx, sample: ResolvedToken | undefined): string {
         );
     }
 
-    // One token of the set, by its path (color.bg.surface), as the file has it.
     let node: unknown = set;
     const leaf: Record<string, unknown> = {};
     let into = leaf;
@@ -129,12 +116,10 @@ function studioSnippet(ctx: Ctx, sample: ResolvedToken | undefined): string {
     );
 }
 
-/** A snippet in a box with a Copy button; the text is project data, so it is escaped. */
 export function snippet(id: string, text: string, lang = ""): string {
     return `<div class="snip-wrap"><button class="copy" type="button" data-copy-from="${esc(id)}" data-copy="">Copy</button><pre class="snip" id="${esc(id)}"${lang === "" ? "" : ` data-lang="${esc(lang)}"`}><code>${esc(text)}</code></pre></div>`;
 }
 
-/** What the generated files are and how to use each: CSS, Tailwind v4, and JSON for Style Dictionary or Tokens Studio. */
 export function codeSection(ctx: Ctx): { html: string; count: number } {
     const { compiled } = ctx.system;
     const first = ctx.modes[0]!;
@@ -155,8 +140,7 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
     const dark = ctx.modes.find((mode) => ctx.theme.get(mode) === "dark" && mode !== first);
     const cssVar = sample?.cssVar ?? "--color-bg-surface";
     const css = `<link rel="stylesheet" href="tokens.css">\n\n.card {\n    background: var(${cssVar});\n    padding: var(${spacing?.cssVar ?? "--space-4"});\n}${dark === undefined ? "" : `\n\n<!-- ${modeLabel(dark)} mode -->\n<html data-theme="${dark}">`}`;
-    // The utilities come from the variables that the compiled theme gives the sample tokens (`tailwindNames`): no utility
-    // name is written here. A system with no color or no spacing token shows no class for it.
+    // The utilities come from the names that the compiled theme gives the sample tokens (`tailwindNames`); none is written here.
     const sampleVar = sample === undefined ? undefined : ctx.twVar.get(sample.name);
     const spacingVar = spacing === undefined ? undefined : ctx.twVar.get(spacing.name);
     const classes = [
@@ -171,7 +155,6 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
         modeFiles[0] === undefined
             ? "tokens.resolved.json"
             : `tokens.${modeFiles[0][0]}.resolved.json`;
-    // Style Dictionary reads the DTCG files as they are. The config is plain JSON: what it means is written beside it.
     const json = JSON.stringify(
         {
             source: [jsonName],
@@ -186,9 +169,7 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
         null,
         2,
     );
-    // Tokens Studio: the first entry of the generated file, so that what a person sees is what the file holds.
     const studio = studioSnippet(ctx, sample);
-    // `dist/README.md` is written by the compiler (stream T); the page lists it when the system has it.
     const readme = (compiled as { readme?: string }).readme ?? "";
     const files = [
         {
@@ -237,8 +218,7 @@ export function codeSection(ctx: Ctx): { html: string; count: number } {
     const use = (title: string, note: string, id: string, text: string, lang: string) =>
         `<div class="use"><h4>${esc(title)}</h4><p class="sub">${note}</p>${snippet(id, text, lang)}</div>`;
 
-    // The colors of the code come from the system's own code tokens, so that they follow the mode and sit on the ground
-    // that the system made for code. Each is left out when the system has no such token (the CSS has a fallback).
+    // Each color is left out when the system has no such code token (the CSS has a fallback).
     const syntax = (
         [
             ["bg", ["color.code.bg"]],

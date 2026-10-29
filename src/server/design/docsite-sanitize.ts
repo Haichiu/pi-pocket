@@ -1,34 +1,24 @@
-/**
- * The allowlist that the documentation page applies to a component's markup and CSS before it shows them (see
- * `docsite-components.ts`). The markup is project text. The page parses it in an inert document and then builds a new
- * tree from it: an element and an attribute that are not on a list below are not copied, so nothing that the lists do not
- * name can reach the page, and no new element or attribute of a browser (SMIL, `foreignObject`, `math`, …) is let in by
- * being missing from a denylist. The lists are data here and text in the page's script (`SANITIZER_JS`), and a test runs
- * probes through the real thing in Chromium.
- */
+// The allowlist that the page applies to a component's markup and CSS (project text) before it shows them. The page builds a new tree from the lists below, so nothing they do not name can reach the page, and no new browser element is let in by missing from a denylist.
+// The lists are data here and text in the page's script (`SANITIZER_JS`); a test runs probes through the real thing in Chromium.
 
-/** HTML elements that a specimen may use. Others are unwrapped (their children stay), or dropped whole (below). */
 export const HTML_ELEMENTS =
     "a abbr address article aside b bdi bdo blockquote br button caption cite code col colgroup dd del details dfn div dl dt em fieldset figcaption figure footer h1 h2 h3 h4 h5 h6 header hgroup hr i img input ins kbd label legend li main mark meter nav ol optgroup option output p pre progress q rp rt ruby s samp section select small span strong style sub summary sup table tbody td textarea tfoot th thead time tr u ul var wbr".split(
         " ",
     );
 
-/** SVG elements: shapes, text, gradients, and the small set of filters. No animation, no `foreignObject`, no script, no image. */
+/** SVG elements. No animation, `foreignObject`, script, or image. */
 export const SVG_ELEMENTS =
     "svg g path circle ellipse rect line polyline polygon text tspan defs lineargradient radialgradient stop clippath mask pattern symbol title desc use marker a style filter fegaussianblur feoffset fecolormatrix femerge femergenode feflood fecomposite feblend fedropshadow".split(
         " ",
     );
 
-/** Elements that are dropped with everything inside them (an unlisted element is only unwrapped). */
 export const DROPPED_ELEMENTS =
     "script iframe frame frameset object embed template noscript math foreignobject animate set animatetransform animatemotion mpath discard portal applet link meta base head".split(
         " ",
     );
 
-/** Attributes of any element, besides `aria-*` and `data-*`. `style` is cleaned, and an address is checked, below. */
 export const GLOBAL_ATTRIBUTES = "class id role title lang dir tabindex hidden style".split(" ");
 
-/** Attributes of HTML elements. `href` (links) and `src` (images) are checked as addresses. */
 export const HTML_ATTRIBUTES =
     "type value placeholder disabled checked selected readonly required for alt width height colspan rowspan min max step rows cols open label multiple maxlength size scope headers datetime name href src abbr cite span start reversed".split(
         " ",
@@ -44,10 +34,6 @@ export const SVG_ATTRIBUTES =
 export const URL_ATTRIBUTES =
     "fill stroke clip-path mask filter marker-start marker-mid marker-end".split(" ");
 
-/**
- * The script that cleans markup and CSS: `window.__dsClean(parsedDocument, targetElement)` copies what the lists allow;
- * `window.__dsCss(text)` removes `@import` and every `url()` but `#id` and a small image. ES5, run by the page.
- */
 export const SANITIZER_JS = `
 var HTML_NS = "http://www.w3.org/1999/xhtml";
 var SVG_NS = "http://www.w3.org/2000/svg";

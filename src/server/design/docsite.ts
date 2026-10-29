@@ -1,14 +1,5 @@
-/**
- * The design system's documentation page (stream G of the design-system hill climb): one self-contained HTML document
- * for a `DesignSystem`, with navigation and search, an overview, color roles and the palette with contrast tables,
- * type specimens, spacing, radii, shadows, motion demos, every component as a grid of its states with its code, the
- * guidelines, a table of every token, and the code to use it. It has a switch for each of the system's modes.
- *
- * The page runs in the artifact sandbox, so it asks for nothing: no network, no app, no external font or image. All
- * project text (names, descriptions, values, Markdown, component markup and CSS) is data. Text is escaped; token values
- * that reach a style are checked first; component markup and CSS show in a shadow root of their own, after the page's
- * script has stripped every script, handler, and address from the markup, under a policy that blocks every request.
- */
+// The page runs in the artifact sandbox, so it asks for nothing. All project text is data: it is escaped, token values that reach a style are checked first,
+// and component markup and CSS show in a shadow root after the page's script has stripped every script, handler, and address, under a policy that blocks every request.
 import { type DesignSystem, type ResolvedToken } from "./system-types.ts";
 import { contrastRatio, parseColor, readableOn, toHex } from "./docsite-color.ts";
 import { escapeHtml as esc, plural, renderMarkdown } from "./docsite-markdown.ts";
@@ -47,8 +38,6 @@ import { typographySection } from "./docsite-type.ts";
 
 export type { SystemDoc } from "./docsite-core.ts";
 
-// ── The page ───────────────────────────────────────────────────────────────────────────────────────────────────────
-
 interface Block {
     id: string;
     title: string;
@@ -58,7 +47,6 @@ interface Block {
     searchable?: boolean;
 }
 
-/** Colors for the page's own accent: the system's accent when it reads on the page, else a calm blue. */
 function chromeAccent(
     ctx: Ctx,
     theme: "light" | "dark",
@@ -99,12 +87,6 @@ function chromeAccent(
 const ICON_MENU = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg>`;
 const ICON_SEARCH = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="9" r="5.5"/><path d="m13.5 13.5 3.5 3.5"/></svg>`;
 
-/**
- * The swatches of the hero, chosen by the role they play, in the order a person reads a system: the ground, the
- * surface, text, its quieter text, the line, the accent, and the status colors. Each has a short role word as its
- * label; its full token name is the tooltip and what a tap copies. A role the system does not name is left out, and
- * when too few are found, the first semantic colors fill the row.
- */
 function sampler(ctx: Ctx): string {
     const ROLES: [string, string[], RegExp][] = [
         ["background", BASE_GROUNDS, /^color\.(bg|background)\.(base|default|canvas|page)$/],
@@ -176,7 +158,6 @@ function sampler(ctx: Ctx): string {
         }
     }
 
-    // A system with few named roles still shows a row: more of its semantic colors, labelled by their last words.
     for (const token of semantic) {
         if (chosen.length >= 8) {
             break;
@@ -198,10 +179,7 @@ function sampler(ctx: Ctx): string {
               .join("")}</div>`;
 }
 
-/**
- * The documentation page for a design system. An artifact holds 2 MB at most, so a system so large that its page would
- * not fit shows fewer rows in the token table until it does.
- */
+// An artifact holds 2 MB at most: a system so large that its page would not fit shows fewer rows in the token table until it does.
 export function renderSystemDoc(system: DesignSystem): SystemDoc {
     let rows = MAX_TOKENS;
     let doc = build(system, rows);
@@ -366,7 +344,6 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
         .join("");
     const statText = (value: string, label: string) =>
         `<div class="stat"><b>${esc(value)}</b><span>${esc(label)}</span></div>`;
-    // The number, and its noun in the right number: "1 mode", "3 modes".
     const stat = (count: number, noun: string) =>
         statText(String(count), plural(count, noun).slice(String(count).length + 1));
     const overview = `<section class="block" id="overview" data-pid="overview" aria-labelledby="overview-title"><div class="hero"><p class="eyebrow">Design system</p><h1 id="overview-title">${esc(name)}</h1>${system.description === undefined ? "" : `<p class="lead">${esc(clip(system.description, 400))}</p>`}${sampler(ctx)}<div class="stats">${stat(ctx.system.tokens.length, "token")}${stat(roleCount, "color role")}${stat(ctx.modes.length, "mode")}${stat(ctx.system.components.length, "component")}${pairs.total > 0 ? statText(`${pairs.passing}/${pairs.total}`, pairs.total === 1 ? "contrast check passes" : "contrast checks pass") : ""}</div></div><div class="tiles">${tiles}</div>${problemsHtml(ctx)}${notesHtml(ctx)}${system.tokens.length > MAX_TOKENS ? `<p class="sub" style="margin-top:14px">This page shows the first ${MAX_TOKENS} of ${system.tokens.length} tokens.</p>` : ""}</section>`;
@@ -493,11 +470,9 @@ ${body}
 </html>
 `;
 
-    // The search reads each item's own text (the script does it once, on the first search), so no copy of it is kept.
     return {
         html: html
             .replace(/ data-q="[^"]*"/g, " data-s")
-            // A sub-heading with an id (Roles, Palette, Typefaces, ...) gets its link too.
             .replace(
                 /<h3 id="([^"]+)">([^<]*)<\/h3>/g,
                 (_all, id: string, text: string) =>
