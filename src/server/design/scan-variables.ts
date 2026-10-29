@@ -227,8 +227,8 @@ export function follow(
     active: Set<Variable> = new Set(),
     memo: Map<Variable, { text: string; via?: Variable } | undefined> = new Map(),
 ): { text: string; via?: Variable } | undefined {
-    // A variable that arithmetic points back at (`$a: $a * 2`) is not followed into itself, nor a chain past 64.
-    if (active.has(start) || active.size >= 64) {
+    // A variable that arithmetic points back at (`$a: $a * 2`) is not followed into itself, nor a chain past 256.
+    if (active.has(start) || active.size >= 256) {
         return undefined;
     }
 

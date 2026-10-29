@@ -579,3 +579,29 @@ test("the values are typed: a token value is a string, a number, or a DTCG objec
     assert.ok(kinds.length < 4000, `the value's schema stays small: ${kinds.length}`);
     assert.ok(JSON.stringify(tool.parameters).length < 8000, "the whole schema is in every prompt");
 });
+
+test("scan: a scan past its time limit is stopped in its worker, and the server's timers go on meanwhile", async () => {
+    const css = (f: number) => Array.from({ length: 10_000 }, (_, i) => `--a${f}-${i}: ${i}px;`);
+    const files = Array.from({ length: 20 }, (_, f) => [
+        `s${f}.css`,
+        `:root {${css(f).join("\n")}}`,
+    ]);
+    const dir = project(Object.fromEntries(files));
+    let ticks = 0;
+    const timer = setInterval(() => (ticks += 1), 20);
+
+    // The 20 files take about 4 s to read; the limit (20 s in use) is 300 ms here.
+    process.env.PI_SCAN_TIME_MS = "300";
+
+    try {
+        await assert.rejects(run(dir, { action: "scan" }), {
+            message:
+                "The scan stopped: it used too much time or memory. Scan a smaller folder with path.",
+        });
+    } finally {
+        clearInterval(timer);
+        delete process.env.PI_SCAN_TIME_MS;
+    }
+
+    assert.ok(ticks >= 5, `${ticks} ticks of 20 ms in 300 ms`);
+});
