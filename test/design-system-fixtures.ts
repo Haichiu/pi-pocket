@@ -1,7 +1,4 @@
-// A design system for the System view's tests and for looking at it by hand: the files of `.pi/design/` in a session's
-// folder (DTCG tokens with a dark mode, three kinds of component, and guidelines). It has a few things on purpose: a
-// text color that fails its contrast pair, a color in the object form with an alpha, aliases two steps deep, a typography
-// token that refers to other tokens, and a token that is only in the default mode.
+// It has a few things on purpose: a text color that fails its contrast pair, a color in the object form with an alpha, aliases two steps deep, a typography token that refers to other tokens, and a token that is only in the default mode.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -48,7 +45,6 @@ export const TOKENS = {
         red: ramp({ "100": "#fde2e6", "400": "#f7768e", "600": "#d6334f", "800": "#8c1d33" }),
         green: ramp({ "100": "#dff4d0", "400": "#9ece6a", "600": "#3f8f2c", "800": "#1f5a14" }),
         amber: ramp({ "100": "#fdf0cf", "400": "#e0af68", "600": "#a96b00", "800": "#664000" }),
-        // The scrims are the object form (2025.10) with an alpha: a swatch over the checkerboard.
         scrim: {
             "40": { $value: black(0.4) },
             "60": { $value: black(0.6) },
@@ -81,7 +77,6 @@ export const TOKENS = {
                 $extensions: ext(on("color.bg.surface", 3)),
             },
             inverse: { $value: "{color.white}", $extensions: ext(on("color.accent.default")) },
-            // Two pairs: the link is read on a card and on the page.
             link: {
                 $value: "{color.blue.700}",
                 $extensions: ext({
@@ -229,7 +224,6 @@ export const TOKENS = {
                 spread: px(-4),
             },
         },
-        // Made of parts that link to other tokens: a color of the palette, and two steps of the spacing scale.
         lg: {
             $value: {
                 color: "{color.scrim.40}",
@@ -267,7 +261,6 @@ export const TOKENS = {
     },
 };
 
-/** The dark mode: only the paths that change. */
 export const DARK = {
     color: {
         bg: {
@@ -330,7 +323,7 @@ ${Object.entries(states)
     .join("\n")}
 `;
 
-export const COMPONENTS: Record<string, string> = {
+const COMPONENTS: Record<string, string> = {
     button: component(
         {
             name: "Button",
@@ -414,7 +407,6 @@ Calm, clear, and quick to read at a dock in the wind.
 - Don't put the accent on body text.
 `;
 
-/** Write the system into `cwd/.pi/design/`, as the engine reads it. */
 export function writeSystemFixture(cwd: string, { dark = true } = {}): void {
     const root = join(cwd, ".pi", "design");
 
@@ -432,10 +424,7 @@ export function writeSystemFixture(cwd: string, { dark = true } = {}): void {
     writeFileSync(join(root, "guidelines.md"), GUIDELINES);
 }
 
-/**
- * A page that uses the system: its variables inline (what `ds/tokens.css` is), `data-pid`s, and two things the check finds on
- * purpose: a color that is no token, and an image with no alt text.
- */
+// A page that uses the system, with two things the check finds on purpose: a color that is no token, and an image with no alt text.
 export const ferryPage = (tokensCss: string, probe = false) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ferry</title>

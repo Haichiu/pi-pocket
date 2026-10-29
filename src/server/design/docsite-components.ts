@@ -1,6 +1,3 @@
-/**
- * The Components section of the documentation page: every component as a grid of its states, with its code. (Split from `docsite.ts`; see it for how the page is built and kept safe.)
- */
 import { type ComponentSpec } from "./system-types.ts";
 import { escapeHtml as esc, plural } from "./docsite-markdown.ts";
 import {
@@ -15,15 +12,7 @@ import {
     textToken,
 } from "./docsite-core.ts";
 
-// ── Components ─────────────────────────────────────────────────────────────────────────────────────────────────────
-
-/**
- * Where a component's states show. The page's script fills it: it reads the component's markup and CSS from the code
- * listings below (so the text is on the page once), parses each state in an inert document, strips what could run or
- * load, and puts the result in a shadow root of its own: the component's CSS cannot reach the page, and the page's
- * cannot reach it, yet it paints with the page, with no frame to size, load, or leave blank in a capture. The three
- * custom properties give the stage its ground, text color, and font from the system's own tokens.
- */
+// Component markup is parsed in an inert document, stripped of what could run or load, and shown in a shadow root: its CSS cannot reach the page, and the page's cannot reach it.
 export function componentStage(ctx: Ctx): string {
     const ground = groundToken(ctx);
     const text = textToken(ctx);
@@ -43,7 +32,7 @@ export function codeBlock(id: string, label: string, code: string, kind: "state"
     return `<div class="snip-wrap" data-panel="${esc(label)}" data-kind="${kind}"><button class="copy" type="button" data-copy-from="${esc(id)}" data-copy="">Copy</button><pre class="snip" id="${esc(id)}"><code>${esc(code)}</code></pre></div>`;
 }
 
-export function componentArticle(ctx: Ctx, spec: ComponentSpec, index: number): string {
+function componentArticle(ctx: Ctx, spec: ComponentSpec, index: number): string {
     const id = `comp-${idOf(spec.slug)}`;
     const states = spec.states.slice(0, MAX_STATES);
     const usage = spec.usage;

@@ -1,4 +1,3 @@
-/** The page's CSS for the overview, the color cards and swatches, and the tables. */
 export const CSS_CONTENT = `/* ── Overview ──────────────────────────────────────────── */
 
 .hero {

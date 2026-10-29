@@ -10,7 +10,6 @@ import { loadDesignSystem } from "../src/server/design/tokens.ts";
 const FLAGSHIP = fileURLToPath(new URL("../docs/examples/design-system/pocket", import.meta.url));
 const DIST = join(FLAGSHIP, ".pi", "design", "dist");
 
-/** The files that the compiler makes for the flagship, by name in dist/. */
 function compiled(): Map<string, string> {
     const system = loadDesignSystem(FLAGSHIP)!;
     const files = new Map<string, string>([

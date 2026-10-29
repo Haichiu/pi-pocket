@@ -40,9 +40,7 @@ const formatSchema = Type.Union([
     Type.Literal("html"),
 ]);
 
-/** What the tools read besides the host. Tests give their own. */
-export interface DesignToolDeps {
-    /** The project's design system: `loadDesignSystem` of `tokens.ts`. */
+interface DesignToolDeps {
     loadSystem?: (cwd: string) => DesignSystem | undefined;
 }
 
@@ -66,7 +64,6 @@ type Output = (
     { type: "text"; text: string } | { type: "image"; data: string; mimeType: string }
 )[];
 
-/** One line for a finding: level, rule, where, and the message (which carries the value, the count, and the fix). */
 function findingLine(finding: CheckFinding, views: string, all: number): string {
     const where =
         finding.selector === ""
@@ -77,7 +74,6 @@ function findingLine(finding: CheckFinding, views: string, all: number): string 
     return `- ${finding.level} ${finding.rule} ${where}${views.length > 0 && views.split(", ").length < all ? ` (${views})` : ""}: ${finding.message}`;
 }
 
-/** The compact text of the checks: a summary line, then the worst findings. */
 export function checkText(
     reports: { view: string; report: CheckReport }[],
     system: DesignSystem | undefined,
@@ -144,7 +140,6 @@ export function checkText(
     return lines.join("\n");
 }
 
-/** The text after the screenshots: the checks, then what the console and the network reported. */
 function renderNotes(
     page: Pick<DesignPage, "errors" | "failedRequests">,
     reports: { view: string; report: CheckReport }[],
@@ -274,7 +269,6 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                         system === undefined ? undefined : modeFor(system, colorScheme, args.mode);
                 }
 
-                // A named mode draws in its own scheme.
                 const scheme = picked?.scheme ?? colorScheme;
 
                 return withRender(bundle, host, context.abortSignal, async (page) => {
@@ -470,7 +464,6 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
     return [preview, exportTool, designSystemTool()];
 }
 
-/** What an export needs of a mode: the color scheme to draw in and the `data-theme`. Nothing when no mode is named. */
 function exportMode(
     loadSystem: (cwd: string) => DesignSystem | undefined,
     cwd: string,
@@ -495,7 +488,6 @@ function exportMode(
     return { colorScheme: picked.scheme, theme: picked.theme };
 }
 
-/** The `slide` of an export request: a slide number from 1, or `all`. */
 function slideOf(value: unknown): number | "all" | undefined {
     if (value === undefined || value === null) {
         return undefined;

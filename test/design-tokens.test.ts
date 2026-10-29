@@ -1,4 +1,3 @@
-// The tokens engine: DTCG parsing in both value forms, types, references, tiers, modes, contrast, and validation messages.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { RawSystem } from "../src/server/design/tokens-base.ts";
@@ -6,7 +5,6 @@ import { scaleOf } from "../src/server/design/tokens-compile.ts";
 import { buildSystem } from "../src/server/design/tokens-model.ts";
 import type { DesignSystem, ResolvedToken } from "../src/server/design/system-types.ts";
 
-/** Builds a system from token objects, with mode files and component files as options. */
 function build(
     tokens: unknown,
     options: { modes?: Record<string, unknown>; components?: Record<string, string> } = {},
@@ -115,7 +113,6 @@ test("both value forms of every type become CSS", () => {
     assert.equal(css(system, "font.str"), "'JetBrains Mono', ui-monospace, monospace");
     assert.equal(css(system, "n.one"), "1.5");
     assert.equal(css(system, "n.text"), "2");
-    // The resolved value keeps the DTCG form it was written in.
     assert.deepEqual(token(system, "color.obj").modes.light!.value, {
         colorSpace: "srgb",
         components: [0.5, 0.2, 1],
@@ -318,10 +315,8 @@ test("a missing reference names the nearest token; a cycle names its path; a typ
     assert.ok(
         list.some((text) => /\{space\.s\} is a dimension, but a color is needed here/.test(text)),
     );
-    // The tokens that fail are left out; the good ones stay.
     assert.ok(system.tokens.some((each) => each.name === "color.bg"));
     assert.ok(!system.tokens.some((each) => each.name === "color.accent"));
-    // A cycle is reported once, not once for each token in it.
     assert.equal(list.filter((text) => /Reference cycle: color\.a/.test(text)).length, 1);
 });
 
@@ -399,7 +394,6 @@ test("bad values are errors with a fix", () => {
     assert.match(list, /A gradient is an array of 2 to 12 stops/);
     assert.match(list, /fontFamily is missing/);
     assert.match(list, /Unknown \$type "weird"/);
-    // A unitless dimension is read as pixels, with a warning.
     assert.equal(css(system, "d.c"), "16px");
     assert.ok(warnings(system).some((text) => /"16" has no unit; it is read as 16px/.test(text)));
 });
@@ -423,7 +417,6 @@ test("value text cannot end a rule, open markup, hide a comment, or load a URL",
         assert.equal(errors(system).length, 1);
     }
 
-    // The same rule holds for easings and calc().
     assert.equal(
         errors(build({ s: { $type: "dimension", a: { $value: "calc(1px; color: red)" } } })).length,
         1,
@@ -634,7 +627,6 @@ test("contrast pairs are checked in every mode, with the ratio kept", () => {
         messages.find((text) => /color\.text\.many/.test(text))!,
         /on color\.panel \(needs 4\.5\)/,
     );
-    // A contrast failure is a warning: the system is usable and can be saved.
     assert.deepEqual(errors(system), []);
 });
 
@@ -846,7 +838,6 @@ test("composite values come back fully resolved in every mode: no reference is l
     );
 
     assert.deepEqual(errors(system), []);
-    // The default mode is the one `tokens.json` names.
     assert.deepEqual(system.modes, ["day", "night"]);
 
     for (const each of system.tokens) {
@@ -858,7 +849,6 @@ test("composite values come back fully resolved in every mode: no reference is l
         }
     }
 
-    // A mode's override flows into the composites that point at the color.
     const shadow = token(system, "shadow.card");
 
     assert.deepEqual(shadow.modes.day!.value, [
@@ -897,7 +887,6 @@ test("composite values come back fully resolved in every mode: no reference is l
         { color: "#f0f4f8", position: 0 },
         { color: "#f0f4f8", position: 1 },
     ]);
-    // The type and the tier come from the groups.
     assert.equal(token(system, "font.size.md").type, "dimension");
     assert.equal(token(system, "font.weight.bold").type, "fontWeight");
     assert.equal(token(system, "color.line").tier, "semantic");

@@ -1,10 +1,4 @@
-/**
- * The page script's code color: a small tokenizer for CSS, JSON, HTML, and JS (no library). It reads the text of a
- * `pre.snip[data-lang]` and rebuilds the `<code>` from text nodes and `<span class="sx-…">` elements, so nothing is
- * ever parsed as HTML: whatever the text holds is shown as it is. The colors are in the page's CSS, from the system's own
- * `color.code.*` tokens. Without the script, the text stays plain. (`String.raw`, so that the regular expressions keep
- * their backslashes.)
- */
+// `String.raw`, so that the regular expressions keep their backslashes.
 export const JS_CODE = String.raw`    // Code color. A rule is [class, /pattern/]; the first rule that matches at a place wins, so the order is the priority.
     var STR = /"(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?/;
     var NUM = /\d+(?:\.\d+)?(?:[eE][+-]?\d+)?(?:%|[a-zA-Z]{1,4})?/;

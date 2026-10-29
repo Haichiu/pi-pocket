@@ -1,5 +1,3 @@
-// The design checks: color math and token sets without a browser, then each rule on small pages in the private Chromium,
-// with a case that must report and a case that must stay quiet.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { findBrowser } from "../src/server/browser/discovery.ts";
@@ -147,7 +145,6 @@ test("a token set holds one mode of the system, and modes pick by color scheme",
         named: false,
     });
     assert.deepEqual(modeFor(night, "dark"), { mode: "dark", scheme: "dark", named: false });
-    // A reference keeps its resolved value; a component token is not on a scale.
     const aliased = token("color.alias", "color", { colorSpace: "srgb", components: [1, 0, 0] });
 
     aliased.modes.light!.css = "var(--color-red)";
@@ -251,7 +248,6 @@ test(
                     `<p data-pid="off-font" style="margin:0;font-family:Georgia,serif">Serif</p>` +
                     `<p data-pid="off-mono" style="margin:0;font-family:Menlo,monospace">Mono</p>` +
                     `<p data-pid="off-size" style="margin:0;font-size:15px;padding:14px;border-radius:12px;background:var(--color-bg-surface)">Sizes</p>` +
-                    // A literal that equals a token still does not follow the system: a warning, with the token to use.
                     `<p data-pid="literal" style="margin:0;color:#5a5f73;padding:16px;font-family:system-ui,sans-serif;background:var(--color-bg-surface)">Hard-coded</p>`,
             ),
         );
@@ -287,7 +283,6 @@ test(
         );
         assert.equal(sizes.find((item) => item.value === "14px")!.suggestion, "var(--space-3)");
         assert.equal(sizes.find((item) => item.value === "12px")!.suggestion, "var(--radius-md)");
-        // The card uses only system values: pills, circles, auto margins, and rem-based scale steps are not findings.
         assert.deepEqual(
             report.findings.filter((item) => item.pid === "ok-card"),
             [],
@@ -331,7 +326,6 @@ test("the same value on many elements is one finding with a count", browser, asy
     );
     const found = ofRule(report, "off-system-color").filter((item) => item.value === "#7ba3f8");
 
-    // The same defect on elements of two scopes is one finding that lists both (a pin for each).
     assert.equal(found.length, 1);
     assert.deepEqual(found[0]!.elements!.map((item) => item.pid).sort(), ["other", "scope"]);
     assert.match(found[0]!.message, /text on 5 elements/);
@@ -345,22 +339,17 @@ test(
         const report = await check(
             page(
                 ".t{margin:0;padding:8px}",
-                // Fails: grey on white.
                 `<p class="t" data-pid="low" style="color:#999">Low contrast</p>` +
-                    // Passes: dark on white.
                     `<p class="t" data-pid="ok-dark" style="color:#1c1e26">Fine</p>` +
-                    // The background comes from the parent, behind a transparent child.
                     `<div style="background:#1c1e26"><p class="t" data-pid="ok-parent" style="color:#fff">On dark</p><p class="t" data-pid="low-parent" style="color:#2b2f3a">Dark on dark</p></div>` +
                     // A translucent background mixes with what is below it: white at 10% on dark stays dark.
                     `<div style="background:#1c1e26"><div style="background:rgba(255,255,255,0.1)"><p class="t" data-pid="low-alpha" style="color:#444a5a">Alpha layer</p></div></div>` +
                     // A translucent text color mixes with its background: 40% black on white is light grey.
                     `<p class="t" data-pid="low-text-alpha" style="color:rgba(0,0,0,0.45);background:#fff">Alpha text</p>` +
-                    // Partial opacity makes the result depend on the state the page is caught in: not judged.
                     `<div style="opacity:0.4"><p class="t" data-pid="ok-opacity" style="color:#1c1e26;background:#fff">Faded</p></div>` +
                     // Large text needs 3:1 only: #777 on white is 4.48:1 (fails 4.5, passes 3), #aaa is 2.3:1.
                     `<p class="t" data-pid="ok-large" style="font-size:24px;color:#8a8a8a;background:#fff">Large</p><p class="t" data-pid="low-large" style="font-size:24px;color:#aaa;background:#fff">Large low</p>` +
                     `<p class="t" data-pid="low-bold" style="font-size:19px;font-weight:700;color:#a0a0a0;background:#fff">Bold low</p><p class="t" data-pid="ok-bold" style="font-size:19px;font-weight:700;color:#8a8a8a;background:#fff">Bold</p>` +
-                    // Not judged: a disabled control, hidden text, text over a gradient or an image.
                     `<button class="t" disabled data-pid="ok-disabled" style="color:#aaa;background:#fff">Off</button>` +
                     `<p class="t" data-pid="ok-hidden" style="color:#fff;visibility:hidden">Hidden</p>` +
                     `<div style="background:linear-gradient(#fff,#eee)"><p class="t" data-pid="ok-gradient" style="color:#bbb">Over gradient</p></div>` +
@@ -403,13 +392,11 @@ test("contrast is judged only where the background is certain", browser, async (
         ".over{position:absolute;left:0;top:0;width:100%;height:40px;background:#000}" +
         "input::placeholder{color:#bbb}";
     const body =
-        // Judged: certain backgrounds.
         `<section class="night" data-pid="night"><p class="t" data-pid="ok-on-night">Light on dark</p><p class="t" data-pid="low-on-night" style="color:#2b3140">Dark on dark</p><div class="card"><p class="t" data-pid="ok-card">Card text</p><p class="t" data-pid="low-card" style="color:#ddd">Pale on the card</p></div></section>` +
         `<section class="scope" data-pid="scope"><p class="t" data-pid="ok-scope">Scoped variables</p></section>` +
         `<section class="night"><div class="glass" data-pid="glass"><p class="t" data-pid="ok-glass">Glass over dark</p></div></section>` +
         `<button class="btn" data-pid="ok-btn">Primary</button><button class="btn ghost" data-pid="ok-ghost">Ghost</button>` +
         `<input data-pid="ok-placeholder" placeholder="Email" style="padding:8px">` +
-        // Not judged: the background cannot be known.
         `<section class="hero" data-pid="hero"><p class="t" data-pid="ok-hero">Over an overlay drawn by ::before</p></section>` +
         `<div class="box" data-pid="box"><img alt="" src="${gif}"><p class="t" data-pid="ok-image" style="position:absolute;margin:0;color:#ccc">Over an image</p></div>` +
         `<div data-pid="grad" style="background:linear-gradient(#fff,#eee)"><p class="t" data-pid="ok-grad" style="color:#ccc">Over a gradient</p></div>` +
@@ -445,7 +432,6 @@ test("a suggestion takes a token of the role the color plays", browser, async ()
     assert.doesNotMatch(ground.message, /is a text token/);
     // #1c2230 is used as text: the text token comes first, though the background token is the exact color.
     assert.equal(words.suggestion, "var(--color-text-primary)");
-    // With no background token near, the text token is the last resort, and the message says what it is.
     const plain = await check(page("", body), {}, testSystem());
     const fallback = onPid(plain, "off-system-color", "ground")!;
 
@@ -606,15 +592,11 @@ test("tap targets: under 24 px is an error, under 44 px a warning", browser, asy
         "a,button{display:inline-block;margin:0;padding:0;color:#1c1e26}" +
         ".gap{margin-right:40px}";
     const body =
-        // Under 24 px is an error, alone or crowded.
         `<div data-pid="crowded"><a href="#" style="width:16px;height:16px;background:#ccc"></a><a href="#" style="width:16px;height:16px;background:#ccc"></a></div>` +
         `<div data-pid="alone" style="margin-top:80px"><a class="gap" href="#" style="width:18px;height:18px;background:#ccc"></a></div>` +
-        // A link inside a sentence is exempt.
         `<p data-pid="ok-inline" style="margin-top:80px">Read the <a href="#" style="display:inline">full story</a> today.</p>` +
-        // 36 px: warns on a phone.
         `<button data-pid="warn" style="margin-top:80px;width:120px;height:36px">Small</button>` +
         `<button data-pid="ok-big" style="margin-top:80px;width:120px;height:48px">Big</button>` +
-        // A checkbox with a big label is a big target.
         `<label data-pid="ok-label" style="display:block;margin-top:80px;height:48px"><input type="checkbox"> Gift</label>` +
         `<input data-pid="bare-checkbox" type="checkbox" style="margin-top:80px;display:block">`;
     const phone = await check(page(css, body), {}, null);
@@ -633,7 +615,6 @@ test("tap targets: under 24 px is an error, under 44 px a warning", browser, asy
         undefined,
         "a native checkbox is the browser's",
     );
-    // The same sizes at a desktop viewport: the rule is about the target, not the screen.
     const desktop = await check(page(css, body), { viewport: "desktop" }, null);
 
     assert.equal(onPid(desktop, "tap-target", "warn")!.level, "warning");
@@ -748,7 +729,6 @@ test(
         );
         assert.equal(found[0]!.level, "warning");
         assert.equal(found[0]!.value, "Zzyzx Display");
-        // A face that is declared and fails to load is an error. One that loads is quiet.
         const face = (name: string, url: string) =>
             `@font-face{font-family:'${name}';src:url(${url}) format('woff2')}`;
         const loaded = await check(
@@ -867,7 +847,6 @@ test(
 );
 
 test("a dark color scheme compares with the dark mode of the system", browser, async () => {
-    // The page's variables flip in dark (`prefers-color-scheme`), and so does the mode that it is checked against.
     const linked = page("", `<p data-pid="text" style="margin:0;padding:var(--space-2)">Text</p>`);
     const light = await check(linked, { colorScheme: "light" });
     const dark = await check(linked, { colorScheme: "dark" });
@@ -879,7 +858,6 @@ test("a dark color scheme compares with the dark mode of the system", browser, a
         [],
         "var() follows the mode, so a page of variables is on both",
     );
-    // A literal of the dark mode's value is off the light mode (an error) and hard-coded in the dark one (a warning).
     const hard = page(
         "",
         `<p data-pid="text" style="margin:0;color:#e6e8f0;background:#101218">Dark text</p>`,
@@ -890,7 +868,6 @@ test("a dark color scheme compares with the dark mode of the system", browser, a
     assert.equal(onPid(inLight, "off-system-color", "text")!.level, "error");
     assert.equal(onPid(inDark, "off-system-color", "text")!.level, "warning");
     assert.match(onPid(inDark, "off-system-color", "text")!.message, /written as a literal/);
-    // An explicit mode wins over the scheme.
     const forced = await check(hard, { colorScheme: "dark", mode: "light" });
 
     assert.equal(onPid(forced, "off-system-color", "text")!.level, "error");
@@ -926,12 +903,10 @@ test(
             "15px",
             "a number takes the knob's unit",
         );
-        // An action runs first: after a hover the button's text is too light.
         const hovered = await check(content, { actions: [{ type: "hover", selector: "a.btn" }] });
 
         assert.ok(onPid(hovered, "contrast", "btn"));
         assert.equal(onPid(plain, "contrast", "btn"), undefined);
-        // Another page of the bundle is the page that is checked.
         const about = bundleOf(content, [
             {
                 name: "about.html",
@@ -1051,7 +1026,6 @@ test(
     "a mode of the system: data-theme, the mode's scheme, and the mode's tokens",
     browser,
     async () => {
-        // The flagship has light, dark, and high-contrast, and says that high-contrast is drawn dark.
         const flagship = loadDesignSystem(
             join(import.meta.dirname, "fixtures", "design-system", "flagship"),
         )!;
@@ -1080,7 +1054,6 @@ test(
         assert.equal(contrast.mode, "high-contrast");
         assert.equal(contrast.colorScheme, "dark", "the mode's own scheme, not the one asked for");
         assert.equal(quiet(contrast), undefined, "the ground is the high-contrast ground");
-        // It wins over the scheme that is asked for, and over a data-theme that the page has.
         assert.equal(
             (await run({ mode: "high-contrast", colorScheme: "light" })).colorScheme,
             "dark",
@@ -1094,7 +1067,6 @@ test(
         );
 
         assert.equal(quiet(forced), undefined, "the named mode replaces the page's own data-theme");
-        // A name is checked, and a mode needs a system.
         await assert.rejects(
             run({ mode: "sepia" }),
             /no mode "sepia"\. Modes: light, dark, high-contrast\./,
@@ -1138,7 +1110,6 @@ test(
             finding[0]!.message,
             /no `@media \(prefers-reduced-motion: reduce\)` rule\. Add `@media \(prefers-reduced-motion: reduce\) \{ \*, \*::before, \*::after \{ animation-duration: 0\.01ms !important/,
         );
-        // Under 500 ms, none, or `transition-property: none`: nothing to reduce.
         const quiet = await check(
             page(
                 ".a{transition:opacity .5s}.b{transition:none}.c{transition:all 2s;transition-property:none}.d{animation:none}",
@@ -1149,7 +1120,6 @@ test(
         );
 
         assert.equal(ofRule(quiet, "reduced-motion").length, 0);
-        // A loop is motion at any speed; a spinner that turns once is not a loop.
         const spin =
             ".spin{animation:turn 1s linear infinite}.once{animation:turn 300ms 1}@keyframes turn{to{transform:rotate(1turn)}}";
         const loop = await check(
@@ -1160,7 +1130,6 @@ test(
 
         assert.equal(ofRule(loop, "reduced-motion")[0]!.pid, "spin");
 
-        // Any prefers-reduced-motion rule in the page's CSS, whatever it says, ends the finding: the page has thought of it.
         for (const media of ["reduce", "no-preference"]) {
             const covered = await check(
                 page(
@@ -1174,7 +1143,6 @@ test(
             assert.equal(ofRule(covered, "reduced-motion").length, 0, media);
         }
 
-        // The check does not leave its own calm style behind: the transition is still there after it.
         const again = await check(page(slow, body), {}, null);
 
         assert.equal(ofRule(again, "reduced-motion").length, 1);

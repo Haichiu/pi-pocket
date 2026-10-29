@@ -1,12 +1,5 @@
-/**
- * Color math for the design system (stream T): parses every CSS color syntax and the DTCG color object into sRGB,
- * writes hex, and computes the WCAG 2.2 contrast ratio. Pure functions, no I/O.
- *
- * Wide-gamut colors (display-p3, oklch, lab...) are converted to sRGB and clipped per channel. That is exact for the
- * contrast check (WCAG defines luminance in sRGB) and close enough for a swatch.
- */
+// Wide-gamut colors are clipped to sRGB per channel: exact for WCAG contrast, close enough for a swatch.
 
-/** A color in sRGB: channels 0 to 1, alpha 0 to 1. */
 export interface Rgba {
     r: number;
     g: number;
@@ -14,11 +7,9 @@ export interface Rgba {
     a: number;
 }
 
-/** The CSS named colors, as `name:hex` pairs (the `transparent` keyword is handled apart). */
 const NAMES =
     "aliceblue:f0f8ff,antiquewhite:faebd7,aqua:00ffff,aquamarine:7fffd4,azure:f0ffff,beige:f5f5dc,bisque:ffe4c4,black:000000,blanchedalmond:ffebcd,blue:0000ff,blueviolet:8a2be2,brown:a52a2a,burlywood:deb887,cadetblue:5f9ea0,chartreuse:7fff00,chocolate:d2691e,coral:ff7f50,cornflowerblue:6495ed,cornsilk:fff8dc,crimson:dc143c,cyan:00ffff,darkblue:00008b,darkcyan:008b8b,darkgoldenrod:b8860b,darkgray:a9a9a9,darkgreen:006400,darkgrey:a9a9a9,darkkhaki:bdb76b,darkmagenta:8b008b,darkolivegreen:556b2f,darkorange:ff8c00,darkorchid:9932cc,darkred:8b0000,darksalmon:e9967a,darkseagreen:8fbc8f,darkslateblue:483d8b,darkslategray:2f4f4f,darkslategrey:2f4f4f,darkturquoise:00ced1,darkviolet:9400d3,deeppink:ff1493,deepskyblue:00bfff,dimgray:696969,dimgrey:696969,dodgerblue:1e90ff,firebrick:b22222,floralwhite:fffaf0,forestgreen:228b22,fuchsia:ff00ff,gainsboro:dcdcdc,ghostwhite:f8f8ff,gold:ffd700,goldenrod:daa520,gray:808080,green:008000,greenyellow:adff2f,grey:808080,honeydew:f0fff0,hotpink:ff69b4,indianred:cd5c5c,indigo:4b0082,ivory:fffff0,khaki:f0e68c,lavender:e6e6fa,lavenderblush:fff0f5,lawngreen:7cfc00,lemonchiffon:fffacd,lightblue:add8e6,lightcoral:f08080,lightcyan:e0ffff,lightgoldenrodyellow:fafad2,lightgray:d3d3d3,lightgreen:90ee90,lightgrey:d3d3d3,lightpink:ffb6c1,lightsalmon:ffa07a,lightseagreen:20b2aa,lightskyblue:87cefa,lightslategray:778899,lightslategrey:778899,lightsteelblue:b0c4de,lightyellow:ffffe0,lime:00ff00,limegreen:32cd32,linen:faf0e6,magenta:ff00ff,maroon:800000,mediumaquamarine:66cdaa,mediumblue:0000cd,mediumorchid:ba55d3,mediumpurple:9370db,mediumseagreen:3cb371,mediumslateblue:7b68ee,mediumspringgreen:00fa9a,mediumturquoise:48d1cc,mediumvioletred:c71585,midnightblue:191970,mintcream:f5fffa,mistyrose:ffe4e1,moccasin:ffe4b5,navajowhite:ffdead,navy:000080,oldlace:fdf5e6,olive:808000,olivedrab:6b8e23,orange:ffa500,orangered:ff4500,orchid:da70d6,palegoldenrod:eee8aa,palegreen:98fb98,paleturquoise:afeeee,palevioletred:db7093,papayawhip:ffefd5,peachpuff:ffdab9,peru:cd853f,pink:ffc0cb,plum:dda0dd,powderblue:b0e0e6,purple:800080,rebeccapurple:663399,red:ff0000,rosybrown:bc8f8f,royalblue:4169e1,saddlebrown:8b4513,salmon:fa8072,sandybrown:f4a460,seagreen:2e8b57,seashell:fff5ee,sienna:a0522d,silver:c0c0c0,skyblue:87ceeb,slateblue:6a5acd,slategray:708090,slategrey:708090,snow:fffafa,springgreen:00ff7f,steelblue:4682b4,tan:d2b48c,teal:008080,thistle:d8bfd8,tomato:ff6347,turquoise:40e0d0,violet:ee82ee,wheat:f5deb3,white:ffffff,whitesmoke:f5f5f5,yellow:ffff00,yellowgreen:9acd32";
 
-/** The named colors, by name, as `#rrggbb`. */
 export const NAMED_COLORS: ReadonlyMap<string, string> = new Map(
     NAMES.split(",").map((pair) => {
         const [name, hex] = pair.split(":");
@@ -40,7 +31,7 @@ const multiply = (
     m[6] * x + m[7] * y + m[8] * z,
 ];
 
-// Linear RGB of each space to XYZ (D65), and back to sRGB; the D50 to D65 adaptation. From CSS Color 4.
+// Matrices from CSS Color 4, including the D50 to D65 adaptation.
 const XYZ_TO_SRGB: Matrix = [
     3.2409699419045226, -1.537383177570094, -0.4986107602930034, -0.9692436362808796,
     1.8759675015077202, 0.04155505740717559, 0.05563007969699366, -0.20397695888897652,
@@ -66,7 +57,6 @@ const D50_TO_D65: Matrix = [
 ];
 const D50_WHITE = [0.3457 / 0.3585, 1, (1 - 0.3457 - 0.3585) / 0.3585] as const;
 
-// The transfer functions: sRGB's (also Display P3's), and the pure gamma of Adobe RGB and Rec. 2020's.
 const decodeSrgb = (v: number) =>
     Math.sign(v) *
     (Math.abs(v) <= 0.04045 ? Math.abs(v) / 12.92 : ((Math.abs(v) + 0.055) / 1.055) ** 2.4);
@@ -82,7 +72,6 @@ const decodeRec2020 = (v: number) =>
         ? Math.abs(v) / 4.5
         : ((Math.abs(v) + ALPHA2020 - 1) / ALPHA2020) ** (1 / 0.45));
 
-/** Linear sRGB (not clipped) to an `Rgba`: encode, then clip to the gamut. */
 function fromLinear([r, g, b]: readonly [number, number, number], a: number): Rgba {
     return {
         r: clamp(encodeSrgb(r)),
@@ -92,11 +81,10 @@ function fromLinear([r, g, b]: readonly [number, number, number], a: number): Rg
     };
 }
 
-/** XYZ (D65) to an `Rgba`. */
 const fromXyz = (xyz: readonly [number, number, number], a: number): Rgba =>
     fromLinear(multiply(XYZ_TO_SRGB, xyz), a);
 
-/** Oklab to an `Rgba` (Björn Ottosson's matrices). */
+// Björn Ottosson's matrices.
 export function fromOklab(l: number, a: number, b: number, alpha: number): Rgba {
     const lp = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3;
     const mp = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3;
@@ -112,7 +100,6 @@ export function fromOklab(l: number, a: number, b: number, alpha: number): Rgba 
     );
 }
 
-/** CIE Lab (D50, as CSS defines it) to an `Rgba`. */
 function fromLab(l: number, a: number, b: number, alpha: number): Rgba {
     const kappa = 24389 / 27;
     const epsilon = 216 / 24389;
@@ -154,7 +141,6 @@ function fromHwb(h: number, w: number, b: number, alpha: number): Rgba {
     return { r: mix(base.r), g: mix(base.g), b: mix(base.b), a: base.a };
 }
 
-/** The color spaces of `color()` and the DTCG color object that this module converts. */
 const SPACES = [
     "srgb",
     "srgb-linear",
@@ -166,7 +152,6 @@ const SPACES = [
     "xyz-d50",
 ] as const;
 
-/** A color given in one of the `color()` spaces, 0 to 1 per channel (XYZ unbounded). */
 function fromSpace(space: string, c: readonly [number, number, number], alpha: number): Rgba {
     switch (space) {
         case "srgb":
@@ -199,7 +184,6 @@ function fromSpace(space: string, c: readonly [number, number, number], alpha: n
     }
 }
 
-/** An angle in degrees: a bare number, or one with `deg`, `grad`, `rad`, or `turn`. */
 function angle(token: string): number | undefined {
     if (token === "none") {
         return 0;
@@ -225,7 +209,6 @@ function angle(token: string): number | undefined {
     }
 }
 
-/** A number or a percentage of `scale`; `none` is 0. Anything else (a `calc()`, a `var()`) is undefined. */
 function amount(token: string, scale: number): number | undefined {
     if (token === "none") {
         return 0;
@@ -240,7 +223,7 @@ function amount(token: string, scale: number): number | undefined {
     return match[2] === "%" ? (Number(match[1]) / 100) * scale : Number(match[1]);
 }
 
-/** A saturation, lightness, whiteness, or blackness: `50%` or `50` (both mean half), as 0 to 1. */
+// Both `50%` and `50` mean half.
 function percentage(token: string): number | undefined {
     const value = amount(token.replace(/%$/, ""), 100);
 
@@ -260,11 +243,7 @@ function parseHex(text: string): Rgba | undefined {
     return { r: byte(0), g: byte(2), b: byte(4), a: full.length === 8 ? byte(6) : 1 };
 }
 
-/**
- * Parses a CSS color: hex (3, 4, 6, 8 digits), `rgb()`/`rgba()`, `hsl()`/`hsla()`, `hwb()`, `lab()`, `lch()`,
- * `oklab()`, `oklch()`, `color()` in the spaces above, a name, or `transparent`. Undefined for anything else,
- * including `currentColor`, `var()`, and `color-mix()`, which have no value of their own.
- */
+// `currentColor`, `var()`, and `color-mix()` have no value of their own: undefined.
 export function parseColor(input: string): Rgba | undefined {
     const text = input.trim().toLowerCase();
 
@@ -296,7 +275,6 @@ export function parseColor(input: string): Rgba | undefined {
         .filter(Boolean);
     let alphaToken = slash?.trim();
 
-    // The legacy form carries alpha as a fourth comma-separated part.
     if (alphaToken === undefined && parts.length === 4 && name !== "color") {
         alphaToken = parts.pop();
     }
@@ -405,14 +383,12 @@ export function parseColor(input: string): Rgba | undefined {
     }
 }
 
-/** A number for CSS: at most `digits` decimals, no trailing zeros, no `-0`. */
 export function num(value: number, digits = 4): string {
     const text = String(Number(value.toFixed(digits)));
 
     return text === "-0" ? "0" : text;
 }
 
-/** `#rrggbb`, or `#rrggbbaa` when the color is not opaque. */
 export function toHex(color: Rgba): string {
     const byte = (value: number) =>
         Math.round(clamp(value) * 255)
@@ -423,7 +399,6 @@ export function toHex(color: Rgba): string {
     return color.a < 1 ? `${base}${byte(color.a)}` : base;
 }
 
-/** The color over an opaque `backdrop` (alpha compositing). The result is opaque when the backdrop is. */
 export function over(color: Rgba, backdrop: Rgba): Rgba {
     const a = color.a + backdrop.a * (1 - color.a);
 
@@ -442,17 +417,13 @@ export function over(color: Rgba, backdrop: Rgba): Rgba {
     };
 }
 
-/** The WCAG 2.2 relative luminance of the color's rgb channels, 0 (black) to 1 (white). */
 export function luminance(color: Rgba): number {
     return (
         0.2126 * decodeSrgb(color.r) + 0.7152 * decodeSrgb(color.g) + 0.0722 * decodeSrgb(color.b)
     );
 }
 
-/**
- * The WCAG 2.2 contrast ratio, 1 to 21, of `foreground` on `background`. A translucent foreground is composited over
- * the background; a translucent background over `page` (white by default), as the page behind it would show.
- */
+// A translucent foreground is composited over the background, a translucent background over `page`.
 export function contrastRatio(
     foreground: Rgba,
     background: Rgba,
@@ -468,7 +439,6 @@ export function contrastRatio(
     return (high + 0.05) / (low + 0.05);
 }
 
-/** The color in Oklab: lightness 0 to 1, and the green-red and blue-yellow axes. */
 export function toOklab(color: Rgba): { l: number; a: number; b: number } {
     const { l, c, h } = toOklch(color);
     const rad = (h * Math.PI) / 180;
@@ -476,7 +446,6 @@ export function toOklab(color: Rgba): { l: number; a: number; b: number } {
     return { l, a: c * Math.cos(rad), b: c * Math.sin(rad) };
 }
 
-/** The color as Oklch: lightness 0 to 1, chroma (about 0 to 0.4), hue in degrees (0 when the color is gray). */
 export function toOklch(color: Rgba): { l: number; c: number; h: number } {
     const r = decodeSrgb(color.r);
     const g = decodeSrgb(color.g);
@@ -493,14 +462,6 @@ export function toOklch(color: Rgba): { l: number; c: number; h: number } {
     return { l: lightness, c: chroma, h: hue };
 }
 
-/** The `oklch()` CSS text of a color: `oklch(0.72 0.12 264)`, with `/ alpha` when not opaque. */
-export function toOklchCss(color: Rgba): string {
-    const { l, c, h } = toOklch(color);
-
-    return `oklch(${num(l, 3)} ${num(c, 3)} ${num(h, 1)}${color.a < 1 ? ` / ${num(color.a, 3)}` : ""})`;
-}
-
-/** The color spaces of the DTCG color object, and the CSS function or `color()` space that writes each. */
 const OBJECT_SPACES: Record<string, { css: string; scale: readonly string[] }> = {
     srgb: { css: "srgb", scale: ["", "", ""] },
     "srgb-linear": { css: "srgb-linear", scale: ["", "", ""] },
@@ -517,13 +478,8 @@ const OBJECT_SPACES: Record<string, { css: string; scale: readonly string[] }> =
     "xyz-d50": { css: "xyz-d50", scale: ["", "", ""] },
 };
 
-/** The color spaces that a DTCG color object may name. */
-export const COLOR_SPACES = Object.keys(OBJECT_SPACES);
+const COLOR_SPACES = Object.keys(OBJECT_SPACES);
 
-/**
- * A DTCG 2025.10 color object (`{ colorSpace, components, alpha?, hex? }`) as CSS text, or an error message that says
- * how to fix it. `srgb` without alpha is written as hex; the other spaces as their CSS function.
- */
 export function colorObjectCss(value: unknown): { css: string } | { error: string } {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
         return { error: "a color object must be { colorSpace, components, alpha? }" };
@@ -581,12 +537,7 @@ export function colorObjectCss(value: unknown): { css: string } | { error: strin
     return { css: `color(${space.css} ${parts.join(" ")}${tail})` };
 }
 
-/**
- * `color-mix()` of two colors in `space`, as CSS Color 5 defines it for the rectangular spaces: the components are mixed
- * premultiplied by alpha. `srgb` mixes the encoded channels; `oklch` (and `lch`, `hsl`, `hwb`, taken as `oklch`) mixes
- * lightness and chroma and turns the hue the short way; every other space (`oklab`, `lab`...) is mixed in Oklab. A percentage left out is the rest of 100%; if both add to less than 100%, the mix
- * is translucent by the difference.
- */
+// A percentage left out is the rest of 100%; if both add to less than 100%, the mix is translucent by the difference.
 export function mixColors(
     space: string,
     first: { color: Rgba; percent?: number },

@@ -1,7 +1,4 @@
-/**
- * A part of the script that `lint.ts` runs inside a rendered design (see `lint-page.ts`): icons and focus rings, and the answer of the script. The parts are one
- * function body, in this order: setup, values, literals, states, elements, checks, focus. Plain JavaScript in a string.
- */
+// Plain JavaScript in a string: one part of the page script of `lint-page.ts`. The parts form one function body, so they share its locals.
 export const PAGE_FOCUS = String.raw`// Icons that are the whole of a control (a button with only an SVG): their strokes and fills need 3:1 (WCAG 1.4.11)
 // against what is behind them, judged only when every color that the icon paints fails.
 for (const control of [...doc.querySelectorAll(pointed)].slice(0, 300)) {

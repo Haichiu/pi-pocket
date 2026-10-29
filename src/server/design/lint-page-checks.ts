@@ -1,7 +1,4 @@
-/**
- * A part of the script that `lint.ts` runs inside a rendered design (see `lint-page.ts`): checks of the whole page: images, focusable elements, tap targets, overflow, headings, and fonts. The parts are one
- * function body, in this order: setup, values, literals, states, elements, checks, focus. Plain JavaScript in a string.
- */
+// Plain JavaScript in a string: one part of the page script of `lint-page.ts`. The parts form one function body, so they share its locals.
 export const PAGE_CHECKS = String.raw`// Page semantics: the language, a name for every control, and a main landmark; and the input size that makes a phone zoom.
 const shown = (el) => {
     const look = getComputedStyle(el);

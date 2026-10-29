@@ -1,14 +1,5 @@
-/**
- * The JSON files of `dist/` (stream T): `tokens.<mode>.resolved.json` (DTCG, the main JSON output), `tokens.studio.json`
- * (one file for Tokens Studio, with a token set for each mode and a `$themes` array), and `tokens.resolved.json` (a
- * compact summary for scripts). Pure functions of the resolved tokens, like the rest of the compiler.
- *
- * DTCG has two forms of its basic values. The 2021 to 2024 drafts, which Style Dictionary 4 and Tokens Studio read,
- * write a color as a string (`"#7aa2f7"`) and a dimension as a string (`"16px"`). The 2025.10 draft writes a color as
- * `{ colorSpace, components, alpha, hex }`, and a dimension or a duration as `{ value, unit }`. The default here is the
- * string form (`"2021"`); `$extensions["com.pi-pocket"].format: "2025.10"` in `tokens.json` gives the object form in
- * the per-mode files. Either way a file has one form throughout, whatever form the tokens were written in.
- */
+// DTCG has two forms of its basic values: strings (the 2021 to 2024 drafts: `"#7aa2f7"`, `"16px"`) and objects (the 2025.10 draft: `{ colorSpace, components, alpha, hex }`, `{ value, unit }`).
+// The default is the string form (`"2021"`); `$extensions["com.pi-pocket"].format: "2025.10"` in `tokens.json` gives the object form. A file has one form throughout.
 import type { CompileInput } from "./tokens-compile.ts";
 import { colorObjectCss, parseColor, toHex, type Rgba } from "./color.ts";
 import type { ResolvedToken, TokenType } from "./system-types.ts";
@@ -18,15 +9,11 @@ type Obj = Record<string, unknown>;
 const isObject = (value: unknown): value is Obj =>
     typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** The `color-scheme` value of a mode. */
 const schemeOf = (system: CompileInput, mode: string) => system.schemes[mode] ?? "light";
-
-// --- The two forms of a color, a dimension, and a duration --------------------------------------------------------------
 
 /** Four decimals, which is finer than 8 bits can tell apart. */
 const round = (value: number) => Number(value.toFixed(4));
 
-/** A color as `{ colorSpace, components, alpha, hex }` (sRGB); anything that is not a color stays as it is. */
 function colorObject(value: unknown): unknown {
     if (isObject(value)) {
         if (typeof value.hex === "string" || !Object.hasOwn(value, "colorSpace")) {
@@ -51,7 +38,6 @@ function colorObject(value: unknown): unknown {
           };
 }
 
-/** A color as a string: `#rrggbb`, `#rrggbbaa`, or the CSS function of its space. */
 function colorString(value: unknown): unknown {
     if (!isObject(value)) {
         return value;
@@ -65,21 +51,19 @@ function colorString(value: unknown): unknown {
 const LENGTH = /^(-?(?:\d+\.?\d*|\.\d+))(px|rem)$/i;
 const TIME = /^(-?(?:\d+\.?\d*|\.\d+))(ms|s)$/i;
 
-/** A `"16px"` or `"1.5rem"` as `{ value: 16, unit: "px" }`. DTCG 2025.10 has only px and rem; other units stay as text. */
+/** DTCG 2025.10 has only px and rem; other units stay as text. */
 function dimensionObject(value: unknown): unknown {
     const match = typeof value === "string" ? LENGTH.exec(value.trim()) : null;
 
     return match === null ? value : { value: Number(match[1]), unit: match[2]!.toLowerCase() };
 }
 
-/** A `"150ms"` or `"0.2s"` as `{ value: 150, unit: "ms" }`. */
 function durationObject(value: unknown): unknown {
     const match = typeof value === "string" ? TIME.exec(value.trim()) : null;
 
     return match === null ? value : { value: Number(match[1]), unit: match[2]!.toLowerCase() };
 }
 
-/** `{ value: 16, unit: "px" }` as `"16px"`. */
 const unitString = (value: unknown): unknown =>
     isObject(value) && typeof value.value === "number" && typeof value.unit === "string"
         ? `${value.value}${value.unit}`
@@ -98,7 +82,6 @@ const OBJECTS: Forms = {
     duration: durationObject,
 };
 
-/** A token's value with its colors, dimensions, and durations in one form, also inside a shadow, a type style, and so on. */
 function inForm(type: TokenType, value: unknown, forms: Forms): unknown {
     const members = (layer: unknown, map: Record<string, keyof Forms>) => {
         if (!isObject(layer)) {
@@ -152,9 +135,7 @@ function inForm(type: TokenType, value: unknown, forms: Forms): unknown {
     }
 }
 
-// --- tokens.<mode>.resolved.json -----------------------------------------------------------------------------------------
-
-/** A group, created on the way to a token's path. Defined, not assigned, so that a name such as `__proto__` is only a key. */
+/** Defined, not assigned, so that a name such as `__proto__` is only a key. */
 function groupAt(root: Obj, keys: readonly string[]): Obj {
     let group = root;
 
@@ -188,11 +169,6 @@ function setKey(group: Obj, key: string, value: unknown): void {
     });
 }
 
-/**
- * `tokens.<mode>.resolved.json`: the whole system in one mode as a DTCG file (the Design Tokens Community Group format
- * that Style Dictionary and Tokens Studio read). Groups nest by path; each token has `$type` and one `$value`, with
- * every reference followed; `$description` and `$deprecated` stay. The header says which draft the values follow.
- */
 export function dtcgJson(system: CompileInput, mode: string): string {
     const draft = system.dtcgFormat ?? "2021";
     const root: Obj = {
@@ -221,9 +197,6 @@ export function dtcgJson(system: CompileInput, mode: string): string {
     return `${JSON.stringify(root, null, 2)}\n`;
 }
 
-// --- tokens.studio.json --------------------------------------------------------------------------------------------------
-
-/** A token as Tokens Studio reads it: DTCG `$type` and `$value` (string forms), and a reference where the mode has one. */
 function studioToken(token: ResolvedToken, mode: string): Obj {
     const value = token.modes[mode]!;
 
@@ -237,12 +210,7 @@ function studioToken(token: ResolvedToken, mode: string): Obj {
     };
 }
 
-/**
- * `tokens.studio.json`: one file in the single-file format of Tokens Studio. A token set for each mode (every token, so
- * that a set stands alone, with the references that the mode has), a `$themes` array with a theme for each mode that
- * turns on its set and turns off the others, and `$metadata.tokenSetOrder`. Always in the string forms, which Tokens
- * Studio reads.
- */
+// Every mode's set holds every token, so that a set stands alone. A theme for each mode turns on its set and turns off the others. Always the string forms, which Tokens Studio reads.
 export function studioJson(system: CompileInput): string {
     const root: Obj = {};
 
@@ -276,9 +244,6 @@ export function studioJson(system: CompileInput): string {
     return `${JSON.stringify(root, null, 2)}\n`;
 }
 
-// --- tokens.resolved.json ------------------------------------------------------------------------------------------------
-
-/** The value of `get` for each mode: one value when every mode has the same, else a map by mode. */
 function perMode<T>(
     modes: readonly string[],
     get: (mode: string) => T,
@@ -291,12 +256,6 @@ function perMode<T>(
         : { by: Object.fromEntries(modes.map((mode) => [mode, get(mode)])) };
 }
 
-/**
- * `tokens.resolved.json`: a compact summary of the tokens with every reference followed, for scripts that want one
- * small file; it is secondary to `tokens.<mode>.resolved.json`, the DTCG files that other tools read. For each token its
- * type, tier, and variable, and its value as CSS (`value` when every mode has the same, else `values` by mode);
- * `alias` names the token it refers to; `parts` are a type style's members.
- */
 export function compactJson(system: CompileInput): string {
     const tokens = system.tokens.map((token): [string, unknown] => {
         const entry: Record<string, unknown> = {

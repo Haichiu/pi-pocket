@@ -95,7 +95,6 @@ const DESIGN = `<!doctype html><html><head><meta charset="utf-8"><title>Design</
 <script>document.getElementById("go").onclick = () => { window.clicked += 1; };</script>
 ${TEST_HOOKS}</body></html>`;
 
-/** A long page with a count of the hit tests that the bridge makes (a pin's place costs some): `pinwork` answers it. */
 const LONG = `<!doctype html><html><head><meta charset="utf-8"><title>Long</title>
 <style>body{font:16px/1.5 system-ui;margin:0}p{margin:0;padding:0 40px}</style></head>
 <body>${Array.from({ length: 160 }, (_, at) => `<p data-pid="p${at}">Row ${at}: boarding opens at nine, and the ferry leaves on the hour.</p>`).join("")}
@@ -112,7 +111,6 @@ addEventListener("message", (event) => {
 });
 </script></body></html>`;
 
-/** A page with one element that has room around it, for a pin to sit above it: a tap on the pin, and where it is told to be. */
 const PINS = `<!doctype html><html><head><meta charset="utf-8"><title>Pins</title>
 <style>body{margin:0;height:1500px}#target{position:absolute;left:200px;top:700px;width:120px;height:40px;background:#cde}</style></head>
 <body><div id="target" data-pid="target">Target</div>
@@ -633,7 +631,6 @@ test(
         const work = (extra: object = {}) =>
             ask<{ hits: number; scrollY: number }>({ type: "pinwork", ...extra });
 
-        // A hundred pins on a long page: the ones in view get a place, the rest are only rectangles.
         assert.equal(
             await send({
                 type: "pocket-highlight",
@@ -648,14 +645,12 @@ test(
         await settle();
         assert.ok((await work()).hits > 0, "the pins in view were given a place");
 
-        // Nothing changes: every frame reads rectangles, and none of them is a hit test.
         const quiet = await work({ reset: true });
 
         assert.equal(quiet.hits, 0);
         await settle();
         assert.equal((await work()).hits, 0, "a quiet page costs no hit tests");
 
-        // A scroll moves the page and the pins together: the places that were found stay.
         const before = await work({ reset: true });
 
         assert.equal(before.hits, 0);
@@ -698,12 +693,10 @@ test(
         const told = (await gotOf("pocket-pin")).find((each) => each.rect !== undefined)!;
 
         assert.equal(told.label, "7");
-        // The page scrolled it to the middle of the frame (600 px high), and says where it is now.
         assert.ok(Math.abs(told.rect.y + told.rect.height / 2 - 300) < 3, JSON.stringify(told));
         assert.equal(told.rect.x, 200);
         assert.equal(told.rect.width, 120);
 
-        // The pin sits above its element, outside it: a tap on the pin is a message, with no rectangle.
         await settle();
 
         const above = told.rect.y - 22 - 3;
@@ -719,7 +712,6 @@ test(
             { type: "pocket-pin", label: "7", tap: true },
         );
 
-        // The page does not see the tap (the pin is not in its tree), and nothing else of the page changed.
         assert.equal((await dump()).clicked, 0);
         await send({ type: "pocket-highlight", targets: [] });
     },
@@ -954,7 +946,6 @@ test("what a page says is checked for its shape and length", real, async () => {
     assert.equal(await deck("3", 0), null);
     assert.equal(await deck(3, 0.5), null);
 
-    // A pin: a tap (no other field comes through), or where its element is (finite numbers); nothing else.
     const pin = (body: object) =>
         check(`bridge.checkPageMessage({ type: "pocket-pin", ...${JSON.stringify(body)} })`);
 
@@ -1003,7 +994,6 @@ test("the app's own messages are checked before they go", real, async () => {
         ).error,
     );
     assert.ok((await check({ type: "pocket-run", html: "<p>" })).error);
-    // A pin may ask to be brought into view (a finding tapped in a list); only a boolean says so.
     assert.ok(
         (await check({ type: "pocket-highlight", targets: [{ selector: "p", reveal: true }] }))
             .message,

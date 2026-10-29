@@ -1,6 +1,3 @@
-/**
- * The Spacing, Radii, and Other sections of the documentation page. (Split from `docsite.ts`; see it for how the page is built and kept safe.)
- */
 import type { ResolvedToken } from "./system-types.ts";
 import { escapeHtml as esc } from "./docsite-markdown.ts";
 import {
@@ -48,7 +45,6 @@ export function spacingSection(ctx: Ctx): Built {
     }
 
     const parts: string[] = [];
-    // The bars share the width: the longest step fills a row, and the others are in proportion to it.
     const spaceMax = Math.max(
         ...space.map((token) => pxOf(valueIn(token, ctx.modes[0]!)?.value) ?? 0),
         1,
@@ -123,7 +119,6 @@ export function radiiSection(ctx: Ctx): Built {
         ctx.claimed.add(token);
     }
 
-    // A pile of near-equal sizes reads better as the jobs they do: small marks, controls, containers, and round things.
     const BANDS: { id: string; title: string; note: string; has: (px: number) => boolean }[] = [
         {
             id: "marks",
@@ -158,7 +153,6 @@ export function radiiSection(ctx: Ctx): Built {
         return `<div class="radius" data-q="${esc(`${token.name} ${token.description ?? ""}`.toLowerCase())}"><div class="shape" style="border-radius:${varOf(token, "0")}"></div>${copyName(token)}<span class="desc mono">${value}</span>${token.description === undefined ? "" : `<span class="desc">${esc(token.description)}</span>`}</div>`;
     };
 
-    // A system with roles shows them by use, and its scale after them; one with only a scale shows that, by use.
     const hasRoles = radii.some((token) => token.tier === "semantic");
     const bandTokens = hasRoles ? radii.filter((token) => token.tier === "semantic") : radii;
     const scaleTokens = hasRoles ? radii.filter((token) => token.tier === "primitive") : [];

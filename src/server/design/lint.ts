@@ -1,12 +1,5 @@
-/**
- * Design checks (docs/design/design-system.md, "Verification"): render a design in the private Chromium, walk its DOM
- * once, and compare what it uses with the design system's tokens (colors, fonts, sizes), then check contrast, tap
- * targets, overflow, images, headings, fonts, the viewport, `data-pid`s, and focus styles.
- *
- * Precision matters more than recall: a finding is reported only when the page's own values prove it. Equal values on
- * many elements are one finding with a count in its message. The page is untrusted: everything that comes back from
- * it is shape-checked and bounded before it is used.
- */
+// Precision matters more than recall: a finding is reported only when the page's own values prove it.
+// The page is untrusted: everything that comes back from it is shape-checked and bounded before it is used.
 import { createHash } from "node:crypto";
 import type { PocketHost } from "../host.ts";
 import type { DesignBundle } from "./bundle.ts";
@@ -44,35 +37,20 @@ import {
 } from "./render.ts";
 import type { CheckFinding, CheckReport, CheckRule, DesignSystem } from "./system-types.ts";
 
-/** What `checkDesign` takes besides the bundle and the system. */
 export interface CheckOptions {
-    /** A preset or a size. Default: desktop. */
     viewport?: ViewportName | DesignViewport;
-    /** Default: light. */
     colorScheme?: "light" | "dark";
-    /**
-     * A mode of the system (`system.modes`: `high-contrast`, a brand). The page gets `data-theme="<mode>"` on its root
-     * element, is drawn in the mode's color scheme (`system.schemes`; `colorScheme` is the fallback), and is compared
-     * with that mode's tokens. The name is checked against the system, and a system is needed. Left out: `dark` for a
-     * dark color scheme when the system has that mode (the root gets `data-theme` only if the page sets none), else
-     * the system's default mode.
-     */
+    // A mode of the system: the page gets `data-theme="<mode>"` on its root, is drawn in the mode's color scheme (`colorScheme` is the fallback), and is compared with that mode's tokens.
+    // Left out: `dark` when the system has that mode and the scheme is dark (the root gets `data-theme` only if the page sets none), else the system's default mode.
     mode?: string;
     tweaks?: TweakValues;
-    /** Another HTML page of the bundle (`about.html`). */
     page?: string;
-    /**
-     * Ids of findings that a person accepted on purpose (`CheckFinding.id`, stable between runs). They are reported apart,
-     * in `accepted`, and are not errors or warnings. An id that no finding has any more is ignored.
-     */
     accepted?: string[];
-    /** Steps before the checks, in order. */
     actions?: DesignAction[];
     /** For a deck: the slide to check (from 1, default 1), or `all` (up to 40 slides). */
     slide?: number | "all";
 }
 
-/** The order that findings sort in, after errors before warnings. */
 const RULE_ORDER: CheckRule[] = [
     "contrast",
     "overflow",
@@ -94,12 +72,10 @@ const RULE_ORDER: CheckRule[] = [
     "missing-pid",
 ];
 
-/** Motion longer than this, in milliseconds, or an animation that repeats forever, needs a reduced-motion rule. */
 export const MOTION_MS = 500;
 
 export { colorRoleOf };
 
-/** WCAG contrast for the suggestions of `lint-suggest.ts`. */
 const nearestPassing = (
     set: TokenSet,
     fg: RgbaTuple,
@@ -107,7 +83,6 @@ const nearestPassing = (
     needed: number,
     use?: string,
 ) => passing(set, fg, back, needed, contrastOf, use);
-/** Lengths this close, in pixels, are the same. */
 const SAME_LENGTH = 0.5;
 const MAX_TEXT = 300;
 
@@ -118,7 +93,6 @@ const num = (value: unknown, fallback = 0): number =>
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 const more = (count: number) => (count > 1 ? ` (and ${plural(count - 1, "more element")})` : "");
 
-/** An element reference from the page, cleaned. */
 function elementOf(raw: RawElement | undefined): {
     selector: string;
     pid?: string;
@@ -151,20 +125,14 @@ const rgbOf = (value: unknown): [number, number, number] | undefined =>
         ? [value[0], value[1], value[2]]
         : undefined;
 
-/** The view of a system's mode: which mode, which color scheme to draw, and the `data-theme` to set. */
-export interface ModeView {
+interface ModeView {
     mode: string;
     scheme: "light" | "dark";
-    /** The value of `data-theme` on the root, when the check sets one. */
     theme?: string;
     /** True when the mode was asked for by name: the attribute then replaces the page's own. */
     named: boolean;
 }
 
-/**
- * The mode of `system` that a check at `colorScheme` compares with. A named mode is validated and draws in its own
- * scheme (`system.schemes`); without a name, the mode that `tokens.css` shows at that scheme.
- */
 export function modeFor(
     system: DesignSystem,
     colorScheme: "light" | "dark",
@@ -198,7 +166,6 @@ export function modeFor(
     return { mode: base, scheme: colorScheme, named: false };
 }
 
-/** What the page script resolved for the system's tokens, put back into the token set. */
 function resolveTokens(set: TokenSet, raw: RawPage): void {
     set.colors.forEach((token, index) => {
         token.rgba = rgbaOf(raw.resolvedColors?.[index]);
@@ -210,7 +177,6 @@ function resolveTokens(set: TokenSet, raw: RawPage): void {
     });
 }
 
-/** The properties that can hold a length of each group (`props` of a size group), with their sides and shorthands. */
 const LENGTH_PROPERTIES: Record<string, string[]> = {
     padding: ["padding", "padding-top", "padding-right", "padding-bottom", "padding-left"],
     margin: ["margin", "margin-top", "margin-right", "margin-bottom", "margin-left"],
@@ -225,7 +191,6 @@ const LENGTH_PROPERTIES: Record<string, string[]> = {
     ],
 };
 
-/** The length tokens of a kind, with a pixel value. */
 const lengthsOf = (set: TokenSet, kind: LengthKind) =>
     set.lengths.filter(
         (token): token is typeof token & { px: number } =>
@@ -234,7 +199,6 @@ const lengthsOf = (set: TokenSet, kind: LengthKind) =>
 
 const tokenRef = (token: { cssVar: string }) => `var(${token.cssVar})`;
 
-/** The token to suggest for a font family list: one with the same generic fallback, else the first. */
 function suggestFont(set: TokenSet, list: string) {
     const wanted = familyList(list).filter(isGenericFamily).at(-1);
 
@@ -245,10 +209,6 @@ function suggestFont(set: TokenSet, list: string) {
     );
 }
 
-/**
- * The findings for what the page script returned. Pure: no browser. `tokens` is `undefined` without a system, and then
- * the off-system rules do not run.
- */
 export function analyze(
     raw: RawPage,
     tokens: TokenSet | undefined,
@@ -261,7 +221,6 @@ export function analyze(
         resolveTokens(tokens, raw);
     }
 
-    // Colors.
     if (tokens !== undefined && tokens.colors.some((token) => token.rgba !== undefined)) {
         for (const group of raw.colors ?? []) {
             const rgba = rgbaOf(group.rgba);
@@ -270,7 +229,6 @@ export function analyze(
                 continue;
             }
 
-            // On the system: some token is this color, within a rounding.
             const onSystem = tokens.colors.some(
                 (token) => token.rgba !== undefined && colorDistance(rgba, token.rgba) < SAME_COLOR,
             );
@@ -352,7 +310,6 @@ export function analyze(
         }
     }
 
-    // Fonts.
     if (tokens !== undefined && tokens.fonts.length > 0) {
         const allowed = new Set(tokens.fonts.map((font) => font.families[0]));
 
@@ -409,7 +366,6 @@ export function analyze(
         }
     }
 
-    // Sizes: font size, spacing, and radius, each on its own scale.
     if (tokens !== undefined) {
         const names: Record<string, string> = {
             "font-size": "the type scale",
@@ -478,7 +434,6 @@ export function analyze(
         }
     }
 
-    // Contrast.
     for (const group of raw.contrast ?? []) {
         const fg = rgbOf(group.fg);
         const bg = rgbOf(group.bg);
@@ -583,7 +538,6 @@ export function analyze(
         );
     }
 
-    // Tap targets.
     for (const group of raw.targets ?? []) {
         const width = num(group.width);
         const height = num(group.height);
@@ -604,7 +558,6 @@ export function analyze(
         );
     }
 
-    // Overflow.
     if (raw.overflow !== undefined && context.deck !== true) {
         const { scrollWidth, clientWidth, clipped, offenders } = raw.overflow;
 
@@ -619,7 +572,6 @@ export function analyze(
         });
     }
 
-    // Images, headings, fonts, the viewport.
     for (const group of raw.images ?? []) {
         add(
             {
@@ -681,7 +633,6 @@ export function analyze(
         );
     }
 
-    // Page semantics.
     const semantics = raw.semantics;
 
     if (semantics !== undefined && semantics.lang === false) {
@@ -756,7 +707,6 @@ export function analyze(
         }
     }
 
-    // Motion with no way to ask for less: one finding for the page.
     const motion = raw.motion;
 
     if (
@@ -776,7 +726,6 @@ export function analyze(
         });
     }
 
-    // `data-pid`: one finding in all, naming the tags.
     const pids = (raw.pids ?? []).filter((group) => num(group.count) > 0);
 
     if (pids.length > 0) {
@@ -819,14 +768,9 @@ export function analyze(
 const plain = (message: string) =>
     message.replace(/\d+ (more )?(elements?|uses?)/g, "N").replace(/ ?\(and N\)/g, "");
 
-/** The key that findings of one defect share, kept apart from the message (which grows a list of the other elements). */
 const groupKeys = new WeakMap<CheckFinding, string>();
 
-/**
- * Findings of one rule with the same value, suggestion, and message (apart from its counts) are one defect on several
- * elements, as two titles in the same wrong font: they become one finding that lists its elements (a pin for each). A
- * finding with no element (a page-level one) is left alone.
- */
+// Findings of one rule with the same value, suggestion, and message (apart from counts) become one finding that lists its elements. A page-level finding is left alone.
 export function groupFindings(list: CheckFinding[], next: CheckFinding): CheckFinding[] {
     const element = (finding: CheckFinding) => ({
         selector: finding.selector,
@@ -876,11 +820,7 @@ export function groupFindings(list: CheckFinding[], next: CheckFinding): CheckFi
     return list;
 }
 
-/**
- * A finding's id: the rule, and a hash of where it is (the `data-pid`, else the selector) and what it is about (the
- * value). The same problem on the same element has the same id in every run, so a pin can follow it; fixing the value
- * ends it, and a new value is a new id. The color scheme, the viewport, and the wording do not change it.
- */
+// The same problem on the same element has the same id in every run, so a pin can follow it; fixing the value ends it. The color scheme, the viewport, and the wording do not change it.
 export function findingId(
     finding: Pick<CheckFinding, "rule" | "pid" | "selector" | "value" | "elements">,
 ): string {
@@ -897,7 +837,6 @@ export function findingId(
     return `${finding.rule}-${hash}`;
 }
 
-/** The edit for a length: the property (or properties), the token by name, its value, and what it replaces. */
 function sizeEdit(
     props: unknown,
     kind: string,
@@ -917,7 +856,6 @@ function sizeEdit(
     return `Set ${set} to ${tokenRef(step)}, ${step.px}px, instead of ${px}px.${change}`;
 }
 
-/** A report for findings. */
 export function reportOf(
     findings: CheckFinding[],
     view: { viewport: DesignViewport; colorScheme: "light" | "dark"; mode?: string },
@@ -953,10 +891,6 @@ export function reportOf(
     };
 }
 
-/**
- * Move the findings that a person accepted (by id) out of `findings`: they are reported in `accepted`, and the counts
- * leave them out. A report with nothing accepted is returned as it is.
- */
 export function acceptFindings(
     report: CheckReport,
     ids: readonly string[] | undefined,
@@ -991,7 +925,6 @@ export function acceptFindings(
     };
 }
 
-/** The sentence of a report that says what was left unjudged, or nothing when everything was judged. */
 export function notJudgedText(report: CheckReport): string | undefined {
     const left = report.summary.notJudged?.contrast;
 
@@ -1000,7 +933,6 @@ export function notJudgedText(report: CheckReport): string | undefined {
         : `Contrast not judged on ${plural(left.count, "element")} (what is behind the text is not certain: a gradient, an image, an overlay, a filter, or a faded parent)${left.elements.length > 0 ? `: ${left.elements.join(", ")}${left.count > left.elements.length ? ", …" : ""}` : ""}.`;
 }
 
-/** What was not judged, over several reports (slides): the most, with the elements of each, up to 8. */
 export function mergeNotJudged(
     reports: CheckReport[],
 ): { count: number; elements: string[] } | undefined {
@@ -1016,10 +948,6 @@ export function mergeNotJudged(
           };
 }
 
-/**
- * The mode to check the loaded page against: the one asked for, else the `data-theme` the page's root really has when
- * that is a mode of the system, else `picked`.
- */
 export async function renderedMode(
     page: DesignPage,
     system: DesignSystem | undefined,
@@ -1037,10 +965,6 @@ export async function renderedMode(
     return typeof theme === "string" && system?.modes.includes(theme) ? theme : picked;
 }
 
-/**
- * Check the page that is loaded in `page`, in the state it is in now (a color scheme, tweaks, a slide, actions already
- * applied). `mode` names the system mode to compare with.
- */
 export async function checkPage(
     page: DesignPage,
     system: DesignSystem | undefined,
@@ -1081,7 +1005,6 @@ export async function checkPage(
     );
 }
 
-/** Findings of several reports as one list, equal findings once. */
 export function mergeFindings(reports: CheckReport[]): CheckFinding[] {
     const seen = new Set<string>();
     const merged: CheckFinding[] = [];
@@ -1102,10 +1025,6 @@ export function mergeFindings(reports: CheckReport[]): CheckFinding[] {
     return merged;
 }
 
-/**
- * Render a design and check it: the contract that the Design workspace's Check button and `design_preview` rely on.
- * Without a system, the off-system rules do not run and the report says so.
- */
 export async function checkDesign(
     bundle: DesignBundle,
     system: DesignSystem | undefined,

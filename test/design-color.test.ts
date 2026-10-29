@@ -1,4 +1,3 @@
-// Color math of the design system: every CSS color syntax, the DTCG color object, and the WCAG contrast ratio.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -12,7 +11,6 @@ import {
     parseColor,
     toHex,
     toOklch,
-    toOklchCss,
 } from "../src/server/design/color.ts";
 
 const hex = (text: string) => {
@@ -91,7 +89,6 @@ test("the WCAG 2.2 contrast ratio", () => {
     assert.ok(Math.abs(contrastRatio(parseColor("#767676")!, white) - 4.54) < 0.01);
     assert.equal(luminance(white), 1);
     assert.equal(luminance(black), 0);
-    // The order of the two colors does not matter.
     assert.equal(contrastRatio(white, black), contrastRatio(black, white));
 });
 
@@ -103,7 +100,6 @@ test("translucent colors are composited: the foreground over the background, the
     assert.ok(
         Math.abs(contrastRatio(half, white) - contrastRatio(parseColor("#808080")!, white)) < 0.05,
     );
-    // A translucent background shows the page: over black it is darker than over white.
     const glass = parseColor("rgb(255 255 255 / 0.1)")!;
     const text = parseColor("#fff")!;
 
@@ -115,9 +111,7 @@ test("oklch of a color, and its CSS text", () => {
 
     assert.ok(Math.abs(blue.l - 0.719) < 0.002);
     assert.ok(Math.abs(blue.h - 264.2) < 0.5);
-    assert.equal(toOklchCss(parseColor("#7aa2f7")!), "oklch(0.719 0.132 264.2)");
     assert.equal(toOklch(parseColor("#808080")!).h, 0, "a gray has no hue");
-    assert.equal(toOklchCss(parseColor("rgb(0 0 0 / 0.5)")!), "oklch(0 0 0 / 0.5)");
 });
 
 test("the DTCG color object becomes CSS, and a bad one says how to fix it", () => {
@@ -200,6 +194,5 @@ test("mixColors matches the browser's color-mix()", () => {
             (value, at) => Math.abs(value - channels("#c986e0")[at]!) <= 1,
         ),
     );
-    // Percentages that do not add to 100 are scaled; if they add to less, the result is translucent.
     assert.equal(mixed("srgb", "#000", 25, "#fff", 25), "#80808080");
 });

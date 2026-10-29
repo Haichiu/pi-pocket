@@ -1,4 +1,3 @@
-// A small design system and a helper to check a page against it, for the design check tests.
 import { dimensionCss } from "../src/server/design/lint-color.ts";
 import { createPublicFetch } from "../src/server/public-fetch.ts";
 import type { PocketHost } from "../src/server/host.ts";
@@ -15,7 +14,6 @@ import type {
 
 export const host = { fetchPublic: createPublicFetch() } as PocketHost;
 
-/** A token with a value in the light mode, and in the dark mode when given. */
 export function token(
     name: string,
     type: TokenType,
@@ -38,7 +36,6 @@ export function token(
     };
 }
 
-/** Colors, two fonts, a type scale, a spacing scale, and radii, in light and dark. */
 export function testSystem(): DesignSystem {
     return {
         name: "Test system",
@@ -71,7 +68,6 @@ export function testSystem(): DesignSystem {
     };
 }
 
-/** A bundle for a page. */
 export function bundleOf(content: string, assets: DesignBundle["assets"] = []): DesignBundle {
     return { meta: { title: "Test", type: "html", versions: [] }, version: 1, content, assets };
 }
@@ -79,7 +75,6 @@ export function bundleOf(content: string, assets: DesignBundle["assets"] = []): 
 const head =
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
 
-/** The test system as CSS variables, light and dark, as a tokens.css would give them. */
 export function tokensCss(system: DesignSystem = testSystem()): string {
     const lines = (mode: string) =>
         system.tokens
@@ -99,14 +94,10 @@ export function tokensCss(system: DesignSystem = testSystem()): string {
     return `:root{${lines("light")}}@media (prefers-color-scheme: dark){:root{${lines("dark")}}}`;
 }
 
-/**
- * A page: the head with a viewport meta and the system's variables, the style, and the body. The body's own look uses
- * the variables, so a page made of `var()`s alone is on the system.
- */
+// The body's own look uses the variables, so a page made of `var()`s alone is on the system.
 export const page = (style: string, body: string) =>
     `${head}<style>${tokensCss()}body{margin:0;font-family:var(--font-body);font-size:var(--font-size-md);line-height:1.5;color:var(--color-text-primary);background:var(--color-bg-page)}${style}</style></head><body><main data-pid="page">${body}</main></body></html>`;
 
-/** Check a page at a phone size against the test system (`null`: no system). */
 export function check(
     content: string,
     options: CheckOptions = {},
@@ -121,7 +112,6 @@ export function check(
     );
 }
 
-/** The findings of a rule, and of a rule on one `data-pid`. */
 export const ofRule = (report: CheckReport, rule: string): CheckFinding[] =>
     report.findings.filter((finding) => finding.rule === rule);
 export const onPid = (report: CheckReport, rule: string, pid: string): CheckFinding | undefined =>

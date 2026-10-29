@@ -1,19 +1,11 @@
-/**
- * Component specimens of a design system (stream T): one HTML file for each component, with a JSON description, a
- * style block, and one `<template data-state="…">` for each state (docs/design/design-system.md). The parser is pure;
- * the engine (`tokens-model.ts`) calls it with the token names that exist, so it can say which `var(--…)` is unknown.
- *
- * A specimen's markup and CSS are untrusted: they reach people only in a sandboxed frame, and `components.css` only
- * as a style asset. The parser keeps scripts, event handlers, `@import`, and markup inside the CSS out.
- */
+// Specimen markup and CSS are untrusted: they reach people only in a sandboxed frame, and `components.css` only as a style asset.
+// The parser keeps scripts, event handlers, `@import`, and markup inside the CSS out.
 import type { ComponentSpec, SystemProblem } from "./system-types.ts";
 
 export const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const STATE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
 
-/** What the parser needs to know about the system's tokens. */
-export interface KnownTokens {
-    /** Token names by CSS variable: `--color-bg-surface` → `color.bg.surface`. */
+interface KnownTokens {
     byVar: ReadonlyMap<string, string>;
     names: ReadonlySet<string>;
 }
@@ -26,7 +18,6 @@ const plain = (text: string) =>
         .replace(/\s+/g, " ")
         .trim();
 
-/** The balanced `<template>` elements of `html`, in order: the attribute text and the inner markup. */
 function templates(html: string): { attributes: string; inner: string }[] {
     const found: { attributes: string; inner: string }[] = [];
     const tag = /<(\/?)template\b([^>]*)>/gi;
@@ -54,11 +45,9 @@ function templates(html: string): { attributes: string; inner: string }[] {
     return found;
 }
 
-/** The selectors of a stylesheet's rules, including those inside `@media`, `@supports`, and `@layer` blocks. */
 function selectors(css: string): string[] {
     const text = css.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, " ");
     const found: string[] = [];
-    // Whether each open block holds rules of its own (a conditional at-rule) or declarations.
     const stack: boolean[] = [];
     let prelude = "";
 
@@ -90,17 +79,12 @@ function selectors(css: string): string[] {
     return found;
 }
 
-/** A selector that targets no class, id, or attribute: it would restyle every element of that kind on a page. */
 const UNSCOPED = (selector: string) =>
     selector
         .split(",")
         .map((part) => part.trim())
         .some((part) => part !== "" && !/[.#[]/.test(part.replace(/:(root|host)\b/g, "")));
 
-/**
- * Parses one specimen file. `problems` carry the file name (`components/<slug>.html`); an error means the specimen
- * cannot be used (no spec is returned), a warning means it can.
- */
 export function parseComponent(
     slug: string,
     html: string,
@@ -162,7 +146,6 @@ export function parseComponent(
         warn("The CSS loads a remote url(): a specimen should not depend on the network.");
     }
 
-    // The templates, one for each state, in file order.
     const markup: Record<string, string> = {};
     const order: string[] = [];
 
@@ -196,7 +179,6 @@ export function parseComponent(
         );
     }
 
-    // The description block.
     const object =
         typeof meta === "object" && meta !== null && !Array.isArray(meta)
             ? (meta as Record<string, unknown>)
@@ -253,7 +235,6 @@ export function parseComponent(
         }
     }
 
-    // Tokens: the ones the file names, then the ones its CSS uses.
     const used = new Set<string>();
     const unknownVars = new Set<string>();
     // A variable the component sets itself (`--notice-bg: …`) is its own, not a missing token.

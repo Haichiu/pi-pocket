@@ -1,4 +1,3 @@
-/** The page script's token table: a search of names and values, filters by type and tier, and rows drawn a screenful at a time on a phone. */
 export const JS_TABLE = `    // The table of tokens. Its search, type filter, and tier filter hide rows; on a phone only the first rows are in the
     // page, and more come as the person scrolls (or taps), so that a long table costs a phone nothing until it is read.
     var tbody = $("#tokens tbody");

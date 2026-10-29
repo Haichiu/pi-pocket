@@ -1,6 +1,3 @@
-/**
- * The shared parts of the documentation page: its limits, the safe-style helpers, value text, and the page model (`Ctx`) that every section reads. (Split from `docsite.ts`; see it for how the page is built and kept safe.)
- */
 import {
     type DesignSystem,
     type ModeValue,
@@ -16,31 +13,23 @@ export interface SystemDoc {
     assets: { name: string; content: string }[];
 }
 
-/** The most tokens, components, and states the page draws; a system over a limit shows its first part and says so. */
 export const MAX_TOKENS = 3000;
 export const MAX_COMPONENTS = 60;
-/** The most color cards, palette steps, and rows of one specimen list: a bigger list goes on in the token table. */
 export const MAX_ROLES = 240;
 export const MAX_PALETTE = 480;
-export const MAX_SPECIMENS = 120;
 export const MAX_STATES = 16;
+const MAX_SPECIMENS = 120;
+
 /** The most bytes of page: an artifact holds 2 MB, and the page keeps room under that. */
 export const MAX_PAGE = 1_800_000;
 
-/** The longest piece of code the page prints for a component or for the compiled files. */
 export const MAX_CODE = 60_000;
 
-/**
- * The page's policy. Nothing loads from outside, no frame or form or `<base>` is allowed, and an image or a font only as
- * data. Script runs only with the page's own nonce, which a component's markup cannot carry (and a `javascript:` address
- * is no script of the page, so it is blocked too). The artifact viewer's bridge script is the first thing in the page,
- * before this policy, so it has run by then and is not touched. The page's script also builds a component's markup
- * from an allowlist, so the policy is the second guard and not the only one.
- */
+// Nothing loads from outside; script runs only with the page's own nonce, which a component's markup cannot carry.
+// The artifact viewer's bridge script comes first, before this policy, so it has run by then and is not touched.
+// The page's script also builds component markup from an allowlist: this policy is the second guard.
 export const pageCsp = (nonce: string) =>
     `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'`;
-
-// ── Small helpers ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 export const isObject = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === "object" && !Array.isArray(value);
@@ -48,15 +37,13 @@ export const isObject = (value: unknown): value is Record<string, unknown> =>
 export const clip = (text: string, max: number) =>
     text.length > max ? `${text.slice(0, max - 1)}…` : text;
 
-/** A name for a mode, for people: `high-contrast` is "High contrast". */
 export function modeLabel(mode: string): string {
     const text = mode.replace(/[-_]+/g, " ").trim() || mode;
 
     return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** Words for a path segment; a few short names are spelled out. */
-export const SEGMENT_TITLES: Record<string, string> = {
+const SEGMENT_TITLES: Record<string, string> = {
     bg: "Background",
     fg: "Foreground",
     bgcolor: "Background",
@@ -91,14 +78,11 @@ export function safeCss(value: unknown): string | undefined {
 
 export const safeVar = (name: string) => (/^--[A-Za-z0-9_-]{1,120}$/.test(name) ? name : undefined);
 
-/** `var(--name)` for a token, or the fallback when the name is not a safe custom property. */
 export const varOf = (token: ResolvedToken, fallback = "transparent") =>
     safeVar(token.cssVar) === undefined ? fallback : `var(${token.cssVar})`;
 
-/** An id that is safe in an attribute and a selector. */
 export const idOf = (text: string) => slugify(text) || "x";
 
-/** A dimension value as CSS text (`16px`), from the string and object forms. */
 export function dimText(value: unknown): string | undefined {
     if (typeof value === "string") {
         return value;
@@ -115,7 +99,6 @@ export function dimText(value: unknown): string | undefined {
     return undefined;
 }
 
-/** A dimension in pixels (one rem is 16). */
 export function pxOf(value: unknown): number | undefined {
     const match = /^(-?\d*\.?\d+)\s*(px|rem|em)?$/.exec(dimText(value) ?? "");
 
@@ -143,7 +126,7 @@ export function colorValueText(value: unknown): string | undefined {
     return color === undefined ? undefined : toHex(color);
 }
 
-export function shadowText(value: unknown): string {
+function shadowText(value: unknown): string {
     const layers = Array.isArray(value) ? value : [value];
 
     return layers
@@ -253,10 +236,9 @@ export function limiter(): { limit: <T>(list: T[]) => T[]; note: () => string } 
 // ── The page's model ───────────────────────────────────────────────────────────────────────────────────────────────
 
 /** The sections that count tokens. A token is in exactly one; their counts add up to the system's token count. */
-export type SectionId =
-    "color" | "typography" | "spacing" | "radii" | "shadows" | "motion" | "other";
+type SectionId = "color" | "typography" | "spacing" | "radii" | "shadows" | "motion" | "other";
 
-export const SECTION_HINTS: [SectionId, RegExp][] = [
+const SECTION_HINTS: [SectionId, RegExp][] = [
     ["typography", /^(font|type|text|typography|line|leading|letter|tracking)$/],
     ["spacing", /^(space|spacing|gap|size|sizes|padding|margin|inset|stack|layout)$/],
     ["radii", /^(radius|radii|round|rounded|corner|corners)$/],
@@ -425,7 +407,7 @@ export function textToken(ctx: Ctx): ResolvedToken | undefined {
 }
 
 /** Whether a mode is dark: by its ground color when the system has one, else by its name. */
-export function themeOfMode(ctx: Ctx, mode: string): "light" | "dark" {
+function themeOfMode(ctx: Ctx, mode: string): "light" | "dark" {
     const ground = colorOf(groundToken(ctx), mode);
 
     if (ground !== undefined) {
@@ -503,7 +485,7 @@ export function rowOf(ctx: Ctx, token: ResolvedToken, sample: string): string {
  * section that also has roles) and a component's own tokens are counted inside the section, each in its own line. The
  * three add up to `total`, and the sections' totals add up to the system's tokens. The System view counts the same way.
  */
-export interface SectionCount {
+interface SectionCount {
     headline: number;
     primitives: number;
     components: number;
@@ -563,9 +545,7 @@ export function moreTokens(ctx: Ctx, id: SectionId): string {
 
 export const rootOf = (token: ResolvedToken) => token.path[0]!.toLowerCase();
 
-// ── Other tokens, the reference table, and the code ───────────────────────────────────────────────────────────────
-
-export function valueCell(ctx: Ctx, token: ResolvedToken): string {
+function valueCell(ctx: Ctx, token: ResolvedToken): string {
     const text = variants(ctx, (mode) =>
         esc(clip(plain(token.type, valueIn(token, mode)?.value), 160)),
     );
@@ -576,14 +556,11 @@ export function valueCell(ctx: Ctx, token: ResolvedToken): string {
         : text;
 }
 
-/** A link to a heading: an icon that shows on hover or focus, and copies the address of the heading when it is used. */
 export function anchor(id: string, label: string): string {
-    // The icon is drawn by the page's CSS (a mask), so each link is a few bytes.
     return `<a class="anchor" href="#${esc(id)}" aria-label="Link to ${esc(label)}"></a>`;
 }
 
-/** A token's value in one mode, as the cell of a column: a color has its own swatch (not the page's variable, which is for one mode). */
-function modeCell(ctx: Ctx, token: ResolvedToken, mode: string, across = 1): string {
+function modeCell(token: ResolvedToken, mode: string, across = 1): string {
     const value = valueIn(token, mode)?.value;
     const text =
         token.type === "shadow" ? shadowLayers(value) : esc(clip(plain(token.type, value), 160));
@@ -596,10 +573,6 @@ function modeCell(ctx: Ctx, token: ResolvedToken, mode: string, across = 1): str
         : `<td data-label="${esc(modeLabel(mode))}" class="num wrap">${body}</td>`;
 }
 
-/**
- * The cell of a value that is the same in every mode: one cell across the mode columns, with the value once. It is
- * `undefined` when the modes differ (or there is one mode, where a column is already one value).
- */
 function sameCell(ctx: Ctx, token: ResolvedToken): string | undefined {
     if (ctx.modes.length < 2) {
         return undefined;
@@ -612,14 +585,10 @@ function sameCell(ctx: Ctx, token: ResolvedToken): string | undefined {
     });
 
     return texts.every((text) => text === texts[0])
-        ? modeCell(ctx, token, ctx.modes[0]!, ctx.modes.length)
+        ? modeCell(token, ctx.modes[0]!, ctx.modes.length)
         : undefined;
 }
 
-/**
- * The rows of a table of tokens. With `columns`, a column for each mode (and a swatch of its own in each); without, one
- * value that follows the mode in force. A row carries its type and tier, for the table's filters.
- */
 export function tableRows(ctx: Ctx, tokens: ResolvedToken[], columns = false): string {
     return tokens
         .map((token) => {
@@ -628,7 +597,7 @@ export function tableRows(ctx: Ctx, tokens: ResolvedToken[], columns = false): s
                     ? ""
                     : ` <span class="pill warn">Deprecated${typeof token.deprecated === "string" ? `: ${esc(clip(token.deprecated, 80))}` : ""}</span>`;
 
-            return `<tr data-q="${esc(`${token.name} ${token.cssVar} ${token.type} ${token.tier} ${token.description ?? ""}`.toLowerCase())}"><td data-label="Token"><span class="${deprecated === "" ? "" : "dep"}">${copyName(token)}</span>${token.cssVar === `--${token.path.join("-")}` ? "" : `<button class="tk">${esc(token.cssVar)}</button>`}${deprecated}${token.description === undefined ? "" : `<div class="desc">${esc(token.description)}</div>`}</td><td data-label="Type"><span>${esc(token.type)}</span> <span class="pill">${esc(token.tier)}</span></td>${columns ? (sameCell(ctx, token) ?? ctx.modes.map((mode) => modeCell(ctx, token, mode)).join("")) : `<td data-label="Value" class="num wrap">${valueCell(ctx, token)}</td>`}</tr>`;
+            return `<tr data-q="${esc(`${token.name} ${token.cssVar} ${token.type} ${token.tier} ${token.description ?? ""}`.toLowerCase())}"><td data-label="Token"><span class="${deprecated === "" ? "" : "dep"}">${copyName(token)}</span>${token.cssVar === `--${token.path.join("-")}` ? "" : `<button class="tk">${esc(token.cssVar)}</button>`}${deprecated}${token.description === undefined ? "" : `<div class="desc">${esc(token.description)}</div>`}</td><td data-label="Type"><span>${esc(token.type)}</span> <span class="pill">${esc(token.tier)}</span></td>${columns ? (sameCell(ctx, token) ?? ctx.modes.map((mode) => modeCell(token, mode)).join("")) : `<td data-label="Value" class="num wrap">${valueCell(ctx, token)}</td>`}</tr>`;
         })
         .join("");
 }

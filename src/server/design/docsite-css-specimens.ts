@@ -1,4 +1,3 @@
-/** The page's CSS for the foundation specimens (type, spacing, radii, shadows, motion) and the components. */
 export const CSS_SPECIMENS = `/* ── Specimens ─────────────────────────────────────────── */
 
 .spec {

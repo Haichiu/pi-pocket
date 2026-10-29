@@ -1,4 +1,3 @@
-/** The page script's phone navigation, filter, and scroll spy. */
 export const JS_NAV = `    // Navigation on a phone.
     var menuButton = $(".icon-btn");
     function navOpen(open) {

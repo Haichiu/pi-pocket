@@ -1,11 +1,4 @@
-/**
- * The design system as compact text for the prompt (stream T): the variables Pi may use, with their values, grouped by
- * what they are for, then the components and the rules. It is bounded, and the most useful lines come first: how to
- * link it, the semantic tokens (the roles), the components, the scales, the guidelines, and last the raw palette and
- * the tokens that belong to one component. What does not fit is named, not guessed. Inside a group, a token that
- * components and other tokens use more comes first. Project text (descriptions, component names, guidelines) is data:
- * it is cut to one line, stripped of invisible characters, and made safe to put between tags.
- */
+// Project text (descriptions, component names, guidelines) is data: it is cut to one line, stripped of invisible characters, and made safe to put between tags.
 import { defang } from "../fence.ts";
 import type { DesignSystem, ResolvedToken } from "./system-types.ts";
 
@@ -19,7 +12,6 @@ const plain = (text: string) =>
 const clip = (text: string, max: number) =>
     text.length > max ? `${text.slice(0, max - 1)}…` : text;
 
-/** What a token reads like in a list: the value in the default mode, and in each other mode where it differs. */
 function valueLine(system: DesignSystem, token: ResolvedToken): string {
     const [base, ...others] = system.modes as [string, ...string[]];
 
@@ -37,10 +29,8 @@ function valueLine(system: DesignSystem, token: ResolvedToken): string {
     return `${first}${changes.length > 0 ? ` (${changes.join("; ")})` : ""}`;
 }
 
-/** A group heading for a token: its first path segment, so `color.bg.surface` is under `color`. */
 const headingOf = (token: ResolvedToken) => token.path[0]!;
 
-/** Collapses `color.blue.50` … `color.blue.900` into `color.blue.{50, 100 … 900}`. */
 function palettes(tokens: ResolvedToken[]): string[] {
     const groups = new Map<string, string[]>();
 
@@ -59,14 +49,9 @@ function palettes(tokens: ResolvedToken[]): string[] {
     );
 }
 
-/** A class name that is safe to show: letters, digits, and the marks that Tailwind and BEM use. */
 const CLASS_NAME = /^[\w:.[\]%/#-]{1,48}$/;
 
-/**
- * The root element of a markup, and the class names of its states: `<article class="pk-card">` and the other classes
- * the states use (`pk-card--selected`), so that Pi can reuse the markup without reading the file. Project text: only
- * safe class names are kept.
- */
+// Project text: only safe class names are kept.
 function rootOf(component: DesignSystem["components"][number]): string {
     const classesIn = (tag: string) =>
         (
@@ -103,7 +88,6 @@ function rootOf(component: DesignSystem["components"][number]): string {
     return `root <${tag}${rootClasses.length === 0 ? "" : ` class="${rootClasses.join(" ")}"`}>${others.length === 0 ? "" : `; other classes ${others.slice(0, 8).join(" ")}${others.length > 8 ? " …" : ""}`}`;
 }
 
-/** How much each token is used: by components (their `tokens`), and by other tokens that are aliases of it. */
 function useCounts(system: DesignSystem): Map<string, number> {
     const uses = new Map<string, number>();
     const add = (name: string) => uses.set(name, (uses.get(name) ?? 0) + 1);
@@ -129,10 +113,6 @@ function headingsOf(tokens: ResolvedToken[]): string[] {
     ];
 }
 
-/**
- * The summary of a system, at most `maxBytes` bytes. In order: how to link it, the semantic tokens with values, the
- * components, the scales, the guidelines, the palette, the component tokens. Lines that do not fit are named.
- */
 export function systemSummary(system: DesignSystem, maxBytes: number): string {
     const uses = useCounts(system);
     const errors = system.problems.filter((problem) => problem.level === "error").length;
@@ -157,7 +137,6 @@ export function systemSummary(system: DesignSystem, maxBytes: number): string {
                     (uses.get(b.token.name) ?? 0) - (uses.get(a.token.name) ?? 0) || a.at - b.at,
             )
             .map((each) => each.token);
-    // The semantic tokens, and the raw colors when nothing names them; then the scales; then what belongs to one component.
     const semantic = rest.filter(
         (token) =>
             token.tier === "semantic" || (token.type === "color" && token.tier === "primitive"),
@@ -272,7 +251,6 @@ export function systemSummary(system: DesignSystem, maxBytes: number): string {
         return { first, all: [...first, ...later] };
     };
 
-    // Fit: whole lines, then a note that names what was left out.
     const bytes = (text: string) => Buffer.byteLength(text) + 1;
     const total = (lines: string[]) => lines.reduce((sum, line) => sum + bytes(line), 0);
     const note = (left: number) =>

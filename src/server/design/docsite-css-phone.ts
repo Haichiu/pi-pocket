@@ -1,4 +1,3 @@
-/** The page's CSS for phones and small screens, for reduced motion, and for print. */
 export const CSS_PHONE = `/* ── Phone and small screens ───────────────────────────── */
 
 @media (max-width: 959px) {

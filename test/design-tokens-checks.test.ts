@@ -1,6 +1,3 @@
-// The token checks of round 3: names that are their own value, contrast pairs that are exempt, the extra data an editor
-// reads (shadow parts, what a mode overrides, every contrast pair), and the tool's refusal of a parameter that does not
-// fit its action.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,8 +22,6 @@ const system = (tokens: unknown, modes?: Record<string, unknown>) =>
     writeDesignSystem(project(), { tokens, ...(modes === undefined ? {} : { modes }) });
 const warnings = (made: ReturnType<typeof system>) =>
     made.problems.filter((problem) => problem.level === "warning");
-
-// --- A name that is its own value ------------------------------------------------------------------------------------
 
 test("a token named for its own value warns, with a fix; the steps of a scale do not", () => {
     const made = system({
@@ -84,8 +79,6 @@ test("a name equal to the value in rem or in seconds is the same case", () => {
     );
 });
 
-// --- Contrast ---------------------------------------------------------------------------------------------------------
-
 const textTokens = (disabled: unknown) => ({
     color: {
         $type: "color",
@@ -138,7 +131,6 @@ test("a pair that fails is a warning with a fix; an exempt pair is a note, not a
         );
     }
 
-    // An exempt pair that passes needs no note.
     assert.equal(
         system(textTokens({ on: "{color.bg.page}", min: 1.5, exempt: "disabled" })).notes,
         undefined,
@@ -181,8 +173,6 @@ test("a token with several contrast pairs lists all of them", () => {
     assert.deepEqual(token.contrast, token.contrasts![0], "contrast is the first pair");
 });
 
-// --- What an editor reads ----------------------------------------------------------------------------------------------
-
 test("a shadow has parts: its members as CSS, one layer plain, several by layer", () => {
     const made = system({
         color: { $type: "color", shadow: { $value: "#00000040" } },
@@ -224,7 +214,6 @@ test("a shadow has parts: its members as CSS, one layer plain, several by layer"
     assert.equal(parts("shadow.two")!["layer-1-blur"], "2px");
     assert.equal(parts("shadow.two")!["layer-2-color"], "var(--color-shadow)");
     assert.equal(parts("shadow.two")!["layer-2-inset"], "inset");
-    // They are for editors: the stylesheet does not repeat them.
     assert.doesNotMatch(made.compiled.css, /--shadow-one-blur/);
 });
 
@@ -249,8 +238,6 @@ test("a mode lists the tokens its file sets, so a view can show the rest as inhe
     });
     assert.deepEqual(system({ n: { $type: "number", one: { $value: 1 } } }).overrides, {});
 });
-
-// --- The tool ---------------------------------------------------------------------------------------------------------
 
 const tool = designSystemTool();
 const run = (dir: string, args: Record<string, unknown>) =>
@@ -285,7 +272,6 @@ test("a parameter that does not fit the action is refused, with the action it fi
         /not an action of design_system\. Actions: read, scan, init/,
     );
 
-    // The fitting call is not refused, and a value of undefined is no parameter.
     assert.ok(await run(dir, { action: "scan", path: undefined }));
     assert.ok(await run(dir, { action: "validate", file: undefined }));
 });

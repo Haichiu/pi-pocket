@@ -1,4 +1,3 @@
-/** The base of the page's CSS: the custom properties, the reset, the shell (top bar, navigation, search), and the sections' headings. */
 export const CSS_BASE = `
 :root {
     color-scheme: light;

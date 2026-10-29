@@ -1,5 +1,3 @@
-// What a report says besides its findings: findings of one defect grouped with their elements, findings that a person
-// accepted on purpose (reported apart), and what was not judged (so that silence can be trusted).
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -31,7 +29,6 @@ test(
     "one defect on several elements is one finding that lists them, with a pin for each",
     browser,
     async () => {
-        // The judge's case: the title and the subtitle in the same wrong font showed as two rows.
         const report = await check(page("", `${serif("title")}${serif("sub")}${serif("third")}`));
         const fonts = ofRule(report, "off-system-font");
 
@@ -46,13 +43,11 @@ test(
         );
         assert.match(fonts[0]!.message, /The same in 2 more places: sub, third\.$/);
         assert.equal(report.summary.byRule["off-system-font"], 1);
-        // The id depends on the set of elements, not on their order; another set is another id.
         const swapped = await check(page("", `${serif("third")}${serif("title")}${serif("sub")}`));
         const fewer = await check(page("", `${serif("title")}${serif("sub")}`));
 
         assert.equal(ofRule(swapped, "off-system-font")[0]!.id, fonts[0]!.id);
         assert.notEqual(ofRule(fewer, "off-system-font")[0]!.id, fonts[0]!.id);
-        // A different value is a different finding.
         const mixed = await check(
             page("", `${serif("a")}<p data-pid="b" style="font-family:Georgia;margin:0">B</p>`),
         );
@@ -117,7 +112,6 @@ test(
             accepted: [blue.id!, "off-system-size-0000000000"],
         });
 
-        // The finding leaves the lists and the counts; an id that nothing has is ignored.
         assert.equal(
             accepted.findings.some((item) => item.id === blue.id),
             false,
@@ -134,21 +128,18 @@ test(
             (first.summary.byRule["off-system-color"] ?? 0) - 1,
         );
         assert.equal(accepted.findings.length, first.findings.length - 1);
-        // The same on the next check, and in the other scheme.
         const again = await check(content, { accepted: [blue.id!], colorScheme: "dark" });
 
         assert.deepEqual(
             again.accepted!.map((item) => item.id),
             [blue.id],
         );
-        // The color changes: it is another finding, and it comes back.
         const changed = await check(content.replace("#7ba3f8", "#7ba3fa"), {
             accepted: [blue.id!],
         });
 
         assert.equal(changed.accepted, undefined);
         assert.ok(ofRule(changed, "off-system-color").some((item) => item.value === "#7ba3fa"));
-        // Pure: a report with nothing accepted is the same report.
         assert.equal(acceptFindings(first, undefined), first);
         assert.equal(acceptFindings(first, ["nothing-0000000000"]), first);
     },
@@ -178,7 +169,6 @@ test(
             notJudgedText(report)!,
             /^Contrast not judged on 3 elements \(what is behind the text is not certain: a gradient, an image, an overlay, a filter, or a faded parent\): .*\[data-pid="grad"\]/,
         );
-        // The preview text says it too, once.
         const text = checkText([{ view: "desktop", report }], undefined, undefined, []);
 
         assert.equal(
@@ -186,7 +176,6 @@ test(
                 .length,
             1,
         );
-        // Nothing unjudged: no field, no sentence.
         const clean = await check(
             page("", `<p data-pid="a" style="margin:0;color:#1c1e26;background:#fff">Fine</p>`),
             {},
@@ -256,7 +245,6 @@ test("the route cleans what a report adds: elements, accepted findings, and what
     assert.equal(cleaned.summary.notJudged!.contrast.count, 3);
     assert.equal(cleaned.summary.notJudged!.contrast.elements.length, 8);
     assert.ok(cleaned.summary.notJudged!.contrast.elements.every((each) => each.length <= 500));
-    // Nothing accepted, nothing unjudged: an empty accepted list (the app always reads one), and no summary fields.
     const bare = cleanReport({
         ...report,
         accepted: [],

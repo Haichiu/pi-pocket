@@ -1,6 +1,3 @@
-/**
- * The Color section of the documentation page: role cards, the palette, the text-on-ground matrix, and the contrast pairs. (Split from `docsite.ts`; see it for how the page is built and kept safe.)
- */
 import { type ResolvedToken } from "./system-types.ts";
 import { contrastRatio, rating, readableOn, toOklchText } from "./docsite-color.ts";
 import { escapeHtml as esc, plural } from "./docsite-markdown.ts";
@@ -24,16 +21,13 @@ import {
     tokensOf,
 } from "./docsite-core.ts";
 
-// ── Color cards ────────────────────────────────────────────────────────────────────────────────────────────────────
-
 /** A contrast ratio with one decimal, cut and not rounded, so that 4.48 never shows as the 4.5 it does not reach. */
-export const fmtRatio = (ratio: number) => (Math.floor(ratio * 10 + 1e-9) / 10).toFixed(1);
+const fmtRatio = (ratio: number) => (Math.floor(ratio * 10 + 1e-9) / 10).toFixed(1);
 
-export function ratioPill(ratio: number, min: number | undefined, exempt?: string): string {
+function ratioPill(ratio: number, min: number | undefined, exempt?: string): string {
     const label = rating(ratio);
     const passes = min === undefined ? label !== "fail" : ratio >= min;
 
-    // An exempt pair (disabled or decorative text) is not a failure: it says why it is left out.
     if (!passes && exempt !== undefined) {
         return `<span class="ratio">${fmtRatio(ratio)}:1</span> <span class="pill">exempt (${esc(exempt)})</span>`;
     }
@@ -41,12 +35,7 @@ export function ratioPill(ratio: number, min: number | undefined, exempt?: strin
     return `<span class="ratio">${fmtRatio(ratio)}:1</span> <span class="pill ${passes ? "ok" : "bad"}">${passes ? label : "Fails"}</span>`;
 }
 
-/**
- * Three ways to copy a token: as a CSS variable, as a Tailwind class (the compiled `@theme` maps `--color-*` to
- * utilities), and as its JSON path. The page's script makes the buttons from these three values, so that they are
- * written once and not three times a card.
- */
-export function copyRow(ctx: Ctx, token: ResolvedToken): string {
+function copyRow(ctx: Ctx, token: ResolvedToken): string {
     // The class comes from the variable that the compiled theme gives the token (`--color-surface`, so `bg-surface`).
     const tailwind = ctx.twVar.get(token.name) ?? token.cssVar;
     const rest = tailwind.startsWith("--color-") ? tailwind.slice("--color-".length) : undefined;
@@ -59,7 +48,7 @@ export function copyRow(ctx: Ctx, token: ResolvedToken): string {
     return `<div class="copy-row" data-var="${esc(token.cssVar)}"${rest === undefined ? "" : ` data-tw="${esc(`${prefix}-${rest}`)}"`} data-json="${esc(`${token.name}.$value`)}"></div>`;
 }
 
-export function swatchCard(ctx: Ctx, token: ResolvedToken): string {
+function swatchCard(ctx: Ctx, token: ResolvedToken): string {
     const pair =
         token.contrast === undefined ? undefined : ctx.byName.get(nameOfRef(token.contrast.on));
     const translucent = ctx.modes.some((mode) => (colorOf(token, mode)?.a ?? 1) < 0.999);
@@ -121,8 +110,7 @@ export function swatchCard(ctx: Ctx, token: ResolvedToken): string {
     return `<article class="card" data-q="${esc(query)}"><button class="sw-chip" data-copy="${esc(`var(${token.cssVar})`)}" aria-label="Copy var(${esc(token.cssVar)})">${chip}</button><div class="card-body"><div><button class="tk">${esc(token.name)}</button>${deprecated}</div>${token.description === undefined ? "" : `<p class="desc">${esc(token.description)}</p>`}<dl class="vals">${rows.join("")}</dl>${contrast}${copyRow(ctx, token)}</div></article>`;
 }
 
-/** The title of the group a color token sits in: its path without the first segment (`color`) and the name. */
-export function groupKey(token: ResolvedToken): string {
+function groupKey(token: ResolvedToken): string {
     const path = token.path.slice(0, -1);
 
     if (path.length > 1 && /^(colou?rs?|palette)$/i.test(path[0]!)) {
@@ -147,7 +135,7 @@ export function grouped(
     return [...groups];
 }
 
-export function rampStep(ctx: Ctx, token: ResolvedToken): string {
+function rampStep(ctx: Ctx, token: ResolvedToken): string {
     const label = token.path[token.path.length - 1]!;
     const ink = variants(ctx, (mode) => {
         const color = colorOf(token, mode);
@@ -161,12 +149,10 @@ export function rampStep(ctx: Ctx, token: ResolvedToken): string {
     return `<button class="step" data-q="${esc(query)}" data-copy="${esc(token.name)}" style="background:${varOf(token)}" title="Copy ${esc(token.name)}">${ink}</button>`;
 }
 
-/** Contrast pairs that the system declares, with the ratio in each mode. */
 export function pairRows(ctx: Ctx): { total: number; passing: number; table: string } {
     const declared = ctx.system.tokens.filter((token) => token.contrast !== undefined);
     let total = 0;
     let passing = 0;
-    // A token may declare several pairs: a row for each. An exempt pair is shown, and counted in neither number.
     const rows = declared.flatMap((token) =>
         (token.contrasts ?? [token.contrast!]).map((pairOf) => {
             const pair = ctx.byName.get(nameOfRef(pairOf.on));
@@ -205,7 +191,6 @@ export function pairRows(ctx: Ctx): { total: number; passing: number; table: str
     };
 }
 
-/** Every text color on every ground, in each mode. */
 export function matrix(ctx: Ctx, roles: ResolvedToken[]): string {
     // Text for reading: not placeholders, disabled text, or text that goes on a fill.
     const reads = (token: ResolvedToken) =>
@@ -262,8 +247,7 @@ export function matrix(ctx: Ctx, roles: ResolvedToken[]): string {
     return `<h3 id="color-matrix">Text on grounds</h3><p class="sub">Every text color on every ground, in the mode you chose. AA text needs 4.5:1 and AAA text 7:1; ✕ is below 3:1.</p><div class="table-wrap"><table class="matrix"><thead><tr><th>Text</th>${head}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
 }
 
-/** One sentence on how many contrast checks meet their minimum; none when there is no check. */
-export function checkSentence(passing: number, total: number): string {
+function checkSentence(passing: number, total: number): string {
     if (total === 0) {
         return "";
     }

@@ -1,4 +1,3 @@
-// The design system's documentation page: its sections, its safety with hostile project text, and its output in Chromium.
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -42,7 +41,6 @@ const flagship = (): DesignSystem => {
     return system;
 };
 
-/** A token with one value in each mode. */
 function token(
     name: string,
     type: TokenType,
@@ -66,7 +64,6 @@ function token(
     };
 }
 
-/** The page without the code listings, which hold project markup and CSS as escaped text. */
 const outsideListings = (html: string) =>
     html.replace(/<pre class="snip"[\s\S]*?<\/pre>/g, "<pre></pre>");
 
@@ -96,7 +93,6 @@ test("the page has a section and a link for each part of the system, and a stage
         assert.match(html, new RegExp(`id="comp-${spec.slug}"`), `the ${spec.slug} component`);
     }
 
-    // The states are drawn in the page itself (a shadow root that the page's script fills), never in a frame.
     assert.equal(
         (html.match(/<div class="comp-stage"/g) ?? []).length,
         system.components.length,
@@ -104,7 +100,6 @@ test("the page has a section and a link for each part of the system, and a stage
     );
     assert.doesNotMatch(html, /<iframe|srcdoc=/i, "no frame");
 
-    // Color: roles with contrast, the palette, the matrix, and the pairs.
     for (const part of [
         'id="color-roles"',
         'id="color-palette"',
@@ -115,7 +110,6 @@ test("the page has a section and a link for each part of the system, and a stage
         assert.ok(html.includes(part), part);
     }
 
-    // The other foundations each have their own specimen.
     for (const part of [
         'class="family"',
         'class="spec-row"',
@@ -131,7 +125,6 @@ test("the page has a section and a link for each part of the system, and a stage
         assert.ok(html.includes(part), part);
     }
 
-    // Every token is in the reference table, and the code section has the compiled files.
     for (const named of system.tokens) {
         assert.ok(
             html.includes(`<button class="tk">${named.name}</button>`),
@@ -163,7 +156,6 @@ test("each mode has a switch, and the page opens in the default mode", () => {
         html,
         /<html lang="en" class="nojs" data-mode="light" data-theme="light" data-dark-mode="dark">/,
     );
-    // A value that differs by mode is written once for each mode; one that does not is written once.
     assert.match(html, /class="mv" data-m="1"/);
     assert.match(html, /html:not\(\[data-mode="dark"\]\) \.mv\[data-m="1"\]\{display:none\}/);
 });
@@ -191,7 +183,6 @@ test("the page asks for nothing: no external request, no script or style file, n
     );
     assert.equal((page.match(/<script/g) ?? []).length, 2, "the page's two scripts only");
 
-    // The policy: nothing from outside, no frame, form, or base, and an image or font only as data.
     const policy = /http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html)?.[1] ?? "";
 
     for (const part of [
@@ -206,7 +197,6 @@ test("the page asks for nothing: no external request, no script or style file, n
     }
 
     assert.doesNotMatch(policy, /frame-src/);
-    // Script runs only with the page's nonce, which is new for each page and is on each of the page's two scripts.
     const nonce = /script-src 'nonce-([\w-]+)'/.exec(policy)?.[1];
 
     assert.ok(nonce !== undefined && nonce.length >= 20, "a nonce");
@@ -219,7 +209,6 @@ test("the page asks for nothing: no external request, no script or style file, n
     );
 });
 
-/** A system built of hostile text in every place that the page prints. */
 function hostile(): DesignSystem {
     const bad = `<img src=x onerror=alert(1)>`;
     const closer = `</style><script>alert(2)</script>`;
@@ -259,7 +248,6 @@ function hostile(): DesignSystem {
                     description: closer,
                 },
             ),
-            // A value that could end a declaration or a block never reaches a style.
             token("color.evil", "color", {
                 light: `red;}body{display:none}</style><script>alert(7)</script>`,
             }),
@@ -268,7 +256,6 @@ function hostile(): DesignSystem {
                 light: [`Arial", sans-serif;}</style>`, "serif"],
             }),
             token("shadow.x", "shadow", { light: `0 0 0 1px red}</style>` }),
-            // A custom property name that is not plain is replaced.
             token(
                 "color.odd",
                 "color",
@@ -288,7 +275,6 @@ test("project text is escaped, and a value that could break a style is left out"
     const { html } = renderSystemDoc(hostile());
     const page = outsideListings(html);
 
-    // Only the page's own two scripts (the first sets the mode, the second runs the page) are in the page.
     assert.equal((page.match(/<script/g) ?? []).length, 2, "two scripts");
     assert.ok(!/<img[^>]+onerror/i.test(page), "no image with a handler");
     assert.ok(!page.includes("alert(1)>") || !/<img src=x/.test(page));
@@ -301,7 +287,6 @@ test("project text is escaped, and a value that could break a style is left out"
     );
     assert.ok(page.includes("&lt;img src=x onerror=alert(1)&gt;"), "shown as text");
 
-    // None of the hostile style values is in a style, and the odd property name is replaced.
     const styles = [...page.matchAll(/<style>([\s\S]*?)<\/style>/g)]
         .map((match) => match[1])
         .join("\n");
@@ -317,7 +302,6 @@ test("project text is escaped, and a value that could break a style is left out"
         assert.ok(!styles.includes(part), `${part} is not in a style`);
     }
 
-    // Component markup and CSS are on the page once, as escaped text in a listing: no raw tag can leave it.
     const listings = [
         ...html.matchAll(/<pre class="snip" id="code-\d+-\d+"><code>([\s\S]*?)<\/code><\/pre>/g),
     ].map((match) => match[1]!);
@@ -399,7 +383,6 @@ test("the flagship's contrast pairs pass in every mode, and the page says so", (
     const system = flagship();
     let checked = 0;
 
-    // An exempt pair (disabled text) may be below its minimum: it is shown with its reason, not as a failure.
     const exempt = system.tokens.filter((item) => item.contrast?.exempt !== undefined);
 
     assert.deepEqual(
@@ -502,7 +485,6 @@ test(
     async () => {
         const system = flagship();
 
-        // A component whose markup tries to run script, to reach out, and to leave: the page must strip all of it.
         system.components = [
             {
                 ...system.components[0]!,
@@ -524,7 +506,6 @@ test(
 
         await withRender(bundle, host, undefined, async (page) => {
             await page.load({ width: 1280, height: 800 });
-            // The page says when every state is drawn in place (`data-docs-ready`): wait for that, not for a time.
             await page.evaluate(
                 "new Promise((resolve) => { const look = () => document.documentElement.hasAttribute('data-docs-ready') ? resolve(true) : setTimeout(look, 20); look(); })",
             );
@@ -536,7 +517,6 @@ test(
             );
             assert.equal(await page.evaluate("document.querySelectorAll('.comp-stage').length"), 3);
 
-            // Every stage has its shadow root, with its states, drawn in the page: each is tall and in the page's layout.
             const sizes = JSON.parse(
                 (await page.evaluate(
                     "JSON.stringify([...document.querySelectorAll('.comp-stage')].map((stage) => [stage.hasAttribute('data-ready'), !!stage.querySelector('.comp-host').shadowRoot, stage.getBoundingClientRect().height, stage.querySelector('.comp-host').shadowRoot.querySelectorAll('.__c').length]))",
@@ -550,7 +530,6 @@ test(
                 JSON.stringify(sizes),
             );
 
-            // The probe's script, handlers, addresses, and frame are gone; nothing ran.
             const inside = (await page.evaluate(
                 "document.querySelector('#comp-probe .comp-host').shadowRoot.innerHTML",
             )) as string;
@@ -564,14 +543,12 @@ test(
 
             const here = await page.evaluate("location.href");
 
-            // Clicking its button, its links, and its form does nothing, and the page stays where it is.
             await page.evaluate(
                 "(() => { const root = document.querySelector('#comp-probe .comp-host').shadowRoot; for (const id of ['probe', 'leave', 'out', 'send']) root.getElementById(id)?.click(); })()",
             );
             assert.equal(await page.evaluate("typeof window.__ran"), "undefined");
             assert.equal(await page.evaluate("location.href"), here);
 
-            // The mode switch recolors the states, with nothing sent to them: they read the page's variables.
             // (The button eases its color for 150 ms: read it when that transition has ended, not after a fixed time,
             // which a busy machine can stretch past.)
             const color = () =>
@@ -593,12 +570,10 @@ test(
                 "true",
             );
 
-            // Copying a token name works from the keyboard-reachable button, with no error.
             assert.equal(
                 await page.evaluate("document.querySelectorAll('[data-copy]').length > 100"),
                 true,
             );
-            // The filter hides what does not match and shows a notice when nothing does.
             await page.evaluate(
                 "(() => { const q = document.getElementById('q'); q.value = 'zzzz-nothing'; q.dispatchEvent(new Event('input')); })()",
             );
@@ -638,12 +613,10 @@ test("section counts follow one rule: a headline of role tokens, the palette and
     let total = 0;
 
     for (const id of ids) {
-        // The section's tokens, by the rule that every token is in exactly one section (the System view's `sectionOf`).
         const mine = system.tokens.filter((token) => sectionOf(token) === sectionIds[id]);
         const semantic = mine.filter((token) => token.tier === "semantic").length;
         const primitive = mine.filter((token) => token.tier === "primitive").length;
         const component = mine.filter((token) => token.tier === "component").length;
-        // The headline is the role tokens; a section with none counts its primitives. Component tokens never count in it.
         const headline = semantic > 0 ? semantic : primitive;
         const inside = (semantic > 0 ? primitive : 0) + component;
 
@@ -655,7 +628,6 @@ test("section counts follow one rule: a headline of role tokens, the palette and
         );
         total += mine.length;
 
-        // Under the title, the counts of what is inside, in one line.
         const line =
             new RegExp(
                 `<section class="block" id="${id}"[^>]*>(?:(?!</section>)[\\s\\S])*?<p class="counts">([^<]*)</p>`,
@@ -674,7 +646,6 @@ test("section counts follow one rule: a headline of role tokens, the palette and
     assert.equal(count("tokens"), system.tokens.length, "the table lists every token");
     assert.equal(count("components"), system.components.length, "Components counts components");
     assert.equal(count("color"), 52, "the flagship's Color says its 52 roles");
-    // The flagship's lines, from the same rule: its palette is the primitive colors, and its component colors are the component tier's.
     const colors = system.tokens.filter((token) => token.type === "color");
     const palette = colors.filter((token) => token.tier === "primitive").length;
     const components = colors.filter((token) => token.tier === "component").length;
@@ -685,7 +656,6 @@ test("section counts follow one rule: a headline of role tokens, the palette and
         ),
     );
 
-    // A token that no specimen draws is still on the page, in its section's table.
     for (const token of system.tokens) {
         assert.ok(
             html.includes(`<button class="tk">${token.name}</button>`),
@@ -705,7 +675,6 @@ test("a ratio is written with one decimal, cut and never rounded up; cards copy 
         ratios.every((text) => /^\d+\.\d:1$/.test(text)),
         String(ratios.find((text) => !/^\d+\.\d:1$/.test(text))),
     );
-    // The page's script makes the three buttons from the values a card carries.
     assert.match(
         html,
         /<div class="copy-row" data-var="--color-bg-surface" data-tw="bg-surface" data-json="color\.bg\.surface\.\$value"><\/div>/,
@@ -721,13 +690,11 @@ test("a ratio is written with one decimal, cut and never rounded up; cards copy 
         html,
         /<footer class="foot"><strong>Pi Pocket<\/strong> · \d+ tokens · 3 modes · 10 components · generated \d{4}-\d{2}-\d{2} by Pi Pocket<\/footer>/,
     );
-    // Small groups share a grid, so that no row is half empty; the hero's swatches carry their names.
     assert.match(html, /<h4[^>]*>Brand · Spark/);
     assert.match(
         html,
         /<button type="button" class="sw" data-copy="color\.[a-z.-]+" title="color\.[a-z.-]+"><i /,
     );
-    // A phone gets a menu for the modes and keeps the system's name in the header.
     assert.match(html, /<select class="modesel"/);
     assert.match(html, /<span class="brand-name">Pi Pocket<\/span>/);
 });
@@ -744,7 +711,6 @@ test("the page's sentences have the right number and article", () => {
     assert.equal(article("user"), "a");
     assert.equal(article("Error"), "an");
 
-    // Every sentence the page generates, for a system with one of each and for the flagship.
     const one: DesignSystem = {
         name: "One",
         modes: ["default"],
@@ -807,7 +773,6 @@ test("the page's sentences have the right number and article", () => {
 test("an exempt pair is labelled and not a failure; notes have an area; the code section shows how to use each output", () => {
     const { html } = renderSystemDoc(flagship());
 
-    // The contrast table: the label, with the ratio, in every mode; and the counts leave the exempt pair out.
     assert.match(html, /<td class="num">exempt \(disabled\)<\/td>/);
     assert.equal(
         (html.match(/<span class="pill">exempt \(disabled\)<\/span>/g) ?? []).length >= 3,
@@ -817,18 +782,15 @@ test("an exempt pair is labelled and not a failure; notes have an area; the code
     assert.doesNotMatch(html, /Fails/);
     assert.match(html, /exempt \(disabled\); would need 4\.5:1 on color\.bg\.surface/);
 
-    // Notes are apart from problems.
     assert.match(html, /<details class="notes"><summary>1 note from the validator<\/summary>/);
     assert.match(html, /the pair is exempt \(disabled\)/);
     assert.doesNotMatch(html, /from the validator<\/summary><ul><li><strong>Warning/);
 
-    // Use it: CSS, Tailwind v4, and JSON, and the generated files.
     assert.match(html, /<h4>CSS<\/h4>/);
     assert.match(html, /<h4>Tailwind v4<\/h4>/);
     assert.match(html, /<h4>JSON \(DTCG\)<\/h4>/);
     assert.match(html, /<h4>Tokens Studio<\/h4>/);
     assert.match(html, /tokens\.studio\.json\./, "how to load the Tokens Studio file");
-    // The cards show real snippets: a valid Style Dictionary config, and the first lines of the Tokens Studio file.
     const snip = (id: string) =>
         (
             new RegExp(`<pre class="snip" id="${id}"[^>]*><code>([\\s\\S]*?)</code></pre>`).exec(
@@ -887,7 +849,6 @@ test("the flagship's page is small, its hero swatches are roles, and its radii a
 
     assert.ok(Buffer.byteLength(html) < 600_000, `${Buffer.byteLength(html)} bytes`);
 
-    // The hero: one swatch for each role, in reading order, labelled by the role and named in full on hover.
     const hero = /<div class="strip">([\s\S]*?)<\/div>/.exec(html)![1]!;
     const labels = [...hero.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1]);
 
@@ -911,7 +872,6 @@ test("the flagship's page is small, its hero swatches are roles, and its radii a
         "short enough not to wrap",
     );
 
-    // Radii: the jobs they do, small to large, each with a line on why.
     for (const [title, note] of [
         ["Marks and tags", "Up to 4 px"],
         ["Controls", "5 to 7 px"],
@@ -926,12 +886,10 @@ test("the flagship's page is small, its hero swatches are roles, and its radii a
         );
     }
 
-    // Spacing bars share the width: the longest step is a full row.
     assert.match(html, /<div class="spec cols">/);
     assert.match(html, /<div class="bar" style="width:100%"><\/div>/);
 });
 
-/** Probes of component markup and CSS that try to run script or to cover the page. Each is one component. */
 const PROBES: { slug: string; markup: string; css?: string; target: string }[] = [
     {
         slug: "smil-animate",
@@ -971,8 +929,6 @@ const PROBES: { slug: string; markup: string; css?: string; target: string }[] =
     },
     {
         slug: "css-fetch",
-        // Every way to make the page fetch an image or a font from outside: functions, escapes, and at-rules, in a style
-        // attribute, in a style element, and in the component's CSS.
         markup: `<div id="t" style="border-image:image-set('https://evil.example/s1' 1x);background:u\\72l(https://evil.example/s2);list-style-image:url(https://evil.example/s3);cursor:url(https://evil.example/s4),auto;mask:-webkit-image-set(url(https://evil.example/s5) 1x);width:60px;height:20px">x</div><style>#t{content:image-set('https://evil.example/s6' 1x);background:cross-fade(url(https://evil.example/s7),#fff,50%)}@\\69mport 'https://evil.example/s8';</style><svg width="20" height="20"><rect id="r" width="20" height="20" style="fill:url(https://evil.example/s9)" fill="url(https://evil.example/s10)"/></svg>`,
         css: `#t{border-image:image-set("https://evil.example/c1" 1x);background:-webkit-image-set(url(https://evil.example/c2) 1x)}@\\69mport "https://evil.example/c3";@font-face{font-family:f;src:url(https://evil.example/c4.woff2)}.x{background:element(#t);list-style:src("https://evil.example/c5")}`,
         target: "t",
@@ -1047,7 +1003,6 @@ test(
             };
 
             for (const probe of PROBES) {
-                // What is in the shadow root: no element or attribute that could run script or reach out.
                 const inside = (await page.evaluate(
                     `document.querySelector('#comp-${probe.slug} .comp-host').shadowRoot.innerHTML`,
                 )) as string;
@@ -1058,7 +1013,6 @@ test(
                     `${probe.slug}: ${inside.slice(0, 300)}`,
                 );
 
-                // Scroll the probe's target into view and press it with a real mouse, in the middle of its box.
                 const at = JSON.parse(
                     (await page.evaluate(`(() => {
                         const root = document.querySelector('#comp-${probe.slug} .comp-host').shadowRoot;
@@ -1087,7 +1041,6 @@ test(
                 );
             }
 
-            // No request was attempted, for a script's sake or an image's: none failed, none was blocked, none was made.
             assert.deepEqual(page.failedRequests, [], "a request was attempted and blocked");
             assert.equal(
                 await page.evaluate(
@@ -1103,7 +1056,6 @@ test(
                 "none|none|auto|none",
             );
 
-            // A click in the middle of the window, and the corners, runs nothing: the overlay probe did not cover the page.
             for (const [x, y] of [
                 [640, 400],
                 [20, 20],
@@ -1118,13 +1070,11 @@ test(
                 assert.notEqual(top, "stage", `a component covers the page at ${x},${y}`);
             }
 
-            // The overlay's fixed host is placed against its own stage (layout containment), not the window, and is clipped to it.
             const inside = await page.evaluate(
                 `(() => { const stage = document.querySelector('#comp-host-overlay .comp-stage').getBoundingClientRect(); const host = document.querySelector('#comp-host-overlay .comp-host').getBoundingClientRect(); return Math.abs(host.left - stage.left) < 2 && Math.abs(host.top - stage.top) < 2; })()`,
             );
 
             assert.equal(inside, true);
-            // The page still works: the filter, with no script error.
             await page.evaluate("document.querySelector('.seg button[data-mode=dark]').click()");
             assert.equal(await page.evaluate("document.documentElement.dataset.theme"), "dark");
             assert.deepEqual(page.errors, []);
@@ -1205,7 +1155,6 @@ test("the token table has a column for each mode, filters by type and tier, and 
         table,
         /<thead><tr><th>Token<\/th><th>Type<\/th><th>Light<\/th><th>Dark<\/th><th>High contrast<\/th><\/tr><\/thead>/,
     );
-    // A cell of a color has the swatch of its own mode, drawn from that mode's value.
     assert.match(
         table,
         /<td data-label="Dark" class="num wrap"><i class="mini-sw" style="background:#1a1b26"><\/i>#1a1b26<\/td>/,
@@ -1226,7 +1175,6 @@ test("the token table has a column for each mode, filters by type and tier, and 
     );
     assert.match(html, /placeholder="Filter tokens and values"/);
 
-    // A link to each section, each component, and each sub-heading with an id: a short anchor, and its icon is CSS.
     for (const id of ["color", "typography", "spacing", "radii", "components", "tokens", "code"]) {
         assert.match(
             html,
@@ -1249,7 +1197,6 @@ test("the token table has a column for each mode, filters by type and tier, and 
     assert.match(html, /<h3 id="color-roles">Roles<a class="anchor" href="#color-roles"/);
     assert.match(html, /\.anchor::before\s*\{[^}]*mask:/);
 
-    // Corners: the scale is its own group after the roles; spacing and size have their own groups.
     assert.match(html, /<h4 style="margin-top:22px">Scale<\/h4>/);
     assert.match(html, /<h3 id="spacing-steps">Steps/);
     assert.match(html, /<h3 id="spacing-roles">Roles/);
@@ -1285,7 +1232,6 @@ test(
                 await page.evaluate("document.getElementById('tc').textContent"),
                 `${total} tokens`,
             );
-            // The script made each row's CSS variable chip from its name; a row whose variable is not that keeps its own.
             assert.equal(
                 await page.evaluate(
                     "document.querySelectorAll('#tokens tbody tr:first-child .tk').length",
@@ -1293,14 +1239,12 @@ test(
                 2,
             );
 
-            // By type.
             await page.evaluate(type("shadow"));
             assert.equal(
                 await page.evaluate(visible),
                 system.tokens.filter((token) => token.type === "shadow").length,
             );
             await page.evaluate(type(""));
-            // By tier.
             await page.evaluate(
                 "(() => { const select = document.getElementById('tr'); select.value = 'component'; select.dispatchEvent(new Event('change')); })()",
             );
@@ -1315,7 +1259,6 @@ test(
             await page.evaluate(
                 "(() => { const select = document.getElementById('tr'); select.value = ''; select.dispatchEvent(new Event('change')); })()",
             );
-            // By value: a hex that only a few tokens have, and the type and tier together.
             await page.evaluate(write("tq", "#7aa2f7"));
             const withValue = system.tokens.filter((token) =>
                 Object.values(token.modes).some((mode) =>
@@ -1327,14 +1270,12 @@ test(
             assert.equal(await page.evaluate(visible), withValue);
             await page.evaluate(write("tq", ""));
             assert.equal(await page.evaluate(visible), total);
-            // The page's own filter reads values too, and the table follows it.
             await page.evaluate(write("q", "#7aa2f7"));
             assert.ok(((await page.evaluate(visible)) as number) >= 3);
             assert.ok(((await page.evaluate(visible)) as number) < total);
             await page.evaluate(write("q", ""));
             assert.equal(await page.evaluate(visible), total);
 
-            // A link to a code listing inside a closed fold opens the fold.
             assert.equal(
                 await page.evaluate("document.getElementById('code-css').closest('details').open"),
                 false,
@@ -1345,7 +1286,6 @@ test(
                 await page.evaluate("document.getElementById('code-css').closest('details').open"),
                 true,
             );
-            // A tap on a heading's link follows it and says that it copied (or could not).
             await page.evaluate("document.querySelector('#color-title .anchor').click()");
             assert.equal(await page.evaluate("location.hash"), "#color");
             assert.match(
@@ -1358,7 +1298,6 @@ test(
             await page.load({ width: 390, height: 844 });
             await page.evaluate("new Promise((resolve) => setTimeout(resolve, 400))");
 
-            // A phone has the first rows, a "show more" row, and the rest waiting.
             const drawn = (await page.evaluate(
                 "document.querySelectorAll('#tokens tbody tr:not(.more)').length",
             )) as number;
@@ -1383,7 +1322,6 @@ test(
                     "document.querySelectorAll('#tokens tbody tr:not(.more)').length",
                 )) as number) > drawn,
             );
-            // A search draws all of them first, so that nothing it should find is left out.
             await page.evaluate(write("tq", "shadow"));
             assert.equal(
                 await page.evaluate("document.querySelectorAll('#tokens tr.more').length"),
@@ -1411,11 +1349,9 @@ test("the code panels name their language, take their own height, and take their
         assert.match(uses, new RegExp(`<pre class="snip" id="${id}" data-lang="${lang}">`));
     }
 
-    // The colors are the system's own, as page variables on the code section.
     assert.match(html, /<div class="sx" style="--sx-bg:var\(--color-code-bg/);
     assert.match(html, /--sx-k:var\(--color-code-keyword/);
     assert.match(html, /--sx-s:var\(--color-code-string/);
-    // The cards do not stretch to one height, and the Tokens Studio snippet is indented by two spaces at each level.
     assert.match(html, /\.uses \{[^}]*align-items: start/);
     assert.doesNotMatch(html, /\.use \.snip-wrap \{[^}]*flex: 1/);
     const studio = /id="code-use-studio"[^>]*><code>([^<]*)<\/code>/
@@ -1429,7 +1365,6 @@ test("the code panels name their language, take their own height, and take their
         "every indent is a whole number of two-space levels",
     );
     assert.ok(JSON.parse(studio).$themes.length > 0);
-    // A system with no code tokens sets no color of its own: the CSS falls back to the page's.
     const bare = flagship();
 
     bare.tokens = bare.tokens.filter((item) => !item.name.startsWith("color.code."));
@@ -1443,10 +1378,8 @@ test("a value that is the same in every mode is one cell across the mode columns
     const table = html.slice(html.indexOf('<div class="table-wrap ref">'));
     const same = [...table.matchAll(/<td data-label="Every mode"[^>]*colspan="(\d+)"/g)];
 
-    // Every primitive that does not change with the mode (most of the palette) has one cell.
     assert.ok(same.length > 100, `${same.length} one-cell rows`);
     assert.ok(same.every((match) => match[1] === String(modes)));
-    // A token that differs between modes keeps a column for each (bg.base is one color in each mode).
     const row =
         /<tr data-s><td data-label="Token"><span class=""><button class="tk">color\.bg\.base<\/button>([\s\S]*?)<\/tr>/.exec(
             table,
@@ -1455,7 +1388,6 @@ test("a value that is the same in every mode is one cell across the mode columns
     assert.equal((row.match(/<td /g) ?? []).length, 1 + modes);
     assert.doesNotMatch(row, /Every mode/);
 
-    // A shadow shows x, y, blur, spread, and a color swatch with its opacity, not a raw eight-digit hex.
     assert.match(html, /<span class="sh-row sh-head"><span>x<\/span><span>y<\/span>/);
     assert.match(html, /<span class="sh-row"><span>0<\/span><span>18<\/span><span>40<\/span>/);
     assert.match(html, /<i class="mini-sw alpha" style="--c:#28284624"><\/i>#282846 14%/);
@@ -1519,7 +1451,6 @@ test(
                 "sx-t",
             ]);
 
-            // The text of a panel is what the Copy button copies: coloring changes nothing of it.
             assert.equal(
                 await page.evaluate(`(() => {
                     const copy = document.querySelector('[data-copy-from="code-use-css"]');
@@ -1528,7 +1459,6 @@ test(
                 })()`),
                 true,
             );
-            // Every color is a real color, and the panel is its system's code ground.
             const colors = (await page.evaluate(`(() => {
                 const pre = document.getElementById('code-use-css');
                 const style = (el) => getComputedStyle(el);

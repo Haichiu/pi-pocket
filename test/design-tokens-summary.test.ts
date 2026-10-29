@@ -1,4 +1,3 @@
-// The summary of a system in the prompt: when it is cut, the roles and the components stay, and what is used most comes first.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,11 +17,9 @@ function project(): string {
     return dir;
 }
 
-// 24 grounds: `page` first, then `tone-1` to `tone-23`.
 const ROLES = ["page", ...Array.from({ length: 23 }, (_, at) => `tone-${at + 1}`)];
 const SLUGS = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"];
 
-/** A system the size of a real one: a long palette, semantic roles, component tokens, scales, components, and rules. */
 function big() {
     const palette: Record<string, unknown> = {};
 

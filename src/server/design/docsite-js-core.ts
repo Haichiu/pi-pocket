@@ -1,4 +1,3 @@
-/** The page script's start: strict mode, the helpers, the toast, and copy to the clipboard. */
 export const JS_CORE = `
 (function () {
     "use strict";

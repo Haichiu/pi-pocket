@@ -1,5 +1,3 @@
-// The JSON of dist/: one convention. tokens.<mode>.resolved.json (DTCG) is the main output, in the string forms or, with
-// `format: "2025.10"`, the object forms; tokens.studio.json is for Tokens Studio; tokens.resolved.json is a compact summary.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,7 +17,6 @@ const project = () => {
     return dir;
 };
 
-/** A system that has a token of each basic type, written in the object forms of 2025.10 (the input is read either way). */
 const tokens = (format?: string) => ({
     $extensions: { "com.pi-pocket": { name: "Demo", ...(format === undefined ? {} : { format }) } },
     color: {
@@ -71,7 +68,6 @@ const tokens = (format?: string) => ({
 
 const dark = () => ({ color: { base: { $value: "#101216" }, ink: { $value: "#e6e8ee" } } });
 
-/** Every string in a JSON value that is a color or a dimension in the string form. */
 function stringForms(node: unknown, found: string[] = []): string[] {
     if (
         typeof node === "string" &&
@@ -219,7 +215,6 @@ test("tokens.studio.json: a token set for each mode, a $themes array, the order,
     assert.equal(studio.dark.space[4].$value, "16px", "the string forms");
     assert.equal(studio.light.color.base.$value, "#1a3366");
 
-    // A set stands alone: every token is in it.
     const count = (node: Record<string, unknown>): number =>
         Object.entries(node).reduce(
             (sum, [key, child]) =>

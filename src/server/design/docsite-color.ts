@@ -1,10 +1,3 @@
-/**
- * Color math for the design-system documentation page (docsite.ts): parse the values a resolved token can hold (a hex or
- * functional string, or a DTCG color object), mix alpha over a ground, and rate text contrast with WCAG 2.2's formula.
- * Everything here is pure and treats its input as data: a value that does not parse is `undefined`, never an error.
- */
-
-/** A color in sRGB: channels 0 to 255, alpha 0 to 1. */
 export interface Rgba {
     r: number;
     g: number;
@@ -48,7 +41,6 @@ function parseHex(text: string): Rgba | undefined {
     return { r: byte(0), g: byte(2), b: byte(4), a: digits.length === 8 ? byte(6) / 255 : 1 };
 }
 
-/** One channel of a functional color: a number, or a percentage of `scale`. */
 function channel(text: string, scale: number): number | undefined {
     const value = text.trim();
     const number = Number.parseFloat(value);
@@ -151,10 +143,6 @@ function parseFunctional(text: string): Rgba | undefined {
     return undefined;
 }
 
-/**
- * Reads a color: a hex string (3, 4, 6, or 8 digits), `rgb()`, `hsl()`, `oklch()`, `oklab()`, a few names, or a DTCG
- * object (`{ colorSpace, components, alpha, hex }`). Anything else gives `undefined`.
- */
 export function parseColor(value: unknown): Rgba | undefined {
     if (typeof value === "string") {
         const text = value.trim();
@@ -220,14 +208,12 @@ const hex2 = (value: number) =>
         .toString(16)
         .padStart(2, "0");
 
-/** `#rrggbb`, or `#rrggbbaa` when the color is not opaque. */
 export function toHex(color: Rgba): string {
     const base = `#${hex2(color.r)}${hex2(color.g)}${hex2(color.b)}`;
 
     return color.a < 0.999 ? `${base}${hex2(color.a * 255)}` : base;
 }
 
-/** The color laid over an opaque ground. */
 export function over(color: Rgba, ground: Rgba): Rgba {
     const a = clamp(color.a, 0, 1);
 
@@ -239,7 +225,6 @@ export function over(color: Rgba, ground: Rgba): Rgba {
     };
 }
 
-/** Relative luminance (WCAG): 0 for black, 1 for white. */
 export function luminance(color: Rgba): number {
     const [r, g, b] = [color.r, color.g, color.b].map((value) => {
         const unit = clamp(value, 0, 255) / 255;
@@ -250,7 +235,6 @@ export function luminance(color: Rgba): number {
     return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
 }
 
-/** The contrast ratio of a color on a ground (WCAG 2.2), counting the color's alpha. */
 export function contrastRatio(foreground: Rgba, ground: Rgba): number {
     const base = ground.a < 1 ? over(ground, { r: 255, g: 255, b: 255, a: 1 }) : ground;
     const a = luminance(over(foreground, base));
@@ -259,7 +243,6 @@ export function contrastRatio(foreground: Rgba, ground: Rgba): number {
     return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
-/** How a ratio rates for normal text: AAA from 7, AA from 4.5, AA large (and UI parts) from 3, else fail. */
 export function rating(ratio: number): "AAA" | "AA" | "AA large" | "fail" {
     if (ratio >= 7) {
         return "AAA";
@@ -272,7 +255,6 @@ export function rating(ratio: number): "AAA" | "AA" | "AA large" | "fail" {
     return ratio >= 3 ? "AA large" : "fail";
 }
 
-/** Black or white, whichever reads better on the color. */
 export function readableOn(color: Rgba): "#000000" | "#ffffff" {
     const ground = over(color, { r: 128, g: 128, b: 128, a: 1 });
 
@@ -282,7 +264,6 @@ export function readableOn(color: Rgba): "#000000" | "#ffffff" {
         : "#ffffff";
 }
 
-/** The color in OKLCH, as CSS text such as `oklch(72% 0.14 262)`, for the detail line of a swatch. */
 export function toOklchText(color: Rgba): string {
     const lin = [color.r, color.g, color.b].map((value) => {
         const unit = clamp(value, 0, 255) / 255;

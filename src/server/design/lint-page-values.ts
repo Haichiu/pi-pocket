@@ -1,7 +1,4 @@
-/**
- * A part of the script that `lint.ts` runs inside a rendered design (see `lint-page.ts`): colors as the browser reads them, the system's values resolved, selectors, and groups of equal values. The parts are one
- * function body, in this order: setup, values, literals, states, elements, checks, focus. Plain JavaScript in a string.
- */
+// Plain JavaScript in a string: one part of the page script of `lint-page.ts`. The parts form one function body, so they share its locals.
 export const PAGE_VALUES = String.raw`// ---------------------------------------------------------------------------------------------------------------------
 // Colors: any CSS color the browser knows, as red, green, blue, and alpha.
 

@@ -1,5 +1,3 @@
-// Regression: the workspace's check runs in the color scheme that it is given (the dock passes the canvas's scheme), and
-// compares with the matching mode of the system. Stream V's side of the check, through the route that the dock calls.
 import { cleanUp, newSession, openApp, root, scriptedModel } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
@@ -81,7 +79,6 @@ test(
         assert.equal(dark.colorScheme, "dark");
         assert.equal(low(light), undefined, "5.9:1 on the light canvas");
         assert.equal(low(dark)!.level, "error", "3.2:1 on the dark canvas");
-        // What is not given is light, as the dock's default canvas is.
         const none = await check({});
 
         assert.equal(none.colorScheme, "light");
@@ -104,7 +101,6 @@ test(
         );
         assert.ok(first.findings.every((item) => /^[a-z-]+-[0-9a-f]{10}(-\d+)?$/.test(item.id!)));
         assert.equal(new Set(first.findings.map((item) => item.id)).size, first.findings.length);
-        // The same color on the same element in the other scheme is the same finding, whatever its level there.
         const note = (report: CheckReport) =>
             report.findings.find(
                 (item) => item.rule === "off-system-color" && item.pid === "note",

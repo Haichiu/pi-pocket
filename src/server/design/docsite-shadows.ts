@@ -1,6 +1,3 @@
-/**
- * The Shadows section of the documentation page. (Split from `docsite.ts`; see it for how the page is built and kept safe.)
- */
 import { escapeHtml as esc } from "./docsite-markdown.ts";
 import {
     varOf,
@@ -13,8 +10,6 @@ import {
     tokensOf,
     moreTokens,
 } from "./docsite-core.ts";
-
-// ── Shadows and motion ─────────────────────────────────────────────────────────────────────────────────────────────
 
 export function shadowSection(ctx: Ctx): { html: string; count: number } | undefined {
     const { limit, note } = limiter();
@@ -41,5 +36,3 @@ export function shadowSection(ctx: Ctx): { html: string; count: number } | undef
         count: mine.length,
     };
 }
-
-/** The cubic Bézier of a value as an SVG path in a 100 by 100 box, with the y axis up. */

@@ -1,11 +1,5 @@
-/**
- * A small, safe Markdown renderer for `guidelines.md` on the documentation page (docsite.ts). It knows the parts that
- * guidelines use: headings, paragraphs, lists, tables, quotes, code, rules, and inline code, emphasis, and links. Every
- * character of the text is escaped before any markup is added, so project text can never become HTML of its own; only
- * `https:` links and `#` anchors keep their address.
- */
+// Every character of the text is escaped before any markup is added, so project text can never become HTML of its own; only `https:` links and `#` anchors keep their address.
 
-/** Escapes text for HTML content and for quoted attributes. */
 export function escapeHtml(text: string): string {
     return text
         .replace(/&/g, "&amp;")
@@ -15,7 +9,6 @@ export function escapeHtml(text: string): string {
         .replace(/'/g, "&#39;");
 }
 
-/** A heading's anchor id: lowercase words joined by hyphens. */
 export function slugify(text: string): string {
     return (
         text
@@ -36,7 +29,7 @@ function safeHref(url: string): string | undefined {
     return undefined;
 }
 
-/** Inline parts: code spans first (their text stays literal), then links, bold, and italics on the escaped rest. */
+/** Inline parts: code spans first, so that their text stays literal. */
 function inline(text: string): string {
     return text
         .split(/(`[^`]+`)/)
@@ -166,7 +159,6 @@ export function renderMarkdown(source: string, maxBytes = 16_384): string {
 
                 at++;
 
-                // A continuation line is indented and belongs to the item above.
                 while (
                     at < lines.length &&
                     /^\s{2,}\S/.test(lines[at]!) &&
@@ -200,12 +192,10 @@ export function renderMarkdown(source: string, maxBytes = 16_384): string {
     return out.join("\n");
 }
 
-/** "1 role", "2 roles": a count with its noun in the right number. `many` is for an irregular plural. */
 export function plural(count: number, one: string, many = `${one}s`): string {
     return `${count} ${count === 1 ? one : many}`;
 }
 
-/** The noun's own word for "a" or "an", by its sound: `an info`, `a unit`, `an hour`. */
 export function article(word: string): "a" | "an" {
     const text = word.trim().toLowerCase();
 

@@ -1,12 +1,6 @@
-/**
- * What the design checks (`lint.ts`) need besides `color.ts`: perceptual distance in OKLab, and the values of a design
- * system's tokens in one mode, ready to compare with what a page uses. Parsing, luminance, contrast, and the CSS of a
- * DTCG color are `color.ts`'s.
- */
 import { colorObjectCss, contrastRatio, toHex } from "./color.ts";
 import type { DesignSystem, ModeValue, ResolvedToken } from "./system-types.ts";
 
-/** Red, green, blue (0 to 255) and alpha (0 to 1), as the browser resolves a color. */
 export type RgbaTuple = [number, number, number, number];
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
@@ -33,10 +27,7 @@ export function toOklab(red: number, green: number, blue: number): [number, numb
     ];
 }
 
-/**
- * How far apart two colors look: the OKLab distance times 100 (about 1 for the smallest step a person sees, 0.4 for
- * one 8-bit step), plus the alpha difference in percent.
- */
+// The OKLab distance times 100: about 1 is the smallest step a person sees, 0.4 is one 8-bit step. The alpha difference in percent is added.
 export function colorDistance(a: RgbaTuple, b: RgbaTuple): number {
     const [l1, a1, b1] = toOklab(a[0], a[1], a[2]);
     const [l2, a2, b2] = toOklab(b[0], b[1], b[2]);
@@ -45,7 +36,6 @@ export function colorDistance(a: RgbaTuple, b: RgbaTuple): number {
     return lab + Math.abs(a[3] - b[3]) * 100;
 }
 
-/** WCAG contrast ratio (1 to 21) of two opaque colors given as 0 to 255 channels. */
 export function contrastOf(a: readonly number[], b: readonly number[]): number {
     const color = (value: readonly number[]) => ({
         r: value[0]! / 255,
@@ -57,7 +47,6 @@ export function contrastOf(a: readonly number[], b: readonly number[]): number {
     return contrastRatio(color(a), color(b));
 }
 
-/** `#7aa2f7`, or `rgb(255 255 255 / 0.1)` when the color is not opaque. */
 export function formatColor(color: readonly number[]): string {
     const alpha = color[3] ?? 1;
     const channels = [color[0]!, color[1]!, color[2]!].map((value) =>
@@ -71,7 +60,6 @@ export function formatColor(color: readonly number[]): string {
     return `rgb(${channels.join(" ")} / ${Math.round(alpha * 100) / 100})`;
 }
 
-/** The text of a DTCG color value as CSS, for the browser to resolve. `undefined` when the value is not a color. */
 export function colorCss(value: unknown): string | undefined {
     if (typeof value === "string") {
         return value.startsWith("{") || value.length > 200 ? undefined : value;
@@ -88,7 +76,6 @@ export function colorCss(value: unknown): string | undefined {
     return typeof hex === "string" ? hex : undefined;
 }
 
-/** The CSS length of a DTCG dimension: `16px`, `1rem`, `{ value: 16, unit: "px" }`, or a bare number (pixels). */
 export function dimensionCss(value: unknown): string | undefined {
     if (typeof value === "number" && Number.isFinite(value)) {
         return `${value}px`;
@@ -109,7 +96,6 @@ export function dimensionCss(value: unknown): string | undefined {
     return undefined;
 }
 
-/** A font family list as names: lower case, with no quotes. */
 export function familyList(value: string): string[] {
     const names: string[] = [];
     let current = "";
@@ -153,39 +139,34 @@ const GENERIC_FAMILIES = new Set([
     "fangsong",
 ]);
 
-/** True for a generic family (`sans-serif`, `system-ui`). */
 export function isGenericFamily(name: string): boolean {
     return GENERIC_FAMILIES.has(name);
 }
 
 export type LengthKind = "font-size" | "space" | "radius";
 
-export interface TokenColor {
+interface TokenColor {
     name: string;
     cssVar: string;
     tier: ResolvedToken["tier"];
     css: string;
-    /** Filled in after the browser resolves `css`. */
     rgba?: RgbaTuple;
 }
 
-export interface TokenFont {
+interface TokenFont {
     name: string;
     cssVar: string;
-    /** Lower-case family names, in order. */
     families: string[];
 }
 
-export interface TokenLength {
+interface TokenLength {
     kind: LengthKind;
     name: string;
     cssVar: string;
     css: string;
-    /** Filled in after the browser resolves `css`. */
     px?: number;
 }
 
-/** What a design system holds in one mode, in the forms the checks compare with. */
 export interface TokenSet {
     mode: string;
     colors: TokenColor[];
@@ -198,7 +179,6 @@ const RADIUS_GROUP = /^(radius|radii|rounded|corner|corners|round)$/i;
 const FONT_GROUPS = /^(font|fonts|text|type|typography|fontsize|fontsizes|font-size|font-sizes)$/i;
 const SIZE_NAME = /^(size|sizes|fontsize|font-size|fontsizes|font-sizes|fs)$/i;
 
-/** Which scale a dimension token belongs to, by the names in its path. */
 export function lengthKind(path: string[]): LengthKind | undefined {
     const names = path.slice(0, -1).concat(path.at(-1) ?? "");
 
@@ -228,7 +208,6 @@ const isNonSize = (name: string) =>
 const valueIn = (token: ResolvedToken, mode: string): ModeValue | undefined =>
     token.modes[mode] ?? Object.values(token.modes)[0];
 
-/** The font families of a token value (a string, or a list of strings). */
 function fontFamilies(value: unknown): string[] {
     if (typeof value === "string") {
         return familyList(value);
@@ -241,7 +220,6 @@ function fontFamilies(value: unknown): string[] {
     return [];
 }
 
-/** The tokens of `system` in `mode`: its colors, font families, and font-size, spacing, and radius lengths. */
 export function tokenSet(system: DesignSystem, mode: string): TokenSet {
     const set: TokenSet = { mode, colors: [], fonts: [], lengths: [] };
     const seen = new Set<string>();

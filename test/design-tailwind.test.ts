@@ -1,5 +1,4 @@
-// The names in tailwind.css: every variable that starts with a namespace of Tailwind v4's theme is of that namespace's kind,
-// and the utilities that Tailwind makes from the flagship are the ones in the fixture (made with a real Tailwind 4.3 compile).
+// The utilities in the fixture were made with a real Tailwind 4.3 compile.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -9,7 +8,6 @@ import { loadDesignSystem, tailwindNames } from "../src/server/design/tokens.ts"
 const FLAGSHIP = join(import.meta.dirname, "..", "docs", "examples", "design-system", "pocket");
 const system = loadDesignSystem(FLAGSHIP)!;
 
-/** Which token types a namespace may hold: Tailwind reads any variable that starts with it as that kind of value. */
 const KINDS: [string, string[]][] = [
     ["font-weight", ["fontWeight"]],
     ["inset-shadow", ["shadow"]],
@@ -128,7 +126,6 @@ test("color roles drop the word that the utility repeats (bg-surface, text-muted
     );
 });
 
-/** The utilities that Tailwind v4 makes for each variable of the theme (what its namespaces mean). */
 function utilities(css: string): string[] {
     const theme = css.slice(
         css.indexOf("@theme static {"),
@@ -248,7 +245,6 @@ test("dist/names.md lists every token with its variable in each file and its uti
     assert.match(row("radius.card"), /`rounded-card` \|$/);
     assert.match(row("button.height"), /no utility: `var\(--button-height\)` \|$/);
 
-    // The variables in the table are the ones of the files.
     for (const token of system.tokens) {
         assert.ok(text.includes(`\`${tailwind.get(token.name)}\``), token.name);
         assert.ok(system.compiled.css.includes(`${token.cssVar}:`), token.cssVar);
