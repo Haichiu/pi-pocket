@@ -1,7 +1,5 @@
-/** How well a variable's name fits a role (stream T): the words of a name, and a score for each role from them. */
 import { type RoleName, w } from "./scan-color-base.ts";
 
-/** The words of a variable name: camelCase split, lower case, noise words dropped. */
 /** Variables whose library prefix decides what they are: Mantine's `--mantine-color-body` is the page, not the body text. */
 const LIBRARY_NAMES: [RegExp, string][] = [
     [/^mantine-color-body$/i, "bg-page"],
@@ -83,7 +81,6 @@ const OTHER_ROLE = new Set(
     ),
 );
 
-/** A name made only of the role's own words, and short: `border`, `border-default`; not `divider-light-1`. */
 const subset = (segs: string[], allowed: string[]) =>
     segs.length <= 2 && segs.every((seg) => allowed.includes(seg) || /^\d{1,3}$/.test(seg));
 
@@ -95,7 +92,7 @@ const VARIANT = w(
 
 const INK = ["foreground", "fg", "text", "on", "contrast", "inverse", "inverted", "content"];
 
-/** How well a variable's name fits a role, 0 (not at all) to about 100. */
+// 0 (not at all) to about 100.
 export function nameScore(role: RoleName, segs: string[]): number {
     if (
         segs.length === 0 ||
@@ -259,7 +256,6 @@ export function nameScore(role: RoleName, segs: string[]): number {
                 return 50;
             }
 
-            // Two (`text-2`, `fg-3`).
             if (ink && segs.some((seg) => /^[2-4]$/.test(seg))) {
                 return 70;
             }
@@ -399,5 +395,3 @@ export function nameScore(role: RoleName, segs: string[]): number {
         }
     }
 }
-
-// --- Roles ----------------------------------------------------------------------------------------------------------

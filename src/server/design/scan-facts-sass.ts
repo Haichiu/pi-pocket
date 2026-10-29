@@ -1,16 +1,13 @@
-/** Sass maps (stream T): `$colors: (primary: #123, ...)` and maps of modes, read as variables. */
 import { commaParts, type Scope } from "./scan-parse.ts";
 import { addVar, type Facts } from "./scan-facts.ts";
 import { modeOf } from "./scan-facts-lists.ts";
 
-/** One entry of a Sass map: its key, and its value as text, or as entries when the value is a map. */
 interface MapEntry {
     key: string;
     value: string;
     map?: MapEntry[];
 }
 
-/** Reads a Sass map `(a: 1, b: (c: 2))`; undefined when the text is not one. */
 function sassMap(text: string, depth = 0): MapEntry[] | undefined {
     const inner = text.trim();
 
@@ -51,11 +48,6 @@ function sassMap(text: string, depth = 0): MapEntry[] | undefined {
     return entries;
 }
 
-/**
- * A Sass map is one variable for each entry: `$spacers: (1: 0.25rem, 2: 0.5rem)` is `spacers-1` and `spacers-2`. A map
- * of modes (`$themes: (light: (bg: #fff), dark: (bg: #000))`) holds the variables of each mode; a map of names that
- * each hold modes (`primary: (light: #fff, dark: #000)`) holds one variable with two values.
- */
 export function sassMapVars(
     facts: Facts,
     file: string,

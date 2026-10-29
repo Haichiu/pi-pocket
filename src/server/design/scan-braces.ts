@@ -1,9 +1,6 @@
-/**
- * Brace matching in the text of a script (stream T): the object around a place, the end of an object, and the keys at its
- * top level. Strings and template literals are skipped. The reads are bounded: untrusted text.
- */
+// Bounded: the text is untrusted.
 
-/** The index after the bracket that closes the one at `open` (`{`, `[`), or undefined when it does not close in reach. */
+/** The index after the bracket that closes the one at `open`, or undefined. */
 export function closeOf(text: string, open: number): number | undefined {
     const start = text[open];
     const close = start === "[" ? "]" : "}";
@@ -31,7 +28,6 @@ export function closeOf(text: string, open: number): number | undefined {
     return undefined;
 }
 
-/** The `{` that opens the object around `index`, or undefined. */
 export function openAround(text: string, index: number): number | undefined {
     let depth = 0;
 
@@ -52,7 +48,6 @@ export function openAround(text: string, index: number): number | undefined {
     return undefined;
 }
 
-/** Where the value of `key` starts, among the top-level keys of the object that spans `open` to `end`; or undefined. */
 export function topLevelAt(
     text: string,
     open: number,
@@ -102,7 +97,6 @@ export function topLevelAt(
     return undefined;
 }
 
-/** The raw text of the value of a top-level key, up to the comma or the line end; or undefined. */
 export function topLevelValue(
     text: string,
     open: number,
