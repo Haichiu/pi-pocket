@@ -157,11 +157,27 @@ function distance(a: string, b: string): number {
 }
 
 /** The token name closest to `name`, when one is close enough to be a typo. */
-function nearest(name: string, names: Iterable<string>): string | undefined {
+function nearest(
+    name: string,
+    names: Iterable<string>,
+    budget: { remaining: number },
+): string | undefined {
     let best: string | undefined;
     let bestDistance = Math.max(2, Math.floor(name.length / 4)) + 1;
 
     for (const candidate of names) {
+        if (Math.abs(name.length - candidate.length) > 4) {
+            continue;
+        }
+
+        const cost = name.length * candidate.length;
+
+        if (cost > budget.remaining) {
+            break;
+        }
+
+        budget.remaining -= cost;
+
         const gap = distance(name, candidate);
 
         if (gap < bestDistance) {
@@ -420,6 +436,8 @@ function schemeOf(mode: string, declared: unknown): "light" | "dark" | undefined
  */
 export function buildSystem(raw: RawSystem): DesignSystem {
     const report = new Report();
+    // Typo suggestions are optional: the edit-distance work of one load is bounded (a few tenths of a second at most).
+    const suggestionBudget = { remaining: 20_000_000 };
 
     for (const problem of raw.problems) {
         report.add(problem.level, problem.message, problem.file, problem.token, problem.fix);
@@ -535,7 +553,7 @@ export function buildSystem(raw: RawSystem): DesignSystem {
             const def = defs.get(token.name);
 
             if (def === undefined) {
-                const close = nearest(token.name, defs.keys());
+                const close = nearest(token.name, defs.keys(), suggestionBudget);
 
                 report.error(
                     `"${token.name}" is not in tokens.json, so it has no default value.${close === undefined ? " Add it to tokens.json first." : ` Did you mean "${close}"?`}`,
@@ -654,7 +672,7 @@ export function buildSystem(raw: RawSystem): DesignSystem {
                     const target = defs.get(targetName);
 
                     if (target === undefined) {
-                        const close = nearest(targetName, defs.keys());
+                        const close = nearest(targetName, defs.keys(), suggestionBudget);
 
                         return report.error(
                             `The reference {${clip(targetName)}} does not exist.${close === undefined ? "" : ` Did you mean {${close}}?`}`,

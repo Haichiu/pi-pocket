@@ -938,3 +938,19 @@ test("scaleOf says which dimension tokens are the type, spacing, and radius scal
         "ease.out": undefined,
     });
 });
+
+test("many missing references have a budget for typo suggestions, so a load stays fast", () => {
+    const shade: Record<string, unknown> = {};
+    const typo: Record<string, unknown> = {};
+
+    for (let i = 0; i < 600; i++) {
+        shade[`shade-${i}-of-the-long-ramp`] = { $value: 1 };
+        typo[`shade-${i}-of-the-long-ramp`] = { $value: `{a.shade-${i}-of-the-long-ramps}` };
+    }
+
+    const missing = errors(build({ a: { $type: "number", ...shade }, b: { ...typo } }));
+
+    assert.equal(missing.length, 200);
+    assert.ok(missing.some((message) => message.includes("Did you mean")));
+    assert.ok(missing.some((message) => !message.includes("Did you mean")));
+});
