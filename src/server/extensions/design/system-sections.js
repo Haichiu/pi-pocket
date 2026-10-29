@@ -9,7 +9,6 @@ import {
     safeCss,
     shadowOf,
     shadowLines,
-    shadowSummary,
     showValue,
     tails,
     themeCss,
@@ -92,7 +91,6 @@ export function createSystemSections(env, widgets) {
                     token=${token}
                     modes=${ctx.modes}
                     canEdit=${ctx.canEdit}
-                    narrow=${ctx.narrow}
                 />`
             }
         </li>`;
@@ -262,7 +260,6 @@ export function createSystemSections(env, widgets) {
                     token=${open}
                     modes=${ctx.modes}
                     canEdit=${ctx.canEdit}
-                    narrow=${ctx.narrow}
                 />
             </div>`
         );
@@ -462,7 +459,7 @@ export function createSystemSections(env, widgets) {
             />`;
         }
 
-        const row = (token, group) => {
+        const row = (token) => {
             const now = ctx.model.value(token.name, mode);
 
             if (token.type === "typography") {
@@ -531,7 +528,7 @@ export function createSystemSections(env, widgets) {
             (group) =>
                 html`<${Group} key=${group.id} ctx=${ctx} group=${group}>
                     <ul class="dsy-rows">
-                        ${group.tokens.map((token) => row(token, group))}
+                        ${group.tokens.map((token) => row(token))}
                     </ul>
                 <//>`,
         )}`;

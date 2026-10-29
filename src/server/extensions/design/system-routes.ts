@@ -287,7 +287,7 @@ export function revisionOf(system: DesignSystem): string {
         .slice(0, 16);
 }
 
-export function viewOf(system: DesignSystem) {
+function viewOf(system: DesignSystem) {
     return {
         name: system.name,
         ...(system.description === undefined ? {} : { description: system.description }),
@@ -316,7 +316,7 @@ export function viewOf(system: DesignSystem) {
     };
 }
 
-export type CheckedReport = CheckReport & {
+type CheckedReport = CheckReport & {
     accepted: CheckFinding[];
     order: string[];
 };
@@ -324,8 +324,6 @@ export type CheckedReport = CheckReport & {
 // The report holds text from the page: every field is cut to a fixed shape.
 export function cleanReport(
     report: CheckReport,
-    system?: DesignSystem,
-    mode?: string,
     accepted: ReadonlySet<string> = new Set(),
 ): CheckedReport {
     const open: CheckFinding[] = [];
@@ -339,7 +337,7 @@ export function cleanReport(
         ...listed(report?.findings).map((one) => [one, false] as const),
         ...listed(engines).map((one) => [one, true] as const),
     ]) {
-        const finding = cleanFinding(each as CheckFinding, system, mode);
+        const finding = cleanFinding(each as CheckFinding);
 
         if (finding === undefined) {
             continue;
@@ -398,11 +396,7 @@ export function cleanReport(
     };
 }
 
-function cleanFinding(
-    each: CheckFinding,
-    system: DesignSystem | undefined,
-    mode: string | undefined,
-): CheckFinding | undefined {
+function cleanFinding(each: CheckFinding): CheckFinding | undefined {
     if (!RULES.includes(each?.rule)) {
         return undefined;
     }
@@ -410,8 +404,7 @@ function cleanFinding(
     const rect = each.rect;
     const fix = each.fix;
 
-    const fixable =
-        (each as { fixable?: unknown }).fixable === true || isFixable(each, system, mode);
+    const fixable = (each as { fixable?: unknown }).fixable === true || isFixable(each);
 
     return {
         ...(typeof each.id === "string" ? { id: clip(each.id, 60) } : {}),
@@ -487,7 +480,7 @@ function legacySize(cwd: string): number | null {
 }
 
 // The engine's own message is written for Pi ("Fix them and call again"), so the problems are shown instead.
-export function refusal(error: unknown): { failed: string; problems: SystemProblem[] } {
+function refusal(error: unknown): { failed: string; problems: SystemProblem[] } {
     const list = (error as { problems?: unknown } | null)?.problems;
     const problems: SystemProblem[] = (Array.isArray(list) ? list : [])
         .slice(0, 20)
@@ -708,7 +701,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             ...(checked === undefined ? {} : { mode: checked }),
         };
 
-        return { id, version: version as number | undefined, options, system, mode: checked };
+        return { id, version: version as number | undefined, options, system };
     };
 
     const acceptedOf = async (
@@ -729,7 +722,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         "POST",
         "c/:conversation/system/check",
         async (request) => {
-            const { id, version, options, system, mode } = await checkTarget(request);
+            const { id, version, options, system } = await checkTarget(request);
 
             try {
                 const bundle = await readBundle(
@@ -748,7 +741,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 const report = await checkDesign(bundle, system, asked, host, request.signal);
 
                 return {
-                    report: cleanReport(report, system, mode, accepted),
+                    report: cleanReport(report, accepted),
                     id,
                     version: bundle.version,
                 };

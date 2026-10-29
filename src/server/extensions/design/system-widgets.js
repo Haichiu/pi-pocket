@@ -688,7 +688,7 @@ export function createSystemWidgets(env) {
         </div>`;
     }
 
-    function TokenEditor({ model, token, modes, canEdit, narrow }) {
+    function TokenEditor({ model, token, modes, canEdit }) {
         const editable = EDITABLE.has(token.type);
         const dependents = model.dependents(token.name);
         const anyEdit = model.modes.some((mode) => model.edited(token.name, mode));

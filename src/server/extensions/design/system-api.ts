@@ -12,7 +12,7 @@ export interface FixResult {
     fixes: { rule: CheckFinding["rule"]; from: string; to: string; count: number }[];
 }
 
-export function isFixable(finding: CheckFinding, _system?: DesignSystem, _mode?: string): boolean {
+export function isFixable(finding: CheckFinding): boolean {
     return finding.fix !== undefined;
 }
 

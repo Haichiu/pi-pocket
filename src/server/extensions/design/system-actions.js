@@ -13,7 +13,7 @@ import {
 
 const IDLE = { status: "idle", error: "", problems: [], note: "" };
 
-export function createSystemActions(env, systemData) {
+export function createSystemActions(env) {
     const { store } = env;
     const fresh = (s) => (s.save.status === "saving" ? s.save : IDLE);
 

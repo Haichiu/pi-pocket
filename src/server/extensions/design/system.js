@@ -63,9 +63,8 @@ const TIER_TITLES = { semantic: "", primitive: "Primitives", component: "Compone
 const SCALE_TITLES = { spacing: "Scale", radii: "Corners", shadows: "Elevation" };
 
 // Same words as the documentation page groups by (`src/server/design/docsite-space.ts`); a test compares them.
-export const SPACE_ROOT = /^(space|spacing|gap|gaps|sp|spaces)$/;
-export const SIZE_ROOT = /^(size|sizes|sizing)$/;
-export const RADIUS_ROOT = /^(radius|radii|rounded|corners?|round)$/;
+const SPACE_ROOT = /^(space|spacing|gap|gaps|sp|spaces)$/;
+const SIZE_ROOT = /^(size|sizes|sizing)$/;
 
 const rootOf = (token) => token.path[0].toLowerCase();
 
@@ -961,7 +960,7 @@ const GUIDELINES = "guidelines";
 // Edits to one thing closer than this make one undo step (a color picker drag).
 const COALESCE_MS = 1200;
 
-export const editKey = (op) => (op.kind === "guidelines" ? GUIDELINES : keyOf(op.mode, op.token));
+const editKey = (op) => (op.kind === "guidelines" ? GUIDELINES : keyOf(op.mode, op.token));
 
 export const tokenEdit = (mode, token, raw) => ({ kind: "token", mode, token, raw });
 
@@ -1081,9 +1080,9 @@ export function safeCss(value) {
 }
 
 // The artifact bridge takes `--` and up to 78 letters, digits, `_`, `-`.
-export const bridgeName = (cssVar) => /^--[A-Za-z0-9_-]{1,78}$/.test(cssVar);
+const bridgeName = (cssVar) => /^--[A-Za-z0-9_-]{1,78}$/.test(cssVar);
 
-export function varsOf(model, mode) {
+function varsOf(model, mode) {
     const out = [];
 
     for (const token of model.tokens) {

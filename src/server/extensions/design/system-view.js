@@ -466,7 +466,7 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
-    function SystemBar({ s, designs, design, shown, room, canEdit, Picker }) {
+    function SystemBar({ s, designs, design, room, canEdit, Picker }) {
         const [open, setOpen] = useState(null);
         const data = s.system.data;
         const narrow = env.sizeClass(s) === "narrow";
@@ -957,7 +957,6 @@ export function createSystemView(env, canvas, sections, widgets) {
             model,
             modes,
             canEdit,
-            narrow,
             guidelines,
             query: s.sysSearch ? s.sysQuery.trim() : "",
         };

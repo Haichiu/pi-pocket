@@ -12,7 +12,7 @@ export async function createSystemUi(env, canvas) {
     await env.style("system.css");
 
     changeWith(changeOf);
-    Object.assign(env, createSystemActions(env, env.systemData));
+    Object.assign(env, createSystemActions(env));
 
     if (stopPreview === null) {
         stopPreview = watchPreview(env.store);
