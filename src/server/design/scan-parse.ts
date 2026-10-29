@@ -778,9 +778,17 @@ export function readLiteral(
             at += 1;
 
             const out: { [key: string]: Literal } = {};
+            let last = -1;
 
             while (at < text.length) {
                 skip();
+
+                // A closing bracket of another kind (`{ a: 1 ) }`) is read by nothing: the object ends there.
+                if (at === last) {
+                    break;
+                }
+
+                last = at;
 
                 if (text[at] === "}") {
                     at += 1;
@@ -889,9 +897,16 @@ export function readLiteral(
             at += 1;
 
             const out: Literal[] = [];
+            let last = -1;
 
             while (at < text.length) {
                 skip();
+
+                if (at === last) {
+                    break;
+                }
+
+                last = at;
 
                 if (text[at] === "]") {
                     at += 1;

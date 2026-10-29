@@ -1,6 +1,7 @@
 // The structured scan: what it reads (CSS, SCSS, Less, Tailwind, JS themes, token files), the roles and scales it
 // infers, the dark mode, and that its draft always loads in the tokens engine.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -2157,4 +2158,16 @@ test("star re-exports in a cycle are read once each: a local export wins, then t
     assert.ok(Date.now() - started < 1000, `${Date.now() - started} ms`);
     assert.equal(out.get("shared")?.value(), "s0");
     assert.equal(out.get("first")?.value(), "f1");
+});
+
+test("readLiteral ends at a stray closing bracket (it looped for ever before: run in a child)", () => {
+    const module = new URL("../src/server/design/scan-parse.ts", import.meta.url).href;
+    const code = `import { readLiteral } from "${module}";
+console.log(Object.keys(readLiteral("{ a: f(1)), b: 2 }", 0)).join());`;
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", code], {
+        encoding: "utf8",
+        timeout: 20_000,
+    });
+
+    assert.equal(child.stdout.trim(), "a");
 });
