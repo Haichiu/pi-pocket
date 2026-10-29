@@ -771,7 +771,12 @@ test("a system with an error is not published or exported, and a revision is a s
     assert.equal((await call("owner", "system/export", {}, id)).status, 409);
 
     const system = loadDesignSystem(folder)!;
+    const hex = system.tokens.find((each) => each.name === "color.text.primary")!.modes.light!.hex;
+    const content = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>K</title><style>h1 { color: ${hex}; }</style></head><body><main data-pid="m"><h1 data-pid="t">K</h1></main></body></html>`;
+    const fix = { id: "k", mode: "light", viewport: "mobile", key: "fix-key-broken" };
 
+    await publishDesign(app, id, { id: "k", title: "K", content });
+    assert.equal((await call("owner", "system/fix", fix, id)).status, 409);
     assert.equal(revisionOf(system), revisionOf(loadDesignSystem(folder)!));
     assert.match(revisionOf(system), /^[0-9a-f]{16}$/);
 });
