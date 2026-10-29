@@ -1,12 +1,4 @@
-/**
- * The rendered scan (stream T): a project's HTML pages (or its built output) shown in the private Chromium of `render.ts`,
- * offline, and read as the browser computed them, once as the page is and once in its dark mode (the browser's
- * `prefers-color-scheme: dark`, then a class or an attribute that the stylesheets and scripts name for a dark mode:
- * `.dark`, `[data-theme=dark]`, `[data-bs-theme=dark]`, `[data-mantine-color-scheme=dark]`...). What the browser computed
- * becomes declarations, as if the project had written them in a stylesheet, and the static scan reads them after its own
- * files: the static scan wins where it is sure (a variable of the same name, a role that a name states), and the rendered
- * values fill what it could not find. A format the scan has never met still gives the colors that a page shows.
- */
+// The static scan wins where it is sure (a variable of the same name, a role that a name states); the rendered values fill what it could not find.
 import { parseColor, toHex } from "./color.ts";
 import type { PocketHost } from "../host.ts";
 import type { DesignBundle } from "./bundle.ts";
@@ -16,25 +8,20 @@ import type { Facts } from "./scan-facts.ts";
 import { type DarkToggle, planRender, type RenderPlan } from "./scan-render-pages.ts";
 import { PROBE_SOURCE, type ProbeInput, type Reading } from "./scan-render-probe.ts";
 
-/** What one page showed. */
 export interface PageEvidence {
     page: string;
     light: Reading;
     dark?: Reading;
-    /** How the dark mode was switched: `prefers-color-scheme`, or the class or attribute. */
     how?: string;
 }
 
-/** What the render found. */
 export interface RenderedEvidence {
     pages: PageEvidence[];
     notes: string[];
 }
 
-/** The most time the whole render may take. */
 const BUDGET_MS = 40_000;
 
-/** The pages are shown offline: nothing outside the project loads. */
 const OFFLINE = {
     fetchPublic: async () => {
         throw new Error("The scan shows pages offline.");
@@ -65,7 +52,6 @@ const SETTLE_STYLE = `(() => {
     document.head.append(style);
 })()`;
 
-/** Whether two readings differ as a light and a dark mode do. */
 function differs(a: Reading, b: Reading): boolean {
     if (a.page.bg !== b.page.bg || a.page.text !== b.page.text) {
         return true;
@@ -82,7 +68,6 @@ function differs(a: Reading, b: Reading): boolean {
     return changed >= 2;
 }
 
-/** Puts a toggle on the root and the body; returns the function that takes it off. */
 async function apply(page: DesignPage, toggle: DarkToggle): Promise<() => Promise<void>> {
     const spec = JSON.stringify(toggle);
 
@@ -112,7 +97,6 @@ async function read(page: DesignPage, input: ProbeInput): Promise<Reading> {
     )) as unknown as Reading;
 }
 
-/** Shows the pages of a plan and reads them. */
 export async function renderEvidence(
     plan: RenderPlan,
     signal?: AbortSignal,
@@ -172,7 +156,6 @@ async function readPage(page: DesignPage, rel: string, plan: RenderPlan): Promis
     const light = await read(page, input);
     const evidence: PageEvidence = { page: rel, light };
 
-    // A page that is empty (a bundler's shell with no script that runs) has nothing to show.
     if (light.count < 3) {
         return evidence;
     }
@@ -188,7 +171,6 @@ async function readPage(page: DesignPage, rel: string, plan: RenderPlan): Promis
         return { ...evidence, dark: media, how: "prefers-color-scheme" };
     }
 
-    // A class or an attribute that the page's styles name for a dark mode.
     await page.applyView({ colorScheme: "light" });
 
     for (const toggle of plan.toggles) {
@@ -212,8 +194,6 @@ async function readPage(page: DesignPage, rel: string, plan: RenderPlan): Promis
     return evidence;
 }
 
-// --- Declarations ---------------------------------------------------------------------------------------------------------
-
 const decl = (selector: string, prop: string, value: string, scope: Scope): Decl => ({
     prop,
     value,
@@ -224,14 +204,12 @@ const decl = (selector: string, prop: string, value: string, scope: Scope): Decl
     inline: false,
 });
 
-/** A computed color as `#rrggbb` (or with alpha), undefined when it is not one. */
 function hexOf(css: string): string | undefined {
     const color = parseColor(css);
 
     return color === undefined ? undefined : toHex(color);
 }
 
-/** How many times a value is written: a heavier one more often, up to eight. */
 const copies = (weight: number, scale: number) =>
     Math.max(1, Math.min(8, 1 + Math.floor(Math.log2(1 + weight / scale))));
 
@@ -259,9 +237,7 @@ const TEXT_SELECTOR: Record<string, string> = {
     code: "code",
 };
 
-/** What the files already say: the colors they hold, the custom properties they set, and the scales they have. */
 export interface Known {
-    /** Colors as `#rrggbb` (alpha dropped). */
     colors: string[];
     vars: Set<string>;
     fonts: boolean;
@@ -271,7 +247,6 @@ export interface Known {
     shadows: boolean;
 }
 
-/** Whether a color is, within a step of rounding, one that the files hold. */
 function isKnown(hex: string, known: Known): boolean {
     const channels = (text: string) =>
         [1, 3, 5].map((at) => Number.parseInt(text.slice(at, at + 2), 16));
@@ -284,7 +259,7 @@ function isKnown(hex: string, known: Known): boolean {
     });
 }
 
-/** The declarations that a reading stands for, in one scope. Only values that differ from `against` are written for dark. */
+// Only values that differ from `against` are written for dark.
 function declsOf(reading: Reading, scope: Scope, known: Known, against?: Reading): Decl[] {
     const out: Decl[] = [];
     const dark = scope === "dark";
@@ -397,7 +372,6 @@ function declsOf(reading: Reading, scope: Scope, known: Known, against?: Reading
         }
     }
 
-    // Buttons: the first with a primary word is the primary one, else the first with a color of its own.
     const primary =
         reading.buttons.find((button) => button.primary && hexOf(button.bg) !== undefined) ??
         reading.buttons[0];
@@ -465,7 +439,6 @@ function declsOf(reading: Reading, scope: Scope, known: Known, against?: Reading
     return out;
 }
 
-/** The declarations of every page: the page as it is, and what its dark mode changes. */
 export function renderedDecls(
     evidence: RenderedEvidence,
     known: Known,
@@ -479,7 +452,6 @@ export function renderedDecls(
     }));
 }
 
-/** Finds the pages of a project and shows them; undefined when there is no page, or no browser. */
 export async function renderProject(
     root: string,
     signal?: AbortSignal,
@@ -500,10 +472,8 @@ export async function renderProject(
     }
 }
 
-/** The scales the static scan found, from its result: a scale it has is not filled from the page. */
 export type Have = Pick<Known, "fonts" | "sizes" | "space" | "radii" | "shadows">;
 
-/** What the files read so far already say, for the rendered values to fill around. */
 export function knownOf(facts: Facts, have: Have): Known {
     const colors = new Set<string>();
 

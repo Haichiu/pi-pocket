@@ -1,4 +1,3 @@
-/** The variables of one mode, ready to infer from (stream T): each one classified, its colors evaluated, and the page checked for a dark default. */
 import { px } from "./scan-parse.ts";
 import { luminance, parseColor, type Rgba, toHex } from "./color.ts";
 import { nameScore, words } from "./scan-colors.ts";
@@ -10,7 +9,6 @@ import { channelColor, evalMath, follow, type Variable, variables } from "./scan
 import { categorize } from "./scan-categorize.ts";
 import { evalColor, SASS_COLOR } from "./scan-sass-colors.ts";
 
-/** A variable sorted into a category, with its value in the default scope and in the other mode. */
 export interface Classified {
     variable: Variable;
     category: Category;
@@ -19,20 +17,17 @@ export interface Classified {
     lightColor?: string;
     darkColor?: string;
     via?: Variable;
-    /** The variable the dark value was followed through. */
     darkVia?: Variable;
 }
 
 export interface Prepared {
     index: Map<string, Variable>;
     classified: Classified[];
-    /** The other mode: `dark` in most projects, `light` in a dark-first one. */
     alt: "dark" | "light";
     /** Colors kept for the other mode under names of their own (`$dark-text`), as the roles they stand for. */
     others: { role: string; entry: Classified }[];
 }
 
-/** Sorts the project's variables into categories and reads their values in both modes. */
 export function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
     const all = variables(facts, alt);
     const index = new Map<string, Variable>();
@@ -200,7 +195,6 @@ export function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
     });
     const others: Prepared["others"] = [];
 
-    // A project that sets the other mode's values on its variables already has that mode (`--color-text` in the dark scope).
     const sets = facts.vars.some((fact) => fact.scope === alt);
 
     if (!sets && loose.length >= 2 && new Set(loose.map((item) => item.role)).size >= 2) {
@@ -218,7 +212,6 @@ export function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
     };
 }
 
-/** Whether the project's page background (in the default scope) is dark. */
 export function pageIsDark(prep: Prepared, facts: Facts): boolean {
     let best: { score: number; color: Rgba } | undefined;
 
@@ -240,7 +233,6 @@ export function pageIsDark(prep: Prepared, facts: Facts): boolean {
         return luminance(best.color) < 0.2;
     }
 
-    // No variable is called the background: the variable, or the color, that the page's root is painted with.
     const painted = prep.classified
         .map((entry) => ({
             color: entry.lightColor === undefined ? undefined : parseColor(entry.lightColor),
@@ -259,10 +251,7 @@ export function pageIsDark(prep: Prepared, facts: Facts): boolean {
     return page !== undefined && luminance(page) < 0.2;
 }
 
-/**
- * The colors that Tailwind's utility classes name without the project defining them (`bg-slate-200`, `text-white`) are
- * uses of those colors. A name the project defines itself (its own `blue-500`) is its own, not the default.
- */
+// A name the project defines itself (its own `blue-500`) is its own, not Tailwind's default.
 export function useDefaultColors(facts: Facts): void {
     if (!facts.tailwind || facts.classColors.size === 0) {
         return;
@@ -286,7 +275,6 @@ export function useDefaultColors(facts: Facts): void {
     }
 }
 
-/** Sass color functions in a value, over variables or colors, as the colors they come to: `rgba($black, .2)` is `rgba(0, 0, 0, 0.2)`. */
 function sassColors(text: string, index: Map<string, Variable>): string {
     if (!/[a-z]\(/i.test(text)) {
         return text;
@@ -295,7 +283,6 @@ function sassColors(text: string, index: Map<string, Variable>): string {
     return text.replace(
         /(?<![\w-])([a-z][a-z-]*)\(((?:[^()]|\([^()]*\))*)\)/gi,
         (all, fn: string, args: string) => {
-            // Plain CSS `rgba(0, 0, 0, .2)` is a color already.
             if (!SASS_COLOR.has(fn.toLowerCase()) || parseColor(all) !== undefined) {
                 return all;
             }
@@ -309,10 +296,6 @@ function sassColors(text: string, index: Map<string, Variable>): string {
     );
 }
 
-/**
- * A rule that sets one color on one class (`.text-gray-900 { color: #111827 }`) is a use for each time markup uses the
- * class: the definition counted once, the rest are added here.
- */
 export function weighClassRules(facts: Facts): void {
     for (const [key, rule] of facts.classRules) {
         const [name] = key.split("|") as [string];
@@ -324,7 +307,6 @@ export function weighClassRules(facts: Facts): void {
         ] as const) {
             const fact = hex === undefined ? undefined : map.get(hex);
 
-            // A class on the page's own `<body>` or `<html>` styles the whole page.
             if (fact !== undefined && facts.rootClasses.has(name)) {
                 fact[rule.kind === "bg" ? "root" : "body"] += rule.kind === "border" ? 0 : 1;
                 fact[rule.kind] += rule.kind === "text" ? 2 : 0;
@@ -339,7 +321,6 @@ export function weighClassRules(facts: Facts): void {
     }
 }
 
-/** Sizes computed from custom properties (`padding: calc(var(--gap) * 2)`) are uses of the sizes they come to. */
 export function resolveDeferred(facts: Facts, prep: Prepared): void {
     const lookup = (name: string, kind: "scss" | "less" | "css") => {
         const target = prep.index.get(`${kind}:${name}`);
@@ -352,7 +333,6 @@ export function resolveDeferred(facts: Facts, prep: Prepared): void {
             return evalMath(inner, lookup) ?? all;
         });
 
-        // `map-get($spacers, 3)` is the variable `spacers-3`; `space(3)` is the project's function with 3 for its argument.
         resolved = resolved.replace(
             /map[.-]get\(\s*\$([\w-]+)\s*,\s*['"]?([\w-]+)['"]?\s*\)/g,
             (all, map: string, key: string) => lookup(`${map}-${key}`, "scss") ?? all,
@@ -371,16 +351,13 @@ export function resolveDeferred(facts: Facts, prep: Prepared): void {
             },
         );
 
-        // Sass color functions over variables: `rgba($black, .2)`, `darken($brand, 10%)`, `tint-color(#c5221f, 88%)`.
         resolved = sassColors(resolved, prep.index);
 
-        // Arithmetic on lengths: `$unit * 2`, `$unit / 2`, `($a + 4px)`.
         resolved = resolved.replace(
             /(?:[$@][\w-]+|\d*\.?\d+[a-z%]*)(?:\s*[*/]\s*(?:[$@][\w-]+|\d*\.?\d+[a-z%]*)|\s+[+-]\s+(?:[$@][\w-]+|\d*\.?\d+[a-z%]*))+/g,
             (run) => evalMath(run, lookup) ?? run,
         );
 
-        // A variable left on its own is its value.
         resolved = resolved.replace(/(?:[\w-]+\.)?[$@]([A-Za-z_][\w-]*)/g, (all, name: string) => {
             return lookup(name, "scss") ?? lookup(name, "less") ?? all;
         });

@@ -1,7 +1,3 @@
-/**
- * The color roles of the scan (stream T): the colors that the project's variables hold and the literal colors it uses,
- * merged for each mode, and the role (page, surface, text, muted, border, accent, and the statuses) that each mode picks.
- */
 import {
     chooseRoles,
     type ColorEntry,
@@ -22,7 +18,6 @@ import { type Book, type Inferred } from "./scan-scales.ts";
 import { hexOf } from "./scan-util.ts";
 import { type Variable } from "./scan-variables.ts";
 
-/** What the phases of the inference share: the facts, the classified variables, the draft that grows, and the result. */
 export interface InferContext {
     facts: Facts;
     prep: Prepared;
@@ -34,7 +29,6 @@ export interface InferContext {
     uses: (variable: Variable) => number;
 }
 
-/** The colors and roles of each mode, for the palette. */
 export interface ColorRoles {
     lightColors: Map<string, ColorEntry>;
     darkColors: Map<string, ColorEntry>;
@@ -46,7 +40,6 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
     const { facts, prep, classified, alt, result, uses } = context;
     const colorVars = classified.filter((entry) => entry.category === "color");
 
-    // 2. Colors: the variables' values and the literal uses, merged; then the roles.
     const lightDefined = colorVars.flatMap((entry) => {
         const hex = hexOf(entry.lightColor);
 
@@ -113,7 +106,6 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
 
         entry?.names.push({ name: each.name, uses: each.uses });
 
-        // What the variables that hold a color are used for is a use of the color.
         if (entry !== undefined && each.kinds !== undefined) {
             entry.fact = mergeFact(
                 entry.fact,
@@ -159,7 +151,6 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
     result.hasDark =
         hasDarkVars || prep.others.length > 0 || (alt === "dark" && facts.darkColors.size > 0);
 
-    // Names paired with the light roles first: the same variable's dark value is the dark role.
     const darkRoles: Partial<Record<RoleName, RoleChoice>> = result.hasDark
         ? chooseRoles(darkColors, namedDark)
         : {};

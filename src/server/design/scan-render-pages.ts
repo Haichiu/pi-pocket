@@ -1,33 +1,20 @@
-/**
- * The pages of a project to render (stream T): the HTML pages that can show the design (`index.html`, `public/*.html`, a
- * build folder, a Storybook static build), the files they need (stylesheets, scripts), the custom property names the
- * stylesheets declare, and the classes and attributes that may switch a dark mode. The walk is bounded and follows no
- * link; it goes into `dist`, `build`, and the like, which the style scan leaves out, because a built page is what the
- * browser can show. Nothing is read from `node_modules`, `.git`, or a dot folder.
- */
+// The walk is bounded and follows no link. It goes into `dist` and `build`, which the style scan leaves out, because a built page is what the browser can show.
 import { lstatSync, readdirSync } from "node:fs";
 import { join, posix } from "node:path";
 import { readHead } from "./scan-files.ts";
 
-/** A file the page may load. */
 export interface PageAsset {
     name: string;
     type: string;
     bytes: Buffer;
 }
 
-/** How a dark mode may be switched on a page: a class, or an attribute with a value. */
 export type DarkToggle = { class: string } | { attr: string; value: string };
 
-/** What the render needs. */
 export interface RenderPlan {
-    /** The pages to render, relative to the root, best first. */
     pages: string[];
-    /** The files of the bundle, by path from the root (the pages are among them, with root-absolute links made relative). */
     assets: PageAsset[];
-    /** Custom property names that the stylesheets declare. */
     vars: string[];
-    /** The ways that a dark mode may be switched. */
     toggles: DarkToggle[];
     /** True when a page is only a shell that a script fills (a bundler's `index.html` with no sources built). */
     notes: string[];
@@ -43,7 +30,6 @@ const LIMITS = {
     html: 400_000,
 };
 
-/** Folders never entered. */
 const NEVER =
     /^(?:node_modules|\.git|\.hg|\.svn|vendor|vendors|bower_components|third[-_]?party|coverage|__pycache__|\.venv|venv|target|\.yarn|\.pnpm-store)$/i;
 
@@ -58,7 +44,6 @@ const TYPES: Record<string, string> = {
 
 const extensionOf = (name: string) => /\.[a-z0-9]+$/i.exec(name)?.[0].toLowerCase() ?? "";
 
-/** The score of a page: how likely it is to show the design. */
 function pageScore(rel: string, text: string): number {
     const parts = rel.split("/");
     const name = parts.at(-1)!.toLowerCase();
@@ -85,7 +70,6 @@ function pageScore(rel: string, text: string): number {
         score -= 25;
     }
 
-    // A fragment, or a template that a server fills: little of it shows.
     if (!/<(?:body|html|!doctype)/i.test(text.slice(0, 4000))) {
         score -= 30;
     }
@@ -94,7 +78,6 @@ function pageScore(rel: string, text: string): number {
         score -= 25;
     }
 
-    // Something to show: markup in the body, or a script that makes it.
     const bodyText = text
         .replace(/<(script|style)[\s\S]*?<\/\1>/gi, "")
         .replace(/<[^>]+>/g, " ")
@@ -107,7 +90,6 @@ function pageScore(rel: string, text: string): number {
     return score;
 }
 
-/** The root-absolute links of a page (`/assets/app.css`) made relative to the page, when the file is among the assets. */
 function relink(html: string, page: string, has: (path: string) => boolean): string {
     const dir = posix.dirname(page);
 
@@ -133,7 +115,6 @@ function relink(html: string, page: string, has: (path: string) => boolean): str
     );
 }
 
-/** The ways a stylesheet or script says that a dark mode can be switched. */
 function togglesIn(texts: string[]): DarkToggle[] {
     const classes = new Map<string, number>();
     const attrs = new Map<string, number>();
@@ -203,7 +184,6 @@ function togglesIn(texts: string[]): DarkToggle[] {
     return toggles.slice(0, 12);
 }
 
-/** The pages to render under `root`, with their files; undefined when the project has no page to show. */
 export function planRender(root: string): RenderPlan | undefined {
     const files: { rel: string; size: number }[] = [];
     let seen = 0;
@@ -235,9 +215,7 @@ export function planRender(root: string): RenderPlan | undefined {
             } else if (entry.isFile() && TYPES[extensionOf(entry.name)] !== undefined) {
                 try {
                     files.push({ rel, size: lstatSync(join(root, rel)).size });
-                } catch {
-                    // A file that cannot be looked at is left out.
-                }
+                } catch {}
             }
         }
     };
@@ -293,7 +271,6 @@ export function planRender(root: string): RenderPlan | undefined {
         return undefined;
     }
 
-    // The files of the bundle: the pages, then what is nearest to them, up to the limits.
     const near = (rel: string) =>
         Math.max(
             ...pages.map((page) => {
