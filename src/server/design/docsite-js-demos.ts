@@ -1,4 +1,3 @@
-/** The page script's motion demos, code tabs, and its end. */
 export const JS_DEMOS = `    // Motion demos.
     var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce) { root.classList.add("reduce"); $$("[data-reduce-note]").forEach(function (note) { note.hidden = false; }); }

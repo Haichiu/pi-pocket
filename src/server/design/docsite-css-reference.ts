@@ -1,4 +1,3 @@
-/** The page's CSS for the guidelines (rendered Markdown), the token table, and the footer. */
 export const CSS_REFERENCE = `/* ── Guidelines (rendered Markdown) ────────────────────── */
 
 .prose {

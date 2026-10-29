@@ -1,4 +1,3 @@
-/** The page script's links to headings: a tap copies the link, and a link to something in a closed fold opens the fold. */
 export const JS_LINKS = `    // Links to headings. A tap copies the address of the heading; the page follows it as any link.
     document.addEventListener("click", function (event) {
         var link = event.target && event.target.closest ? event.target.closest("a.anchor") : null;

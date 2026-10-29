@@ -1,6 +1,5 @@
 import { SANITIZER_JS } from "./docsite-sanitize.ts";
 
-/** The page script's modes and its component states (parsed in an inert document and rebuilt from an allowlist). */
 export const JS_STAGES = `    // Mode: the system's own modes. The theme (light or dark) of the page follows the mode. Every token variable
     // is set on the body for each mode, so nothing else needs to change: component states inherit them.
     function setMode(mode, theme) {
