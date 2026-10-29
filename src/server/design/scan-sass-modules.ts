@@ -118,7 +118,7 @@ export class Module {
     }
 }
 
-export interface ModuleRule {
+interface ModuleRule {
     path: string;
     namespace: string | undefined;
     prefix: string;

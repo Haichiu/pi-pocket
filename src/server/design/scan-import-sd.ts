@@ -1,5 +1,5 @@
 import { parseColor } from "./color.ts";
-import { type SdConfig, sdConfigsIn } from "./scan-import-sd-config.ts";
+import { type SdConfig } from "./scan-import-sd-config.ts";
 import { isObject, type Obj } from "./scan-import-convert.ts";
 import {
     DARK,
@@ -14,7 +14,7 @@ import {
     tokensOf,
 } from "./scan-import-eval.ts";
 
-export interface SdFile {
+interface SdFile {
     file: string;
     root: Obj;
 }
@@ -123,9 +123,6 @@ export function globToRegExp(glob: string): { test: (path: string) => boolean } 
 
     return { test: (path) => programs.some((steps) => run(steps, path)) };
 }
-
-export const sdConfigIn = (dir: string, text: string): SdConfig | undefined =>
-    sdConfigsIn(dir, "", text)[0];
 
 const MODE_FOLDER = /^(?:brands?|themes?|modes?|skins?|variants?|schemes?)$/i;
 

@@ -75,7 +75,7 @@ export const emptyKinds = (): Kinds => ({
     surface: 0,
 });
 
-export interface FontFact {
+interface FontFact {
     stack: string[];
     count: number;
     heading: number;

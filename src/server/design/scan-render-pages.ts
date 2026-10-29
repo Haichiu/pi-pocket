@@ -3,7 +3,7 @@ import { lstatSync, readdirSync } from "node:fs";
 import { join, posix } from "node:path";
 import { readHead } from "./scan-files.ts";
 
-export interface PageAsset {
+interface PageAsset {
     name: string;
     type: string;
     bytes: Buffer;

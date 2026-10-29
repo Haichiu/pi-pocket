@@ -90,10 +90,10 @@ export class Project implements Flat {
 }
 
 // The member is found from its `.$`, looking back: a long run of `a-a-a-…` with no `.$` in it costs nothing.
-export const NEEDS_EVAL =
+const NEEDS_EVAL =
     /@(?:each|for|while)\b|\bmap[.-](?:merge|get|set|keys|values)\b|\b(?:color|math|map|list|string)\.[a-z-]+\(|\b(?:scale-color|adjust-color|change-color)\(|@function[\s\S]{0,400}?\b(?:mix|lighten|darken|saturate|desaturate|rgba|adjust-hue|color\.)|(?<=\b[a-z][\w-]*)\.\$[\w-]|@use\b[^;]*\bwith\b|@forward\b[^;]*\b(?:as|show|hide|with)\b/;
 
-export interface Evaluated {
+interface Evaluated {
     text: string;
     complete: boolean;
 }

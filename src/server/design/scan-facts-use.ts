@@ -458,7 +458,7 @@ export function ingest(facts: Facts, decl: Decl): void {
     }
 }
 
-export function lightDark(value: string): [string, string] | undefined {
+function lightDark(value: string): [string, string] | undefined {
     let light = "";
     let dark = "";
     let at = 0;

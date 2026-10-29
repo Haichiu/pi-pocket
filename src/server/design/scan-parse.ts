@@ -17,11 +17,11 @@ export interface Decl {
     line?: number;
 }
 
-export const MAX_VALUE = 400;
-export const MAX_MAP = 8000;
+const MAX_VALUE = 400;
+const MAX_MAP = 8000;
 
 // Comments hold notes and old code, not styles in use. An unclosed comment runs to the end of the text, so the match stays linear; a `/*` or `//` after a word, a quote, or (for `//`) `:` or `(` is a glob or an address.
-export const COMMENTS =
+const COMMENTS =
     /(?<![\w.*"'`/-])\/\*[\s\S]*?(?:\*\/|$)|<!--[\s\S]*?(?:-->|$)|(?<![:\w"'`(/\\])\/\/[^\n]*/g;
 
 const DARK_WORD = String.raw`(?:dark|dark[-_]theme|dark[-_]mode|darkmode|dark[-_]scheme|theme[-_]{0,2}dark|mode[-_]{0,2}dark|scheme[-_]{0,2}dark|color[-_]scheme[-_]dark|is[-_]?dark|has[-_]?dark|ui[-_]dark|app[-_]dark|body[-_]dark|v-theme--dark|chakra-ui-dark|ant-dark|night|night[-_]mode|nightmode|theme[-_]night|dark[-_]?(?:theme|mode|scheme)(?:[-_]active|[-_]on|[-_]enabled)?)`;
@@ -926,7 +926,7 @@ const NAME_WORDS = new RegExp(
     "gi",
 );
 
-export interface FoundColor {
+interface FoundColor {
     text: string;
     hex: string;
 }

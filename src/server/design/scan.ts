@@ -96,7 +96,7 @@ export interface Rendered {
     have: Have;
 }
 
-export function readFacts(root: string, rendered?: Rendered): Facts {
+function readFacts(root: string, rendered?: Rendered): Facts {
     const facts = newFacts();
     const { files, partial, skipped } = collectFiles(root);
     let bytes = 0;

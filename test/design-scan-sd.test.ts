@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { scanReport, scanTokens, type TokenScan } from "../src/server/design/scan.ts";
-import { globToRegExp, sdConfigIn } from "../src/server/design/scan-import-sd.ts";
+import { globToRegExp } from "../src/server/design/scan-import-sd.ts";
 import { type Entry, Mode, flatten } from "../src/server/design/scan-import-eval.ts";
 import { modeOfConfigFile, sdConfigsIn } from "../src/server/design/scan-import-sd-config.ts";
 import type { DesignSystem } from "../src/server/design/system-types.ts";
@@ -386,16 +386,20 @@ test("globs: **, *, ?, braces; a template, a long pattern, and many ** are refus
     assert.ok(Date.now() - started < 400, `${Date.now() - started} ms`);
 
     assert.deepEqual(
-        sdConfigIn("", `{ "source": ["a/*.json"], "include": ["b/*.json"], "platforms": {} }`),
+        sdConfigsIn(
+            "",
+            "",
+            `{ "source": ["a/*.json"], "include": ["b/*.json"], "platforms": {} }`,
+        )[0],
         { dir: "", include: ["b/*.json"], source: ["a/*.json"] },
     );
     assert.equal(
-        sdConfigIn("", `{ "source": ["a/*.json"] }`),
+        sdConfigsIn("", "", `{ "source": ["a/*.json"] }`)[0],
         undefined,
         "no platforms: not a config",
     );
     assert.equal(
-        sdConfigIn("", `module.exports = { platforms: {}, source: getSources() }`),
+        sdConfigsIn("", "", `module.exports = { platforms: {}, source: getSources() }`)[0],
         undefined,
         "a list built in code",
     );

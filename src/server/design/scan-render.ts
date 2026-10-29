@@ -8,7 +8,7 @@ import type { Facts } from "./scan-facts.ts";
 import { type DarkToggle, planRender, type RenderPlan } from "./scan-render-pages.ts";
 import { PROBE_SOURCE, type ProbeInput, type Reading } from "./scan-render-probe.ts";
 
-export interface PageEvidence {
+interface PageEvidence {
     page: string;
     light: Reading;
     dark?: Reading;
@@ -97,10 +97,7 @@ async function read(page: DesignPage, input: ProbeInput): Promise<Reading> {
     )) as unknown as Reading;
 }
 
-export async function renderEvidence(
-    plan: RenderPlan,
-    signal?: AbortSignal,
-): Promise<RenderedEvidence> {
+async function renderEvidence(plan: RenderPlan, signal?: AbortSignal): Promise<RenderedEvidence> {
     // A scan that was cancelled before it got here starts no browser.
     signal?.throwIfAborted();
 
@@ -237,7 +234,7 @@ const TEXT_SELECTOR: Record<string, string> = {
     code: "code",
 };
 
-export interface Known {
+interface Known {
     colors: string[];
     vars: Set<string>;
     fonts: boolean;

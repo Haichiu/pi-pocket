@@ -16,7 +16,7 @@ const COLOR_TOKEN =
 export const GRADIENT =
     /^(?:repeating-)?(?:linear|radial|conic)-gradient\([\w\s,.%#()/+*-]{4,360}\)$/i;
 
-export function looksLikeShadow(text: string): boolean {
+function looksLikeShadow(text: string): boolean {
     const layers = commaParts(text.trim());
 
     if (

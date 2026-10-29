@@ -28,7 +28,7 @@ export interface Imported {
 }
 
 /** A file that may hold tokens: by its name, so `package.json` and `tsconfig.json` are never read as tokens. */
-export const TOKEN_FILE =
+const TOKEN_FILE =
     /(?:^|\/)(?:[^/]*tokens?[^/]*|[^/]*theme[^/]*)\.json$|(?:^|\/)(?:design-?tokens?|tokens?|properties|brands?|themes?|style-?dictionary|dictionary)\/(?:[^/]+\/)*[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
 
 const MAX_FILES = 300;

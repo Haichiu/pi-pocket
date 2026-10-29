@@ -9,7 +9,7 @@ export interface Draft {
     modes: Record<string, Obj>;
 }
 
-export interface RoleInfo {
+interface RoleInfo {
     token: string;
     value: string;
     dark?: string;
@@ -41,7 +41,7 @@ export interface Inferred {
     review: string[];
 }
 
-export const BEZIER: Record<string, number[]> = {
+const BEZIER: Record<string, number[]> = {
     ease: [0.25, 0.1, 0.25, 1],
     "ease-in": [0.42, 0, 1, 1],
     "ease-out": [0, 0, 0.58, 1],
@@ -150,7 +150,7 @@ export class Book {
     }
 }
 
-export const WEIGHT_NAMES: Record<number, string> = {
+const WEIGHT_NAMES: Record<number, string> = {
     100: "thin",
     200: "extralight",
     300: "light",
@@ -198,8 +198,8 @@ const TAILWIND_WEIGHT: Record<string, [string, number]> = {
     black: ["black", 900],
 };
 
-export const SIZE_BELOW = ["sm", "xs", "2xs"];
-export const SIZE_ABOVE = ["lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl"];
+const SIZE_BELOW = ["sm", "xs", "2xs"];
+const SIZE_ABOVE = ["lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl"];
 
 export const rounded = (value: number) => Math.round(value * 100) / 100;
 export const topBy = <T>(list: T[], key: (item: T) => number, limit: number) =>
@@ -762,12 +762,7 @@ function sameShadow(a: unknown, b: unknown): boolean {
     );
 }
 
-export function shadowScale(
-    facts: Facts,
-    book: Book,
-    explicit: Set<Category>,
-    result: Inferred,
-): void {
+export function shadowScale(facts: Facts, book: Book, result: Inferred): void {
     const clusters: { text: string; value: unknown; count: number }[] = [];
 
     for (const [text, count] of [...facts.shadows].sort((a, b) => b[1] - a[1])) {

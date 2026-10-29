@@ -144,7 +144,7 @@ export function infer(facts: Facts, folder: string): Inferred {
     detailScales(facts, book, explicit);
     spacingScale(facts, book, explicit, result);
     radiusScale(facts, book, explicit, result);
-    shadowScale(facts, book, explicit, result);
+    shadowScale(facts, book, result);
     motionScale(facts, book, explicit, result);
     breakpointScale(facts, book, explicit, result);
     dedupeScales(book);

@@ -5,25 +5,25 @@ export interface Num {
     n: number;
     unit: string;
 }
-export interface Str {
+interface Str {
     t: "str";
     s: string;
     quoted: boolean;
 }
-export interface Col {
+interface Col {
     t: "color";
     r: number;
     g: number;
     b: number;
     a: number;
 }
-export interface Lst {
+interface Lst {
     t: "list";
     items: Value[];
     sep: "comma" | "space";
     bracket: boolean;
 }
-export interface MapV {
+interface MapV {
     t: "map";
     entries: [Value, Value][];
 }
@@ -31,7 +31,7 @@ export interface Bool {
     t: "bool";
     b: boolean;
 }
-export interface Nul {
+interface Nul {
     t: "null";
 }
 export type Value = Num | Str | Col | Lst | MapV | Bool | Nul;

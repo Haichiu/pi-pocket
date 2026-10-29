@@ -330,7 +330,7 @@ export function collectFiles(root: string): {
                     .replace(/^\.\//, "")
                     .split("/")
                     .filter((_, at, all) => at < all.length - 1)
-                    .filter((part, at, all) =>
+                    .filter((_, at, all) =>
                         all.slice(0, at + 1).every((each) => !/[*?{$]/.test(each)),
                     );
 
