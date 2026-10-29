@@ -12,6 +12,8 @@ import { type Obj, slug } from "./scan-util.ts";
 /** A variable collection: its modes, in the file's order, so the first is the default. */
 export interface Collection {
     id: string;
+    /** The published key of the collection: a variable's `variableSetID` may name it instead of its guid. */
+    key: string;
     modes: { id: string; name: string }[];
 }
 
@@ -95,7 +97,7 @@ export function collectionsOf(nodes: Obj[]): Map<string, Collection> {
             return modeId === "" ? [] : [{ id: modeId, name: asText(entry?.name) }];
         });
 
-        found.set(id, { id, modes });
+        found.set(id, { id, key: asText(node.key), modes });
     }
 
     return found;
@@ -410,17 +412,23 @@ export interface FigStyle {
     token: Obj;
 }
 
+/** The style kinds that a node's `styleType` gives, and that the token format holds. */
+const STYLE_KINDS = new Set(["TEXT", "EFFECT", "FILL"]);
+
 /** The styles of a file that the token format holds, and how many of each kind it cannot hold. */
 export function stylesOf(nodes: Obj[]): { styles: FigStyle[]; left: Map<string, number> } {
     const styles: FigStyle[] = [];
     const left = new Map<string, number>();
 
     for (const node of nodes) {
-        if (node.type !== "STYLE") {
+        const kind = asText(node.styleType).toUpperCase();
+
+        // A style is the node that holds one: Figma writes it as the layer kind it edits (`TEXT`, `RECTANGLE`) with a
+        // `styleType`, and an older export names `STYLE` in `type`.
+        if (node.type !== "STYLE" && !STYLE_KINDS.has(kind)) {
             continue;
         }
 
-        const kind = asText(node.styleType).toUpperCase();
         const token =
             kind === "TEXT"
                 ? typographyOf(node)

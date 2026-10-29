@@ -4,10 +4,11 @@
  * hands the schema and the data to `scan-fig-kiwi.ts`.
  *
  * Nothing is executed, and every read is bounded: the file's size, the size after decompression (a ZIP entry's claim is
- * checked before it is inflated, and the inflate itself has a ceiling), and the entries of the archive. One budget covers
- * every inflate of one file, so the inner `canvas.fig` and the two chunks it holds cannot each take the whole of it. A name
- * of the archive that a reason repeats is quoted, one line, and 60 characters at most. A file this module cannot read
- * throws `FigError` with a reason for a person.
+ * checked before it is inflated, and the inflate itself has a ceiling), the entries of the archive, and the chunks of a bare
+ * container (the 2 a `.fig` uses are kept, and a file of more than 8 is refused). One budget covers every inflate of one
+ * file, so the inner `canvas.fig` and the two chunks it holds cannot each take the whole of it. A name of the archive that a
+ * reason repeats is quoted, one line, and 60 characters at most. A file this module cannot read throws `FigError` with a
+ * reason for a person.
  */
 import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
 import { inflateRawSync, inflateSync, zstdDecompressSync } from "node:zlib";
@@ -56,6 +57,9 @@ export interface FigDecoded {
     entries: string[];
 }
 
+/** The most chunks a bare container may hold: the schema and the data, with room for a version that adds one. */
+const MAX_CHUNKS = 8;
+
 /** The chunks that hold the schema and the data, from a bare container. */
 function kiwiChunks(bytes: Buffer, limits: FigLimits): { version: number; chunks: Buffer[] } {
     const header = bytes.subarray(0, 8).toString("latin1");
@@ -74,6 +78,7 @@ function kiwiChunks(bytes: Buffer, limits: FigLimits): { version: number; chunks
     const chunks: Buffer[] = [];
     let at = 12;
     let total = 0;
+    let count = 0;
 
     while (at + 4 <= bytes.length) {
         const length = bytes.readUInt32LE(at);
@@ -94,7 +99,18 @@ function kiwiChunks(bytes: Buffer, limits: FigLimits): { version: number; chunks
             );
         }
 
-        chunks.push(bytes.subarray(at, at + length));
+        // Only the 2 chunks a `.fig` uses are kept, and a file of more than 8 is refused: a Buffer view for each chunk of a
+        // file of zero-length chunks is 3.4 GB for 99 MB of them, and the loop would walk every 4 bytes of it.
+        count += 1;
+
+        if (count > MAX_CHUNKS) {
+            return fail(`it holds more than ${MAX_CHUNKS} chunks, where a .fig holds 2`);
+        }
+
+        if (count <= 2) {
+            chunks.push(bytes.subarray(at, at + length));
+        }
+
         at += length;
     }
 
@@ -201,7 +217,7 @@ function zipBytes(bytes: Buffer, entry: ZipEntry, limits: FigLimits, spend: Spen
         entry.method === 0
             ? data
             : entry.method === 8
-              ? inflate(data, ceiling, entry.name)
+              ? inflate(data, ceiling, quoted(entry.name, 60))
               : fail(
                     `its ZIP entry ${quoted(entry.name, 60)} uses compression ${entry.method}, which is not deflate`,
                 );
@@ -211,7 +227,10 @@ function zipBytes(bytes: Buffer, entry: ZipEntry, limits: FigLimits, spend: Spen
     return out;
 }
 
-/** Deflate or zstd, whichever the chunk is, with a ceiling on what it may make. */
+/**
+ * Deflate or zstd, whichever the chunk is, with a ceiling on what it may make. `what` is what a reason calls it, already
+ * quoted when it comes from the file: a name reaches no reason raw.
+ */
 function inflate(data: Buffer, ceiling: number, what: string): Buffer {
     const zstd =
         data.length >= 4 &&
@@ -222,7 +241,7 @@ function inflate(data: Buffer, ceiling: number, what: string): Buffer {
         try {
             return zstdDecompressSync(data, { maxOutputLength: ceiling }) as Buffer;
         } catch (error) {
-            return fail(`"${what}" is zstd that cannot be decompressed (${reasonOf(error)})`);
+            return fail(`${what} is zstd that cannot be decompressed (${reasonOf(error)})`);
         }
     }
 
@@ -235,7 +254,7 @@ function inflate(data: Buffer, ceiling: number, what: string): Buffer {
     }
 
     return fail(
-        `"${what}" is not deflate data, or it is bigger than the ${ceiling} bytes this scan reads`,
+        `${what} is not deflate data, or it is bigger than the ${ceiling} bytes this scan reads`,
     );
 }
 
@@ -260,8 +279,8 @@ function container(
         return {
             container: "kiwi",
             version,
-            schema: chunk(chunks[0]!, limits, spend, "its schema"),
-            data: chunk(chunks[1]!, limits, spend, "its data"),
+            schema: chunk(chunks[0]!, limits, spend, quoted("its schema", 60)),
+            data: chunk(chunks[1]!, limits, spend, quoted("its data", 60)),
             entries: [],
         };
     }
@@ -285,8 +304,8 @@ function container(
     return {
         container: "zip",
         version,
-        schema: chunk(chunks[0]!, limits, spend, "its schema"),
-        data: chunk(chunks[1]!, limits, spend, "its data"),
+        schema: chunk(chunks[0]!, limits, spend, quoted("its schema", 60)),
+        data: chunk(chunks[1]!, limits, spend, quoted("its data", 60)),
         entries: entries.map((entry) => entry.name),
     };
 }
@@ -300,18 +319,25 @@ function chunk(bytes: Buffer, limits: FigLimits, spend: Spend, what: string): Bu
     return out;
 }
 
-/** Decodes a `.fig` in memory: its message, its nodes, and the names of its ZIP entries. */
-export function decodeFig(bytes: Buffer, limits: FigLimits = FIG_LIMITS): FigDecoded {
+/**
+ * Decodes a `.fig` in memory: its message, its nodes, and the names of its ZIP entries. `until` is when the whole scan's
+ * Figma files must end, in milliseconds since the epoch; the default is one file's own limit.
+ */
+export function decodeFig(
+    bytes: Buffer,
+    limits: FigLimits = FIG_LIMITS,
+    until: number = Date.now() + limits.ms,
+): FigDecoded {
     if (bytes.length === 0) {
         return fail("the file is empty");
     }
 
     const budget: Budget = {
         limits,
-        started: Date.now(),
+        // The reader stops when `now - started` passes the limit, so a deadline of the whole scan is where it started.
+        started: until - limits.ms,
         values: 0,
         decoded: 0,
-        decodedLimit: 0,
     };
     const opened = container(bytes, limits, { used: 0 });
 
@@ -332,12 +358,23 @@ export function decodeFig(bytes: Buffer, limits: FigLimits = FIG_LIMITS): FigDec
     };
 }
 
-/** The bytes of a `.fig`, never through a link, and never more than the limit. */
+/** The bytes of a `.fig`, never through a link, never a folder, and never more than the limit. */
 export function readFigBytes(path: string, limit: number = FIG_LIMITS.file): Buffer {
     const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
 
     try {
-        const size = fstatSync(fd).size;
+        const info = fstatSync(fd);
+
+        // A path named `x.fig` may be a folder (or a pipe): reading one is an `EISDIR` in the report instead of a reason.
+        if (!info.isFile()) {
+            return fail(
+                info.isDirectory()
+                    ? "it is a folder, and not a Figma file"
+                    : "it is not a regular file, and not a Figma file",
+            );
+        }
+
+        const size = info.size;
 
         if (size > limit) {
             fail(`it is ${size} bytes, more than the ${limit} bytes this scan reads`);

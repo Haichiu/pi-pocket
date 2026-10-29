@@ -9,7 +9,7 @@
  * The walk is bounded (files, depth, bytes) and never follows a symlink, so a project cannot lead it out of the folder.
  * Everything it reads is untrusted data and reaches Pi fenced.
  */
-import { lstatSync, realpathSync } from "node:fs";
+import { lstatSync, realpathSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
 import { expandSassFiles } from "./scan-sass-eval.ts";
@@ -25,7 +25,7 @@ import { shapeThemes } from "./scan-theme-shapes.ts";
 import { resolveChannels } from "./scan-channels.ts";
 import { indentedToBraces } from "./scan-parse.ts";
 import { LIMITS, collectFiles, readHead, type Skipped } from "./scan-files.ts";
-import { readFigInto } from "./scan-fig.ts";
+import { FIG_TIME_MS, readFigInto } from "./scan-fig.ts";
 import { colorsIn, darkMixinsIn } from "./scan-parse.ts";
 import { type Facts, newFacts } from "./scan-facts.ts";
 import { ingestFile } from "./scan-facts-files.ts";
@@ -123,12 +123,20 @@ export interface Rendered {
     have: Have;
 }
 
-/** Reads the files under `root` into facts. */
-export function readFacts(root: string, rendered?: Rendered): Facts {
+/**
+ * Reads the files under `root` into facts. `figUntil` is the deadline of every Figma file of the scan, and is for a test that
+ * must reach the limit.
+ */
+export function readFacts(
+    root: string,
+    rendered?: Rendered,
+    figUntil: number = Date.now() + FIG_TIME_MS,
+): Facts {
     const facts = newFacts();
 
-    // The path may be one `.fig` file: then it is the whole of what is read, and there is no folder to walk.
-    const one = isFigFile(root) ? basename(root) : undefined;
+    // The path may be one `.fig` file: then it is the whole of what is read, and there is no folder to walk. A folder may be
+    // named `x.fig` too, and it is a folder to walk, not one file to read.
+    const one = isFigFile(root) && statSync(root).isFile() ? basename(root) : undefined;
     const { files, partial, skipped } =
         one === undefined
             ? collectFiles(root)
@@ -148,7 +156,7 @@ export function readFacts(root: string, rendered?: Rendered): Facts {
             : [{ rel: one, path: root }];
 
     for (const fig of figs) {
-        readFigInto(facts, fig.rel, fig.path);
+        readFigInto(facts, fig.rel, fig.path, figUntil);
     }
 
     // A design has one or two Figma files; a folder of many is a download folder, and only the best were read.

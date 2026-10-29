@@ -91,8 +91,6 @@ export interface Budget {
     values: number;
     /** Definitions decoded: a struct with no fields costs no byte, so this count has a bound of its own. */
     decoded: number;
-    /** The most definitions that the data's own length allows: one value for each byte, and a floor for a tiny file. */
-    decodedLimit: number;
 }
 
 /** A reader over one buffer: every read is checked against what is left, and each value counts against the budget. */
@@ -123,7 +121,9 @@ class Cursor {
         }
 
         if (budget.values % 4096 < values && Date.now() - budget.started > budget.limits.ms) {
-            fail(`reading it took longer than ${Math.round(budget.limits.ms / 1000)} seconds`);
+            fail(
+                `reading the Figma files took longer than ${Math.round(budget.limits.ms / 1000)} seconds`,
+            );
         }
     }
 
@@ -237,7 +237,10 @@ class Cursor {
     }
 }
 
-/** The schema a file carries: its definitions, and the fields of each, with their types resolved by name. */
+/**
+ * The schema a file carries: its definitions, and the fields of each, with their types resolved by name. A field of an enum
+ * type is named by its enum's definition, so its value decodes to the name that Figma gives it (`VARIABLE`, not `28`).
+ */
 export function readSchema(bytes: Buffer, budget: Budget): FigSchema {
     const cursor = new Cursor(bytes, budget);
     const count = cursor.varUint();
@@ -309,7 +312,7 @@ export function readSchema(bytes: Buffer, budget: Budget): FigSchema {
                 fail(`its schema names a definition that is not in it (${code})`);
             }
 
-            field.type = target.kind === "ENUM" ? "enum" : target.name;
+            field.type = target.name;
         }
     }
 
@@ -321,6 +324,9 @@ export function readSchema(bytes: Buffer, budget: Budget): FigSchema {
 /** A field's name that must not become a key of a decoded object: it would change the object's prototype. */
 const UNSAFE = new Set(["__proto__", "constructor", "prototype"]);
 
+/** The definitions a read may decode before its data has paid for any: a tiny file has a floor of its own. */
+const DECODED_FLOOR = 64;
+
 /** One message decoded by the schema: messages read tagged fields, structs read their fields in order. */
 function decodeDef(cursor: Cursor, schema: FigSchema, def: FigDef, depth: number): Obj {
     const limits = cursor.budget.limits;
@@ -329,13 +335,18 @@ function decodeDef(cursor: Cursor, schema: FigSchema, def: FigDef, depth: number
         fail(`its data nests deeper than ${limits.depth} levels`);
     }
 
-    // A definition is a value, however few bytes it takes. A struct with no fields takes none, so without this count a small
-    // file could ask for a tree of them that grows without bound (and the time check would never run either).
+    // A definition is a value, however few bytes it takes. A struct with no fields takes none, so the count is held to the
+    // bytes of the data that the message has read so far: padding at the end of a chunk buys nothing (a 3 KB file padded to
+    // 2.5 MB made 2.5 million empty objects), and a file cannot ask for a tree of empty structs that grows without bound (the
+    // time check would never run either).
     cursor.spend();
 
-    if ((cursor.budget.decoded += 1) > cursor.budget.decodedLimit) {
+    const decoded = (cursor.budget.decoded += 1);
+    const paid = Math.max(DECODED_FLOOR, cursor.at);
+
+    if (decoded > paid) {
         fail(
-            `its data asks for more values than its ${cursor.budget.decodedLimit} bytes can hold, so it is not a Figma file`,
+            `its data asks for more values than the bytes it has read (${paid}) can hold, so it is not a Figma file`,
         );
     }
 
@@ -416,7 +427,6 @@ function readValue(cursor: Cursor, schema: FigSchema, type: string, depth: numbe
         case "int":
             return cursor.varInt();
         case "uint":
-        case "enum":
             return cursor.varUint();
         case "float":
             return cursor.varFloat();
@@ -433,9 +443,22 @@ function readValue(cursor: Cursor, schema: FigSchema, type: string, depth: numbe
                 return fail(`its schema names a type that is not in it (${quoted(type, 60)})`);
             }
 
-            return decodeDef(cursor, schema, def, depth + 1);
+            return def.kind === "ENUM"
+                ? enumValue(cursor, def)
+                : decodeDef(cursor, schema, def, depth + 1);
         }
     }
+}
+
+/**
+ * An enum's value as the name the schema gives it, or as the number when the schema does not hold that value: a file is
+ * read the way Figma reads it, where `type` is `VARIABLE` and not 28. The name is the schema's own string, so no string is
+ * made for each value.
+ */
+function enumValue(cursor: Cursor, def: FigDef): string | number {
+    const value = cursor.varUint();
+
+    return def.fields.find((field) => field.tag === value)?.name ?? value;
 }
 
 /**
@@ -456,10 +479,6 @@ export function readMessage(schema: FigSchema, bytes: Buffer, budget: Budget): O
     if (root === undefined) {
         fail("its schema has no message to read");
     }
-
-    // A decoded value must cost at least one byte of the data: a struct with no fields costs none, so a file of them would
-    // grow without bound, and this count stops it.
-    budget.decodedLimit = Math.max(64, bytes.length);
 
     const cursor = new Cursor(bytes, budget);
 

@@ -8,9 +8,10 @@
  * untrusted project data: it reaches the report through the scan's fence, and nothing in it is run. A file that cannot be
  * read never throws out of the scan: it becomes a note.
  */
+import { quoted } from "../fence.ts";
 import { type Facts } from "./scan-facts.ts";
 import { type FigDecoded, decodeFig, readFigBytes } from "./scan-fig-container.ts";
-import { FigError } from "./scan-fig-kiwi.ts";
+import { FIG_LIMITS, FigError } from "./scan-fig-kiwi.ts";
 import {
     FONT_NAME,
     RESERVED,
@@ -27,7 +28,7 @@ import {
     variablesOf,
 } from "./scan-fig-nodes.ts";
 import { type Imported, addTo } from "./scan-import.ts";
-import { assemble, dropTypes, hoistTypes, rewrite } from "./scan-tree.ts";
+import { assemble, type Progress, dropTypes, hoistTypes, rewrite } from "./scan-tree.ts";
 import { type Obj } from "./scan-util.ts";
 
 /** The tokens of one `.fig`, and what the report says about it. */
@@ -72,17 +73,24 @@ const isDarkMode = (name: string): boolean => /(?:^|[^a-z])dark(?:[^a-z]|$)/i.te
 
 // --- The whole file -------------------------------------------------------------------------------------------------
 
-/** The most time one `.fig` may take to become tokens: past it, the file is read in part and the report says so. */
-export const FIG_TIME_MS = 5000;
+/**
+ * The most time the scan's Figma files may take in all: past it, a file is read in part, and the report says so. It is one
+ * deadline for every file, and it is generous because a busy machine slows the clock many times over the work: a 274 KB file
+ * of 108 variables costs about a second, and is never cut short by it.
+ */
+export const FIG_TIME_MS = 20_000;
 
-/** The tokens of a decoded `.fig`, and the line that the report gives for it. `ms` is for a test that must reach the limit. */
+/**
+ * The tokens of a decoded `.fig`, and the line that the report gives for it. `until` is when the whole scan's Figma files must
+ * end (milliseconds since the epoch); `ms` is a limit of that length from now, for a test that must reach it.
+ */
 export function figTokens(
     decoded: FigDecoded,
     file: string,
-    options: { ms?: number } = {},
+    options: { ms?: number; until?: number } = {},
 ): FigTokens {
     const limit = options.ms ?? FIG_TIME_MS;
-    const deadline = Date.now() + limit;
+    const deadline = options.until ?? Date.now() + limit;
     const nodes = decoded.nodes;
     const collections = collectionsOf(nodes);
     const { list, byKey } = variablesOf(nodes);
@@ -126,10 +134,18 @@ export function figTokens(
     const firstModes = new Set<string>();
     const firstOf = new Map<string, string>();
     const modeById = new Map<string, { id: string; name: string; collection: string }>();
+    // A variable names its collection by guid, or by the collection's published key when the file comes from a library.
+    const collectionOf = new Map<string, string>();
 
     // A mode is found by its id, so a variable costs its own few modes and not every mode of its collection.
     for (const collection of collections.values()) {
         const first = collection.modes[0];
+
+        collectionOf.set(collection.id, collection.id);
+
+        if (collection.key !== "") {
+            collectionOf.set(collection.key, collection.id);
+        }
 
         if (first !== undefined) {
             firstModes.add(modeNameOf(first.name));
@@ -234,7 +250,8 @@ export function figTokens(
             tally.numbers += 1;
         }
 
-        const first = firstOf.get(variable.collection) ?? [...variable.values.keys()][0] ?? "";
+        const collection = collectionOf.get(variable.collection) ?? variable.collection;
+        const first = firstOf.get(collection) ?? [...variable.values.keys()][0] ?? "";
         const value = valueOf(variable, first);
 
         if (value === undefined) {
@@ -253,7 +270,7 @@ export function figTokens(
             const mode = modeId === first ? undefined : modeById.get(modeId);
 
             // A value in a mode of another collection is not a mode of this variable.
-            if (mode === undefined || mode.collection !== variable.collection) {
+            if (mode === undefined || mode.collection !== collection) {
                 continue;
             }
 
@@ -309,7 +326,14 @@ export function figTokens(
     }
 
     const renamed = new Map<string, string>();
-    const tokens = rewrite(assemble(entries, renamed), renamed) as Obj;
+    const progress: Progress = { until: deadline, read: 0, stopped: false };
+    const tokens = rewrite(assemble(entries, renamed, progress), renamed) as Obj;
+
+    // The deadline holds inside the assembly too: the loop above checks it, and so does the loop there.
+    if (progress.stopped) {
+        stopped = true;
+    }
+
     const finalPath = (name: string) => (renamed.get(name) ?? name).split(".");
 
     /** A mode's tree, at the paths that the default mode ended with. */
@@ -352,7 +376,7 @@ export function figTokens(
     }
 
     const notes: string[] = [
-        `Figma: read ${file}: ${plural(tally.collections, "collection")}, ${withKinds(
+        `Figma: read ${quoted(file, 60)}: ${plural(tally.collections, "collection")}, ${withKinds(
             tally.variables,
             "variable",
             [
@@ -377,7 +401,12 @@ export function figTokens(
         const dark = darkChanges.size > 0;
 
         notes.push(
-            `Modes: ${modeNames.slice(0, 6).join(", ")}${modeNames.length > 6 ? ", …" : ""}; the first mode of each collection is the default${dark ? ", and a mode named for dark is the dark mode" : ""}${extraNames.length === 0 ? "" : `; ${extraNames.join(", ")} ${extraNames.length === 1 ? "is a mode of its own" : "are modes of their own"}`}${darkFirst ? ". The file is dark first" : ""}.`,
+            `Modes: ${modeNames
+                .slice(0, 6)
+                .map((name) => quoted(name, 60))
+                .join(
+                    ", ",
+                )}${modeNames.length > 6 ? ", …" : ""}; the first mode of each collection is the default${dark ? ", and a mode named for dark is the dark mode" : ""}${extraNames.length === 0 ? "" : `; ${extraNames.join(", ")} ${extraNames.length === 1 ? "is a mode of its own" : "are modes of their own"}`}${darkFirst ? ". The file is dark first" : ""}.`,
         );
     }
 
@@ -427,7 +456,7 @@ export function figTokens(
 
     if (stopped) {
         notes.push(
-            `Stopped at ${limit} ms, the limit for one Figma file: ${entries.length} of ${plural(list.length, "variable")} and ${stylesRead} of ${plural(styles.length, "style")} were read.`,
+            `Stopped at ${limit} ms, the scan's limit for its Figma files: ${progress.read} of ${plural(list.length, "variable")} and ${stylesRead} of ${plural(styles.length, "style")} were read.`,
         );
     }
 
@@ -436,17 +465,39 @@ export function figTokens(
         default: tokens,
         dark: dropTypes(fill(darkChanges)),
         extra,
-        count: entries.length,
+        count: progress.read,
         line: notes.join(" ").slice(0, 1200),
     };
 }
 
-/** Reads one `.fig` file into the scan's token source, with a line for the report; a file it cannot read is a note. */
-export function readFigInto(facts: Facts, file: string, path: string): void {
+/**
+ * Reads one `.fig` file into the scan's token source, with a line for the report; a file it cannot read is a note. `until` is
+ * the deadline of every Figma file of the scan, not of this one: 4 files may not take 4 times the time.
+ */
+export function readFigInto(
+    facts: Facts,
+    file: string,
+    path: string,
+    until: number = Date.now() + FIG_TIME_MS,
+): void {
+    if (Date.now() >= until) {
+        if (facts.skipped.length < 40) {
+            facts.skipped.push({
+                path: file,
+                why: "was not read: the scan reached its limit for Figma files",
+            });
+        }
+
+        return;
+    }
+
     let tokens: FigTokens;
 
     try {
-        tokens = figTokens(decodeFig(readFigBytes(path)), file);
+        // The reader's own limit is the scan's whole budget, so the reason it gives for its deadline is the true one.
+        const limits = { ...FIG_LIMITS, ms: FIG_TIME_MS };
+
+        tokens = figTokens(decodeFig(readFigBytes(path), limits, until), file, { until });
     } catch (error) {
         const reason =
             error instanceof FigError
