@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { contrastRatio, parseColor } from "../src/server/design/docsite-color.ts";
+import { contrastRatio, parseColor } from "../src/server/design/color.ts";
 import type { DesignSystem, ResolvedToken } from "../src/server/design/system-types.ts";
 import { loadSystem } from "./design-system-loader.ts";
 
@@ -138,8 +138,8 @@ test("every contrast pair passes in every mode, and text roles pass on every gro
     const tokens = byName(loaded.tokens);
     const ratio = (fg: string, bg: string, mode: string) =>
         contrastRatio(
-            parseColor(tokens.get(fg)!.modes[mode]!.value)!,
-            parseColor(tokens.get(bg)!.modes[mode]!.value)!,
+            parseColor(String(tokens.get(fg)!.modes[mode]!.value))!,
+            parseColor(String(tokens.get(bg)!.modes[mode]!.value))!,
         );
 
     // Disabled text is exempt from contrast (WCAG): its pair is declared, and the engine notes it instead of failing it.
@@ -209,12 +209,10 @@ test("every contrast pair passes in every mode, and text roles pass on every gro
 });
 
 function lightness(hex: unknown): number {
-    const color = parseColor(hex)!;
-    const lin = [color.r, color.g, color.b].map((value) => {
-        const unit = value / 255;
-
-        return unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
-    });
+    const color = parseColor(String(hex))!;
+    const lin = [color.r, color.g, color.b].map((unit) =>
+        unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4,
+    );
     const l = Math.cbrt(0.4122214708 * lin[0]! + 0.5363325363 * lin[1]! + 0.0514459929 * lin[2]!);
     const m = Math.cbrt(0.2119034982 * lin[0]! + 0.6806995451 * lin[1]! + 0.1073969566 * lin[2]!);
     const s = Math.cbrt(0.0883024619 * lin[0]! + 0.2817188376 * lin[1]! + 0.6299787005 * lin[2]!);
@@ -392,7 +390,8 @@ test("the grounds are different colors in light and dark; where two share a valu
 
     assert.ok(lightness(value("sunken", "light")) < lightness(value("canvas", "light")));
     assert.ok(
-        parseColor(value("selected", "light"))!.b > parseColor(value("selected", "light"))!.r,
+        parseColor(String(value("selected", "light")))!.b >
+            parseColor(String(value("selected", "light")))!.r,
     );
 
     assert.match(tokens.get("color.bg.raised")!.description ?? "", /same white as surface/);

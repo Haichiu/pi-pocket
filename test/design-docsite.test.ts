@@ -3,20 +3,9 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { findBrowser } from "../src/server/browser/discovery.ts";
 import type { DesignBundle } from "../src/server/design/bundle.ts";
-import {
-    contrastRatio,
-    parseColor,
-    rating,
-    readableOn,
-    toHex,
-} from "../src/server/design/docsite-color.ts";
-import {
-    article,
-    escapeHtml,
-    plural,
-    renderMarkdown,
-} from "../src/server/design/docsite-markdown.ts";
-import { sectionOf } from "../src/server/design/docsite-core.ts";
+import { contrastRatio, parseColor } from "../src/server/design/color.ts";
+import { escapeHtml, plural, renderMarkdown } from "../src/server/design/docsite-markdown.ts";
+import { plain, rating, readableOn, sectionOf } from "../src/server/design/docsite-core.ts";
 import { renderSystemDoc } from "../src/server/design/docsite.ts";
 import { withRender } from "../src/server/design/render.ts";
 import type { PocketHost } from "../src/server/host.ts";
@@ -65,7 +54,7 @@ function token(
 }
 
 const outsideListings = (html: string) =>
-    html.replace(/<pre class="snip"[\s\S]*?<\/pre>/g, "<pre></pre>");
+    html.replace(/<pre id="code-[^"]*"><code>[\s\S]*?<\/pre>/g, "<pre></pre>");
 
 test("the page has a section and a link for each part of the system, and a stage for each component", () => {
     const system = flagship();
@@ -103,7 +92,6 @@ test("the page has a section and a link for each part of the system, and a stage
     for (const part of [
         'id="color-roles"',
         'id="color-palette"',
-        'id="color-matrix"',
         'id="color-pairs"',
         "needs 4.5:1 on color.bg.base",
     ]) {
@@ -112,13 +100,12 @@ test("the page has a section and a link for each part of the system, and a stage
 
     for (const part of [
         'class="family"',
-        'class="spec-row"',
+        'class="row"',
         'class="bar"',
-        'class="radius"',
-        'class="shadow-tile"',
+        'class="tile"',
+        'class="tile lift"',
         'class="demo"',
         'class="curve"',
-        'class="hover-demo"',
         "font.family.sans",
         "color.accent.fill",
     ]) {
@@ -132,7 +119,7 @@ test("the page has a section and a link for each part of the system, and a stage
         );
     }
 
-    assert.match(html, /id="code-css"/);
+    assert.match(html, /id="code-tokens-css"/);
     assert.match(html, /<h1 id="overview-title">Pi Pocket<\/h1>/);
 });
 
@@ -303,7 +290,7 @@ test("project text is escaped, and a value that could break a style is left out"
     }
 
     const listings = [
-        ...html.matchAll(/<pre class="snip" id="code-\d+-\d+"><code>([\s\S]*?)<\/code><\/pre>/g),
+        ...html.matchAll(/<pre id="code-\d+-(?:\d+|css)"><code>([\s\S]*?)<\/code><\/pre>/g),
     ].map((match) => match[1]!);
 
     assert.ok(listings.length >= 3);
@@ -401,8 +388,8 @@ test("the flagship's contrast pairs pass in every mode, and the page says so", (
         assert.ok(on !== undefined, `${named.name}: the pair ${named.contrast!.on} exists`);
 
         for (const mode of system.modes) {
-            const fg = parseColor(named.modes[mode]!.value);
-            const bg = parseColor(on.modes[mode]!.value);
+            const fg = parseColor(String(named.modes[mode]!.value));
+            const bg = parseColor(String(on.modes[mode]!.value));
 
             assert.ok(fg !== undefined && bg !== undefined, `${named.name} in ${mode} is a color`);
             assert.ok(
@@ -417,27 +404,17 @@ test("the flagship's contrast pairs pass in every mode, and the page says so", (
     assert.match(renderSystemDoc(system).html, new RegExp(`${checked}/${checked}`));
 });
 
-test("color parsing and contrast follow WCAG", () => {
-    assert.deepEqual(parseColor("#fff"), { r: 255, g: 255, b: 255, a: 1 });
-    assert.deepEqual(parseColor("#00000080")?.a?.toFixed(2), "0.50");
-    assert.deepEqual(parseColor("rgb(255 0 0 / 50%)"), { r: 255, g: 0, b: 0, a: 0.5 });
-    assert.equal(toHex(parseColor("hsl(120 100% 25%)")!), "#008000");
-    assert.equal(
-        toHex(parseColor({ colorSpace: "srgb", components: [1, 0.5, 0], alpha: 1 })!),
-        "#ff8000",
-    );
-    assert.equal(
-        toHex(parseColor({ hex: "#112233", colorSpace: "srgb", components: [0, 0, 0] })!),
-        "#112233",
-    );
-    assert.ok(parseColor("oklch(70% 0.1 250)") !== undefined);
-    assert.equal(parseColor("not a color"), undefined);
-    assert.equal(parseColor(42), undefined);
+test("colors read through color.ts: DTCG objects show as hex, and ratings follow WCAG", () => {
+    const value = (raw: unknown): ModeValue => ({ value: raw, css: "" });
 
-    const black = parseColor("#000")!;
+    assert.equal(plain("color", value({ colorSpace: "srgb", components: [1, 0.5, 0] })), "#ff8000");
+    assert.equal(plain("color", value("hsl(120 100% 25%)")), "#008000");
+    assert.equal(plain("color", value("#00000080")), "#00000080");
+    assert.equal(plain("color", { value: "x", css: "", hex: "#abcdef" }), "#abcdef");
+
     const white = parseColor("#fff")!;
+    const black = parseColor("#000")!;
 
-    assert.equal(contrastRatio(black, white).toFixed(2), "21.00");
     assert.equal(contrastRatio(parseColor("#777777")!, white).toFixed(2), "4.48");
     assert.equal(rating(4.48), "AA large");
     assert.equal(rating(4.5), "AA");
@@ -664,7 +641,7 @@ test("section counts follow one rule: a headline of role tokens, the palette and
     }
 });
 
-test("a ratio is written with one decimal, cut and never rounded up; cards copy a token three ways; the footer says what it is", () => {
+test("a ratio is written with one decimal, cut and never rounded up; cards copy a token two ways; the footer says what it is", () => {
     const { html } = renderSystemDoc(flagship());
     const ratios = [...html.matchAll(/<span class="ratio">([^<]+)<\/span>/g)].map(
         (match) => match[1]!,
@@ -675,17 +652,20 @@ test("a ratio is written with one decimal, cut and never rounded up; cards copy 
         ratios.every((text) => /^\d+\.\d:1$/.test(text)),
         String(ratios.find((text) => !/^\d+\.\d:1$/.test(text))),
     );
-    assert.match(
-        html,
-        /<div class="copy-row" data-var="--color-bg-surface" data-tw="bg-surface" data-json="color\.bg\.surface\.\$value"><\/div>/,
-    );
-    assert.match(html, /data-var="--color-text-primary" data-tw="text-text"/);
+    const copies = (name: string) =>
+        new RegExp(
+            `<button class="tk">${name.replace(/\./g, "\\.")}</button>(?:(?!</article>)[\\s\\S])*?<div class="copies">(.*?)</div>`,
+        ).exec(html)?.[1] ?? "";
+
+    assert.match(copies("color.bg.surface"), /data-copy="var\(--color-bg-surface\)"[^>]*>CSS var</);
+    assert.match(copies("color.bg.surface"), /data-copy="bg-surface"[^>]*>Tailwind</);
+    assert.match(copies("color.text.primary"), /data-copy="text-text"/);
+    assert.match(copies("color.border.default"), /data-copy="border-border"/);
     assert.doesNotMatch(
         html,
-        /data-tw="(bg-bg|text-text|border-border)-(?!secondary)/,
+        /data-copy="(bg-bg|text-text|border-border)-(?!secondary)/,
         "the class is the compiled theme's name",
     );
-    assert.match(html, /data-var="--color-border-default" data-tw="border-border"/);
     assert.match(
         html,
         /<footer class="foot"><strong>Pi Pocket<\/strong> · \d+ tokens · 3 modes · 10 components · generated \d{4}-\d{2}-\d{2} by Pi Pocket<\/footer>/,
@@ -704,12 +684,6 @@ test("the page's sentences have the right number and article", () => {
     assert.equal(plural(1, "mode"), "1 mode");
     assert.equal(plural(2, "text style"), "2 text styles");
     assert.equal(plural(2, "category", "categories"), "2 categories");
-    assert.equal(article("info"), "an");
-    assert.equal(article("danger"), "a");
-    assert.equal(article("hour"), "an");
-    assert.equal(article("unit"), "a");
-    assert.equal(article("user"), "a");
-    assert.equal(article("Error"), "an");
 
     const one: DesignSystem = {
         name: "One",
@@ -770,10 +744,10 @@ test("the page's sentences have the right number and article", () => {
     );
 });
 
-test("an exempt pair is labelled and not a failure; notes have an area; the code section shows how to use each output", () => {
+test("an exempt pair is labelled and not a failure; notes have an area; the code section names each output", () => {
     const { html } = renderSystemDoc(flagship());
 
-    assert.match(html, /<td class="num">exempt \(disabled\)<\/td>/);
+    assert.match(html, /<td class="num" data-label="Needs">exempt \(disabled\)<\/td>/);
     assert.equal(
         (html.match(/<span class="pill">exempt \(disabled\)<\/span>/g) ?? []).length >= 3,
         true,
@@ -786,50 +760,16 @@ test("an exempt pair is labelled and not a failure; notes have an area; the code
     assert.match(html, /the pair is exempt \(disabled\)/);
     assert.doesNotMatch(html, /from the validator<\/summary><ul><li><strong>Warning/);
 
-    assert.match(html, /<h4>CSS<\/h4>/);
-    assert.match(html, /<h4>Tailwind v4<\/h4>/);
-    assert.match(html, /<h4>JSON \(DTCG\)<\/h4>/);
-    assert.match(html, /<h4>Tokens Studio<\/h4>/);
-    assert.match(html, /tokens\.studio\.json\./, "how to load the Tokens Studio file");
-    const snip = (id: string) =>
-        (
-            new RegExp(`<pre class="snip" id="${id}"[^>]*><code>([\\s\\S]*?)</code></pre>`).exec(
-                html,
-            )?.[1] ?? ""
-        )
-            .replace(/&quot;/g, '"')
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&amp;/g, "&");
-    const config = JSON.parse(snip("code-use-json")) as {
-        source: string[];
-        platforms: { css: { transformGroup: string } };
-    };
+    const code = /<section class="block" id="code"[\s\S]*?<\/section>/.exec(html)![0];
 
-    assert.deepEqual(config.source, ["tokens.light.resolved.json"]);
-    assert.equal(config.platforms.css.transformGroup, "css");
-    assert.doesNotMatch(snip("code-use-json"), /\/\//, "no comment inside the JSON");
     assert.match(
-        html,
-        /<code>"format": "2025\.10"<\/code>/,
-        "how to ask for the 2025.10 forms, beside the code",
+        code,
+        /link <code>tokens\.css<\/code> and read a token with <code>var\(--color-bg-base\)<\/code>/,
     );
-
-    const studio = JSON.parse(snip("code-use-studio")) as Record<string, unknown>;
-
-    assert.deepEqual(Object.keys(studio), ["light", "$themes", "$metadata"]);
-    assert.equal((studio.$themes as { id: string }[])[0]!.id, "light");
-    assert.match(
-        JSON.stringify(studio.light),
-        /"color":\{"bg":\{"base":\{"\$type":"color","\$value":"\{color\.neutral\.50\}"/,
-    );
-    assert.ok(
-        html.includes("@import &quot;tailwindcss&quot;;\n@import &quot;./tailwind.css&quot;;"),
-    );
-    assert.ok(html.includes("&lt;link rel=&quot;stylesheet&quot; href=&quot;tokens.css&quot;&gt;"));
-    assert.ok(html.includes("var(--color-"));
-    assert.match(html, /Style Dictionary/);
-    assert.match(html, /Tokens Studio/);
+    assert.match(code, /Set <code>data-theme="dark"<\/code>/);
+    assert.match(code, /Tailwind v4: import <code>tailwind\.css<\/code>/);
+    assert.match(code, /Style Dictionary/);
+    assert.match(code, /Tokens Studio loads <code>tokens\.studio\.json<\/code>/);
 
     for (const file of [
         "tokens.css",
@@ -839,12 +779,18 @@ test("an exempt pair is labelled and not a failure; notes have an area; the code
         "tokens.light.resolved.json",
         "tokens.dark.resolved.json",
         "tokens.high-contrast.resolved.json",
+        "components.css",
     ]) {
-        assert.ok(html.includes(`<summary>${file}<`), file);
+        assert.ok(code.includes(`<summary>${file} <`), file);
     }
+
+    assert.match(
+        code,
+        /<button class="mini" type="button" data-copy-from="code-tokens-css">Copy<\/button>/,
+    );
 });
 
-test("the flagship's page is small, its hero swatches are roles, and its radii are grouped by use", () => {
+test("the flagship's page is small, its hero swatches are roles, and its radii show roles over their scale", () => {
     const { html } = renderSystemDoc(flagship());
 
     assert.ok(Buffer.byteLength(html) < 600_000, `${Buffer.byteLength(html)} bytes`);
@@ -872,21 +818,9 @@ test("the flagship's page is small, its hero swatches are roles, and its radii a
         "short enough not to wrap",
     );
 
-    for (const [title, note] of [
-        ["Marks and tags", "Up to 4 px"],
-        ["Controls", "5 to 7 px"],
-        ["Containers", "8 px and more"],
-        ["Round", "Fully round"],
-    ]) {
-        assert.ok(
-            html.includes(
-                `<h4 style="margin-top:22px">${title}</h4><p class="sub" style="margin-bottom:0">${note}`,
-            ),
-            String(title),
-        );
-    }
+    const radii = /<section class="block" id="radii"[\s\S]*?<\/section>/.exec(html)![0];
 
-    assert.match(html, /<div class="spec cols">/);
+    assert.ok(radii.indexOf("<h4>Roles</h4>") < radii.indexOf("<h4>Scale</h4>"));
     assert.match(html, /<div class="bar" style="width:100%"><\/div>/);
 });
 
@@ -1056,6 +990,9 @@ test(
                 "none|none|auto|none",
             );
 
+            // At the top of the page no stage is in view: a stage that escaped its box would cover these points.
+            await page.evaluate("window.scrollTo(0, 0)");
+
             for (const [x, y] of [
                 [640, 400],
                 [20, 20],
@@ -1157,7 +1094,7 @@ test("the token table has a column for each mode, filters by type and tier, and 
     );
     assert.match(
         table,
-        /<td data-label="Dark" class="num wrap"><i class="mini-sw" style="background:#1a1b26"><\/i>#1a1b26<\/td>/,
+        /<td data-label="Dark" class="v"><i class="chip" style="background:#1a1b26"><\/i>#1a1b26<\/td>/,
     );
     assert.match(table, /<input id="tq" type="search" placeholder="Search names and values"/);
     assert.match(
@@ -1197,14 +1134,14 @@ test("the token table has a column for each mode, filters by type and tier, and 
     assert.match(html, /<h3 id="color-roles">Roles<a class="anchor" href="#color-roles"/);
     assert.match(html, /\.anchor::before\s*\{[^}]*mask:/);
 
-    assert.match(html, /<h4 style="margin-top:22px">Scale<\/h4>/);
+    assert.match(html, /<h4>Scale<\/h4>/);
     assert.match(html, /<h3 id="spacing-steps">Steps/);
     assert.match(html, /<h3 id="spacing-roles">Roles/);
     assert.match(html, /<h3 id="sizes">Sizes/);
 });
 
 test(
-    "in Chromium the token table filters by type, tier, and value; a phone draws its rows a screenful at a time; a link opens its fold",
+    "in Chromium the token table filters by type, tier, and value; a phone gets the menu and the mode picker; a link opens its fold",
     { skip: findBrowser() === undefined ? "No Chromium on this machine." : false },
     async () => {
         const system = flagship();
@@ -1215,8 +1152,7 @@ test(
             assets: [],
         };
         const total = system.tokens.length;
-        const visible =
-            "document.querySelectorAll('#tokens tbody tr:not(.more):not([hidden])').length";
+        const visible = "document.querySelectorAll('#tokens tbody tr:not([hidden])').length";
         const type = (name: string) =>
             `(() => { const select = document.getElementById('tt'); select.value = '${name}'; select.dispatchEvent(new Event('change')); })()`;
         const write = (id: string, value: string) =>
@@ -1277,13 +1213,17 @@ test(
             assert.equal(await page.evaluate(visible), total);
 
             assert.equal(
-                await page.evaluate("document.getElementById('code-css').closest('details').open"),
+                await page.evaluate(
+                    "document.getElementById('code-tokens-css').closest('details').open",
+                ),
                 false,
             );
-            await page.evaluate("location.hash = '#code-css'");
+            await page.evaluate("location.hash = '#code-tokens-css'");
             await page.evaluate("new Promise((resolve) => setTimeout(resolve, 100))");
             assert.equal(
-                await page.evaluate("document.getElementById('code-css').closest('details').open"),
+                await page.evaluate(
+                    "document.getElementById('code-tokens-css').closest('details').open",
+                ),
                 true,
             );
             await page.evaluate("document.querySelector('#color-title .anchor').click()");
@@ -1298,186 +1238,62 @@ test(
             await page.load({ width: 390, height: 844 });
             await page.evaluate("new Promise((resolve) => setTimeout(resolve, 400))");
 
-            const drawn = (await page.evaluate(
-                "document.querySelectorAll('#tokens tbody tr:not(.more)').length",
-            )) as number;
-
-            assert.ok(
-                drawn >= 60 && drawn <= 130 && drawn < total,
-                `${drawn} rows drawn of ${total}`,
-            );
+            assert.deepEqual(page.errors, []);
             assert.equal(
-                await page.evaluate("document.querySelectorAll('#tokens tr.more').length"),
-                1,
+                await page.evaluate("document.documentElement.scrollWidth <= innerWidth"),
+                true,
+                "nothing scrolls sideways",
             );
-            assert.match(
-                (await page.evaluate(
-                    "document.querySelector('#tokens tr.more button').textContent",
-                )) as string,
-                /^Show \d+ more of \d+$/,
-            );
-            await page.evaluate("document.querySelector('#tokens tr.more button').click()");
-            assert.ok(
-                ((await page.evaluate(
-                    "document.querySelectorAll('#tokens tbody tr:not(.more)').length",
-                )) as number) > drawn,
-            );
-            await page.evaluate(write("tq", "shadow"));
+            assert.equal(await page.evaluate(visible), total);
             assert.equal(
-                await page.evaluate("document.querySelectorAll('#tokens tr.more').length"),
-                0,
+                await page.evaluate(
+                    "[getComputedStyle(document.querySelector('.seg')).display, getComputedStyle(document.querySelector('.modesel')).display].join()",
+                ),
+                "none,block",
             );
+            await page.evaluate(
+                "(() => { const select = document.querySelector('.modesel'); select.value = 'dark'; select.dispatchEvent(new Event('change')); })()",
+            );
+            assert.equal(await page.evaluate("document.documentElement.dataset.theme"), "dark");
+            await page.evaluate("document.querySelector('.icon-btn').click()");
             assert.equal(
-                await page.evaluate("document.querySelectorAll('#tokens tbody tr').length"),
-                total,
+                await page.evaluate("document.documentElement.classList.contains('nav-open')"),
+                true,
             );
-            assert.ok(((await page.evaluate(visible)) as number) >= 6);
+            await page.evaluate("document.querySelector('.nav a[href=\\'#color\\']').click()");
+            assert.equal(
+                await page.evaluate("document.documentElement.classList.contains('nav-open')"),
+                false,
+            );
         });
     },
 );
 
-test("the code panels name their language, take their own height, and take their colors from the system's code tokens", () => {
-    const { html } = renderSystemDoc(flagship());
-    const uses = html.slice(html.indexOf('<div class="uses">'), html.indexOf("<h3>The files</h3>"));
-
-    for (const [id, lang] of [
-        ["code-use-css", "web"],
-        ["code-use-tailwind", "web"],
-        ["code-use-json", "json"],
-        ["code-use-studio", "json"],
-    ]) {
-        assert.match(uses, new RegExp(`<pre class="snip" id="${id}" data-lang="${lang}">`));
-    }
-
-    assert.match(html, /<div class="sx" style="--sx-bg:var\(--color-code-bg/);
-    assert.match(html, /--sx-k:var\(--color-code-keyword/);
-    assert.match(html, /--sx-s:var\(--color-code-string/);
-    assert.match(html, /\.uses \{[^}]*align-items: start/);
-    assert.doesNotMatch(html, /\.use \.snip-wrap \{[^}]*flex: 1/);
-    const studio = /id="code-use-studio"[^>]*><code>([^<]*)<\/code>/
-        .exec(html)![1]!
-        .replaceAll("&quot;", '"')
-        .replaceAll("&amp;", "&");
-
-    assert.deepEqual(
-        studio.split("\n").filter((line) => /^( +)\S/.test(line) && !/^( {2})*\S/.test(line)),
-        [],
-        "every indent is a whole number of two-space levels",
-    );
-    assert.ok(JSON.parse(studio).$themes.length > 0);
-    const bare = flagship();
-
-    bare.tokens = bare.tokens.filter((item) => !item.name.startsWith("color.code."));
-    assert.doesNotMatch(renderSystemDoc(bare).html, /--sx-k:/);
-});
-
-test("a value that is the same in every mode is one cell across the mode columns; a shadow shows its layers", () => {
+test("a value that is the same in every mode is one cell across the mode columns; a shadow shows its layers as text", () => {
     const system = flagship();
     const { html } = renderSystemDoc(system);
     const modes = system.modes.length;
-    const table = html.slice(html.indexOf('<div class="table-wrap ref">'));
+    const table = html.slice(html.indexOf('id="token-table"'));
     const same = [...table.matchAll(/<td data-label="Every mode"[^>]*colspan="(\d+)"/g)];
 
     assert.ok(same.length > 100, `${same.length} one-cell rows`);
     assert.ok(same.every((match) => match[1] === String(modes)));
     const row =
-        /<tr data-s><td data-label="Token"><span class=""><button class="tk">color\.bg\.base<\/button>([\s\S]*?)<\/tr>/.exec(
+        /<tr data-s data-type="color" data-tier="semantic"><td data-label="Token"><button class="tk">color\.bg\.base<\/button>([\s\S]*?)<\/tr>/.exec(
             table,
         )![1]!;
 
     assert.equal((row.match(/<td /g) ?? []).length, 1 + modes);
     assert.doesNotMatch(row, /Every mode/);
 
-    assert.match(html, /<span class="sh-row sh-head"><span>x<\/span><span>y<\/span>/);
-    assert.match(html, /<span class="sh-row"><span>0<\/span><span>18<\/span><span>40<\/span>/);
-    assert.match(html, /<i class="mini-sw alpha" style="--c:#28284624"><\/i>#282846 14%/);
-    assert.doesNotMatch(html, /0 18 40 -18 #28284624/);
+    assert.match(html, /0px 18px 40px -18px #28284624/);
 });
-
-test(
-    "in Chromium the code panels are colored from their text alone, with no markup made from it",
-    { skip: findBrowser() === undefined ? "No Chromium on this machine." : false },
-    async () => {
-        // The listings carry project text (a token's description is a comment in tokens.css), so it must stay text.
-        const system = flagship();
-        const attack = `</code></pre><img id="hit" src=x onerror="window.__hit=1"><script>window.__hit=2</script>`;
-        const first = system.tokens.find((item) => item.tier === "primitive")!;
-
-        first.description = attack;
-        system.compiled = {
-            ...system.compiled,
-            css: `/* ${attack} */\n:root { --a: "${attack}"; color: #fff }\n${system.compiled.css}`,
-        };
-
-        const bundle: DesignBundle = {
-            meta: { title: "Docs", type: "html", versions: [] },
-            version: 1,
-            content: renderSystemDoc(system).html,
-            assets: [],
-        };
-
-        await withRender(bundle, host, undefined, async (page) => {
-            await page.load({ width: 1280, height: 800 });
-            await page.evaluate("new Promise((resolve) => setTimeout(resolve, 400))");
-
-            assert.deepEqual(page.errors, []);
-            assert.equal(await page.evaluate("window.__hit"), undefined);
-            assert.equal(await page.evaluate("document.querySelectorAll('#hit').length"), 0);
-
-            const report = (await page.evaluate(`(() => {
-                const blocks = [...document.querySelectorAll('pre.snip[data-lang]')];
-                return {
-                    total: blocks.length,
-                    colored: blocks.filter((block) => block.hasAttribute('data-colored')).length,
-                    inner: blocks.reduce((sum, block) => sum + block.querySelectorAll('code *:not(span)').length, 0),
-                    kinds: [...new Set([...document.querySelectorAll('pre.snip span')].map((span) => span.className))].sort(),
-                    hostile: blocks.some((block) => block.textContent.includes('onerror="window.__hit=1"')),
-                    copy: document.getElementById('code-use-studio').textContent.trim().startsWith('{'),
-                };
-            })()`)) as Record<string, unknown>;
-
-            assert.equal(report.total, report.colored);
-            assert.ok((report.total as number) >= 8);
-            assert.equal(report.inner, 0, "only spans, made by the script");
-            assert.equal(report.hostile, true, "the hostile text is shown as text");
-            assert.equal(report.copy, true);
-            assert.deepEqual(report.kinds, [
-                "sx-c",
-                "sx-f",
-                "sx-k",
-                "sx-n",
-                "sx-p",
-                "sx-s",
-                "sx-t",
-            ]);
-
-            assert.equal(
-                await page.evaluate(`(() => {
-                    const copy = document.querySelector('[data-copy-from="code-use-css"]');
-                    return document.getElementById('code-use-css').textContent.includes('var(--') &&
-                        copy.getAttribute('data-copy-from') === 'code-use-css';
-                })()`),
-                true,
-            );
-            const colors = (await page.evaluate(`(() => {
-                const pre = document.getElementById('code-use-css');
-                const style = (el) => getComputedStyle(el);
-                return {
-                    ground: style(pre).backgroundColor,
-                    keyword: style(pre.querySelector('.sx-t')).color
-                };
-            })()`)) as Record<string, string>;
-
-            assert.notEqual(colors.keyword, colors.ground);
-        });
-    },
-);
 
 test("the file list shows dist/README.md when the compiler writes one, and nothing when it does not", () => {
     const system = flagship();
     const none = renderSystemDoc(system).html;
 
-    assert.doesNotMatch(none, /id="code-readme"/);
+    assert.doesNotMatch(none, /id="code-readme-md"/);
     system.compiled = {
         ...system.compiled,
         readme: "# <b>Files</b>\n\nUse tokens.css.",
@@ -1485,6 +1301,6 @@ test("the file list shows dist/README.md when the compiler writes one, and nothi
 
     const html = renderSystemDoc(system).html;
 
-    assert.match(html, /<summary>README\.md<span/);
-    assert.match(html, /id="code-readme"><code># &lt;b&gt;Files&lt;\/b&gt;/);
+    assert.match(html, /<summary>README\.md <span/);
+    assert.match(html, /id="code-readme-md"><code># &lt;b&gt;Files&lt;\/b&gt;/);
 });

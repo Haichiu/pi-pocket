@@ -195,17 +195,3 @@ export function renderMarkdown(source: string, maxBytes = 16_384): string {
 export function plural(count: number, one: string, many = `${one}s`): string {
     return `${count} ${count === 1 ? one : many}`;
 }
-
-export function article(word: string): "a" | "an" {
-    const text = word.trim().toLowerCase();
-
-    if (/^(hour|honest|heir|honou?r)/.test(text)) {
-        return "an";
-    }
-
-    if (/^(uni|use|usa|usu|eu|one|once|ubiq)/.test(text)) {
-        return "a";
-    }
-
-    return /^[aeiou]/.test(text) ? "an" : "a";
-}
