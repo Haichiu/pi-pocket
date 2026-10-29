@@ -3,11 +3,9 @@ import { type Category, type Facts } from "./scan-facts.ts";
 import {
     Book,
     breakpointScale,
-    detailScales,
     type Draft,
     fontScale,
     type Inferred,
-    motionScale,
     radiusScale,
     shadowScale,
     sizeScale,
@@ -35,7 +33,6 @@ export function infer(facts: Facts, folder: string): Inferred {
         spacing: { steps: [], off: [] },
         radii: [],
         shadows: 0,
-        motion: { durations: [], easings: [] },
         breakpoints: [],
         hasDark: false,
         modes: { default: "light", alt: "dark" },
@@ -140,11 +137,9 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     fontScale(facts, book, explicit, result);
     sizeScale(facts, book, explicit, result);
-    detailScales(facts, book, explicit);
     spacingScale(facts, book, explicit, result);
     radiusScale(facts, book, explicit, result);
     shadowScale(facts, book, result);
-    motionScale(facts, book, explicit, result);
     breakpointScale(facts, book, explicit, result);
     dedupeScales(book);
     result.review = reviewScales(facts, explicit, result);

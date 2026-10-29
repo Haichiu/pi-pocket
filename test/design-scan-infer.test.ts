@@ -253,10 +253,7 @@ test("a plain stylesheet: the nine roles by name, in light and dark, and the pro
     assert.equal(token(system, "font.body")!.modes.light!.alias, "font.sans");
 
     assert.deepEqual(scan.inferred.typeScale.sizes, ["sm 13px", "base 16px", "lg 24px", "xl 32px"]);
-    assert.deepEqual(scan.inferred.motion.durations, ["fast 150ms", "slow 200ms"]);
     assert.deepEqual(scan.inferred.breakpoints, ["sm 768px", "md 1024px"]);
-    assert.equal(token(system, "weight.bold")!.modes.light!.css, "700");
-    assert.equal(token(system, "leading.normal")!.modes.light!.css, "1.5");
     assert.equal(
         hex(system, "color.text.on-accent"),
         "#ffffff",

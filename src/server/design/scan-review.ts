@@ -25,12 +25,6 @@ export function reviewScales(facts: Facts, explicit: Set<Category>, result: Infe
     guess("space", "spacing", result.spacing.steps.length, total(facts.spacing));
     guess("radius", "radii", result.radii.length, total(facts.radii));
     guess("shadow", "shadows", result.shadows, total(facts.shadows));
-    guess(
-        "duration",
-        "motion",
-        result.motion.durations.length + result.motion.easings.length,
-        total(facts.durations),
-    );
     guess("font", "fonts", Object.keys(result.fonts).length, total(facts.fonts));
 
     // Spacing values that fit no step of the scale are left out of it: a person decides what to do with them.

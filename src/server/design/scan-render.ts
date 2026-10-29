@@ -427,10 +427,6 @@ function declsOf(reading: Reading, scope: Scope, known: Known, against?: Reading
                 repeat(".element", "padding", `${size}px`, weight, 2);
             }
         }
-
-        for (const [value, weight] of Object.entries(reading.weight)) {
-            repeat("p", "font-weight", value, weight, 60);
-        }
     }
 
     return out;

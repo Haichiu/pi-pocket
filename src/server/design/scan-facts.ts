@@ -128,21 +128,15 @@ export interface Facts {
     classRules: Map<string, { kind: "bg" | "text" | "border"; light?: string; dark?: string }>;
     fonts: Map<string, FontFact>;
     sizes: Map<number, SizeFact>;
-    weights: Map<number, number>;
-    leadings: Map<number, number>;
-    tracking: Map<string, number>;
     spacing: Map<number, number>;
     radii: Map<string, { count: number; text: string }>;
     shadows: Map<string, number>;
-    durations: Map<number, number>;
-    easings: Map<string, number>;
     breakpoints: Map<number, number>;
     /** Spacing from Tailwind classes (`p-4` is 16px): used only when the project uses Tailwind. */
     classSpacing: Map<number, number>;
     /** Tailwind utility classes by size name: `text-sm` → `sm`, `rounded-lg` → `lg`, `font-bold` → `bold`. */
     classText: Map<string, number>;
     classRadius: Map<string, number>;
-    classWeight: Map<string, number>;
     /** Scopes that set custom properties but are neither the root nor dark mode, by selector. */
     scoped: Map<string, number>;
     /** Custom properties used inside a color function (`rgb(var(--c-brand))`), and which function: their values are channels. */
@@ -171,19 +165,13 @@ export function newFacts(): Facts {
         classRules: new Map(),
         fonts: new Map(),
         sizes: new Map(),
-        weights: new Map(),
-        leadings: new Map(),
-        tracking: new Map(),
         spacing: new Map(),
         radii: new Map(),
         shadows: new Map(),
-        durations: new Map(),
-        easings: new Map(),
         breakpoints: new Map(),
         classSpacing: new Map(),
         classText: new Map(),
         classRadius: new Map(),
-        classWeight: new Map(),
         scoped: new Map(),
         channels: new Map(),
         skipped: [],

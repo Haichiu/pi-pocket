@@ -17,20 +17,7 @@ export interface VarColor {
     hex: string;
     uses: number;
     kinds?: Kinds;
-    /** The platform whose naming this variable follows, when that says more than the name does. */
-    platform?: "wordpress";
 }
-
-// WordPress block themes (Twenty Twenty-Four and after) call the page `base` and the text `contrast`.
-const wordsOf = (variable: VarColor): string[] => {
-    const all = words(variable.name);
-
-    if (variable.platform === "wordpress" && all.length === 1) {
-        return all[0] === "base" ? ["bg"] : all[0] === "contrast" ? ["text"] : all;
-    }
-
-    return all;
-};
 
 const hueOk = (role: RoleName, color: ColorEntry): boolean => {
     if (color.c < 0.06) {
@@ -96,7 +83,7 @@ export function chooseRoles(
 
         for (const variable of named) {
             const color = entry(variable.hex);
-            const segs = wordsOf(variable);
+            const segs = words(variable.name);
 
             if (
                 (role === "background" ||
@@ -122,13 +109,6 @@ export function chooseRoles(
             }
 
             let score = nameScore(role, segs);
-
-            // A color called `warn` that is red is the error color (Angular Material's `warn` palette).
-            if (role === "danger" && score === 0 && color.c >= 0.1 && hueOk("danger", color)) {
-                const asWarning = nameScore("warning", segs);
-
-                score = asWarning > 0 ? asWarning - 15 : 0;
-            }
 
             if (score === 0) {
                 continue;

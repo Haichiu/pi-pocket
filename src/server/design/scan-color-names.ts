@@ -1,44 +1,7 @@
 import { type RoleName, w } from "./scan-color-base.ts";
 
-/** Variables whose library prefix decides what they are: Mantine's `--mantine-color-body` is the page, not the body text. */
-const LIBRARY_NAMES: [RegExp, string][] = [
-    [/^mantine-color-body$/i, "bg-page"],
-    [/^mantine-color-default$/i, "surface"],
-    [/^mantine-color-default-border$/i, "border"],
-    [/^mantine-color-dimmed$/i, "text-muted"],
-    [/^mantine-color-anchor$/i, "link"],
-    [/^mantine-color-placeholder$/i, "text-placeholder"],
-    [/^mantine-color-error$/i, "danger"],
-    [/^chakra-body-bg$/i, "bg-page"],
-    [/^chakra-body-text$/i, "text"],
-    [/^chakra-border-color$/i, "border"],
-    [/^chakra-placeholder-color$/i, "text-placeholder"],
-    [/^pico-background-color$/i, "bg-page"],
-    [/^pico-color$/i, "text"],
-    [/^pico-muted-color$/i, "text-muted"],
-    [/^pico-muted-border-color$/i, "border"],
-    [/^pico-card-background-color$/i, "surface"],
-    [/^pico-primary$/i, "accent"],
-    // Fluent UI: neutral background 1 is the card, 2 the page, foreground 1 the text, 2 and 3 the quieter ones, stroke 1 the border.
-    [/^colorNeutralBackground1$/, "surface"],
-    [/^colorNeutralBackground2$/, "bg-page"],
-    [/^colorNeutralForeground1$/, "text"],
-    [/^colorNeutralForeground2$/, "text-2"],
-    [/^colorNeutralForeground3$/, "text-muted"],
-    [/^colorNeutralStroke1$/, "border"],
-    [/^colorBrandBackground$/, "accent"],
-    [/^colorBrandForeground1$/, "accent-text"],
-    [/^colorPalette(?:Red|Cranberry)(?:Foreground1|Background3)$/, "danger"],
-    [
-        /^colorPalette(?:Yellow|Marigold|DarkOrange|Orange|Gold)(?:Foreground[12]|Background3)$/,
-        "warning",
-    ],
-    [/^colorPalette(?:Green|LightGreen|DarkGreen)(?:Foreground1|Background3)$/, "success"],
-];
-
 export function words(rawName: string): string[] {
-    const name = LIBRARY_NAMES.find(([pattern]) => pattern.test(rawName))?.[1] ?? rawName;
-    const all = name
+    const all = rawName
         .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
         // `font-color-base` (Infima) is the text color, not a font.
         .replace(/font[-_]colou?r/gi, "text-color")

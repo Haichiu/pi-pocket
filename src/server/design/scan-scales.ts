@@ -30,7 +30,6 @@ export interface Inferred {
     spacing: { base?: number; steps: number[]; off: number[] };
     radii: string[];
     shadows: number;
-    motion: { durations: string[]; easings: string[] };
     breakpoints: string[];
     hasDark: boolean;
     modes: { default: string; alt: string };
@@ -150,17 +149,6 @@ export class Book {
     }
 }
 
-const WEIGHT_NAMES: Record<number, string> = {
-    100: "thin",
-    200: "extralight",
-    300: "light",
-    400: "regular",
-    500: "medium",
-    600: "semibold",
-    700: "bold",
-    800: "extrabold",
-    900: "black",
-};
 const TAILWIND_TEXT: Record<string, string> = {
     xs: "0.75rem",
     sm: "0.875rem",
@@ -186,18 +174,6 @@ const TAILWIND_RADIUS: Record<string, string> = {
     "3xl": "1.5rem",
     full: "9999px",
 };
-const TAILWIND_WEIGHT: Record<string, [string, number]> = {
-    thin: ["thin", 100],
-    extralight: ["extralight", 200],
-    light: ["light", 300],
-    normal: ["regular", 400],
-    medium: ["medium", 500],
-    semibold: ["semibold", 600],
-    bold: ["bold", 700],
-    extrabold: ["extrabold", 800],
-    black: ["black", 900],
-};
-
 const SIZE_BELOW = ["sm", "xs", "2xs"];
 const SIZE_ABOVE = ["lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl"];
 
@@ -463,64 +439,6 @@ export function sizeScale(
               }
             : {}),
     };
-}
-
-export function detailScales(facts: Facts, book: Book, explicit: Set<Category>): void {
-    if (!explicit.has("weight")) {
-        const counts = new Map(facts.weights);
-
-        if (facts.tailwind) {
-            for (const [name, count] of facts.classWeight) {
-                const weight = TAILWIND_WEIGHT[name]?.[1];
-
-                if (weight !== undefined) {
-                    counts.set(weight, (counts.get(weight) ?? 0) + count);
-                }
-            }
-        }
-
-        const used = topBy([...counts], ([, count]) => count, 5).sort((a, b) => a[0] - b[0]);
-
-        if (used.length >= 2) {
-            for (const [weight] of used) {
-                const name = WEIGHT_NAMES[weight];
-
-                if (name !== undefined) {
-                    book.add(["weight", name], { $value: weight, $type: "fontWeight" });
-                }
-            }
-        }
-    }
-
-    if (!explicit.has("leading")) {
-        const used = topBy([...facts.leadings], ([, count]) => count, 3).sort(
-            (a, b) => a[0] - b[0],
-        );
-        const names =
-            used.length === 1
-                ? ["normal"]
-                : used.length === 2
-                  ? ["tight", "normal"]
-                  : ["tight", "normal", "relaxed"];
-
-        used.forEach(([value], at) =>
-            book.add(["leading", names[at]!], { $value: value, $type: "number" }),
-        );
-    }
-
-    if (!explicit.has("tracking")) {
-        const used = [...facts.tracking].sort((a, b) => b[1] - a[1]);
-        const tight = used.find(([text]) => text.startsWith("-"));
-        const wide = used.find(([text]) => !text.startsWith("-"));
-
-        if (tight !== undefined) {
-            book.add(["tracking", "tight"], { $value: tight[0], $type: "dimension" });
-        }
-
-        if (wide !== undefined) {
-            book.add(["tracking", "wide"], { $value: wide[0], $type: "dimension" });
-        }
-    }
 }
 
 export function spacingScale(
@@ -842,68 +760,6 @@ export function shadowScale(facts: Facts, book: Book, result: Inferred): void {
     }
 
     result.shadows = [...book.tokens.values()].filter((entry) => entry.path[0] === "shadow").length;
-}
-
-export function motionScale(
-    facts: Facts,
-    book: Book,
-    explicit: Set<Category>,
-    result: Inferred,
-): void {
-    if (!explicit.has("duration")) {
-        const used = topBy([...facts.durations], ([, count]) => count, 4).sort(
-            (a, b) => a[0] - b[0],
-        );
-        const ladders: Record<number, string[]> = {
-            1: ["base"],
-            2: ["fast", "slow"],
-            3: ["fast", "base", "slow"],
-            4: ["instant", "fast", "base", "slow"],
-        };
-
-        used.forEach(([ms], at) => {
-            book.add(["duration", ladders[used.length]![at]!], {
-                $value: `${ms}ms`,
-                $type: "duration",
-            });
-            result.motion.durations.push(`${ladders[used.length]![at]} ${ms}ms`);
-        });
-    }
-
-    if (!explicit.has("ease")) {
-        const NAMES: Record<string, string> = {
-            ease: "standard",
-            "ease-in": "in",
-            "ease-out": "out",
-            "ease-in-out": "in-out",
-            linear: "linear",
-        };
-        const used = topBy([...facts.easings], ([, count]) => count, 4);
-        let custom = 0;
-
-        for (const [text] of used) {
-            const value = bezier(text);
-
-            if (value === undefined) {
-                continue;
-            }
-
-            const key = JSON.stringify(value);
-            const known = Object.entries(BEZIER).find(([, each]) => JSON.stringify(each) === key);
-            const name =
-                NAMES[text] ??
-                (value[0] === 0.4 && value[1] === 0 && value[2] === 0.2 && value[3] === 1
-                    ? "standard"
-                    : known === undefined
-                      ? `custom-${++custom}`
-                      : NAMES[known[0]]!);
-
-            if (!book.has(["ease", name])) {
-                book.add(["ease", name], { $value: value, $type: "cubicBezier" });
-                result.motion.easings.push(`${name} ${text}`);
-            }
-        }
-    }
 }
 
 export function breakpointScale(

@@ -32,9 +32,6 @@ const TEXT_CLASS = /(?<![\w-])text-(xs|sm|base|lg|xl|[2-9]xl)(?![\w-])/g;
 
 const ROUNDED_CLASS = /(?<![\w-])rounded(?:-(none|xs|sm|md|lg|xl|2xl|3xl|full))?(?![\w-])/g;
 
-const WEIGHT_CLASS =
-    /(?<![\w-])font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)(?![\w-])/g;
-
 const SPACING_CLASS =
     /(?<![\w-])(?:p|px|py|pt|pr|pb|pl|ps|pe|m|mx|my|mt|mr|mb|ml|ms|me|gap|gap-x|gap-y|space-x|space-y)-(\d+(?:\.\d+)?)(?![\w-])/g;
 
@@ -192,7 +189,6 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
         for (const [pattern, map] of [
             [TEXT_CLASS, facts.classText],
             [ROUNDED_CLASS, facts.classRadius],
-            [WEIGHT_CLASS, facts.classWeight],
         ] as const) {
             seen = 0;
 

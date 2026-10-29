@@ -529,12 +529,6 @@ export function scanReport(scan: TokenScan, path?: string): string {
             lines.push(`Shadows: ${inferred.shadows}`);
         }
 
-        if (inferred.motion.durations.length + inferred.motion.easings.length > 0) {
-            lines.push(
-                `Motion: ${[...inferred.motion.durations, ...inferred.motion.easings].join(", ")}`,
-            );
-        }
-
         if (inferred.breakpoints.length > 0) {
             lines.push(`Breakpoints: ${inferred.breakpoints.join(", ")}`);
         }

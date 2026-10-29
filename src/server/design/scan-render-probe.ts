@@ -16,7 +16,6 @@ export interface Reading {
     font: Record<string, Weights>;
     size: Record<string, Weights>;
     space: Weights;
-    weight: Weights;
     status: Record<string, { bg: Weights; text: Weights; border: Weights }>;
     buttons: { bg: string; color: string; area: number; primary: boolean }[];
 }
@@ -104,7 +103,6 @@ export const PROBE_SOURCE = String.raw`(input) => {
         shadow: style.boxShadow,
         family: style.fontFamily,
         size: style.fontSize,
-        weight: style.fontWeight,
         space: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft, style.marginTop, style.marginBottom, style.rowGap, style.columnGap].join('|'),
     });
     const elements = Array.from(document.querySelectorAll('body, body *')).filter((el) => !/^(script|style|link|meta|noscript|template|svg|path|defs|title)$/.test(el.localName)).slice(0, MAX * 2);
@@ -135,7 +133,7 @@ export const PROBE_SOURCE = String.raw`(input) => {
         vars: {},
         page: { bg: '', text: '', bgAuthored: true, textAuthored: true },
         count: visible.length,
-        bg: {}, text: {}, border: {}, radius: {}, shadow: {}, font: {}, size: {}, space: {}, weight: {}, status: {}, buttons: [],
+        bg: {}, text: {}, border: {}, radius: {}, shadow: {}, font: {}, size: {}, space: {}, status: {}, buttons: [],
     };
     const rootStyle = getComputedStyle(root);
     for (const name of input.vars.slice(0, 900)) {
@@ -172,7 +170,6 @@ export const PROBE_SOURCE = String.raw`(input) => {
             if (!same('color') && !(kind === 'link' && UA_LINK.has(now.color))) add(ensure(out.text, kind), now.color, chars);
             if (!same('family')) add(ensure(out.font, /^(code|pre|kbd|samp)$/.test(el.localName) ? 'code' : kind === 'heading' ? 'heading' : 'body'), now.family, chars);
             if (!(same('size') && /^h[1-6]$/.test(el.localName))) add(ensure(out.size, kind === 'heading' ? 'heading' : 'body'), now.size, chars);
-            if (!same('weight')) add(out.weight, now.weight, chars);
         }
         // Borders, radius, shadow.
         if (now.border !== '' && (!same('border') || !same('bw'))) {
@@ -205,7 +202,7 @@ export const PROBE_SOURCE = String.raw`(input) => {
     for (const key of ['bg', 'text', 'font', 'size']) {
         for (const kind of Object.keys(out[key])) out[key][kind] = keep(out[key][kind]);
     }
-    for (const key of ['border', 'radius', 'shadow', 'space', 'weight']) out[key] = keep(out[key]);
+    for (const key of ['border', 'radius', 'shadow', 'space']) out[key] = keep(out[key]);
     for (const status of Object.keys(out.status)) for (const key of ['bg', 'text', 'border']) out.status[status][key] = keep(out.status[status][key], 8);
     return out;
 }`;

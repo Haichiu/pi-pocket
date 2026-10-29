@@ -238,46 +238,6 @@ function useRadius(facts: Facts, value: string): void {
     }
 }
 
-const EASING =
-    /\b(?:ease-in-out|ease-in|ease-out|ease|linear)\b|cubic-bezier\(\s*[\d.\s,-]+\)|steps\([^)]*\)/gi;
-
-function useMotion(facts: Facts, decl: Decl): void {
-    const { prop, value } = decl;
-
-    if (
-        prop === "transition" ||
-        prop === "animation" ||
-        prop === "transition-duration" ||
-        prop === "animation-duration"
-    ) {
-        const clean = value.replace(/cubic-bezier\([^)]*\)|steps\([^)]*\)|var\([^)]*\)/gi, " ");
-
-        // In a shorthand the first time is the duration; the second is a delay.
-        for (const layer of commaParts(clean)) {
-            const first = /(?<![\w.-])(\d*\.?\d+)(ms|s)\b/.exec(layer);
-
-            if (first !== null) {
-                const ms = Math.round(Number(first[1]) * (first[2] === "s" ? 1000 : 1));
-
-                if (ms >= 30 && ms <= 5000) {
-                    bump(facts.durations, ms);
-                }
-            }
-        }
-    }
-
-    if (
-        prop === "transition" ||
-        prop === "animation" ||
-        prop === "transition-timing-function" ||
-        prop === "animation-timing-function"
-    ) {
-        for (const match of value.matchAll(EASING)) {
-            bump(facts.easings, match[0].toLowerCase().replace(/\s+/g, " "));
-        }
-    }
-}
-
 const SASS_PROPS =
     /^(?:padding|margin|gap|row-gap|column-gap|border-radius|font-size|box-shadow|border|border-(?:top|right|bottom|left)|outline|color|background|background-color|border-color)(?:-[a-z-]+)?$/;
 
@@ -367,17 +327,6 @@ export function ingest(facts: Facts, decl: Decl): void {
                 if (stack !== undefined) {
                     useFont(facts, stack, decl);
                 }
-
-                const weight = /(?:^|\s)(\d{3})\s/.exec(decl.value)?.[1];
-                const line = Number(match.groups.line);
-
-                if (weight !== undefined) {
-                    bump(facts.weights, Number(weight));
-                }
-
-                if (Number.isFinite(line) && line >= 1 && line <= 3) {
-                    bump(facts.leadings, Math.round(line * 1000) / 1000);
-                }
             }
 
             return;
@@ -387,40 +336,6 @@ export function ingest(facts: Facts, decl: Decl): void {
             useSize(facts, decl.value, decl);
 
             return;
-
-        case "font-weight": {
-            const weight = /^\d{3}$/.test(decl.value.trim())
-                ? Number(decl.value)
-                : ({ normal: 400, bold: 700 } as Record<string, number>)[
-                      decl.value.trim().toLowerCase()
-                  ];
-
-            if (weight !== undefined) {
-                bump(facts.weights, weight);
-            }
-
-            return;
-        }
-
-        case "line-height": {
-            const value = Number(decl.value.trim());
-
-            if (Number.isFinite(value) && value >= 1 && value <= 3) {
-                bump(facts.leadings, Math.round(value * 1000) / 1000);
-            }
-
-            return;
-        }
-
-        case "letter-spacing": {
-            const text = decl.value.trim();
-
-            if (/^-?\d*\.?\d+(?:em|px|rem)$/.test(text) && Number.parseFloat(text) !== 0) {
-                bump(facts.tracking, text);
-            }
-
-            return;
-        }
 
         case "border-radius":
         case "border-top-left-radius":
@@ -443,8 +358,6 @@ export function ingest(facts: Facts, decl: Decl): void {
         default:
             if (SPACING_PROPS.test(decl.prop)) {
                 useSpacing(facts, decl.value);
-            } else {
-                useMotion(facts, decl);
             }
     }
 }
