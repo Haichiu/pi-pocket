@@ -186,7 +186,8 @@ function listValues(text: string, list: string): string[] {
  */
 function valuesOf(text: string, rawName: string, at: number): string[] {
     const name = rawName.replace(/[$]/g, "\\$&");
-    const list = String.raw`(\[[^\]]{0,600}\]|[A-Za-z_$][\w$]*)`;
+    // A name starts where a name can start (`(?<![\w$])`): from every letter of a long one, the search ran to its end.
+    const list = String.raw`(\[[^\]]{0,600}\]|(?<![\w$])[A-Za-z_$][\w$]*)`;
     const found = new Set<string>();
     const add = (values: string[]) => values.forEach((value) => found.add(value));
 

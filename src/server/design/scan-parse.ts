@@ -222,7 +222,7 @@ export function indentedToBraces(source: string): string {
             text = text
                 .replace(/^=\s*/, "@mixin ")
                 .replace(/^\+\s*/, "@include ")
-                .replace(/\s+\/\/.*$/, "");
+                .replace(/(^|\S)\s+\/\/.*$/, "$1");
             out.push(`${closing}${text} {`);
             stack.push(indent);
 
@@ -230,7 +230,7 @@ export function indentedToBraces(source: string): string {
         }
 
         text = text
-            .replace(/\s+\/\/.*$/, "")
+            .replace(/(^|\S)\s+\/\/.*$/, "$1")
             .replace(/^=\s*/, "@mixin ")
             .replace(/^\+\s*/, "@include ");
 

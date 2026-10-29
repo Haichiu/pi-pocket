@@ -2190,3 +2190,25 @@ test("10,000 custom properties are read in linear time (13 s before)", () => {
     scanTokens(project({ "a.css": css }));
     assert.ok(Date.now() - started < 5000, `${Date.now() - started} ms`);
 });
+
+test("odd inputs end in well under a second, with no throw (R4-4 to R4-7: they threw or took 3 to 13 s)", () => {
+    const chain = Array.from({ length: 800 }, (_, i) => `@v${800 - i}: @v${799 - i} + 1px;`);
+    const refs = (i: number) => `{"$type":"color","$value":[${Array(16).fill(`"{c${i}}"`)}]}`;
+    const fan = Array.from({ length: 7 }, (_, i) => `"c${i + 1}":${refs(i)}`);
+    const config = 'module.exports = { source: ["tokens/${theme}/*.json"], platforms: {} };';
+
+    for (const [file, text] of [
+        ["a.less", `@v0: 1px;\n${chain.join("\n")}\n.x { width: @v800; }`],
+        ["tokens.json", `{"c0":{"$value":"#123456","$type":"color"},${fan.join()}}`],
+        ["tokens.json", `{"a":{"value":${"[".repeat(1500)}${"]".repeat(1500)}}}`],
+        ["a.sass", `a${" ".repeat(76_000)}b`],
+        ["theme.scss", "a-".repeat(80_000)],
+        ["config.js", `${config}${"a".repeat(59_000)}`],
+        ["tokens.json", `{"a":{"value":"${"1".repeat(80_000)}"}}`],
+    ]) {
+        const started = Date.now();
+
+        scanTokens(project({ [file!]: text! }));
+        assert.ok(Date.now() - started < 1500, `${file}: ${Date.now() - started} ms`);
+    }
+});

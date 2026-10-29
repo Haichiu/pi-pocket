@@ -112,10 +112,11 @@ export class Project implements Flat {
 /**
  * Whether a stylesheet has Sass that the scan cannot read as it is: a loop, a map built in code, a module's function, a
  * member of another module (`p.$blue-500`), a configuration (`@use … with`), or a function that works out a color. Mixins and
- * conditions are left to the scan, which has its own reading of them.
+ * conditions are left to the scan, which has its own reading of them. The member is found from its `.$`, looking back: a long
+ * run of `a-a-a-…` with no `.$` in it costs nothing.
  */
 export const NEEDS_EVAL =
-    /@(?:each|for|while)\b|\bmap[.-](?:merge|get|set|keys|values)\b|\b(?:color|math|map|list|string)\.[a-z-]+\(|\b(?:scale-color|adjust-color|change-color)\(|@function[\s\S]{0,400}?\b(?:mix|lighten|darken|saturate|desaturate|rgba|adjust-hue|color\.)|\b[a-z][\w-]*\.\$[\w-]+|@use\b[^;]*\bwith\b|@forward\b[^;]*\b(?:as|show|hide|with)\b/;
+    /@(?:each|for|while)\b|\bmap[.-](?:merge|get|set|keys|values)\b|\b(?:color|math|map|list|string)\.[a-z-]+\(|\b(?:scale-color|adjust-color|change-color)\(|@function[\s\S]{0,400}?\b(?:mix|lighten|darken|saturate|desaturate|rgba|adjust-hue|color\.)|(?<=\b[a-z][\w-]*)\.\$[\w-]|@use\b[^;]*\bwith\b|@forward\b[^;]*\b(?:as|show|hide|with)\b/;
 
 /** The result of running one stylesheet. */
 export interface Evaluated {

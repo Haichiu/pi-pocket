@@ -170,6 +170,8 @@ function inferType(path: string[], value: unknown, node: Obj): string | undefine
     const where = [category, kind, ...path.map((part) => part.toLowerCase())].join(" ");
     const has = (pattern: RegExp) => pattern.test(where);
     const text = typeof value === "string" ? value.trim() : undefined;
+    // A number, a size, or a time is short: a long text is not tested as one (the tests take the square of its length).
+    const short = text !== undefined && text.length <= 200;
 
     if (typeof value === "object" && value !== null) {
         return Array.isArray(value) && value.every((each) => typeof each === "string")
@@ -193,11 +195,11 @@ function inferType(path: string[], value: unknown, node: Obj): string | undefine
         return "shadow";
     }
 
-    if (text !== undefined && /^-?\d*\.?\d+(?:px|rem|em|%|pt|vw|vh)$/i.test(text)) {
+    if (short && /^-?\d*\.?\d+(?:px|rem|em|%|pt|vw|vh)$/i.test(text!)) {
         return "dimension";
     }
 
-    if (text !== undefined && /^\d*\.?\d+(?:ms|s)$/i.test(text)) {
+    if (short && /^\d*\.?\d+(?:ms|s)$/i.test(text!)) {
         return "duration";
     }
 
@@ -209,7 +211,7 @@ function inferType(path: string[], value: unknown, node: Obj): string | undefine
         return "color";
     }
 
-    const numeric = typeof value === "number" || (text !== undefined && /^-?\d*\.?\d+$/.test(text));
+    const numeric = typeof value === "number" || (short && /^-?\d*\.?\d+$/.test(text!));
 
     if (has(/\bweight\b|font-weight/) && numeric) {
         return "fontWeight";
