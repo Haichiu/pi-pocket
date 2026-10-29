@@ -1,4 +1,3 @@
-// A reply to a selected passage (web/quote-text.js): the passage goes out as a Markdown quote and shows as one.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 

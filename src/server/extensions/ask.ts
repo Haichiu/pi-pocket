@@ -1,6 +1,5 @@
 /**
- * Ask: Pi asks you up to 4 questions on a card in the session, each with 2 to 4 answers to tap or one of your own, and
- * waits for your answer. It goes on with what you chose.
+ * Ask: Pi asks you up to 4 questions on a card in the session, each with 2 to 4 answers to tap or one of your own.
  */
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool, section } from "@earendil-works/pi-durable";
@@ -18,10 +17,8 @@ Never ask the same thing twice.`;
 const DECLINED =
     "The person declined to answer. Do not ask again at once; go on with your best judgment, or ask in plain text.";
 
-/** What the call gives back, kept in its memo: a restart after the answer does not ask again. */
 type Reply = { text: string; answers?: { header: string; question: string; answer: string }[] };
 
-/** One line: what a model writes can hold line breaks, which a card's words do not. */
 const flat = (text: string) => text.replace(/\s+/g, " ").trim();
 
 const Choice = Type.Object({
@@ -55,11 +52,10 @@ export default function createAsk(host: PocketHost) {
         parameters: Type.Object({
             questions: Type.Array(Question, { minItems: 1, maxItems: 4 }),
         }),
-        // The card's id comes from the call: after a restart, the same card asks again, unless the answer is in the memo.
+        // The card's id comes from the call: after a restart, the same card asks again unless the memo has the answer.
         replay: "safe",
         execute: async (args, api, context) => {
-            // A subagent works for another agent: nobody reads its chat. Its session has no `ask` (`subagents.ts`), but
-            // one started before that has.
+            // Nobody reads a subagent's chat; a subagent started before `subagents.ts` hid `ask` still has it.
             const agent = await api.agent(context);
 
             if (agent.instructions?.startsWith('You are the subagent "')) {
@@ -97,7 +93,6 @@ export default function createAsk(host: PocketHost) {
                         id: `${api.taskId}:${api.callId}`,
                         taskId: api.taskId,
                         callId: api.callId,
-                        // Each question has its header as a chip: the title names who asks.
                         title: "Pi asks",
                         fields,
                     },

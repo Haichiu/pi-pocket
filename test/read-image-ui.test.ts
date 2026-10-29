@@ -1,4 +1,3 @@
-// An image Pi reads (often one the person just sent) shows only once its read call is opened, not under the call's line.
 import {
     type App,
     cleanUp,
@@ -36,7 +35,6 @@ const PNG = Buffer.from(
 );
 const picture = join(work, "dot.png");
 
-/** The owner asks Pi to read the picture; after the read, Pi answers "seen". */
 const route: FauxResponseStep = (request) => {
     const { text } = lastText(request as never);
 
@@ -55,12 +53,10 @@ let browsers: Browsers;
 let page: BrowserPage;
 let base = "";
 
-/** Run a script in the page and read back the JSON it returns. */
 async function inPage<T>(script: string): Promise<T> {
     return JSON.parse(await page.evaluate(script)) as T;
 }
 
-/** Wait until a script in the page returns true. */
 const see = (script: string, what: string, timeoutMs = 10_000) =>
     until(async () => (await inPage<boolean>(script)) === true, what, timeoutMs);
 
@@ -117,7 +113,6 @@ test("an image a read returned shows only once the read is opened", real, async 
         20_000,
     );
 
-    // The group of steps folds once the turn ends: open it to see the read's line.
     await inPage(`
         const group = document.querySelector('[data-part="activity"]:not(.open) .activity-head');
         group?.click();

@@ -97,7 +97,7 @@ export function describeCall(call) {
             return {
                 icon: "?",
                 label: "Ask",
-                // A peek line's call has its short scalar arguments only (`peekArgs`): no questions, and no subject.
+                // A peek line's call carries only short scalar arguments (`peekArgs`): no questions, no subject.
                 subject:
                     questions.length === 0
                         ? ""

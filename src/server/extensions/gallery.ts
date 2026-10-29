@@ -73,7 +73,6 @@ export default function createGallery(host: PocketHost, web: ExtensionWeb) {
         "GET",
         "reach",
         handle(() => {
-            // A server from before this route: its next start has it.
             if ((gallery as Partial<typeof gallery>).reach === undefined) {
                 throw web.error(
                     503,

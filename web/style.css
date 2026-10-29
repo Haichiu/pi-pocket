@@ -1330,8 +1330,7 @@ kbd {
     color: var(--faint);
 }
 
-/* A subagent's line also names its model, as the composer hides it on a phone while Pi works. It keeps its room (up to a
- * share of the line); the parent's title gives way first. A tap opens the model sheet. */
+/* The composer hides the model on a phone while Pi works, so a subagent's line names it. */
 .title-sub > button.title-model {
     position: relative;
     z-index: 1;
@@ -2710,7 +2709,6 @@ pre.diff .del {
     font-size: 15px;
 }
 
-/* Pi's questions (`ask`): each question over its answers, buttons a thumb can tap, side by side when there is room. */
 .ask-choices {
     display: flex;
     flex-direction: column;
@@ -2834,7 +2832,6 @@ pre.diff .del {
     font-size: 15px;
 }
 
-/* Under the call once answered: each question, and what was chosen. */
 .ask-answers {
     display: flex;
     flex-direction: column;
@@ -4792,13 +4789,11 @@ pre.diff .del {
     }
 }
 
-/* Priority, Recent, Folders, Archived: a segmented track, its raised segment sliding to the one chosen. */
 .session-tabs {
     position: relative;
     flex: none;
     margin-top: 10px;
     display: grid;
-    /* Priority has the most to say (its count), and Archived is just an icon. */
     grid-template-columns: 1.3fr 1fr 1fr minmax(34px, 0.55fr);
     padding: 3px;
     border-radius: var(--r-control);
@@ -4854,7 +4849,6 @@ pre.diff .del {
     padding: 0 4px 4px;
 }
 
-/* The list itself takes the focus only when no row is left to take it (after the last answer in Priority). */
 .session-items:focus-visible {
     outline-offset: -2px;
 }
@@ -5703,10 +5697,6 @@ button.session-chip {
     }
 }
 
-/*
- * Priority: sessions by what they ask of you. Needs you holds the rows whose call waits, whose run failed, or whose
- * subagents failed; each has one button at its right, and a call's Review opens it in the row.
- */
 .tab-count {
     min-width: 16px;
     padding: 0 4px;
@@ -5729,7 +5719,6 @@ button.session-chip {
     color: var(--bg);
 }
 
-/* A group's header with a button beside it: Dismiss N failed, Mark all read. */
 .group-bar {
     display: flex;
     align-items: center;
@@ -5771,7 +5760,6 @@ button.session-chip {
     }
 }
 
-/* The static head of Needs you is not a button: nothing folds it. */
 div.group-head {
     cursor: default;
 }
@@ -5802,7 +5790,6 @@ div.group-head {
     font-weight: 500;
 }
 
-/* The row keeps room on its right for the button that sits over it. */
 .session-row.needs-you .session {
     padding-right: 74px;
 }
@@ -5849,7 +5836,6 @@ div.group-head {
         color var(--t-hover) var(--ease-out);
 }
 
-/* A finger-sized tap area past the pill's edges. */
 .quick-pill::before {
     content: "";
     position: absolute;
@@ -5889,7 +5875,6 @@ div.group-head {
     }
 }
 
-/* The call, open in its row: it sits under the row's line, on a raised ground. */
 .session-row.asking {
     border-radius: var(--r-row);
     background: var(--card);
@@ -6012,7 +5997,6 @@ div.group-head {
     }
 }
 
-/* More of Needs you than shows at once. */
 .more-needs {
     min-height: 32px;
     margin-top: 2px;
@@ -6035,7 +6019,6 @@ div.group-head {
     }
 }
 
-/* A row that just moved here after an answer: a short glow, so the eye follows it. */
 .session-row.glow > .session {
     animation: row-glow 1.2s var(--ease-out);
 }
@@ -6545,7 +6528,6 @@ div.group-head {
     animation: pop 0.25s var(--ease-out);
 }
 
-/* A session row's actions at the pointer, from a right-click (`web/sheets/session.js`): small rows in groups. */
 .session-menu {
     width: max-content;
     min-width: 200px;
@@ -10435,7 +10417,6 @@ textarea.notes {
 
 .font-menu {
     display: grid;
-    /* The label, then the control in the rest: the ligatures row is as tall as the font menus beside it. */
     grid-template-rows: auto 1fr;
     gap: 4px;
     font-size: 12px;
@@ -10446,7 +10427,6 @@ textarea.notes {
     justify-self: start;
 }
 
-/* The switch and its reset on one line, centered in the height of the font menus beside them. */
 .font-ligatures {
     display: flex;
     align-items: center;
@@ -16641,16 +16621,11 @@ textarea.notes {
 
 /* ─── Extension gallery ────────────────────────────────────── */
 
-/*
- * One calm place for extensions and themes: the tabs in the sheet's head, dense rows divided by hairlines with what each
- * one reaches, themes in their own colors, and an entry that says what it can reach in plain words.
- */
 .sheet.extension-hub {
     position: relative;
     max-width: 1180px;
 }
 
-/* Discover, Installed, Updates: a small segmented track beside the title. */
 .extension-hub .sheet-head h2 {
     flex: 0 0 auto;
 }
@@ -16700,7 +16675,6 @@ textarea.notes {
     font: 600 10.5px / 1 var(--mono);
 }
 
-/* Search, refresh, and the filters, held at the top of the list while it scrolls. */
 .ext-toolbar {
     position: sticky;
     top: 0;
@@ -16757,7 +16731,6 @@ textarea.notes {
     color: var(--muted);
 }
 
-/* Kinds, then what an extension does: one row that scrolls sideways when it must. */
 .gallery-tags.ext-filters {
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -16815,7 +16788,6 @@ textarea.notes {
     min-width: 0;
 }
 
-/* A section of the list: its title and count, then hairline rows or theme cards. */
 .ext-section {
     display: flex;
     flex-direction: column;
@@ -16848,7 +16820,6 @@ textarea.notes {
     flex-direction: column;
 }
 
-/* A row: three short lines, a hairline under it, and nothing drawn around it. */
 .ext-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -16945,7 +16916,6 @@ textarea.notes {
     font-size: 11.5px;
 }
 
-/* The lines under the name start where the name does. */
 .ext-row-open > :not(.ext-row-line) {
     padding-left: 24px;
 }
@@ -17071,7 +17041,6 @@ textarea.notes {
     margin-top: 0;
 }
 
-/* How one stands: a small square mark and a word. */
 .ext-state {
     display: inline-flex;
     align-items: center;
@@ -17154,7 +17123,6 @@ textarea.notes {
     margin: 12px 16px 0;
 }
 
-/* Built in: folded under one line, with how many are on. */
 .ext-builtins > summary {
     display: flex;
     align-items: center;
@@ -17220,7 +17188,6 @@ textarea.notes {
     text-decoration: none;
 }
 
-/* Themes: cards drawn in their own colors, as Appearance draws its themes. */
 .ext-themes {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -17434,7 +17401,6 @@ textarea.notes {
     font-size: 12px;
 }
 
-/* One entry: a quiet head, what it can reach in plain words, what it adds as code. */
 .gallery-entry-content {
     display: flex;
     flex-direction: column;
@@ -17532,7 +17498,6 @@ textarea.notes {
     text-transform: uppercase;
 }
 
-/* What it can reach: one plain sentence a line, and where each comes from. */
 .ext-reach {
     display: flex;
     flex-direction: column;
@@ -17600,7 +17565,6 @@ textarea.notes {
     line-height: 1.5;
 }
 
-/* What it adds: tools and commands as code. */
 .ext-codes {
     display: flex;
     flex-wrap: wrap;
@@ -17633,7 +17597,6 @@ textarea.notes {
     font: 12px / 1.5 var(--mono);
 }
 
-/* The one question before an extension runs: a dialog over the sheet. */
 .ext-dialog-scrim {
     position: absolute;
     inset: 0;
@@ -18603,8 +18566,6 @@ pre.gallery-code {
     }
 }
 
-/* Reply to a selected passage of Pi's answer: the button by the selection, the quote above the message box, and the
-   quote atop the sent message. */
 .quote-reply-button {
     position: fixed;
     z-index: 70;

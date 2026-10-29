@@ -214,7 +214,6 @@ export class Alerts {
                                 {
                                     title: `Pi asks you · ${title}`,
                                     body: snippet(
-                                        // Pi's questions (`ask`) say what they ask; other asks keep their title.
                                         !approval.form.fields.some((field) => field.choices)
                                             ? approval.form.title
                                             : `${approval.form.title}: ${approval.reason}`,

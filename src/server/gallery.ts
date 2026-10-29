@@ -217,7 +217,6 @@ export class Gallery {
     #queue: Promise<unknown> = Promise.resolve();
     /** Revoked versions the owner was warned about: `<name>@<commit>`. */
     readonly #warned = new Set<string>();
-    /** The reading of what entries reach that runs: one at a time, shared by whoever asks meanwhile. */
     #reaching: Promise<{ entries: Record<string, Reach & { pin: string }> }> | undefined;
 
     constructor(app: PocketApp) {
@@ -1243,13 +1242,6 @@ export class Gallery {
         });
     }
 
-    // ─── What entries can reach ──────────────────────────────────────────────────────
-
-    /**
-     * What each entry of the index read now can reach (`gallery/reach.ts`): scanned from its code for an extension, its
-     * palettes for a theme. An entry that cannot be read has an `error` and fails no other. Results are kept by entry,
-     * commit, and pinned files, so the code is downloaded once; three entries are read at a time.
-     */
     reach(): Promise<{ entries: Record<string, Reach & { pin: string }> }> {
         if (this.#reaching === undefined) {
             const run = this.#reachAll().finally(() => {
@@ -1299,7 +1291,6 @@ export class Gallery {
             }
         });
 
-        // Only what the index lists now is kept.
         if (changed || Object.keys(now).length !== Object.keys(kept).length) {
             await saveReach(this.#folder(), now).catch(() => {});
         }
@@ -1311,10 +1302,6 @@ export class Gallery {
         };
     }
 
-    /**
-     * An entry's files that `wanted` picks, as text: as installed here when it is installed at the same commit and each
-     * file is as pinned, else downloaded from the pinned commit with the checks every download has.
-     */
     async #reachFiles(
         entry: Pick<Entry, "files" | "source">,
         wanted: (file: string) => boolean,

@@ -230,7 +230,6 @@ test("a report and a follow carry the long answer's start, and say how to read t
     const session = await newSession(app);
     const message = longMessage();
 
-    // The follow of an idle session answers at once, in `now`.
     await say(app, session, message);
     await app.pip.read(id, Number(session));
     const { now } = await app.pip.follow(id, Number(session), undefined, "follow-long");
@@ -239,7 +238,6 @@ test("a report and a follow carry the long answer's start, and say how to read t
     assert.ok(inFence(now).length > 3000, "more than the old cut");
     assert.match(now, /\n\[… \d+ more characters: .*session_read, session \d+, answerFrom \d+\]$/);
 
-    // A report for a message PiP sent.
     await say(app, id, `send ${String(session)} ${message}`);
     await until(
         async () =>
@@ -825,14 +823,12 @@ test("schedules count against PiP's hourly actions, its own too, once each; refu
     await until(() => !app.isBusy(session), "the session at rest", 30_000);
 });
 
-/** A long answer: the session's Pi echoes `echo: ` and the message, so this many characters in all. */
 function longMessage(): string {
     return Array.from({ length: 5000 }, (_, index) => `w${String(index).padStart(4, "0")}`).join(
         " ",
     );
 }
 
-/** The text between the fence tags of a read or a report. */
 function inFence(text: string): string {
     const start = text.indexOf(SESSION_OPEN) + SESSION_OPEN.length + 1;
 
@@ -847,7 +843,6 @@ test("PiP reads a long answer in parts, each cut says what is left, and the part
 
     await say(app, session, message);
 
-    // The first read: the start of the answer, and a note outside the fence with where to go on.
     const first = await app.pip.read(id, Number(session));
     const note = first.match(
         /^\[… (\d+) more characters: .*session_read, session (\d+), answerFrom (\d+)\]$/m,
@@ -867,7 +862,6 @@ test("PiP reads a long answer in parts, each cut says what is left, and the part
     assert.equal(Number(note[1]), whole.length - from);
     assert.ok(whole.length > 2 * from, "needs more than two parts");
 
-    // The next parts: that answer alone, until nothing is left.
     for (let part = 0; part < 10; part += 1) {
         const next = await app.pip.read(id, Number(session), 40, from);
         const body = inFence(next).replace(/^Pi: /, "");

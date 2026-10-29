@@ -41,7 +41,6 @@ function line(value: unknown, what: string, max: number): string {
     return value.trim();
 }
 
-/** A field's answers to pick (`AskField.choices`): 2 to 4, each a label and maybe a line, with different labels. */
 function choicesOf(given: unknown): AskChoice[] {
     if (!Array.isArray(given) || given.length < 2 || given.length > 4) {
         throw new Error("host.ask: a field's choices are a list of 2 to 4");
@@ -141,7 +140,6 @@ export async function ask(
             ...(callId === undefined ? {} : { callId }),
             tool: "ask",
             subject: title,
-            // Where there are no words, the questions: what a tile, a row in Needs you, and a notification show.
             reason:
                 text ??
                 fields
@@ -165,11 +163,7 @@ export async function ask(
     });
 }
 
-/**
- * What a person typed on an ask's card, checked against its fields: each one there, as text of up to
- * `MAX_ASK_VALUE` characters, and nothing else. A field with choices takes one of their labels, or with `multiple`
- * one or more, one per line; with `other`, any text too. An error says what is wrong, never a value.
- */
+/** An error says what is wrong, never a value. */
 export function checkValues(fields: readonly AskField[], values: unknown): Record<string, string> {
     if (typeof values !== "object" || values === null || Array.isArray(values)) {
         if (fields.length === 0 && (values === undefined || values === null)) {

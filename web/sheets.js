@@ -282,7 +282,6 @@ function sheetBody(sheet) {
             break;
 
         case "rename": {
-            // A row's actions name their session (`id`); the menu and `/name` rename the open one.
             const renamed = sheet.id
                 ? store.state.sessions.find((each) => each.id === sheet.id)
                 : view.conversation;

@@ -1028,9 +1028,8 @@ test("a long log loses its oldest segments, and reads go on after them", { skip 
             notify: false,
         });
 
-        // The command's whole output is in the log. Its watch keeps the log short at each tick (and `split` names the
-        // first segment `aaaaaa`), so a wait for 8 segments to be on disk at once is a race with that trim: wait for
-        // the last line instead. (A read would do, but it moves the read position, which this test checks below.)
+        // Its watch trims the log at each tick, so waiting for 8 segments at once races: wait for the last line
+        // (a read would move the read position that this test checks).
         await until(
             () => {
                 const last = segments(id, item.id).at(-1);

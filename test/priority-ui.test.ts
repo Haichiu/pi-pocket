@@ -1,5 +1,3 @@
-// The session list's Priority tab in a headless browser: sessions by what they ask of you, the call that opens in its
-// row and is answered there, a failure dismissed, and the open session staying put while it is read.
 import {
     type App,
     cleanUp,
@@ -94,7 +92,6 @@ after(async () => {
     cleanUp();
 });
 
-/** A call waiting in `id`; the promise is the answer it gets. */
 function ask(id: ConversationId, subject: string, createdAt: number): Promise<ApprovalAnswer> {
     return app.approvals.request(
         {
@@ -131,7 +128,6 @@ const present = (selector: string, what: string) => until(() => exists(selector)
 
 const gone = (selector: string, what: string) => until(async () => !(await exists(selector)), what);
 
-/** The ids of a group's rows, in order. */
 const idsIn = (name: string) =>
     inPage<number[]>(
         `return JSON.stringify([...document.querySelectorAll(${JSON.stringify(`${group(name)} .session-row`)})].map((row) => Number(row.dataset.id)))`,
@@ -165,7 +161,6 @@ test("calls wait in Needs you, oldest first, and are answered in their rows", re
     const shortAnswer = ask(short, "npm publish --tag beta", 1_000);
     const longAnswer = ask(long, `echo ${"a very long command ".repeat(10)}`, 2_000);
 
-    // The Sessions button counts them, before Priority is chosen.
     await until(async () => (await text(".sidebar .rail-count.attn")) === "2", "the rail's count");
     await click('.sidebar .session-tabs [data-tab="priority"]');
     await present(group("needs"), "Needs you");
@@ -180,7 +175,6 @@ test("calls wait in Needs you, oldest first, and are answered in their rows", re
     );
     assert.ok(await exists(rowIn("quiet", quiet)));
 
-    // Review opens the call in its row: a short one can be allowed.
     await click(`${rowIn("needs", short)} [data-review]`);
     await present(`${rowIn("needs", short)} .need-ask`, "the call");
     assert.match(
@@ -191,7 +185,6 @@ test("calls wait in Needs you, oldest first, and are answered in their rows", re
     await click(`${rowIn("needs", short)} [data-part="session-allow"]`);
     assert.deepEqual(await shortAnswer, { allow: true, by: "Owner" });
 
-    // The next call opens by itself, with the focus on its Review; one too long to show whole is not allowed here.
     await present(`${rowIn("needs", long)} .need-ask`, "the next call");
     assert.equal(await exists(`${rowIn("needs", long)} [data-part="session-allow"]`), false);
     assert.ok(await exists(`${rowIn("needs", long)} [data-part="session-ask-open"]`));
@@ -205,7 +198,6 @@ test("calls wait in Needs you, oldest first, and are answered in their rows", re
     await click(`${rowIn("needs", long)} [data-part="session-deny"]`);
     assert.equal((await longAnswer).allow, false);
 
-    // Nothing needs you now.
     await present(".sidebar .priority-clear", "the empty line");
     assert.equal(await text(".sidebar .priority-clear"), "Nothing needs you");
     await gone(".sidebar .rail-count.attn", "the rail's count");
@@ -249,10 +241,8 @@ test(
                 (await inPage<string>(`return JSON.stringify(location.pathname)`)) === `/s/${mine}`,
             "the session open",
         );
-        // Opening it read it; its row stays where it was.
         await new Promise((resolve) => setTimeout(resolve, 400));
         assert.ok(await exists(rowIn("ready", mine)), "still in Ready to read while open");
-        // Another session opens: it moves.
         await page.evaluate(`
         const { navigate } = await import("/store.js");
 
@@ -339,7 +329,6 @@ test("an open session that gets a call and has it answered leaves Needs you", re
     await click('.sidebar .session-tabs [data-tab="priority"]');
     await app.commands.submit(id, owner(app), { text: "fail now", requestId: "priority-held" });
     await present(`${rowIn("needs", id)} [data-part="session-dismiss"]`, "the failure");
-    // Opened, it is read: it stays in Needs you while open.
     await page.evaluate(`
         const { navigate } = await import("/store.js");
 
@@ -348,7 +337,6 @@ test("an open session that gets a call and has it answered leaves Needs you", re
     await new Promise((resolve) => setTimeout(resolve, 400));
     assert.ok(await exists(rowIn("needs", id)), "still in Needs you while open");
 
-    // A call comes, and is answered: nothing needs you there any more, so the row leaves.
     const answer = ask(id, "npm run build", 4_000);
 
     await present(`${rowIn("needs", id)} [data-review]`, "its Review");
