@@ -1,6 +1,6 @@
 export const QUOTE_MAX = 1500;
 
-export function quoteLines(passage) {
+function quoteLines(passage) {
     const text = passage.trim().replace(/\r\n?/g, "\n");
     const cut = text.length > QUOTE_MAX ? `${text.slice(0, QUOTE_MAX).trimEnd()}…` : text;
 

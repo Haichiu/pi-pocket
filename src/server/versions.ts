@@ -49,7 +49,7 @@ export function atLeast(version: string, minimum: string): boolean {
 const RELEASE_VERSION =
     /^(\d{1,4})\.(\d{1,4})\.(\d{1,4})(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
-export function releaseParts(
+function releaseParts(
     version: string,
 ): { numbers: [number, number, number]; pre: string[] } | undefined {
     const match = RELEASE_VERSION.exec(version.replace(/\+.*$/, ""));
