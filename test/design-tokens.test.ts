@@ -967,3 +967,20 @@ test("a very long chain of references is a problem, not a stack overflow", () =>
         /more than 200 references/,
     );
 });
+
+test("a reference chain that doubles at each step stops past 10,000 characters", () => {
+    const font: Record<string, unknown> = { c0: { $value: "ab" } };
+
+    for (let i = 1; i <= 30; i++) {
+        font[`c${i}`] = { $value: `{f.c${i - 1}}{f.c${i - 1}}` };
+    }
+
+    const started = Date.now();
+    const system = build({ f: { $type: "fontFamily", ...font } });
+
+    assert.ok(Date.now() - started < 2000);
+    assert.ok(errors(system).some((message) => /expands past 10,000 characters/.test(message)));
+    assert.ok(
+        system.tokens.every((each) => (each.modes[system.modes[0]!]?.css.length ?? 0) < 20_000),
+    );
+});
