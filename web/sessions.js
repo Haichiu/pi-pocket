@@ -346,7 +346,8 @@ const NEED_RANK = { ask: 0, failed: 1, agents: 2 };
 
 /**
  * Priority's groups: Needs you, Ready to read, Working, and Quiet, each only while it holds a session. `held` is the
- * open session and the group it was in before it was opened: reading it there does not move it until another opens.
+ * open session, the group it was in before it was opened, and whether it waited on a call then (`asked`): reading it
+ * there does not move it until another opens.
  */
 function priorityGroups(shown, ctx, held) {
     const slots = { needs: [], ready: [], working: [], quiet: [] };
@@ -354,10 +355,14 @@ function priorityGroups(shown, ctx, held) {
     for (const session of shown) {
         let slot = slotOf(session, ctx);
 
+        // Reading the open session moves it nowhere until another opens. A new need still comes first, and a call
+        // answered goes where it goes now.
         if (
             session.id === held.id &&
-            slot === "quiet" &&
-            (held.slot === "ready" || held.slot === "needs")
+            held.slot !== null &&
+            slot !== held.slot &&
+            slot !== "needs" &&
+            !(held.slot === "needs" && held.asked)
         ) {
             slot = held.slot;
         }
@@ -412,6 +417,9 @@ function priorityGroups(shown, ctx, held) {
 /** Groups that start folded: the person's first unfolding is kept as `!key` in the same stored set as the folds. */
 const FOLDED_AT_FIRST = new Set(["priority:quiet"]);
 
+/** How long the focus waits for the next call's Review to draw after an answer, before the list takes it. */
+const FOCUS_WAIT_MS = 1000;
+
 /** The most rows Needs you shows before "Show N more": a flood of calls would push everything else away. */
 const NEEDS_SHOWN = 6;
 
@@ -431,6 +439,8 @@ async function dismissFailures(list) {
     const agents = canSteer() ? list.flatMap((session) => session.failedAgents ?? []) : [];
 
     markSeen(...ids);
+
+    const set = seenSnapshot(ids);
 
     for (const id of marked) {
         setUnread(id, false);
@@ -460,9 +470,9 @@ async function dismissFailures(list) {
     }
 
     notify("info", `Dismissed ${what}. ${undoWord()} to undo.`, () => {
-        restoreSeen(seen);
+        const back = restoreSeen(seen, set);
 
-        for (const id of marked) {
+        for (const id of marked.filter((each) => back.has(each))) {
             setUnread(id, true);
         }
     });
@@ -478,10 +488,12 @@ function markRead(list, { say = true } = {}) {
     const seen = seenSnapshot(ids);
     const marked = ids.filter((id) => isUnread(id));
     const chats = list
-        .filter((session) => session.chatAt !== undefined)
-        .map((session) => [session.id, store.state.chatReads[session.id] ?? 0]);
+        .filter((session) => session.chatAt !== undefined && sessionUnread(session))
+        .map((session) => [session.id, store.state.chatReads[session.id] ?? 0, session.chatAt]);
 
     markSeen(...ids);
+
+    const set = seenSnapshot(ids);
 
     for (const id of marked) {
         setUnread(id, false);
@@ -497,15 +509,18 @@ function markRead(list, { say = true } = {}) {
         return;
     }
 
+    // Undo puts back only what is still as this made it: a session read since, here or in another tab, stays read.
     notify("info", `Marked ${list.length} read. ${undoWord()} to undo.`, () => {
-        restoreSeen(seen);
+        const back = restoreSeen(seen, set);
 
-        for (const id of marked) {
+        for (const id of marked.filter((each) => back.has(each) && !isUnread(each))) {
             setUnread(id, true);
         }
 
-        for (const [id, at] of chats) {
-            setChatReadAt(id, at);
+        for (const [id, before, read] of chats) {
+            if ((store.state.chatReads[id] ?? 0) === read) {
+                setChatReadAt(id, before);
+            }
         }
     });
 }
@@ -1047,9 +1062,22 @@ function NeedAsk({ session, ask, steers, ownCall, answering, onAnswer }) {
                     class="need-button"
                     data-part="session-deny"
                     disabled=${answering}
-                    onClick=${() => onAnswer(session.id, false)}
+                    onClick=${() => onAnswer(session.id, ask.id, false)}
                 >
                     Deny
+                </button>`
+            }
+            ${
+                steers &&
+                ask.form &&
+                html`<button
+                    class="need-button"
+                    data-part="session-decline"
+                    title="Decline it from here; answer it where it waits"
+                    disabled=${answering}
+                    onClick=${() => onAnswer(session.id, ask.id, false)}
+                >
+                    Decline
                 </button>`
             }
             ${
@@ -1059,7 +1087,7 @@ function NeedAsk({ session, ask, steers, ownCall, answering, onAnswer }) {
                           class="need-button primary"
                           data-part="session-allow"
                           disabled=${answering}
-                          onClick=${() => onAnswer(session.id, true)}
+                          onClick=${() => onAnswer(session.id, ask.id, true)}
                       >
                           Allow
                       </button>`
@@ -1171,7 +1199,7 @@ function AllSessions({ compact = false }) {
     const [focusReview, setFocusReview] = useState(null);
     const [allNeeds, setAllNeeds] = useState(false);
     // The open session and the group it was in before it opened: it stays there while it is open, though opening it reads it.
-    const opened = useRef({ id: null, slot: null });
+    const opened = useRef({ id: null, slot: null, asked: false });
     const slotsShown = useRef(new Map());
     // The order of the calls in Needs you, for the one that opens next.
     const askOrder = useRef([]);
@@ -1300,7 +1328,11 @@ function AllSessions({ compact = false }) {
 
             // Opened just now: the group it was in as last drawn.
             if (opened.current.id !== openId) {
-                opened.current = { id: openId, slot: slotsShown.current.get(openId) ?? null };
+                opened.current = {
+                    id: openId,
+                    slot: slotsShown.current.get(openId) ?? null,
+                    asked: shown.some((session) => session.id === openId && session.waiting),
+                };
             }
 
             const { groups, slots } = priorityGroups(
@@ -1761,10 +1793,20 @@ function AllSessions({ compact = false }) {
 
     // Allow or deny a call from its row. The next call opens by itself with the focus on its Review (the same
     // session's, when more wait there); the answered row glows in the group it goes to. An answer cannot be undone.
-    const answer = async (id, allow) => {
+    const answer = async (id, askId, allow) => {
         const ask = store.state.sessions.find((each) => each.id === id)?.approval;
 
-        if (!ask || answered.has(ask.id)) {
+        // The row answers the call it showed, never another: one answered elsewhere meanwhile is not answered for it.
+        if (ask?.id !== askId) {
+            notify(
+                "info",
+                "That call was answered elsewhere. Look at the next one before you answer it.",
+            );
+
+            return;
+        }
+
+        if (answered.has(ask.id)) {
             return;
         }
 
@@ -1805,8 +1847,21 @@ function AllSessions({ compact = false }) {
                 ? box?.querySelector("button.session")
                 : box?.querySelector(`[data-review="${focusReview}"]`);
 
-        target?.focus();
-        setFocusReview(null);
+        if (target) {
+            target.focus();
+            setFocusReview(null);
+
+            return;
+        }
+
+        // Not drawn yet (the list has not heard of the answer): each draw looks again, and after a while the list takes
+        // the focus, so it never stays on a button that went away.
+        const timer = setTimeout(() => {
+            box?.querySelector("button.session")?.focus();
+            setFocusReview(null);
+        }, FOCUS_WAIT_MS);
+
+        return () => clearTimeout(timer);
     }, [focusReview, groups]);
 
     // Answers the list has heard of are forgotten, and so is a call open in a row that no longer asks.
@@ -1883,7 +1938,9 @@ function AllSessions({ compact = false }) {
     const [onMenu] = useState(() => (event, id) => handlers.current.menu(event, id));
     const [onFold] = useState(() => (id) => handlers.current.toggleFold(id));
     const [onReview] = useState(() => (id) => handlers.current.review(id));
-    const [onAnswer] = useState(() => (id, allow) => handlers.current.answer(id, allow));
+    const [onAnswer] = useState(
+        () => (id, askId, allow) => handlers.current.answer(id, askId, allow),
+    );
     const [onDismiss] = useState(() => (id) => handlers.current.dismissOne(id));
     const [onRead] = useState(() => (id) => handlers.current.readOne(id));
     // What every row reads of the store, read once here: rows read none of it themselves (`SessionRow`). Marks, seen
@@ -1939,7 +1996,9 @@ function AllSessions({ compact = false }) {
                 session.approval !== undefined &&
                 server?.approvalRule === "others" &&
                 me?.role !== "owner" &&
-                session.approval.requestedBy === me?.id
+                // Nobody known to have asked is not someone else: the server leaves that one to the owner.
+                (session.approval.requestedBy === undefined ||
+                    session.approval.requestedBy === me?.id)
             }
             onReview=${onReview}
             onAnswer=${onAnswer}

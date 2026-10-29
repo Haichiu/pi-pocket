@@ -84,11 +84,24 @@ export function seenSnapshot(ids) {
     return Object.fromEntries(ids.map((id) => [id, store.state.peekSeen?.[id] ?? 0]));
 }
 
-/** Put looks back as `seenSnapshot` took them: what undoes marking sessions read from the list. */
-export function restoreSeen(snapshot) {
+/**
+ * Put looks back as `seenSnapshot` took them: what undoes marking sessions read from the list. With `expected` (a
+ * snapshot taken just after the marking), only looks still as the marking left them go back: a session looked at since,
+ * in this tab or another, stays seen. Returns the ids put back.
+ */
+export function restoreSeen(snapshot, expected) {
     const peekSeen = { ...store.state.peekSeen };
+    const back = new Set();
 
     for (const [id, at] of Object.entries(snapshot)) {
+        const now = Number(localStorage.getItem(SEEN_PREFIX + id)) || 0;
+
+        if (expected !== undefined && now !== (expected[id] ?? 0)) {
+            continue;
+        }
+
+        back.add(Number(id));
+
         if (at > 0) {
             localStorage.setItem(SEEN_PREFIX + id, String(at));
             peekSeen[id] = at;
@@ -99,6 +112,8 @@ export function restoreSeen(snapshot) {
     }
 
     store.set({ peekSeen });
+
+    return back;
 }
 
 /**

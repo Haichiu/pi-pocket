@@ -262,3 +262,73 @@ test(
         assert.equal(await exists(rowIn("ready", mine)), false);
     },
 );
+
+test("a row answers only the call it shows, not one that took its place", real, async () => {
+    const id = await newSession(app);
+    const answer = ask(id, "npm publish --tag next", 3_000);
+    const allow = `${rowIn("needs", id)} [data-part="session-allow"]`;
+
+    await click('.sidebar .session-tabs [data-tab="priority"]');
+    await present(`${rowIn("needs", id)} [data-review]`, "its Review");
+    await click(`${rowIn("needs", id)} [data-review]`);
+    await present(allow, "its Allow");
+    // The list hears of another call in its place before the row draws again: the tap answers neither.
+    await page.evaluate(`
+        const { store } = await import("/store.js");
+        const button = document.querySelector(${JSON.stringify(allow)});
+
+        store.set((state) => ({
+            sessions: state.sessions.map((session) =>
+                session.id === ${Number(id)}
+                    ? { ...session, approval: { ...session.approval, id: "priority-ui-in-its-place" } }
+                    : session,
+            ),
+        }));
+        button.click();
+    `);
+    await until(
+        () =>
+            inPage<boolean>(`
+                const { store } = await import("/store.js");
+
+                return JSON.stringify(store.state.notices.some((each) => /answered elsewhere/.test(each.message)));
+            `),
+        "the notice that it was not answered",
+    );
+
+    const waiting = app.approvals.all().find((each) => each.conversationId === id);
+
+    assert.ok(waiting, "the call it showed still waits");
+    app.approvals.answer(waiting.id, { allow: false, by: "test" });
+    assert.equal((await answer).allow, false);
+});
+
+test("Undo after Mark all read leaves a session read since as it is", real, async () => {
+    const first = await newSession(app);
+    const second = await newSession(app);
+
+    await click('.sidebar .session-tabs [data-tab="priority"]');
+    await page.evaluate(`
+        const { setUnread } = await import("/store.js");
+
+        setUnread(${Number(first)}, true);
+        setUnread(${Number(second)}, true);
+    `);
+    await present(rowIn("ready", first), "the first to read");
+    await present(rowIn("ready", second), "the second to read");
+    await click(`${group("ready")} [data-part="session-group-action"]`);
+    await gone(rowIn("ready", first), "the first, read");
+    await gone(rowIn("ready", second), "the second, read");
+    // The second is looked at again later (in another tab, say): Undo must not make it unread.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await page.evaluate(`
+        const { markSeen } = await import("/seen.js");
+        const { store } = await import("/store.js");
+
+        markSeen(${Number(second)});
+        store.state.notices.findLast((each) => /^Marked \\d+ read/.test(each.message)).action();
+    `);
+    await present(rowIn("ready", first), "the first, to read again");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(await exists(rowIn("ready", second)), false, "the second stays read");
+});
