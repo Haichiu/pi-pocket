@@ -4,22 +4,27 @@ import { createHash } from "node:crypto";
 import type { PocketHost } from "../host.ts";
 import type { DesignBundle } from "./bundle.ts";
 import { contrastFindings } from "./lint-analyze-contrast.ts";
+import {
+    type AnalyzeContext,
+    focusFindings,
+    fontFaceFindings,
+    headingFindings,
+    imageFindings,
+    labelFindings,
+    landmarkFindings,
+    motionFindings,
+    nameFindings,
+    overflowFindings,
+    pidFindings,
+    targetFindings,
+    viewportFindings,
+    zoomFindings,
+} from "./lint-analyze-page.ts";
 import { colorFindings, fontFindings, sizeFindings } from "./lint-analyze-system.ts";
+import { clip, num, plural, rgbaOf, type WeightedFinding } from "./lint-analyze-util.ts";
 import { tokenSet, type TokenSet } from "./lint-color.ts";
 import { colorRoleOf } from "./lint-suggest.ts";
 import { PAGE_SCRIPT, type PageInput, type RawPage } from "./lint-page.ts";
-import {
-    clip,
-    elementOf,
-    lengthsOf,
-    more,
-    num,
-    plural,
-    rgbaOf,
-    tokenRef,
-    weighted,
-    type WeightedFinding,
-} from "./lint-analyze-util.ts";
 import {
     type DesignAction,
     type DesignPage,
@@ -66,8 +71,7 @@ const RULE_ORDER: CheckRule[] = [
     "missing-pid",
 ];
 
-export const MOTION_MS = 500;
-
+export { MOTION_MS } from "./lint-analyze-page.ts";
 export { colorRoleOf };
 
 interface ModeView {
@@ -125,230 +129,37 @@ function resolveTokens(set: TokenSet, raw: RawPage): void {
 export function analyze(
     raw: RawPage,
     tokens: TokenSet | undefined,
-    context: { deck?: boolean; phone?: boolean } = {},
+    context: AnalyzeContext = {},
 ): CheckFinding[] {
-    const out: WeightedFinding[] = [];
-    const add = (finding: CheckFinding, weight = 1) => out.push(weighted(finding, weight));
-
     if (tokens !== undefined) {
         resolveTokens(tokens, raw);
     }
 
-    out.push(
+    return orderFindings([
         ...colorFindings(raw, tokens),
         ...fontFindings(raw, tokens),
         ...sizeFindings(raw, tokens),
         ...contrastFindings(raw, tokens),
-    );
+        ...targetFindings(raw),
+        ...overflowFindings(raw, context),
+        ...imageFindings(raw),
+        ...headingFindings(raw),
+        ...fontFaceFindings(raw),
+        ...viewportFindings(raw, context),
+        ...focusFindings(raw, tokens),
+        ...landmarkFindings(raw, context),
+        ...labelFindings(raw),
+        ...nameFindings(raw),
+        ...zoomFindings(raw, tokens, context),
+        ...motionFindings(raw),
+        ...pidFindings(raw),
+    ]);
+}
 
-    for (const group of raw.targets ?? []) {
-        const width = num(group.width);
-        const height = num(group.height);
-        const level = group.level === "error" ? "error" : "warning";
-
-        add(
-            {
-                rule: "tap-target",
-                level,
-                ...elementOf(group.el),
-                value: `${width}×${height}px`,
-                message:
-                    level === "error"
-                        ? `A <${clip(group.tag, 20)}> target is ${width}×${height} px, under the 24×24 px minimum of WCAG 2.2${more(num(group.count))}. Set \`min-width: 44px; min-height: 44px\` (or padding) on it.`
-                        : `A <${clip(group.tag, 20)}> target is ${width}×${height} px; 44×44 px is easier to hit on a phone${more(num(group.count))}. Set \`min-width: 44px; min-height: 44px\` (or padding) on it.`,
-            },
-            num(group.count),
-        );
-    }
-
-    if (raw.overflow !== undefined && context.deck !== true) {
-        const { scrollWidth, clientWidth, clipped, offenders } = raw.overflow;
-
-        add({
-            rule: "overflow",
-            level: clipped ? "warning" : "error",
-            ...elementOf(raw.overflow.el),
-            value: `${num(scrollWidth)}px in ${num(clientWidth)}px`,
-            message: clipped
-                ? `Content reaches ${num(scrollWidth)} px in a ${num(clientWidth)} px viewport and is cut off (${plural(num(offenders), "element")} end past the edge).`
-                : `The page scrolls sideways: ${num(scrollWidth)} px wide in a ${num(clientWidth)} px viewport${raw.overflow.el === undefined ? "" : `, with the widest element ending past the edge (${plural(num(offenders), "element")} do)`}. Let it wrap, shrink, or scroll inside its own box.`,
-        });
-    }
-
-    for (const group of raw.images ?? []) {
-        add(
-            {
-                rule: "image-alt",
-                level: "error",
-                ...elementOf(group.el),
-                message: `An image has ${clip(group.why, 60)}${more(num(group.count))}. Add \`alt="what it shows"\`, or \`alt=""\` if it is decoration.`,
-            },
-            num(group.count),
-        );
-    }
-
-    for (const group of raw.headings ?? []) {
-        add({
-            rule: "heading-order",
-            level: "warning",
-            ...elementOf(group.el),
-            value: `h${num(group.level)} after h${num(group.previous)}`,
-            message: `A heading jumps from level ${num(group.previous)} to ${num(group.level)}. Change the tag to <h${num(group.previous) + 1}> and keep its look with CSS.`,
-        });
-    }
-
-    for (const group of raw.fontFaces ?? []) {
-        const family = clip(group.family, 120);
-
-        add(
-            {
-                rule: "font-fallback",
-                level: group.failed ? "error" : "warning",
-                ...elementOf(group.el),
-                value: family,
-                message: `Font "${family}" is used but ${clip(group.why, 100)}, so the text falls back to another font${more(num(group.count))}. Load the font (an @font-face file in the bundle, or a public HTTPS stylesheet).`,
-            },
-            num(group.count),
-        );
-    }
-
-    if (raw.hasViewportMeta === false && context.deck !== true) {
-        add({
-            rule: "missing-viewport",
-            level: "error",
-            selector: "",
-            message:
-                'The page has no viewport meta tag, so a phone shows it zoomed out. Add <meta name="viewport" content="width=device-width, initial-scale=1">.',
-        });
-    }
-
-    for (const group of raw.focus ?? []) {
-        const tag = clip(group.tag, 20);
-
-        add(
-            {
-                rule: "focus-visible",
-                level: "warning",
-                ...elementOf(group.el),
-                message: `A <${tag}> shows no focus style: ${group.outlineNone ? "its outline is removed and nothing else changes" : "nothing changes"} when a keyboard focuses it${more(num(group.count))}. Add a :focus-visible rule, such as outline: 2px solid ${tokens?.colors.find((token) => /focus|ring/i.test(token.name)) === undefined ? "an accent color" : tokenRef(tokens.colors.find((token) => /focus|ring/i.test(token.name))!)}.`,
-            },
-            num(group.count),
-        );
-    }
-
-    const semantics = raw.semantics;
-
-    if (semantics !== undefined && semantics.lang === false) {
-        add({
-            rule: "missing-lang",
-            level: "error",
-            ...elementOf(semantics.html),
-            message:
-                'The page has no lang attribute on <html>, so a screen reader has to guess its language (WCAG 3.1.1). Set `<html lang="en">`, with the page\'s own language.',
-        });
-    }
-
-    if (semantics !== undefined && semantics.main === false && context.deck !== true) {
-        add({
-            rule: "missing-main",
-            level: "warning",
-            ...elementOf(semantics.body),
-            message:
-                "The page has no main landmark, so a screen reader cannot jump to its content. Wrap the page's content in `<main>`.",
-        });
-    }
-
-    for (const group of raw.labels ?? []) {
-        add(
-            {
-                rule: "form-label",
-                level: "error",
-                ...elementOf(group.el),
-                value: clip(group.kind, 40),
-                message: `A <${clip(group.kind, 40)}> has no label (no label, aria-label, aria-labelledby, or title; a placeholder is not a label: it goes away when a person types, and not every screen reader reads it)${more(num(group.count))}. Add a \`<label for="id">\` (or wrap the field in a \`<label>\`), or add \`aria-label="what it is"\`.`,
-            },
-            num(group.count),
-        );
-    }
-
-    for (const group of raw.names ?? []) {
-        add(
-            {
-                rule: "accessible-name",
-                level: "error",
-                ...elementOf(group.el),
-                value: clip(group.kind, 40),
-                message: `A <${clip(group.kind, 40)}> has no accessible name (no text, aria-label, aria-labelledby, title, image alt, or SVG title)${more(num(group.count))}. Add \`aria-label="what it does"\`.`,
-            },
-            num(group.count),
-        );
-    }
-
-    if (context.phone === true) {
-        const sizes =
-            tokens === undefined
-                ? []
-                : lengthsOf(tokens, "font-size").filter((token) => token.px >= 16);
-        const step = sizes.sort((a, b) => a.px - b.px)[0];
-
-        for (const group of raw.zoom ?? []) {
-            add(
-                {
-                    rule: "input-zoom",
-                    level: "warning",
-                    ...elementOf(group.el),
-                    value: `${num(group.px)}px`,
-                    ...(step === undefined ? {} : { suggestion: tokenRef(step) }),
-                    message: `A <${clip(group.kind, 40)}> has font-size ${num(group.px)}px: iOS Safari zooms the page in when a field under 16px gets the focus${more(num(group.count))}. ${
-                        step === undefined
-                            ? "Set `font-size: 16px`."
-                            : `Set \`font-size: ${tokenRef(step)}\` (${step.px}px).`
-                    }`,
-                },
-                num(group.count),
-            );
-        }
-    }
-
-    const motion = raw.motion;
-
-    if (
-        motion !== undefined &&
-        num(motion.count) > 0 &&
-        motion.override !== true &&
-        motion.unreadable !== true
-    ) {
-        add({
-            rule: "reduced-motion",
-            level: "warning",
-            ...elementOf(motion.el),
-            value: `${num(motion.longest)}ms`,
-            message:
-                `${plural(num(motion.count), "element")} use a transition or an animation longer than ${MOTION_MS} ms, or one that repeats forever (the longest is ${num(motion.longest)} ms), and the page has no \`@media (prefers-reduced-motion: reduce)\` rule. ` +
-                "Add \`@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }\`.",
-        });
-    }
-
-    const pids = (raw.pids ?? []).filter((group) => num(group.count) > 0);
-
-    if (pids.length > 0) {
-        const total = pids.reduce((sum, group) => sum + num(group.count), 0);
-        const listed = pids
-            .slice(0, 5)
-            .map((group) => `${num(group.count)} <${clip(group.tag, 20)}>`);
-        const tags = pids.length > 5 ? `${listed.join(", ")}, …` : listed.join(", ");
-
-        add({
-            rule: "missing-pid",
-            level: "warning",
-            ...elementOf(pids[0]!.el),
-            message: `${plural(total, "element")} with no data-pid on it or a parent (${tags}). Add data-pid to the sections and controls people may comment on.`,
-        });
-    }
-
+function orderFindings(found: WeightedFinding[]): CheckFinding[] {
     const seen = new Map<string, number>();
 
-    return out
+    return found
         .sort(
             (a, b) =>
                 (a.level === "error" ? 0 : 1) - (b.level === "error" ? 0 : 1) ||
