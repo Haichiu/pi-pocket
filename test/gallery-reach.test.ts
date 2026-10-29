@@ -184,11 +184,11 @@ test("the scan names the programs the code starts", () => {
 
 test("the scan names the files the code writes and the places it reads from", () => {
     assert.deepEqual(scanCode('await writeFile(join(dir, "a.json"), text);').files, [
-        "its data folder",
+        "files it writes",
     ]);
-    assert.deepEqual(scanCode("fs.rmSync(dir, { recursive: true });").files, ["its data folder"]);
+    assert.deepEqual(scanCode("fs.rmSync(dir, { recursive: true });").files, ["files it writes"]);
     assert.deepEqual(scanCode("await fsp.appendFile(p, line); await mkdir(d);").files, [
-        "its data folder",
+        "files it writes",
     ]);
     assert.deepEqual(
         scanCode(`
@@ -196,7 +196,7 @@ test("the scan names the files the code writes and the places it reads from", ()
             const b = "~/.pi/agent/skills/";
             await writeFile(x, y);
         `).files,
-        ["its data folder", "~/.pi/agent/settings.json", "~/.pi/agent/skills"],
+        ["files it writes", "~/.pi/agent/settings.json", "~/.pi/agent/skills"],
     );
     assert.deepEqual(scanCode('const home = homedir(); join(home, ".bashrc");').files, [
         "your home folder",
@@ -243,7 +243,7 @@ test("the scan of several files is one scan of their code", () => {
     ]);
 
     assert.deepEqual(scanned.network, ["one.dev", "two.dev"]);
-    assert.deepEqual(scanned.files, ["its data folder"]);
+    assert.deepEqual(scanned.files, ["files it writes"]);
 });
 
 // ─── Themes ──────────────────────────────────────────────────────────────────────

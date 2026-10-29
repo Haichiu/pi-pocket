@@ -30,7 +30,7 @@ export type Reach =
     | { kind: "extension" | "theme"; commit: string; error: string };
 
 /** Raise it when the scan changes, so results kept from an older scan are made again. */
-export const SCAN_VERSION = 2;
+export const SCAN_VERSION = 3;
 
 /** The files the scan reads: code that runs. Other files are not downloaded. */
 export const SCAN_FILE = /\.(?:[cm]?[jt]s)$/i;
@@ -39,7 +39,7 @@ export const PALETTE_FILES = ["colors.toml", "colors-light.toml"];
 
 const DYNAMIC_ADDRESS = "addresses it builds at run time";
 const DYNAMIC_PROGRAM = "programs it names at run time";
-const DATA_FOLDER = "its data folder";
+const WRITTEN_FILES = "files it writes";
 const HOME_FOLDER = "your home folder";
 
 // ─── Comments ──────────────────────────────────────────────────────────────────────
@@ -264,7 +264,7 @@ function filesOf(code: string): string[] {
     const paths = new Set<string>();
 
     if (WRITES.test(code)) {
-        files.push(DATA_FOLDER);
+        files.push(WRITTEN_FILES);
     }
 
     for (const match of code.matchAll(AGENT_PATH)) {

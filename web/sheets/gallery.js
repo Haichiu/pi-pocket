@@ -285,7 +285,7 @@ function reachRows(declares, found) {
                     `Uses ${sentence(items.map((item) => item.replace(/^(.+) key from Pi$/, "your $1 key, from Pi")))}`,
             ],
             ["programs", "terminal", (items) => `Runs ${sentence(items)}`],
-            ["files", "folder", (items) => `Uses files in ${sentence(items)}`],
+            ["files", "folder", (items) => `Uses ${sentence(items)}`],
         ]) {
             if (scanned[key]?.length > 0) {
                 rows.push({ key, glyph, text: words(scanned[key]), from: "In its code" });
