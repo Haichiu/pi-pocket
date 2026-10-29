@@ -897,6 +897,16 @@ test("a dark color scheme compares with the dark mode of the system", browser, a
     await assert.rejects(check(hard, { mode: "sepia" }), /no mode "sepia"/);
 });
 
+test("a page that sets its own data-theme is checked against that mode", browser, async () => {
+    // A dark-default system: the light scheme alone would pick the light mode, but the page keeps its dark theme.
+    const night = { ...testSystem(), modes: ["dark", "light"] };
+    const dark = page("", `<p data-pid="text" style="margin:0;color:#e6e8f0">Dark</p>`);
+    const report = await check(dark.replace("<html", '<html data-theme="dark"'), {}, night);
+
+    assert.equal(report.mode, "dark");
+    assert.equal(onPid(report, "off-system-color", "text")!.level, "warning");
+});
+
 test(
     "tweaks, another page of the bundle, and actions apply before the checks",
     browser,
