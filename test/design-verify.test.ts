@@ -731,6 +731,20 @@ test("design_preview and design_export take a mode of the system", browser, asyn
         await run("design_preview", { id: "modes", viewports: ["mobile"], mode: "high-contrast" }),
     );
 
+    // A dark default system and a page that keeps its own data-theme="dark": the preview checks the mode it shows.
+    const night = { ...flagship, modes: ["dark", "light", "high-contrast"] };
+
+    await publish({
+        id: "own",
+        title: "Own",
+        content: `<!doctype html><html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="ds/tokens.css"></head><body><p data-pid="t" style="margin:0;color:var(--color-text-primary);background:var(--color-bg-base)">Own</p></body></html>`,
+        assets: [{ name: "ds/tokens.css", content: flagship.compiled.css }],
+    });
+    const own = designTools(host, { loadSystem: () => night }).find(
+        (t) => t.name === "design_preview",
+    )!;
+
+    assert.match(textOf(await call(own, { id: "own", viewports: ["mobile"] })), /", mode dark/);
     assert.match(plain, /light; system "Pi Pocket", mode light/);
     assert.match(plain, /contrast \[data-pid="quiet"\]/);
     assert.match(high, /dark; system "Pi Pocket", mode high-contrast/, "the mode's own scheme");

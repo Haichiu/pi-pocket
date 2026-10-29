@@ -1017,6 +1017,27 @@ export function mergeNotJudged(
 }
 
 /**
+ * The mode to check the loaded page against: the one asked for, else the `data-theme` the page's root really has when
+ * that is a mode of the system, else `picked`.
+ */
+export async function renderedMode(
+    page: DesignPage,
+    system: DesignSystem | undefined,
+    asked: string | undefined,
+    picked: string | undefined,
+): Promise<string | undefined> {
+    if (asked !== undefined) {
+        return picked;
+    }
+
+    const theme = await page.evaluateIsolated(
+        "document.documentElement.getAttribute('data-theme')",
+    );
+
+    return typeof theme === "string" && system?.modes.includes(theme) ? theme : picked;
+}
+
+/**
  * Check the page that is loaded in `page`, in the state it is in now (a color scheme, tweaks, a slide, actions already
  * applied). `mode` names the system mode to compare with.
  */
@@ -1113,13 +1134,7 @@ export async function checkDesign(
             tweaks: options.tweaks,
         });
         await page.act(options.actions ?? []);
-        const theme = await page.evaluateIsolated(
-            "document.documentElement.getAttribute('data-theme')",
-        );
-        const mode =
-            options.mode === undefined && typeof theme === "string" && system?.modes.includes(theme)
-                ? theme
-                : picked?.mode;
+        const mode = await renderedMode(page, system, options.mode, picked?.mode);
         const view = { viewport, colorScheme, mode };
 
         if (!(await page.isDeck())) {
