@@ -1143,7 +1143,7 @@ export async function checkDesign(
         return acceptFindings(
             reportOf(
                 findings,
-                { viewport, colorScheme, mode: picked?.mode },
+                { viewport, colorScheme, mode },
                 reports.reduce((total, report) => total + report.summary.elements, 0),
                 system === undefined,
                 mergeNotJudged(reports),
