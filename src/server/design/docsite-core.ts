@@ -5,6 +5,7 @@ import {
     type TokenType,
 } from "./system-types.ts";
 import { parseColor, toHex, type Rgba } from "./docsite-color.ts";
+import { dimensionParts } from "./lint-color.ts";
 import { escapeHtml as esc, plural, slugify } from "./docsite-markdown.ts";
 import { tailwindNames } from "./tokens-compile.ts";
 
@@ -88,15 +89,9 @@ export function dimText(value: unknown): string | undefined {
         return value;
     }
 
-    if (typeof value === "number") {
-        return `${value}px`;
-    }
+    const parts = dimensionParts(value);
 
-    if (isObject(value) && typeof value.value === "number" && typeof value.unit === "string") {
-        return `${value.value}${value.unit}`;
-    }
-
-    return undefined;
+    return parts === undefined ? undefined : `${parts.amount}${parts.unit}`;
 }
 
 export function pxOf(value: unknown): number | undefined {

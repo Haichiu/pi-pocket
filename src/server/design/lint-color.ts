@@ -58,24 +58,32 @@ export function colorCss(value: unknown): string | undefined {
     return typeof hex === "string" ? hex : undefined;
 }
 
-export function dimensionCss(value: unknown): string | undefined {
-    if (typeof value === "number" && Number.isFinite(value)) {
-        return `${value}px`;
+export function dimensionParts(value: unknown): { amount: number; unit: string } | undefined {
+    if (typeof value === "number") {
+        return { amount: value, unit: "px" };
     }
 
-    if (typeof value === "string") {
-        return /^[-+0-9.a-z%(), *\/]+$/i.test(value) && value.length <= 120 ? value : undefined;
-    }
-
-    if (typeof value === "object" && value !== null) {
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
         const { value: amount, unit } = value as { value?: unknown; unit?: unknown };
 
-        if (typeof amount === "number" && Number.isFinite(amount) && typeof unit === "string") {
-            return /^[a-z%]{1,5}$/i.test(unit) ? `${amount}${unit}` : undefined;
+        if (typeof amount === "number" && typeof unit === "string") {
+            return { amount, unit };
         }
     }
 
     return undefined;
+}
+
+export function dimensionCss(value: unknown): string | undefined {
+    if (typeof value === "string") {
+        return /^[-+0-9.a-z%(), *\/]+$/i.test(value) && value.length <= 120 ? value : undefined;
+    }
+
+    const parts = dimensionParts(value);
+
+    return parts !== undefined && Number.isFinite(parts.amount) && /^[a-z%]{1,5}$/i.test(parts.unit)
+        ? `${parts.amount}${parts.unit}`
+        : undefined;
 }
 
 export function familyList(value: string): string[] {
