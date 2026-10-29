@@ -4,13 +4,12 @@ Pi Pocket ships a stable release every Friday. Between two Fridays, the next rel
 
 ## The week
 
-| When                    | What happens                                                                                            |
-| ----------------------- | ------------------------------------------------------------------------------------------------------- |
-| Friday, after a release | The branch of the next release opens: `release/X.Y.0`, from `main`.                                     |
-| Saturday to Wednesday   | Ready pull requests merge into the release branch. A beta comes out when something worth trying lands.  |
-| Wednesday, end of day   | Code freeze: from now on, only fixes go into the release branch. The last beta comes out.               |
-| Thursday                | The review and live-test rounds run on the release branch, and their fixes go in.                       |
-| Friday                  | The release pull request merges into `main`. The tag `vX.Y.0` and the GitHub release publish it to npm. |
+| When                    | What happens                                                                                                                                                                                       |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Friday, after a release | The branch of the next release opens: `release/X.Y.0`, from `main`.                                                                                                                                |
+| Saturday to Thursday    | Ready pull requests merge into the release branch. A beta comes out when something worth trying lands.                                                                                             |
+| Thursday, end of day    | Code freeze: from now on, only fixes go into the release branch. The last beta comes out.                                                                                                          |
+| Friday                  | The review and live-test rounds run on the release branch, and their fixes go in. Then the release pull request merges into `main`, and the tag `vX.Y.0` and the GitHub release publish it to npm. |
 
 A week with nothing to ship has no release. A change that is not ready by the freeze waits for the next week.
 
