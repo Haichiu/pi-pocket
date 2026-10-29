@@ -589,3 +589,31 @@ test("a mode the code does not have is compared with the code's default value", 
         },
     ]);
 });
+
+test("an I/O error partway through the write leaves the earlier files written, as the tool says", async () => {
+    // A write is not a transaction: tokens.json goes in first, then dist/. A dist that is a file stops it there, so
+    // tokens.json is already written. The tool description says so; without that sentence this assertion fails.
+    assert.match(
+        tool.description,
+        /a disk error partway through a write can leave the files before it written/,
+    );
+
+    const dir = await saved();
+
+    writeFileSync(join(dir, "src/styles.css"), styles({ plum: "#7c3aed" }));
+    rmSync(join(dir, ".pi/design/dist"), { recursive: true, force: true });
+    writeFileSync(join(dir, ".pi/design/dist"), "not a folder");
+
+    // The write stops at the first file that it cannot put in place, which is one under dist/ here.
+    assert.match(await failure(run(dir, { action: "resync", apply: true })), /dist/);
+    assert.ok(
+        file(dir, "tokens.json").color["plum-500"] !== undefined,
+        "tokens.json, which the write puts in first, holds the token the scan added",
+    );
+    assert.equal(
+        file(dir, "tokens.json").$extensions["com.pi-pocket"].source.path,
+        ".",
+        "and the source with it: the file was written whole",
+    );
+    assert.equal(readFileSync(join(dir, ".pi/design/dist"), "utf8"), "not a folder");
+});

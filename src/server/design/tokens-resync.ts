@@ -16,8 +16,10 @@
  * - Guidelines and components are never touched.
  *
  * `planResync` is pure. `resyncChange` builds the one `SystemChange` that `writeDesignSystem` applies, so the checks run
- * before anything is written and a change with an error writes nothing. `resyncReport` is the text the tool returns,
- * fenced as project data like the scan's: token names and values come from files that anyone may have written.
+ * before anything is written and a change with an error writes nothing. That write is not a transaction, though: the
+ * files go in one at a time, so an I/O error partway through leaves the files before it written. `resyncReport` is the
+ * text the tool returns, fenced as project data like the scan's: token names and values come from files that anyone may
+ * have written.
  */
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
 import type { DesignSystem, ModeValue, ResolvedToken, SystemChange } from "./system-types.ts";
