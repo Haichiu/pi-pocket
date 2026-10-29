@@ -53,8 +53,10 @@ export function leaves(
     path: string[],
     out: { path: string[]; value: string }[],
     category: Category,
+    // The nodes still to visit: an object that the reader shares can make a tree of millions of them.
+    budget = { left: 20_000 },
 ): void {
-    if (out.length > 600 || path.length > 6) {
+    if (out.length > 600 || path.length > 6 || --budget.left < 0) {
         return;
     }
 
@@ -102,13 +104,13 @@ export function leaves(
         );
 
         if (only && literal.value !== undefined && typeof literal.value !== "object") {
-            leaves(literal.value, path, out, category);
+            leaves(literal.value, path, out, category, budget);
 
             return;
         }
 
         if (only && Array.isArray(literal.value)) {
-            leaves(literal.value, path, out, category);
+            leaves(literal.value, path, out, category, budget);
 
             return;
         }
@@ -119,6 +121,7 @@ export function leaves(
                 key === "DEFAULT" || key === "default" ? path : [...path, key],
                 out,
                 category,
+                budget,
             );
         }
     }

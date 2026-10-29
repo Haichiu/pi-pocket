@@ -15,7 +15,15 @@ const OPTIONAL_MEMBERS = new Set([
     "paragraphIndent",
 ]);
 
-export const LIMITS = { sets: 40, tokens: 5000, depth: 12, refs: 24, text: 400 } as const;
+export const LIMITS = {
+    sets: 40,
+    tokens: 5000,
+    depth: 12,
+    refs: 24,
+    text: 400,
+    // The text that references make: `{a}{a}` at each level doubles it.
+    made: 4000,
+} as const;
 
 /** A token of a set, with the type that its group gave it. */
 export interface Entry {
@@ -348,9 +356,14 @@ export class Mode {
     }
 
     /** A value with every reference in it replaced and its math done; composite values member by member. */
-    evaluate(raw: unknown, stack: string[]): unknown {
+    evaluate(raw: unknown, stack: string[], depth = 0): unknown {
+        // A value nested deeper than a token's needs (`[[[…]]]`) is not read.
+        if (depth > LIMITS.depth) {
+            return undefined;
+        }
+
         if (Array.isArray(raw)) {
-            const items = raw.slice(0, 16).map((item) => this.evaluate(item, stack));
+            const items = raw.slice(0, 16).map((item) => this.evaluate(item, stack, depth + 1));
 
             return items.some((item) => item === undefined) ? undefined : items;
         }
@@ -359,7 +372,7 @@ export class Mode {
             const out: Obj = {};
 
             for (const [name, member] of Object.entries(raw).slice(0, 24)) {
-                const value = this.evaluate(member, stack);
+                const value = this.evaluate(member, stack, depth + 1);
 
                 if (value === undefined) {
                     // A member that the engine has no use for (`textCase`) may refer to a token that is not there.
@@ -417,7 +430,11 @@ export class Mode {
             (_, braced: string | undefined, dollar: string | undefined) => {
                 const found = this.valueOf(this.keyOf(braced ?? dollar ?? ""), stack);
 
-                if (found === undefined || (typeof found === "object" && found !== null)) {
+                if (
+                    found === undefined ||
+                    (typeof found === "object" && found !== null) ||
+                    String(found).length > LIMITS.made
+                ) {
                     missing = true;
 
                     return "";
@@ -427,7 +444,8 @@ export class Mode {
             },
         );
 
-        if (missing) {
+        // A text that grew past the limit is not read: the token is left out.
+        if (missing || replaced.length > LIMITS.made) {
             return undefined;
         }
 
