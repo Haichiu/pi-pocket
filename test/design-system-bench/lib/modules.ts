@@ -1,16 +1,4 @@
-/**
- * The contracts of the other streams, loaded by path at run time. A module or a function that is not there yet is
- * reported (and scores 0), never an import error. This file is the one place that knows the contracts' names, so a
- * rename in a stream is a change here only.
- *
- * Contracts (docs/design/design-system.md):
- *   tokens.ts   loadDesignSystem(cwd), compileDesignSystem(system), writeDesignSystem(cwd, change), systemSummary(system, max)
- *   lint.ts     checkDesign(bundle, system | undefined, options, host, signal)
- *   docsite.ts  renderSystemDoc(system)
- *   scan.ts     the scan is not fixed by the plan: any of SCAN_NAMES, called with the folder, that returns a DTCG draft
- *               (`{ tokens, modes }`, `{ tokens, dark }`, `{ files: { "tokens.json": … } }`, or a JSON string). Without one,
- *               the 0.26 scan (`scanTokens`) is scored as a baseline.
- */
+// A module or function that is missing is reported and scores 0, never an import error.
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,19 +28,13 @@ export interface Modules {
         signal: AbortSignal,
     ) => Promise<CheckReport>;
     doc?: (system: DesignSystem) => { html: string; assets: { name: string; content: string }[] };
-    /** The scan, as `(folder) => draft`. */
     scan?: { name: string; run: Fn };
-    /** The 0.26 scan: the baseline. */
     legacyScan?: Fn;
-    /** What is missing, and why, for the report. */
     notes: string[];
-    /** Which modules were found. */
     present: Record<"tokens" | "lint" | "docsite" | "scan", boolean>;
 }
 
-/** The names under which a scan might be exported, most specific first. */
-/** The longest a scan may take on one fixture. */
-export const SCAN_LIMIT_MS = 60_000;
+const SCAN_LIMIT_MS = 60_000;
 
 export const SCAN_NAMES = [
     "scanDesignSystem",
@@ -102,7 +84,6 @@ const fn = (
     return module[name] as Fn;
 };
 
-/** Load every contract that exists. `skip` leaves some out (the tests use it to prove that missing parts score 0). */
 export async function loadModules(skip: string[] = []): Promise<Modules> {
     const notes: string[] = [];
     const wanted = (name: string) => !skip.includes(name);
@@ -127,7 +108,6 @@ export async function loadModules(skip: string[] = []): Promise<Modules> {
     };
 
     if (scan !== undefined) {
-        // The scan may also live in tokens.ts, next to the engine.
         for (const name of SCAN_NAMES) {
             const found = [scan, tokens]
                 .map((module) => module?.[name])
@@ -142,7 +122,6 @@ export async function loadModules(skip: string[] = []): Promise<Modules> {
         if (typeof scan.scanTokens === "function") {
             out.legacyScan = scan.scanTokens as Fn;
 
-            // Stream T's structured scan: `scanTokens(root).draft` is the DTCG draft (`{ tokens, modes }`).
             if (out.scan === undefined) {
                 const legacy = scan.scanTokens as Fn;
                 const probe = (root: string) => (legacy(root) as { draft?: unknown }).draft;
@@ -161,14 +140,12 @@ export async function loadModules(skip: string[] = []): Promise<Modules> {
     return out;
 }
 
-/** A DTCG draft: the default tree and the mode override trees. */
 export interface Draft {
     tokens: unknown;
     modes: Record<string, unknown>;
 }
 
-/** Whether a value holds a DTCG token (a `$value`) within a few levels. */
-export function looksDtcg(value: unknown, depth = 0): boolean {
+function looksDtcg(value: unknown, depth = 0): boolean {
     if (typeof value !== "object" || value === null || Array.isArray(value) || depth > 8) {
         return false;
     }
@@ -178,7 +155,6 @@ export function looksDtcg(value: unknown, depth = 0): boolean {
     );
 }
 
-/** Pull a draft out of whatever a scan returned, or `undefined` when it holds no tokens. */
 export function coerceDraft(value: unknown): Draft | undefined {
     if (typeof value === "string") {
         const fenced = /```json\s*\n([\s\S]*?)```/.exec(value);
@@ -258,10 +234,6 @@ export function coerceDraft(value: unknown): Draft | undefined {
     return undefined;
 }
 
-/**
- * The 0.26 scan's findings as a DTCG draft, the way a person would save them: variables under their own names, the other
- * colors, radii and fonts numbered. This is the baseline; the new scan replaces it.
- */
 export function legacyDraft(scan: any): Draft {
     const color: Record<string, unknown> = {};
     const dimension: Record<string, unknown> = {};
@@ -326,13 +298,11 @@ export function legacyDraft(scan: any): Draft {
 
 export interface ScanOutcome {
     draft?: Draft;
-    /** `engine` (the new scan), `baseline` (the 0.26 scan), or `none`. */
     source: "engine" | "baseline" | "none";
     note?: string;
     ms: number;
 }
 
-/** Reject after `ms`: a scan that never returns must not hold the bench. */
 export function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
     let timer: NodeJS.Timeout | undefined;
     const limit = new Promise<never>((_, reject) => {
@@ -346,7 +316,6 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, what: string): P
     return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
 }
 
-/** Run the scan on a folder, with whichever scan exists. Never throws. */
 export async function runScan(modules: Modules, dir: string): Promise<ScanOutcome> {
     const start = Date.now();
 

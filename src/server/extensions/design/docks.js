@@ -625,18 +625,10 @@ export function createDocks(env) {
         check: "Check",
     };
 
-    /**
-     * How high a sheet stands on a phone, as a share of the room under the bars: shut (a bar of its own height, with the
-     * count of findings: the page keeps nearly all of the room, and it is where the sheet starts), middle (the page keeps 46
-     * percent), and high. A tap on the bar, a pin, or the handle opens it.
-     */
+    /** Sheet height on a phone, in percent of the room under the bars: shut (a bar), middle, high. */
     const SHEET_SNAPS = [8, 54, 88];
     const SHEET_WORDS = ["shut", "middle", "high"];
 
-    /**
-     * The handle of a bottom sheet: drag it to the height you want (it settles on the nearest of three), tap it to go to
-     * the next, or use the arrow keys.
-     */
     function SheetHandle({ s }) {
         const handle = useRef(null);
         const drag = useRef(null);
@@ -726,7 +718,6 @@ export function createDocks(env) {
     /** The dock for `s.dock`, or nothing. */
     function Dock({ s, design, shown, canEdit, me }) {
         const props = { s, design, shown, canEdit, me };
-        // The findings of a check on a phone are a sheet: a bar at first, then tall enough to read, the page showing above it.
         const sheet = s.dock === "check" && env.sizeClass(s) === "narrow";
         const shut = sheet && s.checkSheet === 0;
         const body =

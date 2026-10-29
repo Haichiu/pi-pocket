@@ -1,4 +1,3 @@
-/** Phase 1 — scan accuracy: run the scan on each fixture project and score the draft against `expected.json`. */
 import {
     cpSync,
     mkdirSync,
@@ -32,7 +31,6 @@ export interface Fixture {
     expected: Expected;
 }
 
-/** The fixture projects, in name order. */
 export function loadFixtures(root = join(BENCH, "fixtures")): Fixture[] {
     return readdirSync(root, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
@@ -59,7 +57,6 @@ const brief = (item: PRF) => ({
 
 export interface ScanPhase {
     available: boolean;
-    /** `engine` (the new scan), `baseline` (the 0.26 scan), or `none`. */
     source: string;
     fixtures: Record<
         string,
@@ -79,7 +76,6 @@ export interface ScanPhase {
         string,
         ReturnType<typeof brief> & { fixtures: number; target: number; meetsTarget: boolean }
     >;
-    /** The mean F1 over the categories: the number to climb. */
     score: number;
     drafts: Map<string, Draft>;
 }

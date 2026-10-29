@@ -1,4 +1,3 @@
-/** The engines that the System view's routes call, behind one import: tokens (T), checks and fixes (V), and the docs page (G). */
 import type { DesignBundle } from "../../design/bundle.ts";
 import { applyExactFixes } from "../../design/fix.ts";
 import type { CheckFinding, CheckReport, DesignSystem } from "../../design/system-types.ts";
@@ -7,29 +6,22 @@ export { loadDesignSystem, writeDesignSystem } from "../../design/tokens.ts";
 export { type CheckOptions, checkDesign } from "../../design/lint.ts";
 export { renderSystemDoc } from "../../design/docsite.ts";
 
-/** What a one-tap fix did: the new page, how many places changed, and each literal that became a token. */
 export interface FixResult {
     content: string;
     fixed: number;
     fixes: { rule: CheckFinding["rule"]; from: string; to: string; count: number }[];
 }
 
-/** Whether one tap can fix a finding: the check marks a literal that equals a token exactly with `fix`. */
-export function isFixable(finding: CheckFinding, _system?: DesignSystem, _mode?: string): boolean {
+export function isFixable(finding: CheckFinding): boolean {
     return finding.fix !== undefined;
 }
 
-/**
- * Rewrite the exact matches of a check in a version's page (`applyExactFixes`: only `<style>` and `style=""`, only where
- * the place is certain). Findings that it skips are left for Pi.
- */
 export function fixExactMatches(
     bundle: DesignBundle,
     system: DesignSystem,
     report: CheckReport,
     options?: { mode?: string; accepted?: ReadonlySet<string> },
 ): FixResult {
-    // What a person accepted is left as it is: one tap does not rewrite a value that somebody decided is fine.
     const fixable = report.findings.filter(
         (finding) =>
             isFixable(finding) && !(finding.id !== undefined && options?.accepted?.has(finding.id)),

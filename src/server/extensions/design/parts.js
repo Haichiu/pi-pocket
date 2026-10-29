@@ -25,7 +25,6 @@ export const PATHS = {
     layers: "M12 3l9 5-9 5-9-5 9-5z M3 13l9 5 9-5 M3 17l9 5 9-5",
     expand: "M4 9V4h5 M20 9V4h-5 M4 15v5h5 M20 15v5h-5",
     redo: "M15 14l5-5-5-5 M20 9H9a5 5 0 0 0 0 10h4",
-    // Focus mode: the panel grows toward the left, over the conversation.
     focus: "M4 4h16v16H4z M9 4v16 M16 9l-3 3 3 3",
     unfocus: "M4 4h16v16H4z M9 4v16 M13 9l3 3-3 3",
     alert: "M12 4l9 16H3z M12 10v4 M12 17.5h.01",

@@ -1,33 +1,20 @@
-/**
- * A small, independent reader for DTCG token trees: groups, `$type` inheritance, `{references}`, and mode override trees.
- * The bench uses it to read a scan's draft without trusting the engine that wrote it. It accepts the 2025.10 object forms
- * and the older string forms, and it never throws on bad input: a token it cannot read is reported in `problems`.
- */
+// Independent of the engine on purpose: the bench reads a scan draft without trusting the code that wrote it.
 import { colorOf, type Rgba } from "./color.ts";
 
-/** One token with its raw and resolved value in each mode. */
 export interface FlatToken {
-    /** The path joined by dots: `color.bg.surface`. */
     name: string;
     path: string[];
-    /** The `$type`, declared or inherited; guessed from the value when neither is there. */
     type: string;
-    /** The resolved value for each mode (no reference left). A token that a mode does not set takes the default's. */
     values: Record<string, unknown>;
-    /** The referenced token's name per mode, when the raw value there is a reference. */
     aliases: Record<string, string>;
     description?: string;
     deprecated?: boolean | string;
-    /** `$extensions["com.pi-pocket"].tier`, when it is set. */
     tier?: string;
-    /** `$extensions["com.pi-pocket"].contrast`: this text color must reach `min` over the token `on`, in every mode. */
     contrast?: { on: string; min: number; exempt?: string };
-    /** Every pair the token declares (`contrast` may be one pair or a list), in order. `contrast` is the first. */
     contrasts?: { on: string; min: number; exempt?: string }[];
 }
 
 export interface FlatSystem {
-    /** The default mode first. */
     modes: string[];
     tokens: FlatToken[];
     problems: string[];
@@ -41,11 +28,9 @@ interface Raw {
     path: string[];
     type: string | undefined;
     value: unknown;
-    /** The token node itself, for its `$description`, `$deprecated` and `$extensions`. */
     node?: Record<string, unknown>;
 }
 
-/** Collect the tokens of a tree, in order, with inherited `$type`. */
 function collect(tree: unknown, problems: string[]): Map<string, Raw> {
     const found = new Map<string, Raw>();
 
@@ -67,7 +52,6 @@ function collect(tree: unknown, problems: string[]): Map<string, Raw> {
 
         for (const [key, child] of Object.entries(object)) {
             if (key === "$root") {
-                // A group's own token: it is the group's name, not `group.$root`.
                 if (typeof child === "object" && child !== null && Object.hasOwn(child, "$value")) {
                     found.set(path.join("."), {
                         path,
@@ -93,7 +77,6 @@ function collect(tree: unknown, problems: string[]): Map<string, Raw> {
     return found;
 }
 
-/** A type for a token that declares none. */
 function guessType(value: unknown): string {
     if (typeof value === "number") {
         return "number";
@@ -145,7 +128,6 @@ function guessType(value: unknown): string {
     return "unknown";
 }
 
-/** Resolve the references inside a value (the whole value, or any nested string), against one mode's raw map. */
 function resolve(
     value: unknown,
     raw: Map<string, Raw>,
@@ -199,11 +181,7 @@ function resolve(
     return { value };
 }
 
-/**
- * Read a default tree and any mode override trees into tokens with a resolved value for each mode. An override takes
- * the place of the default's raw value before references resolve, so a changed primitive flows to the roles that point
- * at it, as CSS custom properties do.
- */
+// An override replaces the default raw value before references resolve, so a changed primitive flows to the roles that use it.
 export function flatten(tokens: unknown, modes: Record<string, unknown> = {}): FlatSystem {
     const problems: string[] = [];
     const base = collect(tokens, problems);
@@ -248,7 +226,6 @@ export function flatten(tokens: unknown, modes: Record<string, unknown> = {}): F
             token.tier = own.tier;
         }
 
-        // One pair, or a list of them. `exempt` says why a pair is left out of the check ("disabled", "decorative").
         const declared = Array.isArray(own?.contrast)
             ? own.contrast
             : own?.contrast === undefined
@@ -292,7 +269,6 @@ export function flatten(tokens: unknown, modes: Record<string, unknown> = {}): F
     return { modes: modeNames, tokens: flat, problems };
 }
 
-/** The dimension in CSS pixels (`rem` and `em` at 16 px, `pt` at 4/3), or `undefined` when it is not one. */
 export function pixels(value: unknown): number | undefined {
     if (typeof value === "number") {
         return Number.isFinite(value) ? value : undefined;
@@ -334,7 +310,6 @@ export function pixels(value: unknown): number | undefined {
     }
 }
 
-/** One layer of a box shadow, in pixels, with its color. */
 export interface ShadowLayer {
     x: number;
     y: number;
@@ -344,7 +319,6 @@ export interface ShadowLayer {
     color: Rgba;
 }
 
-/** Split on the top-level `sep` (not inside parentheses). */
 function splitTop(text: string, sep: string): string[] {
     const parts: string[] = [];
     let depth = 0;
@@ -368,7 +342,6 @@ function splitTop(text: string, sep: string): string[] {
     return parts.map((part) => part.trim()).filter((part) => part !== "");
 }
 
-/** The layers of a CSS `box-shadow` string, a DTCG shadow object, or an array of them. Empty when unreadable. */
 export function shadowLayers(value: unknown): ShadowLayer[] {
     if (Array.isArray(value)) {
         return value.flatMap((item) => shadowLayers(item));
@@ -422,7 +395,6 @@ export function shadowLayers(value: unknown): ShadowLayer[] {
     return layers;
 }
 
-/** The family names of a font stack: a CSS string, or a DTCG array. Quotes removed. */
 export function families(value: unknown): string[] {
     const list = Array.isArray(value)
         ? value.map(String)

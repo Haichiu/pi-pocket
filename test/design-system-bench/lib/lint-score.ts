@@ -1,25 +1,15 @@
-/**
- * Lint scoring: match what `checkDesign` reported with the findings that a design was seeded with. A reported finding
- * is right when its rule and its element (`data-pid`) are the same and, when the expectation names a value, the value
- * is the same. Everything reported that nothing expected is a false finding; everything expected that nothing matched
- * is a miss. Rules in `../README.md`.
- */
 import { colorOf, sameColor } from "./color.ts";
 import { pixels } from "./dtcg.ts";
 
-/** One finding that a seeded design must produce. */
 export interface ExpectedFinding {
     rule: string;
     /** The element's `data-pid`. Leave out for a page-level finding (`missing-viewport`, `overflow`). */
     pid?: string;
-    /** The value that breaks the rule (`#7ba3f8`, `15px`). Leave out when any value is fine. */
     value?: string;
-    /** The token that the fix should name, in dotted form (`color.accent.default`): one, or any of several equal ones. */
     suggestion?: string | string[];
     level?: "error" | "warning";
 }
 
-/** The parts of a reported finding that the bench reads. */
 export interface FoundFinding {
     rule: string;
     level?: string;
@@ -36,26 +26,17 @@ export interface RuleCount {
 }
 
 export interface LintMatch {
-    /** Pairs of (expected index, found index), strong matches first. */
     pairs: [number, number][];
-    /** Indexes of reported findings that nothing expected. */
     extra: number[];
-    /** Indexes of expected findings that nothing reported. */
     missed: number[];
 }
 
-/** The first number in a text, with its unit stripped (`15px` → 15, `3.1:1` → 3.1). */
 const number = (text: string) => {
     const match = /-?\d*\.?\d+/.exec(text);
 
     return match === null ? undefined : Number(match[0]);
 };
 
-/**
- * Whether a reported value is the expected one. Colors: ΔE 2000 within 3. Lengths: within half a pixel (`rem`/`em`
- * at 16 px). Ratios (`3.1:1`): within 0.3. Anything else: the same text without case or space, or the same first font
- * family.
- */
 export function sameValue(expected: string, found: string): boolean {
     const [a, b] = [colorOf(expected), colorOf(found)];
 
@@ -91,15 +72,11 @@ const onElement = (expected: ExpectedFinding, found: FoundFinding) => {
     );
 };
 
-/**
- * One value, one finding: a reported finding with the same rule, element and value as an earlier one is dropped (a linter
- * that reports `color` and `border-color` of one element for the same literal has found one problem).
- */
+// A linter that reports `color` and `border-color` of one element for the same literal has found one problem.
 export function dedupe(found: FoundFinding[]): FoundFinding[] {
     const out: FoundFinding[] = [];
 
     for (const item of found) {
-        // Without an element there is nothing to say two findings are the same one.
         const located = (item.pid ?? "") !== "" || (item.selector ?? "") !== "";
         const same =
             located &&
@@ -122,7 +99,6 @@ export function dedupe(found: FoundFinding[]): FoundFinding[] {
     return out;
 }
 
-/** Pair expected and reported findings: exact value first, then a value that is missing on one side. */
 export function matchFindings(expected: ExpectedFinding[], found: FoundFinding[]): LintMatch {
     const takenExpected = new Set<number>();
     const takenFound = new Set<number>();
@@ -168,7 +144,6 @@ export function matchFindings(expected: ExpectedFinding[], found: FoundFinding[]
     };
 }
 
-/** Whether a fix names the token (`color.accent.default` is `var(--color-accent-default)` or the dotted name). */
 export function namesToken(suggestion: string | undefined, accept: string | string[]): boolean {
     return (
         suggestion !== undefined &&
@@ -199,12 +174,10 @@ export interface LintScore {
     value: { wanted: number; right: number };
     suggestion: { wanted: number; right: number };
     level: { wanted: number; right: number };
-    /** For the log: what was missed and what was extra. */
     missed: ExpectedFinding[];
     extra: FoundFinding[];
 }
 
-/** Add up the matches of several designs. */
 export function scoreLint(
     designs: { expected: ExpectedFinding[]; found: FoundFinding[] }[],
 ): LintScore {

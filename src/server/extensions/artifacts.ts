@@ -100,7 +100,6 @@ async function readArtifact(path: string): Promise<string> {
     }
 }
 
-/** The compiled design system files that a page links, by their name in the bundle. */
 const DESIGN_FILES = {
     "ds/tokens.css": "css",
     "ds/tailwind.css": "tailwind",
@@ -108,9 +107,8 @@ const DESIGN_FILES = {
 } as const;
 
 /**
- * Adds the project's compiled design system to `prepared` for each `ds/…` file that `content` links and the call does
- * not bring itself or drop: a snapshot of `.pi/design/dist/` as it is now (compiled from the source files, so it is never
- * stale). Returns notes for the result text. It reads files before the commit, so a replayed call finds what it wrote.
+ * Adds the compiled `.pi/design/dist/` files that `content` links and the call does not bring or drop. It reads files
+ * before the commit, so a replayed call finds what it wrote. Returns notes for the result text.
  */
 async function attachDesignSystem(
     content: string,
@@ -407,7 +405,6 @@ async function publish(
             });
         }
 
-        // A page that links the project's design system gets its compiled files, unless the call brings its own.
         if (type === "html" && content.includes("ds/")) {
             let cwd: string | undefined;
 

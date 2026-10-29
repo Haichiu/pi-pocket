@@ -1,8 +1,3 @@
-/**
- * Phase 2 — the format: each system loads, validates with no error, round-trips (load, write, load gives the same
- * system, and a second write changes no byte), compiles to the four files, and its CSS defines every variable in every
- * mode with the values that the bench read from the same DTCG files.
- */
 import {
     cpSync,
     existsSync,
@@ -23,11 +18,8 @@ import type { Draft, Modules } from "./modules.ts";
 import { readFlat } from "./system.ts";
 
 export interface SystemSource {
-    /** A label for the report. */
     name: string;
-    /** `fixture` (hand-written), `scan` (a scan's draft, saved), or `flagship`. */
     kind: "fixture" | "scan" | "flagship";
-    /** A project folder with `.pi/design/` in it. */
     project: string;
 }
 
@@ -46,15 +38,12 @@ export interface FormatResult {
     dist: boolean | undefined;
     namesAgree: number | undefined;
     css: CssCheck | undefined;
-    /** Why a part is missing or failed, for the log. */
     problems: string[];
-    /** 0 to 1: the mean of the parts that apply. */
     score: number;
 }
 
 const rate = (part: number, whole: number) => (whole === 0 ? 0 : part / whole);
 
-/** All files under a folder, as relative path to text. Symlinks are not followed. */
 function snapshot(
     root: string,
     base = root,
@@ -75,8 +64,7 @@ function snapshot(
 
 const plain = (value: unknown) => JSON.stringify(value);
 
-/** The change that writes a project's `.pi/design/` source files back, read straight from disk. */
-export function changeFromDisk(design: string): SystemChange {
+function changeFromDisk(design: string): SystemChange {
     const change: SystemChange = { modes: {}, components: {} };
 
     for (const file of readdirSync(design).sort()) {
@@ -116,8 +104,7 @@ function copyDesign(project: string, parent: string, name: string): string {
     return root;
 }
 
-/** Save a scan's draft as a project, the way a person would: through the engine's write when there is one. */
-export function saveDraft(
+function saveDraft(
     modules: Modules,
     draft: Draft,
     parent: string,
@@ -146,7 +133,7 @@ export function saveDraft(
     return { project: root };
 }
 
-export async function checkSystem(
+async function checkSystem(
     modules: Modules,
     browser: BenchBrowser | undefined,
     source: SystemSource,
@@ -216,7 +203,6 @@ export async function checkSystem(
         note(`error: ${problem.token ?? problem.file ?? ""} ${problem.message}`.trim());
     }
 
-    // The bench's reader and the engine must see the same token names.
     const mine = readFlat(join(dirA, ".pi", "design"));
     const names = new Set(mine.tokens.map((token) => token.name));
     const theirs = new Set(first.tokens.map((token) => token.name));
@@ -224,7 +210,6 @@ export async function checkSystem(
 
     result.namesAgree = rate(shared, new Set([...names, ...theirs]).size);
 
-    // Compile: the four files, with a Tailwind @theme block and resolved JSON that names every token.
     const compiled = first.compiled;
     const json = (() => {
         try {
@@ -249,7 +234,6 @@ export async function checkSystem(
         );
     }
 
-    // Round trip: write the source files to a second copy; loading it gives the same system.
     if (modules.write !== undefined) {
         try {
             const change = changeFromDisk(join(dirB, ".pi", "design"));
@@ -272,7 +256,6 @@ export async function checkSystem(
                 note("writing the same change twice changed a file.");
             }
 
-            // dist/ on disk is what compile gives.
             const dist = join(dirB, ".pi", "design", "dist");
             const read = (file: string) =>
                 existsSync(join(dist, file)) ? readFileSync(join(dist, file), "utf8") : undefined;
@@ -332,7 +315,6 @@ export async function checkSystem(
 
 export interface FormatPhase {
     systems: FormatResult[];
-    /** The mean score of the systems that the bench could try (the flagship counts when it is there). */
     score: number;
     flagship: { present: boolean; path?: string };
 }

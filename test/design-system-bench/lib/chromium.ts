@@ -1,8 +1,4 @@
-/**
- * A small headless Chromium for the bench: its own process and profile (never the shared browser people watch), a local
- * server for a bundle of files, and pages with a size, a color scheme, screenshots and `evaluate`. It uses only
- * `src/server/browser/` (discovery and the DevTools pipe), so a change in the design renderer cannot break it.
- */
+// Uses only `src/server/browser/`, so a change in the design renderer cannot break the bench.
 import { randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -17,7 +13,6 @@ export interface FileEntry {
 }
 
 export interface Served {
-    /** The address of the root, ending in `/`. */
     url: string;
     close(): Promise<void>;
 }
@@ -32,11 +27,9 @@ const TYPES: Record<string, string> = {
     woff2: "font/woff2",
 };
 
-/** The content type for a file name (an unknown extension is plain bytes). */
 export const typeOf = (name: string) =>
     TYPES[name.split(".").pop() ?? ""] ?? "application/octet-stream";
 
-/** Serve some files on a loopback port, under a random path, until closed. */
 export async function serveFiles(files: Map<string, FileEntry>): Promise<Served> {
     const prefix = `/${randomBytes(16).toString("hex")}/`;
     const server: Server = createServer((request, response) => {
@@ -84,10 +77,8 @@ export interface PageOptions {
     colorScheme?: "light" | "dark";
 }
 
-/** One page in its own browser context. */
 export class BenchPage {
     readonly errors: string[] = [];
-    /** Requests that left the loopback server. They are all refused: a design system page must be self-contained. */
     readonly external: string[] = [];
     readonly failed: string[] = [];
     readonly #browser: Chromium;
@@ -167,7 +158,6 @@ export class BenchPage {
         return result.result?.value as T;
     }
 
-    /** Set the size and the preferred color scheme, then load the address and wait until it is settled. */
     async open(url: string, options: PageOptions): Promise<void> {
         await this.send("Emulation.setDeviceMetricsOverride", {
             width: options.width,
@@ -197,7 +187,6 @@ export class BenchPage {
         );
     }
 
-    /** A PNG of the page: the viewport, or the whole page up to `maxHeight`. */
     async screenshot(fullPage: boolean, maxHeight = 12_000): Promise<Buffer> {
         let clip: Record<string, number> | undefined;
 
@@ -223,7 +212,6 @@ export class BenchPage {
         return Buffer.from(String(result.data), "base64");
     }
 
-    /** A PNG of one rectangle of the page (CSS pixels from the top left of the page), at scale 1. */
     async clip(x: number, y: number, width: number, height: number): Promise<Buffer> {
         const result = await this.send("Page.captureScreenshot", {
             format: "png",
@@ -234,11 +222,7 @@ export class BenchPage {
         return Buffer.from(String(result.data), "base64");
     }
 
-    /**
-     * A PNG of one rectangle of the page (CSS pixels, from the page's top left), taken from what is **on screen**. A frame
-     * (an `iframe`, above all a sandboxed one) that is outside the viewport is not painted, so `clip` shows it blank: scroll
-     * the rectangle into the viewport first, and make the viewport tall enough to hold it.
-     */
+    // A frame outside the viewport is not painted: scroll the rectangle into view first.
     async clipInView(x: number, y: number, width: number, height: number): Promise<Buffer> {
         const result = await this.send("Page.captureScreenshot", {
             format: "png",
@@ -249,7 +233,6 @@ export class BenchPage {
         return Buffer.from(String(result.data), "base64");
     }
 
-    /** Set the size of the page. Everything laid out again, at scale 1. */
     async resize(width: number, height: number): Promise<void> {
         await this.send("Emulation.setDeviceMetricsOverride", {
             width,
@@ -267,7 +250,6 @@ export class BenchPage {
     }
 }
 
-/** A Chromium process that the bench owns. `undefined` from `launch` means no browser is installed. */
 export class BenchBrowser {
     readonly #chromium: Chromium;
     readonly #folder: string;
@@ -290,7 +272,6 @@ export class BenchBrowser {
         return new BenchBrowser(chromium, folder);
     }
 
-    /** A new page in a fresh context. `origin` is the only address it may load; everything else is refused. */
     async page(origin: string): Promise<BenchPage> {
         const context = await this.#chromium.connection.send("Target.createBrowserContext");
         const target = await this.#chromium.connection.send("Target.createTarget", {

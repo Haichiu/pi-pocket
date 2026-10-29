@@ -1,31 +1,20 @@
-/**
- * The CSS check: load a compiled `tokens.css` in Chromium and, in every mode, read each custom property back through a
- * probe element. A variable is *defined* when it resolves with no `var()` left, *valid* when its type's CSS property
- * accepts it, and *correct* when the browser's value equals the bench's own reading of the DTCG files (colors, lengths,
- * font weights, durations, and shadows are compared; the rest are checked for validity only).
- */
 import { colorOf, sameColor } from "./color.ts";
 import { families, pixels, shadowLayers, type FlatSystem } from "./dtcg.ts";
 import { BenchBrowser, serveFiles } from "./chromium.ts";
 import { cssVar } from "./system.ts";
 
 export interface CssCheck {
-    /** The stylesheet had rules, and Chromium parsed it. */
     parsed: boolean;
     modes: string[];
-    /** Variable and mode pairs that the bench expected. */
     expected: number;
     defined: number;
     valid: number;
     comparable: number;
     correct: number;
-    /** The first problems, for the log. */
     problems: string[];
-    /** Whether the stylesheet switches to the dark values by the media query when the system has a dark mode. */
     mediaDark: boolean | undefined;
 }
 
-/** The CSS property that takes a type's value, and how to read the browser's answer back. */
 const PROBE: Record<string, string> = {
     color: "color",
     dimension: "margin-left",
@@ -64,7 +53,6 @@ const SCRIPT = (tokens: { name: string; type: string }[]) => `(() => {
     return out;
 })()`;
 
-/** Compare the browser's computed value with the bench's reading of the same token. `undefined` when not compared. */
 function agrees(type: string, computed: string, want: unknown): boolean | undefined {
     if (type === "color") {
         const [a, b] = [colorOf(computed), colorOf(want)];
@@ -131,10 +119,6 @@ function agrees(type: string, computed: string, want: unknown): boolean | undefi
     return undefined;
 }
 
-/**
- * Check a compiled stylesheet against the bench's reading of the same system. `flat.tokens` limits the check to the
- * types that have a plain CSS form.
- */
 export async function checkCss(
     browser: BenchBrowser,
     css: string,
@@ -234,7 +218,6 @@ export async function checkCss(
 
         await page.evaluate(`document.documentElement.removeAttribute('data-theme')`);
 
-        // The dark values must also apply by the media query alone, when the system has a dark mode.
         const dark = flat.modes.find((mode) => /dark/i.test(mode));
 
         if (dark !== undefined) {

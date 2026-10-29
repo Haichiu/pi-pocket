@@ -1,5 +1,3 @@
-// The small parts of the System view: a swatch, a token's name that copies, a contrast badge, number and color fields, the
-// alias picker, and the editor of one token. They draw what `system.js` computes; they keep no state of the system's own.
 import { parseColor, ratioText, swatchCss, toHex, toOklchText, toRgbText } from "./color.js";
 import {
     amountOf,
@@ -12,7 +10,6 @@ import {
     writeAmount,
 } from "./system.js";
 
-/** Put `text` on the clipboard: the async API where the page may use it, else a hidden field and a copy command. */
 export async function copyText(text) {
     try {
         await navigator.clipboard.writeText(text);
@@ -35,10 +32,6 @@ export async function copyText(text) {
     }
 }
 
-/**
- * The word for a contrast: its level when it passes, else how far it gets. A pair that is exempt (a disabled or decorative
- * color) is not a failure: it says so.
- */
 export const verdictOf = (info) =>
     info.pass
         ? info.level
@@ -48,7 +41,6 @@ export const verdictOf = (info) =>
             ? "Large only"
             : "Fail";
 
-/** The title-cased name of a mode (`high-contrast` → `High contrast`). */
 export const modeTitle = (mode) =>
     mode === "" ? "" : mode[0].toUpperCase() + mode.slice(1).replace(/[-_]+/g, " ");
 
@@ -60,7 +52,6 @@ export function createSystemWidgets(env) {
     const { html, useState } = pocket;
     const { Ico, Popover } = env.parts;
 
-    /** A color, or a pair of them (a split swatch: one half for each mode). */
     function Swatch({ values, size = 36 }) {
         return html`<span
             class="dsy-swatch"
@@ -81,7 +72,6 @@ export function createSystemWidgets(env) {
         </span>`;
     }
 
-    /** A token's name, which copies on a tap: its last word strong, the rest of the path quiet. */
     function CopyName({ name, copy = name, size = "" }) {
         const [done, setDone] = useState(false);
         const parts = name.split(".");
@@ -110,7 +100,6 @@ export function createSystemWidgets(env) {
         </button>`;
     }
 
-    /** What a text color's contrast comes to on its pair: `7.1:1 AAA`. A token with no pair of its own shows dashed. */
     function ContrastBadge({ info, mode, modes = 1 }) {
         if (!info) {
             return null;
@@ -130,13 +119,11 @@ export function createSystemWidgets(env) {
         </span>`;
     }
 
-    /** A number with steppers and, for sizes and times, a unit. `onChange` gets `{ n, unit }`. */
     function AmountField({ amount, units, step = 1, label, onChange, disabled }) {
         const [text, setText] = useState(null);
         const shown = text ?? String(amount.n);
         const set = (n, unit = amount.unit) => onChange({ n: round(n), unit });
 
-        // The unit changes by what it is worth: 16px is 1rem.
         const convert = (unit) => {
             const per = { px: 1, rem: 16, em: 16, ms: 1, s: 1000 };
 
@@ -216,7 +203,6 @@ export function createSystemWidgets(env) {
 
     const FORMATS = ["hex", "oklch", "rgb"];
 
-    /** A color: the system's picker, and a field that takes any CSS color. `onChange` gets the new DTCG value. */
     function ColorField({ value, like, label, onChange, disabled }) {
         const [draft, setDraft] = useState(null);
         const [format, setFormat] = useState("hex");
@@ -280,7 +266,6 @@ export function createSystemWidgets(env) {
         </div>`;
     }
 
-    /** The cubic-bezier of an easing, drawn (the curve, its two handles) in a 64 px square. */
     function Curve({ value, size = 64, play = false }) {
         const [x1, y1, x2, y2] = value;
         const pad = 10;
@@ -322,7 +307,6 @@ export function createSystemWidgets(env) {
         </svg>`;
     }
 
-    /** Four numbers of an easing, with its curve. */
     function BezierField({ value, label, onChange, disabled }) {
         const names = ["x1", "y1", "x2", "y2"];
 
@@ -361,11 +345,9 @@ export function createSystemWidgets(env) {
         </div>`;
     }
 
-    /** The tokens an alias may point to: those of the same type that do not lead back. Searchable, in a card over the view. */
     function AliasPicker({ model, token, mode, part, current, onPick, onClose, narrow }) {
         const [query, setQuery] = useState("");
         const words = query.trim().toLowerCase();
-        // A part of a shadow links to a token of its own kind (a size, a color); a token links to one that does not lead back.
         const kind = part ? part.type : token.type;
         const targets = (
             part
@@ -421,7 +403,6 @@ export function createSystemWidgets(env) {
         <//>`;
     }
 
-    /** The words and kinds of a shadow layer's members, in the order they are shown. */
     const SHADOW_PARTS = [
         ["offsetX", "X offset", "dimension"],
         ["offsetY", "Y offset", "dimension"],
@@ -430,7 +411,6 @@ export function createSystemWidgets(env) {
         ["color", "Color", "color"],
     ];
 
-    /** One member of a shadow layer: a value of its own in the field of its kind, or a link to a token that holds it. */
     function PartField({ model, token, mode, layers, at, part, canEdit }) {
         const [key, name, type] = part;
         const member = layers[at][key];
@@ -516,15 +496,9 @@ export function createSystemWidgets(env) {
         </div>`;
     }
 
-    /**
-     * A shadow by its parts: for each layer its offsets, blur, spread, color and whether it is inset, each a value or a link to
-     * a token, kept as the file has it. A layer is added (a copy of the last) or taken away. A shadow that is a link to another
-     * shadow shows that one's parts, and is changed by linking elsewhere or by using a value.
-     */
     function ShadowField({ model, token, mode, canEdit }) {
         const now = model.value(token.name, mode);
         const { layers } = model.shadowRaw(token.name, mode);
-        // A link to another shadow: its parts are that one's, so they are shown and not changed here.
         const mine = canEdit && now.alias === undefined;
         const write = (next) => env.editToken(token.name, mode, { value: shadowValue(next) });
 
@@ -591,10 +565,8 @@ export function createSystemWidgets(env) {
         </div>`;
     }
 
-    /** The value of one token in one mode, as the field of its kind (or what to do when it has none). */
     function ValueField({ model, token, mode, canEdit, like }) {
         const now = model.value(token.name, mode);
-        // A token that links to another can be edited too: a new value replaces the link (undo puts it back).
         const disabled = !canEdit;
         const label = `${token.name} in ${mode}`;
         const edit = (value) => env.editToken(token.name, mode, { value });
@@ -675,11 +647,9 @@ export function createSystemWidgets(env) {
         }
     }
 
-    /** Whether a mode takes the token from the default mode (so its file does not set it), with the edits made. */
     const inherited = (model, token, mode) =>
         mode !== model.defaultMode && !model.overridden(token.name, mode);
 
-    /** The pairs of a color token, each with its ratio and level; a pair that is exempt says so, and is not a failure. */
     function ContrastList({ model, token, mode, modes }) {
         const pairs = model.contrastsOf(token.name, mode);
 
@@ -718,12 +688,7 @@ export function createSystemWidgets(env) {
         </div>`;
     }
 
-    /**
-     * One token's editor: for each mode in view, its alias (link, change, or use a value), and its value in the field of its
-     * kind. A shadow is edited by its parts (each a value or a link); a typography style is shown, and changed with Pi. A mode
-     * other than the default says whether it sets the token or takes the default's, and can give a value back.
-     */
-    function TokenEditor({ model, token, modes, canEdit, narrow }) {
+    function TokenEditor({ model, token, modes, canEdit }) {
         const editable = EDITABLE.has(token.type);
         const dependents = model.dependents(token.name);
         const anyEdit = model.modes.some((mode) => model.edited(token.name, mode));
@@ -740,7 +705,7 @@ export function createSystemWidgets(env) {
             ${modes.map((mode) => {
                 const now = model.value(token.name, mode);
                 const saved = token.modes[mode];
-                // The dialect to write in: that of the saved value (or the default mode's, when this one only follows it).
+                // Write in the dialect of the saved value, else the default mode's.
                 const like =
                     (saved?.alias === undefined
                         ? saved?.value

@@ -1,10 +1,5 @@
-// The System view's model, as pure functions (no DOM, so a test can run them): which section a token belongs to, how the
-// tokens group, the value a token has once the person's unsaved edits are laid over the saved ones (aliases followed), the
-// contrast of a text color, the history of edits (undo and redo), and the change a save sends. The system is data from the
-// project's files: every value read here is checked before it is used.
 import { contrast, grade, parseColor, swatchCss, toHex, writeColor } from "./color.js";
 
-/** The sections of the view, in order. `Other` shows only when something is in it. */
 export const SECTIONS = [
     { id: "colors", label: "Colors" },
     { id: "type", label: "Type" },
@@ -24,7 +19,6 @@ const HINTS = [
     ["motion", /^(motion|duration|delay|ease|easing|transition|timing)$/],
 ];
 
-/** The section of a token: by its type, and for plain numbers and sizes by the words of its name. */
 export function sectionOf(token) {
     switch (token.type) {
         case "color":
@@ -65,27 +59,15 @@ const title = (text) =>
 const TIER_RANK = { semantic: 0, primitive: 1, component: 2 };
 const tierOf = (token) => (token.tier in TIER_RANK ? token.tier : "semantic");
 
-/** What the groups of a section with no kinds of their own are called, by tier, when there is more than one. */
 const TIER_TITLES = { semantic: "", primitive: "Primitives", component: "Component tokens" };
 const SCALE_TITLES = { spacing: "Scale", radii: "Corners", shadows: "Elevation" };
 
-/**
- * The words that name a section's own groups of tokens: the steps of a spacing scale (`space.4`), its sizes (`size.icon.md`),
- * and the corners of a radius scale (`radius.md`). These are the documentation page's (`spacingSection` and `radiiSection` in
- * `src/server/design/docsite-space.ts`): the two group alike, and a test reads the page to check that they do.
- */
-export const SPACE_ROOT = /^(space|spacing|gap|gaps|sp|spaces)$/;
-export const SIZE_ROOT = /^(size|sizes|sizing)$/;
-export const RADIUS_ROOT = /^(radius|radii|rounded|corners?|round)$/;
+// Same words as the documentation page groups by (`src/server/design/docsite-space.ts`); a test compares them.
+const SPACE_ROOT = /^(space|spacing|gap|gaps|sp|spaces)$/;
+const SIZE_ROOT = /^(size|sizes|sizing)$/;
 
 const rootOf = (token) => token.path[0].toLowerCase();
 
-/**
- * What a tab counts, by section id: `{ open, folded, total }`. A tab says `open`: the role tokens of its section, which are
- * what a person uses (the roles of Colors, the styles of Type; for a section that is only a scale, the scale); the palette, the
- * scales that roles point at, and a component's own tokens carry their own counts in their groups' heads. `folded` is the
- * rest, and `total` is every token of the section (the sections add up to the system's tokens).
- */
 export function sectionCounts(tokens) {
     const bySection = {};
 
@@ -106,12 +88,6 @@ export function sectionCounts(tokens) {
     return counts;
 }
 
-/**
- * The tokens of a section, in groups the view shows one after another: what a person edits first (the semantic tier: roles,
- * styles, scales), the primitives after it, and a component's own tokens last. Each group has its `tier`; a color group is
- * `roles`, a `palette`, or `components`. `fold` says whether it starts folded: primitives when the section has semantic
- * tokens too, and component tokens always.
- */
 export function groupsOf(tokens, section) {
     const mine = tokens.filter((token) => sectionOf(token) === section);
     const groups = new Map();
@@ -130,7 +106,6 @@ export function groupsOf(tokens, section) {
         return group;
     };
 
-    // The radii that another radius points at (in any mode): the steps of a scale, whatever they are called.
     const aimed = new Set(
         mine
             .filter((token) => tierOf(token) !== "component")
@@ -168,7 +143,6 @@ export function groupsOf(tokens, section) {
             const sub =
                 by ?? (token.type === "number" ? ["leading", "Line height"] : ["sizes", "Sizes"]);
 
-            // A style is what a person edits in this section (it links to the sizes and families), whatever its tier.
             add(
                 sub[0],
                 tier === "component" ? `Component ${sub[1].toLowerCase()}` : sub[1],
@@ -188,8 +162,7 @@ export function groupsOf(tokens, section) {
         } else if (section === "other") {
             add(token.path[0], title(token.path[0]), "other", token);
         } else if (section === "spacing") {
-            // The steps of the scale, the roles that use a step (the gaps of a layout), the sizes of controls and marks, and a
-            // component's own: the way that the documentation page groups them (`order` is theirs, not the tier's).
+            // Grouped the way the documentation page does (`order` is theirs, not the tier's).
             const root = rootOf(token);
             const [id, name, order] =
                 tier === "component"
@@ -202,8 +175,6 @@ export function groupsOf(tokens, section) {
 
             add(id, name, id, token, tier === "component" ? "component" : "semantic").order = order;
         } else if (section === "radii") {
-            // The scale first (what the roles point at), then the roles, then a component's own. Radii that point at nothing and
-            // are pointed at by nothing are a scale of their own.
             const [id, name, order] =
                 tier === "component"
                     ? ["components", "Component tokens", 2]
@@ -225,7 +196,6 @@ export function groupsOf(tokens, section) {
     );
     const semantic = list.some((each) => each.tier === "semantic");
 
-    // Two groups of one kind and one name (the semantic durations and the primitive ones) are told apart by their tier.
     if (section !== "colors") {
         const seen = new Map();
 
@@ -241,14 +211,10 @@ export function groupsOf(tokens, section) {
     }
 
     for (const group of list) {
-        // The scales (spacing, radii, shadows) have no kinds of their own: they are named by their tier, when there are several.
         if (group.title === "" && list.length > 1) {
             group.title = TIER_TITLES[group.tier] || SCALE_TITLES[section] || "Scale";
         }
 
-        // What a tab counts (`headline`): the section's role tokens, the semantic tier, and the primitives only when it has no
-        // roles. A group of a palette, a type scale, or a component's tokens starts folded; the scale of a spacing or radius
-        // section is shown open, before its roles, and counted by its own tokens' tier (a plain scale is the semantic tier).
         const own = section === "spacing" || section === "radii";
 
         group.headline = own
@@ -264,10 +230,6 @@ export function groupsOf(tokens, section) {
     return list;
 }
 
-/**
- * The shortest tail of each token's path that tells it from the others in `tokens`: `lift`, and `card.shadow` against
- * `menu.shadow` when the last word repeats. A `Map` from a token's name to its label.
- */
 export function tails(tokens) {
     const depth = new Map(tokens.map((token) => [token.name, 1]));
     const label = (token) => token.path.slice(-depth.get(token.name)).join(".");
@@ -296,7 +258,6 @@ export function tails(tokens) {
     return new Map(tokens.map((token) => [token.name, label(token)]));
 }
 
-/** Whether a token matches what was typed in the search: its name, description, or any value. */
 export function matches(token, query) {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
 
@@ -319,12 +280,9 @@ export function matches(token, query) {
     return words.every((word) => text.includes(word));
 }
 
-// ─── Values ──────────────────────────────────────────────────────────────
-
 const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 const number = (value) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
 
-/** `{ n, unit }` from a dimension or a duration in either dialect (`{ value, unit }` or `"16px"`), or null. */
 export function amountOf(value) {
     if (isObject(value)) {
         return number(value.value) !== undefined && typeof value.unit === "string"
@@ -340,14 +298,12 @@ export function amountOf(value) {
     return match ? { n: Number(match[1]), unit: match[2] } : null;
 }
 
-/** An amount written in the dialect of `like` (the object form when `like` is one, else text). */
 export function writeAmount(amount, like) {
     const n = Math.round(amount.n * 10000) / 10000;
 
     return isObject(like) ? { value: n, unit: amount.unit } : `${n}${amount.unit}`;
 }
 
-/** Pixels in an amount, for drawing a bar or a corner (rem and em at 16); null when it has no size. */
 export function pixelsOf(value) {
     const amount = amountOf(value);
 
@@ -362,7 +318,6 @@ export function pixelsOf(value) {
           : null;
 }
 
-/** Milliseconds in a duration; null when it has none. */
 export function millisecondsOf(value) {
     const amount = amountOf(value);
 
@@ -377,7 +332,6 @@ export function millisecondsOf(value) {
 
 const family = (name) => (/^[\w-]+$/.test(name) ? name : `"${name.replace(/"/g, "'")}"`);
 
-/** The CSS of a value of a simple type, as the engine writes it. A type with no simple form gives `undefined`. */
 export function cssOf(type, value) {
     switch (type) {
         case "color": {
@@ -420,10 +374,8 @@ export function cssOf(type, value) {
     }
 }
 
-/** The value to write for a shadow's layers: one layer as an object, several as a list. */
 export const shadowValue = (layers) => (layers.length === 1 ? layers[0] : layers);
 
-/** The layers with one member of one layer changed (a value, or a link written `{name}`), or the layer's `inset`. */
 export const withPart = (layers, at, key, member) =>
     layers.map((layer, index) => {
         if (index !== at) {
@@ -437,7 +389,6 @@ export const withPart = (layers, at, key, member) =>
             : { ...layer, [key]: member };
     });
 
-/** The types that an editor can write whole: the others (a typography style) are edited with Pi. A shadow is edited by parts. */
 export const EDITABLE = new Set([
     "color",
     "dimension",
@@ -449,10 +400,6 @@ export const EDITABLE = new Set([
     "shadow",
 ]);
 
-/**
- * What a person typed for a token of `type`, as a value to write. `like` is the value it replaces: the new one keeps its
- * dialect (an object or text). Returns `{ value }`, or `{ error }` with words for the field.
- */
 export function readInput(type, text, like) {
     const input = String(text ?? "").trim();
 
@@ -548,7 +495,6 @@ export function readInput(type, text, like) {
     }
 }
 
-/** A value for people to read: `#3b6cf6`, `16px`, `120ms`, `600`, `Geist`, `0.2, 0, 0, 1`. */
 export function showValue(token, mode) {
     const { value, css } = mode;
 
@@ -578,36 +524,26 @@ export function showValue(token, mode) {
     }
 }
 
-// ─── The model: saved values with the person's edits over them ───────────────
-
 const keyOf = (mode, token) => `${mode}\u0000${token}`;
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-/** The name a member links to (`{space.2}` → `space.2`), or null for a value of its own. */
 export const linkOf = (member) =>
     typeof member === "string" && /^\{[^{}]+\}$/.test(member) ? member.slice(1, -1) : null;
 
-/** The raw value of a token in a mode, as it is saved: a reference or the value. */
 const rawOf = (value) =>
     value.alias === undefined ? { value: value.value } : { alias: value.alias };
 
-/**
- * The tokens of `system` with the edits of `edits` (a Map from an edit's key to `{ alias }` or `{ value }`) laid over them.
- * `value(name, mode)` is what a token has in a mode now: its value (aliases followed), its CSS, and whether it was edited.
- */
 export function createModel(system, edits = new Map()) {
     const tokens = new Map(system.tokens.map((token) => [token.name, token]));
     const defaultMode = system.modes[0];
     const cache = new Map();
 
-    /** The raw value a mode takes in the file: its own, or the default's when it has none of its own. */
     const savedRaw = (name, mode) => {
         const token = tokens.get(name);
 
         return token?.modes[mode] ? rawOf(token.modes[mode]) : undefined;
     };
 
-    /** The tokens each mode's file sets itself, as the engine says (`overrides`), by mode. */
     const ownSets = new Map();
 
     const ownSet = (mode) => {
@@ -620,10 +556,6 @@ export function createModel(system, edits = new Map()) {
         return ownSets.get(mode);
     };
 
-    /**
-     * Whether a mode takes the default's value for a token, as saved: its file does not set the token (`overrides`), or, with
-     * no `overrides` to say, as far as the saved values can tell.
-     */
     const inherits = (name, mode) => {
         if (mode === defaultMode) {
             return false;
@@ -636,10 +568,6 @@ export function createModel(system, edits = new Map()) {
             : !set.has(name);
     };
 
-    /**
-     * The edit that is in force for a token in a mode: its own, or (a mode that takes the default's value) the default's.
-     * One that gives the value back is the default's saved value (`{ saved }`), or its edit.
-     */
     const editFor = (name, mode) => {
         const own = edits.get(keyOf(mode, name));
 
@@ -670,7 +598,6 @@ export function createModel(system, edits = new Map()) {
         let edit = editFor(name, mode);
 
         if (edit?.saved !== undefined) {
-            // The value that the default mode has, saved: a link is followed in this mode, a value is the same value.
             if (edit.saved.alias === undefined) {
                 return { ...edit.saved, edited: true };
             }
@@ -718,11 +645,6 @@ export function createModel(system, edits = new Map()) {
         return saved;
     }
 
-    /**
-     * A shadow written as parts that may link to other tokens (`{ color: "{color.shadow}", blur: "{space.2}", … }`, one layer
-     * or a list), as it is in a mode: the layers with every link followed, and the `box-shadow` that keeps the links as
-     * `var()`.
-     */
     function shadowFrom(raw, mode, trail) {
         const value = [];
         const css = [];
@@ -770,10 +692,8 @@ export function createModel(system, edits = new Map()) {
     let byVar;
 
     const model = {
-        /** The token that has the custom property `--name`. */
         byVar: (name) =>
             (byVar ??= new Map(system.tokens.map((token) => [token.cssVar, token]))).get(name),
-        /** The color tokens that play each role (`roles`), found once for this model. */
         roles: () => (named ??= roles(model)),
         system,
         defaultMode,
@@ -782,9 +702,7 @@ export function createModel(system, edits = new Map()) {
         token: (name) => tokens.get(name),
         has: (name) => tokens.has(name),
         raw: savedRaw,
-        /** Whether the mode's file sets the token itself, as saved (the default mode's file sets every token). */
         savedOverride: (name, mode) => mode === defaultMode || !inherits(name, mode),
-        /** Whether the token is the mode's own now, with the edits: not the default's value taken as it is. */
         overridden(name, mode) {
             const own = edits.get(keyOf(mode, name));
 
@@ -794,12 +712,6 @@ export function createModel(system, edits = new Map()) {
 
             return own === undefined ? !inherits(name, mode) : own.inherit !== true;
         },
-        /**
-         * A shadow as parts a person can change, in a mode: `{ layers, links }`, each layer `{ offsetX, offsetY, blur, spread,
-         * color, inset }` with a member that links to another token written `{name}`, as in the file. It is read from the edit
-         * if there is one, else from the saved parts (`parts`, which name the tokens a member links to). A shadow that is a
-         * link to another shadow has that one's parts.
-         */
         shadowRaw(name, mode) {
             const owner = model.chain(name, mode).at(-1) ?? name;
             const token = tokens.get(owner);
@@ -839,7 +751,6 @@ export function createModel(system, edits = new Map()) {
                 }),
             };
         },
-        /** What a token has in a mode now. */
         value(name, mode) {
             const key = keyOf(mode, name);
 
@@ -849,15 +760,12 @@ export function createModel(system, edits = new Map()) {
 
             return cache.get(key);
         },
-        /** Whether the person edited the token in this mode, or in the default mode that this one follows. */
         edited: (name, mode) => model.value(name, mode).edited === true,
-        /** The tokens that refer to `name` (in any mode), by name. */
         dependents(name) {
             return system.tokens
                 .filter((token) => Object.values(token.modes).some((each) => each.alias === name))
                 .map((token) => token.name);
         },
-        /** The names an alias chain goes through from `name` to a value: `[name, next, …]`. */
         chain(name, mode) {
             const out = [name];
 
@@ -871,7 +779,6 @@ export function createModel(system, edits = new Map()) {
 
             return out;
         },
-        /** The tokens an alias for `name` may point to: the same type, and none that lead back to `name`. */
         targets(name) {
             const token = tokens.get(name);
 
@@ -882,7 +789,6 @@ export function createModel(system, edits = new Map()) {
                     !model.reaches(each.name, name),
             );
         },
-        /** Whether following aliases from `from` (in any mode) arrives at `to`. */
         reaches(from, to, seen = new Set()) {
             if (from === to) {
                 return true;
@@ -900,10 +806,6 @@ export function createModel(system, edits = new Map()) {
                 (each) => each.alias !== undefined && model.reaches(each.alias, to, seen),
             );
         },
-        /**
-         * The pairs of a color token: those it declares (up to four), or, for body text, its page. Each `{ on, min, exempt?,
-         * auto }`; one that is `auto` is not declared.
-         */
         pairsOf(name) {
             const token = tokens.get(name);
 
@@ -911,7 +813,6 @@ export function createModel(system, edits = new Map()) {
                 return [];
             }
 
-            // The pair names its ground as a token's name, or as a reference to it (`{color.bg.surface}`).
             const declared = (
                 token.contrasts ?? (token.contrast === undefined ? [] : [token.contrast])
             ).map((pair) => ({
@@ -931,7 +832,6 @@ export function createModel(system, edits = new Map()) {
                 ? []
                 : [{ on: ground, min: 4.5, auto: true }];
         },
-        /** The contrast of a token on one pair, in a mode: the ratio and the level it reaches, or null when a color is not one. */
         gradeOf(name, mode, pair) {
             const ink = parseColor(model.value(name, mode).value);
             const ground = tokens.has(pair.on)
@@ -940,13 +840,11 @@ export function createModel(system, edits = new Map()) {
 
             return ink && ground ? { ...grade(contrast(ink, ground), pair.min), ...pair } : null;
         },
-        /** The contrast of a token on each of its pairs, in a mode. */
         contrastsOf: (name, mode) =>
             model
                 .pairsOf(name)
                 .map((pair) => model.gradeOf(name, mode, pair))
                 .filter(Boolean),
-        /** The contrast of a text color on its first pair, in a mode: declared by the token, or worked out for text roles. */
         contrastOf(name, mode) {
             const pair = model.pairsOf(name)[0];
 
@@ -957,18 +855,13 @@ export function createModel(system, edits = new Map()) {
     return model;
 }
 
-/**
- * Whether a color token is body text that sits on the page: its group says text, and its own name says the plain kinds
- * (`primary`, `muted`, `link`). One that is `inverse`, `faint`, `disabled`, or `on-accent` sits on another ground, which only
- * its declared pair can say: nothing is worked out for it.
- */
+// `inverse`, `faint`, `disabled`, and `on-accent` sit on another ground: only a declared pair can say.
 const isText = (token) =>
     token.path
         .slice(0, -1)
         .some((part) => /^(text|fg|foreground|content|ink|label)$/i.test(part)) &&
     /^(primary|secondary|tertiary|muted|default|body|strong|link)$/i.test(token.path.at(-1) ?? "");
 
-/** The words that name each role: the group a token is in (`text`), and its own name (`primary`), best first. */
 const ROLES = {
     canvas: {
         group: ["bg", "background", "surface", "canvas", "color"],
@@ -1021,10 +914,6 @@ const ROLES = {
     },
 };
 
-/**
- * The color tokens that play each role (a page, a card, text, an accent, a border, the statuses), found by the last two
- * words of their names: `{ canvas: "color.bg.canvas", … }`. A role with no match is left out. The same names in every mode.
- */
 export function roles(model) {
     const found = {};
     const colors = model.tokens.filter((token) => token.type === "color");
@@ -1040,7 +929,7 @@ export function roles(model) {
             const named = words.name.indexOf(name);
             const grouped = words.group.indexOf(group);
 
-            // Both words must fit, and a hover or a disabled state is never the role.
+            // A hover or a disabled state is never the role.
             if (
                 named === -1 ||
                 grouped === -1 ||
@@ -1065,33 +954,21 @@ export function roles(model) {
     return found;
 }
 
-// ─── Edits, undo, and redo ───────────────────────────────────────────────
-
-/** An empty history: the edits made (`past`, oldest first) and the ones undone (`future`, the next redo last). */
 export const emptyHistory = () => ({ past: [], future: [] });
 
 const GUIDELINES = "guidelines";
-/** Edits to one thing in a row, closer than this, make one step of undo (a color picker drag). */
+// Edits to one thing closer than this make one undo step (a color picker drag).
 const COALESCE_MS = 1200;
 
-/** The key of an edit: a token in a mode, or the guidelines. */
-export const editKey = (op) => (op.kind === "guidelines" ? GUIDELINES : keyOf(op.mode, op.token));
+const editKey = (op) => (op.kind === "guidelines" ? GUIDELINES : keyOf(op.mode, op.token));
 
-/** A token edit: `raw` is `{ alias }` or `{ value }`, or `{ inherit: true }`: the mode's file does not set the token. */
 export const tokenEdit = (mode, token, raw) => ({ kind: "token", mode, token, raw });
-
-/** Give a mode's token back to the default mode: the file stops setting it (a removal, not a copy of the value). */
-export const inheritEdit = (mode, token) => tokenEdit(mode, token, { inherit: true });
 
 export const guidelinesEdit = (text) => ({ kind: "guidelines", text });
 
-/** The steps of undo that are kept: past it, a step that a later one makes no difference to goes first. */
+// Past this, the oldest step that a later one shadows goes first.
 const MAX_STEPS = 500;
 
-/**
- * The history after `op`: a step of its own, or (with `coalesce`) the same step again when it edits the thing the last one
- * did, a moment later.
- */
 export function push(history, op, now = Date.now(), coalesce = true) {
     const last = history.past.at(-1);
     const again =
@@ -1101,7 +978,7 @@ export function push(history, op, now = Date.now(), coalesce = true) {
         now - (last.at ?? 0) < COALESCE_MS;
     let past = [...(again ? history.past.slice(0, -1) : history.past), { ...op, at: now }];
 
-    // A long session of edits keeps its newest steps: the first step whose thing a later one sets again is the one to go.
+    // Keep the newest steps: drop the first one whose thing a later step sets again.
     if (past.length > MAX_STEPS) {
         const keys = past.map(editKey);
         const shadowed = keys.findIndex((key, at) => keys.indexOf(key, at + 1) !== -1);
@@ -1128,7 +1005,6 @@ export function redo(history) {
         : { past: [...history.past, { ...next, at: 0 }], future: history.future.slice(0, -1) };
 }
 
-/** The edits now in force: the last one for each thing, as a Map from its key (a token's edits first, in order). */
 export function editsOf(history) {
     const edits = new Map();
 
@@ -1139,7 +1015,6 @@ export function editsOf(history) {
     return edits;
 }
 
-/** The map `createModel` takes: token edits only, by key. */
 export function tokenEdits(history) {
     return new Map(
         [...editsOf(history)]
@@ -1148,11 +1023,6 @@ export function tokenEdits(history) {
     );
 }
 
-/**
- * The change to save, and how many things it changes. An edit that puts back what is saved changes nothing, and is left out.
- * `set` is in the order the edits were made. `remove` is what a mode's file stops setting (`inheritEdit`): only a token that
- * the file sets now.
- */
 export function changeOf(system, history) {
     const model = createModel(system);
     const set = [];
@@ -1178,7 +1048,7 @@ export function changeOf(system, history) {
 
         const saved = model.raw(op.token, op.mode);
 
-        // (a value that a mode only has by taking the default's is not set again to the same value: that would be a copy)
+        // A value that a mode only has by taking the default's is not set again: that would be a copy.
         if (saved !== undefined && same(saved, op.raw)) {
             continue;
         }
@@ -1198,9 +1068,7 @@ export function changeOf(system, history) {
     };
 }
 
-// ─── The CSS for the page and the specimens ──────────────────────────────────
-
-/** A CSS value that is safe to write inside a `<style>`: no markup, no block, no escape, no import or url. */
+// Safe inside a `<style>`: no markup, no block, no escape, no import or url.
 export function safeCss(value) {
     const text = String(value ?? "");
 
@@ -1209,11 +1077,10 @@ export function safeCss(value) {
         : "";
 }
 
-/** A custom property that the artifact bridge takes: `--` and up to 78 letters, digits, `_`, `-`. */
-export const bridgeName = (cssVar) => /^--[A-Za-z0-9_-]{1,78}$/.test(cssVar);
+// The artifact bridge takes `--` and up to 78 letters, digits, `_`, `-`.
+const bridgeName = (cssVar) => /^--[A-Za-z0-9_-]{1,78}$/.test(cssVar);
 
-/** The custom properties of a mode as `[name, css]`, from what the tokens have now. */
-export function varsOf(model, mode) {
+function varsOf(model, mode) {
     const out = [];
 
     for (const token of model.tokens) {
@@ -1227,12 +1094,7 @@ export function varsOf(model, mode) {
     return out;
 }
 
-/**
- * What the open design is told, to show `mode` with the edits, as `{ name: css }`: the custom properties that this mode
- * has other than the saved default's, and those that any mode sets other than the default, set to this mode's value (a
- * page that follows the system's dark setting by itself shows `mode` all the same). The bridge refuses a value past 200
- * characters, and a refused batch changes nothing, so a long one is left out.
- */
+// The bridge refuses a value past 200 characters, and a refused batch changes nothing: a long one is left out.
 export function previewVars(model, mode) {
     const base = model.defaultMode;
     const out = {};
@@ -1256,22 +1118,17 @@ export function previewVars(model, mode) {
     return out;
 }
 
-/** The `:root` block of a mode, for a specimen's page. */
 export function themeCss(model, mode) {
     return `:root{${varsOf(model, mode)
         .map(([name, css]) => `${name}:${css}`)
         .join(";")}}`;
 }
 
-// ─── Specimens drawn from a resolved value ───────────────────────────────
-
-/** The names of the app's own fonts, for the system's: a specimen in Geist shows in the font the app has. */
 const FONTS = {
     geist: '"Pocket Sans", Geist',
     "jetbrains mono": '"Pocket Mono", "JetBrains Mono"',
 };
 
-/** A font stack with each family of the app's own put first of its pair: `Geist, serif` → `"Pocket Sans", Geist, serif`. */
 export const fontStack = (css) =>
     css
         .split(",")
@@ -1282,7 +1139,6 @@ export const fontStack = (css) =>
         })
         .join(", ");
 
-/** The style text of a resolved typography value (family, size, weight, line height, letter spacing), or "". */
 export function typographyStyle(value) {
     if (!isObject(value)) {
         return "";
@@ -1319,7 +1175,6 @@ export function typographyStyle(value) {
     return parts.join(";");
 }
 
-/** The `box-shadow` of a resolved shadow value (one layer or a list), or "" when it has none that can be drawn. */
 export function shadowOf(value) {
     const layers = Array.isArray(value) ? value : [value];
     const css = layers
@@ -1343,7 +1198,6 @@ export function shadowOf(value) {
     return safeCss(css);
 }
 
-/** One layer of a shadow in words: `y 18 · blur 40 · spread -18 · 14%` (`x` and `spread` only when they are not 0; `inset` first). */
 function layerWords(layer) {
     const size = (member) => {
         const px = pixelsOf(member ?? "0px");
@@ -1364,38 +1218,16 @@ function layerWords(layer) {
     return `${layer.inset === true ? "inset " : ""}${parts.join(" · ")}`;
 }
 
-/** Every layer of a shadow, in words and with its color: `[{ words: "y 18 · blur 40 · 14%", color }]`. */
 export function shadowLines(value) {
     return (Array.isArray(value) ? value : [value])
         .filter(isObject)
         .map((layer) => ({ words: layerWords(layer), color: layer.color }));
 }
 
-/**
- * A shadow in a line, for a label: its first layer in words, and the layers after the first as `+1 layer`. (A tile shows every
- * layer: `shadowLines`.)
- */
-export function shadowSummary(value) {
-    const lines = shadowLines(value);
-
-    if (lines.length === 0) {
-        return "";
-    }
-
-    return [
-        lines[0].words,
-        ...(lines.length > 1 ? [`+${lines.length - 1} layer${lines.length === 2 ? "" : "s"}`] : []),
-    ].join(" · ");
-}
-
-/** How many things the unsaved edits change in `system` (a step that puts a value back changes nothing). */
 export const unsavedCount = (system, history) => (system ? changeOf(system, history).count : 0);
-
-// ─── A style made of parts that link to other tokens ──────────────────────────
 
 const VAR = /var\((--[A-Za-z0-9_-]{1,78})\)/g;
 
-/** `text` (CSS) with each `var(--name)` of a token put as what the token is now in `mode`, and so on in turn. */
 export function literalOf(model, mode, text, depth = 0) {
     return depth > 6
         ? text
@@ -1407,7 +1239,6 @@ export function literalOf(model, mode, text, depth = 0) {
           });
 }
 
-/** The custom properties that `text` uses, set to what they are now in `mode` (a style text), and those they use in turn. */
 export function scopeStyle(model, mode, text, limit = 40) {
     const declared = new Map();
     const queue = [text];
@@ -1430,11 +1261,6 @@ export function scopeStyle(model, mode, text, limit = 40) {
 
 const TYPE_PARTS = ["font-family", "font-size", "font-weight", "line-height", "letter-spacing"];
 
-/**
- * The style of a typography token in `mode`. The engine gives its members as CSS that links to the tokens they come from
- * (`font-size: var(--font-size-base)`): the style sets those properties to what they are now, so an edit to the size
- * token moves the specimen. Without them, the style is drawn from the resolved value.
- */
 export function typographyStyleOf(model, mode, now) {
     const parts = isObject(now.parts) ? now.parts : undefined;
 
@@ -1452,7 +1278,6 @@ export function typographyStyleOf(model, mode, now) {
     return [scopeStyle(model, mode, text.join(" ")), ...rules].filter(Boolean).join(";");
 }
 
-/** The line under a typography token's name, from what its parts are now: `20px / 1.15 · 600 · Geist`. */
 export function typographyMeta(model, mode, now) {
     const parts = isObject(now.parts) ? now.parts : undefined;
     const part = (name) =>

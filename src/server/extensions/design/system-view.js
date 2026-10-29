@@ -1,6 +1,3 @@
-// The System view: the project's design system as a place to work in. The bar (the pinned picker item, the mode in view, undo
-// and redo), the sections, the unsaved edits and the bar that saves them, and, when there is room, the open design beside it
-// that shows every edit live. A person who cannot steer sees all of it and changes none of it.
 import { clampSize, DEVICES } from "./devices.js";
 import { modeTitle } from "./system-widgets.js";
 import {
@@ -17,12 +14,10 @@ import {
     withPart,
 } from "./system.js";
 
-/** How often the open view asks whether Pi (or someone else) changed the system on disk. */
 const REFRESH_MS = 20_000;
 
 const MODE_ICONS = { light: "sun", dark: "moon" };
 
-/** Whether the keys go to a field: undo and save then belong to it. */
 const typing = (target) =>
     target instanceof HTMLElement &&
     (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
@@ -32,9 +27,6 @@ export function createSystemView(env, canvas, sections, widgets) {
     const { html, useEffect, useMemo, useRef, useState } = pocket;
     const { Ico, Popover } = parts;
 
-    // ─── The bar ─────────────────────────────────────────────────────────────
-
-    /** Which mode is in view: each mode, and the modes side by side. */
     function ModeSwitch({ s, modes, narrow }) {
         const [menu, setMenu] = useState(false);
 
@@ -53,8 +45,6 @@ export function createSystemView(env, canvas, sections, widgets) {
             { value: "both", label: modes.length === 2 ? "Both" : "All", icon: "compare" },
         ];
 
-        // Up to four modes: a segmented control, a button each (an icon on a phone, the name too where there is room).
-        // More than that: one button that shows the mode in view and opens the list.
         if (modes.length > 4) {
             const shown = options.find((option) => option.value === current) ?? options[0];
 
@@ -122,7 +112,6 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
-    /** What the system's menu offers: publish, export, modes, reload, and the conversation's room. */
     function SystemMenu({ s, data, canEdit, onClose, onModes }) {
         const [busy, setBusy] = useState(null);
         const errors = data?.problems.some((problem) => problem.level === "error") ?? false;
@@ -220,7 +209,6 @@ export function createSystemView(env, canvas, sections, widgets) {
         <//>`;
     }
 
-    /** Add a mode, or remove one. A removed mode loses its file. */
     function ModesPopover({ data, onClose, narrow }) {
         const [name, setName] = useState("");
         const [busy, setBusy] = useState(false);
@@ -316,11 +304,9 @@ export function createSystemView(env, canvas, sections, widgets) {
         <//>`;
     }
 
-    /** The section tabs: only the sections that have something in them, and Components and Guidelines. */
     function SectionTabs({ s, data, split, hasDesign }) {
         const unsaved = unsavedCount(data, s.history);
         const bar = useRef(null);
-        // What a tab counts is what its section shows open (`sectionCounts`): the roles of Colors; a folded group has its own count.
         const counts = useMemo(() => sectionCounts(data?.tokens ?? []), [data]);
         const present = useMemo(
             () => new Set((data?.tokens ?? []).map((token) => sectionOf(token))),
@@ -336,7 +322,6 @@ export function createSystemView(env, canvas, sections, widgets) {
             ? s.sysSection
             : list[0]?.id;
 
-        // The tab that is on comes into view in a bar that scrolls (a phone's).
         useEffect(() => {
             const box = bar.current;
             const tab = box?.querySelector('[aria-selected="true"]');
@@ -349,9 +334,7 @@ export function createSystemView(env, canvas, sections, widgets) {
             }
         }, [current]);
 
-        // A bar that scrolls marks where more of it is out of sight (`data-more`, `data-less`). A tab that is not whole, or that
-        // is under a mark, is left out (`data-cut`) at once, while the bar scrolls too: it never shows half a letter, only whole
-        // tabs and a mark toward the rest.
+        // A tab that is not whole, or is under a mark, is left out (`data-cut`) so a half letter never shows.
         useEffect(() => {
             const box = bar.current;
 
@@ -359,7 +342,6 @@ export function createSystemView(env, canvas, sections, widgets) {
                 return undefined;
             }
 
-            // The width of the mark at an edge that has more: a tab under it is not read, so it is not whole.
             const FADE = 26;
 
             const mark = () => {
@@ -392,12 +374,10 @@ export function createSystemView(env, canvas, sections, widgets) {
             };
         }, [list.length, data === null, current]);
 
-        // With no system there are no sections to go between.
         if (data === null) {
             return null;
         }
 
-        // Arrow keys move between the tabs (and Home and End go to the ends); Tab goes past them, to the next control.
         const move = (event) => {
             const at = list.findIndex((section) => section.id === current);
             const to =
@@ -486,8 +466,7 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
-    /** The bar of the System view: the picker, the mode in view, undo and redo, and the menu. */
-    function SystemBar({ s, designs, design, shown, room, canEdit, Picker }) {
+    function SystemBar({ s, designs, design, room, canEdit, Picker }) {
         const [open, setOpen] = useState(null);
         const data = s.system.data;
         const narrow = env.sizeClass(s) === "narrow";
@@ -583,12 +562,8 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
-    // ─── Under the bar ───────────────────────────────────────────────────────
-
-    /** What the validator found: errors stop a save, warnings do not. A tap on one with a token goes to the token. */
     function Problems({ problems, has, narrow }) {
         const errors = problems.filter((problem) => problem.level === "error").length;
-        // Errors stay open where there is room; on a phone, and for warnings, it is one line with a count until a tap.
         const [open, setOpen] = useState(errors > 0 && !narrow);
         const [all, setAll] = useState(false);
 
@@ -660,11 +635,6 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
-    /**
-     * What the system says that needs no action (`notes`): a contrast pair that is below its minimum on purpose (a disabled or
-     * decorative color: exempt). One quiet line that opens; it is not a problem, so it never shows as a warning. It is about
-     * colors, so it shows on the Colors tab only.
-     */
     function Notes({ notes, has }) {
         if (!Array.isArray(notes) || notes.length === 0) {
             return null;
@@ -695,10 +665,8 @@ export function createSystemView(env, canvas, sections, widgets) {
         </details>`;
     }
 
-    /** Unsaved edits and the save: how many, undo, give up, and Save. */
     function SaveBar({ s, count, data, canEdit }) {
-        // "Discard" with more than one change asks again, for a few seconds: nothing brings the changes back. The question is
-        // about the changes there are when it is asked: if their number moves, it is no longer the question.
+        // The confirmation is about the changes there are when it is asked: if their number moves, it is no longer the question.
         const [askedFor, setAskedFor] = useState(null);
         const asking = askedFor === count && count > 1;
 
@@ -813,7 +781,6 @@ export function createSystemView(env, canvas, sections, widgets) {
         </footer>`;
     }
 
-    /** What shows when the project has no tokens yet. */
     function Blank({ s, canEdit }) {
         const legacy = s.system.legacy;
 
@@ -865,16 +832,12 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
-    // ─── The open design beside the view ─────────────────────────────────────
-
-    /** The open design, live with the edits: a choice of design and size, and the page. */
     function Preview({ s, designs, design, shown, size, canEdit, pane }) {
         const narrowHead = pane === "page";
         const edits = unsavedCount(s.system.data, s.history);
         const box = useRef(null);
         const room = parts.useSize(box);
-        // Beside the view, with no size chosen, the page has the room that the pane has: a page at the size of a desktop in a
-        // pane a third as wide is a card in a corner. A size that was chosen (a phone, a tablet, a desktop) is kept.
+        // Beside the view, with no size chosen, the page fills the pane; a chosen size is kept.
         const fitted =
             s.device === "auto" && pane === "side" && room.w > 0 && room.h > 0
                 ? { w: clampSize(room.w - 36), h: clampSize(room.h - 78) }
@@ -962,8 +925,6 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
-    // ─── The whole ───────────────────────────────────────────────────────────
-
     function SystemView({ s, designs, design, shown, size, room, canEdit }) {
         const system = s.system;
         const data = system.data;
@@ -996,12 +957,10 @@ export function createSystemView(env, canvas, sections, widgets) {
             model,
             modes,
             canEdit,
-            narrow,
             guidelines,
             query: s.sysSearch ? s.sysQuery.trim() : "",
         };
 
-        // The first read, and then a quiet look every so often: Pi changes the files too.
         useEffect(() => {
             if (system.status === "idle") {
                 void systemData.load();
@@ -1016,7 +975,6 @@ export function createSystemView(env, canvas, sections, widgets) {
             return () => clearInterval(timer);
         }, []);
 
-        // Undo, redo, and save, as the keys that do them elsewhere (a field keeps its own).
         useEffect(() => {
             const onKey = (event) => {
                 if (
@@ -1047,7 +1005,6 @@ export function createSystemView(env, canvas, sections, widgets) {
             return () => document.removeEventListener("keydown", onKey);
         }, [canEdit]);
 
-        // A section starts at its top.
         useEffect(() => scroll.current?.scrollTo({ top: 0 }), [current]);
 
         let body;
@@ -1113,8 +1070,7 @@ export function createSystemView(env, canvas, sections, widgets) {
                 <${Section} ctx=${ctx} />`;
         }
 
-        // What a screen reader is told after a save: a place that is always there, so that the words put in it are read out.
-        // (A refusal and a conflict have their own `alert`s.)
+        // A live region that is always there, so that words put in it are read out.
         const said = s.save.status === "saved" ? s.save.note : "";
 
         const column = html`<div class="dsy-column">
@@ -1143,7 +1099,7 @@ export function createSystemView(env, canvas, sections, widgets) {
             pane=${split ? "side" : "page"}
         />`;
 
-        // The list of tokens to link to is drawn here, over the whole view: a row would hold it inside its own box.
+        // Drawn over the whole view: a row would hold it inside its own box.
         const picking = s.sysPick && model?.has(s.sysPick.token) ? s.sysPick : null;
 
         return html`<div class="dsy-main" data-split=${split} data-pane=${s.sysPane}>
@@ -1170,7 +1126,6 @@ export function createSystemView(env, canvas, sections, widgets) {
                         env.closePick();
 
                         if (picking.part) {
-                            // A part of a shadow links to the token: the member is written as a reference, as in the file.
                             const { layers } = model.shadowRaw(picking.token, picking.mode);
 
                             env.editToken(picking.token, picking.mode, {

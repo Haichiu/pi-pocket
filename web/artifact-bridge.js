@@ -252,7 +252,6 @@ export function checkPageMessage(data) {
         }
 
         case "pocket-pin": {
-            // A tap on a pin, or where the element of a pin was brought to (its rectangle in the frame).
             const rect = data.rect;
             const finite = (value) =>
                 typeof value === "number" && Number.isFinite(value) && Math.abs(value) < 1e6;
@@ -275,7 +274,7 @@ export function checkPageMessage(data) {
         }
 
         case "pocket-size":
-            // The height of the page's content, in the frame's pixels (0: the page was too big to measure).
+            // 0: the page was too big to measure.
             return isCount(data.height, 100_000) ? { type: data.type, height: data.height } : null;
 
         case "pocket-deck":
@@ -370,7 +369,6 @@ export function checkAppMessage(raw) {
                     pin.label = target.label;
                 }
 
-                // Scroll this one into view in the page (a person tapped it in a list).
                 if (target.reveal === true) {
                     pin.reveal = true;
                 }

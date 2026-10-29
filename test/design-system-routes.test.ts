@@ -1,7 +1,3 @@
-// The System view's server part (`extensions/design/system-routes.ts`) over HTTP: who reads and who writes the design
-// system, what a save accepts and what it refuses, the check of a design, the documentation page as an artifact, and the
-// zip of the files for code. The engines behind it (`system-api.ts`) are whatever this copy has; the tests ask only what
-// their contract says.
 import { cleanUp, newSession, openApp, owner, root, scriptedModel } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
@@ -41,7 +37,6 @@ before(async () => {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 
-    // Three folders: with a system, with none, and with only the old Markdown file.
     folder = join(root, "with-system");
     mkdirSync(folder, { recursive: true });
     writeSystemFixture(folder);
@@ -117,12 +112,10 @@ test("everyone who sees the session reads the system, and a person invited to on
     assert.match(data.system.guidelines, /^# Harbor/);
     assert.deepEqual(data.system.problems, []);
     assert.match(data.system.revision, /^[0-9a-f]{16}$/);
-    // The files that were made, with their sizes: the browser needs no more of them.
     assert.ok(data.system.dist["tokens.css"] > 0);
     assert.equal(data.system.compiled, undefined);
     assert.equal(typeof data.system.componentsCss, "string");
 
-    // A viewer reads the same; so does anyone who steers.
     assert.deepEqual(await read("Vic"), data);
     assert.deepEqual(await read("Gale"), data);
     // Invited to one session: a module's web part is for the whole app, so there is none for them.
@@ -135,7 +128,6 @@ test("the revision answers `unchanged`, and a project with no system says what i
     const same = (await call("owner", `system?revision=${data.system.revision}`)).data;
 
     assert.deepEqual(same, { unchanged: true, revision: data.system.revision });
-    // Another revision is the whole system again.
     assert.equal((await call("owner", "system?revision=nope")).data.system.name, "Harbor");
     assert.deepEqual(await read("owner", bare), { system: null, legacy: null });
 
@@ -143,7 +135,6 @@ test("the revision answers `unchanged`, and a project with no system says what i
 
     assert.equal(old.system, null);
     assert.ok(old.legacy > 10);
-    // A linked folder is not followed.
     const hidden = join(root, "linked");
 
     mkdirSync(join(hidden, ".pi"), { recursive: true });
@@ -151,7 +142,6 @@ test("the revision answers `unchanged`, and a project with no system says what i
 
     const linked = await newSession(app, hidden);
 
-    // The engine refuses a linked folder, in words: the route says them, and the view says that it could not read it.
     const refused = await call("owner", "system", undefined, linked);
 
     assert.equal(refused.status, 400);
@@ -173,7 +163,6 @@ test("a save changes tokens in a mode, writes the files, and answers with the sy
     assert.equal(tokenOf(saved.data, "color.accent.default").modes.light.value, "#e8590c");
     assert.equal(tokenOf(saved.data, "color.accent.default").modes.dark.alias, "color.red.400");
     assert.notEqual(saved.data.system.revision, before.system.revision);
-    // The files on disk, and what is generated from them.
     assert.equal(
         JSON.parse(readFileSync(file("tokens.json"), "utf8")).color.accent.default.$value,
         "#e8590c",
@@ -206,8 +195,6 @@ test("a mode gives a token back to the default mode with a removal, and a shadow
     assert.ok(before.system.overrides.dark.includes("color.border.strong"));
     assert.equal(before.system.overrides.light, undefined, "the default mode sets every token");
 
-    // A removal is for a token that a mode's own file sets. The default mode, a token the mode takes already, and names that are
-    // not there are refused, and nothing changes.
     for (const remove of [
         [{ mode: "light", token: "color.border.strong" }],
         [{ mode: "dark", token: "color.border.focus" }],
@@ -235,7 +222,6 @@ test("a mode gives a token back to the default mode with a removal, and a shadow
 
     assert.equal(saved.status, 200);
     assert.equal(saved.data.ok, true);
-    // Not a copy: the file no longer has the token, the engine says dark takes it, and dark has light's value.
     assert.equal(
         JSON.parse(readFileSync(file("tokens.dark.json"), "utf8")).color?.border?.strong,
         undefined,
@@ -243,7 +229,6 @@ test("a mode gives a token back to the default mode with a removal, and a shadow
     assert.equal(saved.data.system.overrides.dark.includes("color.border.strong"), false);
     assert.deepEqual(tokenOf(saved.data, "color.border.strong").modes.dark.value, light.value);
 
-    // A shadow by its parts: members that link to tokens stay links in the file, and the view gets the parts to edit.
     const result = await call("owner", "system", {
         set: [
             {
@@ -402,14 +387,12 @@ test("guidelines are saved as text, with no control characters, and modes are ad
 
     assert.equal(added.data.ok, true);
     assert.deepEqual(added.data.system.modes, ["light", "dark", "high-contrast"]);
-    // A mode starts with the default's values, in every token.
     assert.deepEqual(
         tokenOf(added.data, "color.bg.canvas").modes["high-contrast"].value,
         tokenOf(added.data, "color.bg.canvas").modes.light.value,
     );
     assert.ok(existsSync(file("tokens.high-contrast.json")));
 
-    // A mode is added or removed, never rewritten, and the default is the tokens file: it stays.
     const before = readFileSync(file("tokens.dark.json"), "utf8");
 
     assert.equal((await call("owner", "system", { modes: { dark: {} } })).status, 400);
@@ -445,7 +428,6 @@ test("what a browser sends is cut to a change before it goes to the engine", () 
     assert.deepEqual(change.modes, { fresh: {}, gone: null });
     assert.equal(baseRevision, "abc");
 
-    // A removal has a mode and a token, and nothing else; its limits are the save's.
     assert.deepEqual(
         cleanChange(web, {
             remove: [{ mode: "dark", token: "color.bg.canvas", extra: "left out" }],
@@ -482,7 +464,6 @@ test("a check of a design answers with a report that has a fixed shape, for thos
         ),
     );
 
-    // A mode of the system: the page is checked in that mode, in the color scheme that the system gives it.
     const inDark = await call("owner", "system/check", {
         id: "ferry",
         mode: "dark",
@@ -491,7 +472,6 @@ test("a check of a design answers with a report that has a fixed shape, for thos
 
     assert.equal(inDark.status, 200);
     assert.equal((inDark.data.report as CheckReport).colorScheme, "dark");
-    // A mode that the system does not have, or no name, is refused.
     const noMode = await call("owner", "system/check", { id: "ferry", mode: "sepia" });
 
     assert.equal(noMode.status, 400);
@@ -513,7 +493,6 @@ test("a check of a design answers with a report that has a fixed shape, for thos
         (await call("owner", "system/check", { id: "ferry", viewport: "watch" })).status,
         400,
     );
-    // The id is the artifact's: not a path.
     assert.equal((await call("owner", "system/check", { id: "../ferry" })).status, 400);
 });
 
@@ -542,7 +521,6 @@ body { margin: 0; padding: 24px; background: ${hexOf("color.bg.canvas")}; font: 
 
     assert.ok(fixable.length >= 1, "an exact match is marked as one that a tap can fix");
 
-    // The tap: a new version, the page rewritten, the script and the off-system blue untouched.
     const key = "fix-key-0001";
     const fixed = await call("owner", "system/fix", { ...body, key });
 
@@ -573,7 +551,6 @@ body { margin: 0; padding: 24px; background: ${hexOf("color.bg.canvas")}; font: 
     );
     assert.equal(await bodyOf(1), page, "the version it came from is as it was");
 
-    // The same tap again finds the version it made; a record with its call id; the newest is the new one.
     assert.equal((await call("owner", "system/fix", { ...body, key })).data.version, 2);
 
     const index = await app.harness.snapshot(ArtifactsDoc, session, BACKGROUND_CONTEXT);
@@ -581,7 +558,6 @@ body { margin: 0; padding: 24px; background: ${hexOf("color.bg.canvas")}; font: 
     assert.equal(index?.items.exact!.versions.length, 2);
     assert.equal(index?.items.exact!.versions.at(-1)!.callId, `design-fix:${key}`);
 
-    // Nothing more to fix in the new version (a new key: it is not the same tap), and the checks of a body.
     assert.equal((await call("owner", "system/fix", { ...body, key: "fix-key-0002" })).status, 409);
     assert.equal((await call("owner", "system/fix", body)).status, 400);
     assert.equal((await call("owner", "system/fix", { ...body, key: "no" })).status, 400);
@@ -666,7 +642,6 @@ test("a report from the check is cut to its fixed shape: the page's words are da
     assert.equal(clean.findings[0]!.pid, "p q");
     assert.deepEqual(clean.findings[0]!.rect, { x: 0, y: 1e7, width: 3.1, height: 0 });
     assert.ok(clean.findings.every((each) => each.rule !== ("made-up" as never)));
-    // The counts are of the findings kept, not of what the page said.
     assert.equal(clean.summary.errors, 0);
     assert.equal(clean.summary.warnings, LIMITS.findings);
     assert.equal(clean.summary.elements, 0);
@@ -685,11 +660,9 @@ test("the documentation page is published as a design, a version each time, once
 
     assert.equal(first.status, 200);
     assert.deepEqual(first.data, { id: DOCS_ID, version: 1 });
-    // The same tap again finds the version it made; another tap makes the next.
     assert.equal((await call("owner", "system/docs", { key: "key-docs-0001" })).data.version, 1);
     assert.equal((await call("Gale", "system/docs", { key: "key-docs-0002" })).data.version, 2);
 
-    // An artifact of the session: HTML, with its page, and its files kept by their hash.
     const index = await app.harness.snapshot(
         ArtifactsDoc,
         session,
@@ -715,7 +688,6 @@ test("the documentation page is published as a design, a version each time, once
         );
     }
 
-    // It shows up as a design of the session.
     const list = (await call("owner", "artifacts")).data.artifacts as { id: string }[];
 
     assert.ok(list.some((each) => each.id === DOCS_ID));
@@ -741,7 +713,6 @@ test("the generated files are exported as a zip in the session's folder", async 
         assert.ok(bytes.includes(Buffer.from(name)), name);
     }
 
-    // The browser downloads it through the core route.
     const download = await fetch(
         `${base}/api/c/${session}/download?path=${encodeURIComponent(made.data.relative)}`,
         {

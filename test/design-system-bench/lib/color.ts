@@ -1,9 +1,5 @@
-/**
- * Color math for the bench: parse the CSS and DTCG color forms, ΔE 2000, and WCAG contrast. The bench keeps its own
- * copy so a mistake in the code it scores cannot hide behind a shared helper.
- */
+// The bench keeps its own copy so a mistake in the code it scores cannot hide behind a shared helper.
 
-/** sRGB in 0–255 (floats), with alpha in 0–1. */
 export interface Rgba {
     r: number;
     g: number;
@@ -34,13 +30,11 @@ const NAMED: Record<string, string> = {
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
-/** The gamma-encoded value (0–1) of a linear one. */
 const encode = (linear: number) =>
     linear <= 0.0031308
         ? 12.92 * linear
         : 1.055 * Math.abs(linear) ** (1 / 2.4) * Math.sign(linear) - 0.055;
 
-/** The linear value (0–1) of a gamma-encoded one. */
 const decode = (value: number) =>
     value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
 
@@ -77,7 +71,6 @@ function fromXyz(x: number, y: number, z: number, alpha = 1): Rgba {
 }
 
 function fromLab(l: number, a: number, b: number, alpha = 1): Rgba {
-    // CIE Lab with the D65 white point (the sRGB default).
     const fy = (l + 16) / 116;
     const fx = fy + a / 500;
     const fz = fy - b / 200;
@@ -125,7 +118,6 @@ function fromP3(r: number, g: number, b: number, alpha = 1): Rgba {
     );
 }
 
-/** A number or a percentage (of `scale`) from a CSS component; `none` is 0. */
 function component(text: string | undefined, scale = 1): number {
     if (text === undefined || text === "none") {
         return 0;
@@ -134,7 +126,6 @@ function component(text: string | undefined, scale = 1): number {
     return text.endsWith("%") ? (Number.parseFloat(text) / 100) * scale : Number.parseFloat(text);
 }
 
-/** An angle in degrees from `210`, `210deg`, `0.5turn`, `3.14rad`. */
 function angle(text: string | undefined): number {
     if (text === undefined || text === "none") {
         return 0;
@@ -153,7 +144,6 @@ function angle(text: string | undefined): number {
     return text.endsWith("rad") ? (value * 180) / Math.PI : value;
 }
 
-/** Parse a CSS color string. Returns `undefined` for anything that is not a plain, static color. */
 export function parseColor(input: string): Rgba | undefined {
     const text = input.trim().toLowerCase();
 
@@ -200,7 +190,6 @@ export function parseColor(input: string): Rgba | undefined {
         body = body.slice(0, slash).trim();
     }
 
-    // The legacy comma form puts the alpha last: `rgba(0, 0, 0, 0.5)`.
     const parts = body.split(/[\s,]+/).filter((part) => part !== "");
 
     if (slash === -1 && parts.length === 4) {
@@ -279,7 +268,6 @@ export function parseColor(input: string): Rgba | undefined {
     return undefined;
 }
 
-/** A DTCG 2025.10 color object (`{ colorSpace, components, alpha?, hex? }`) or any CSS string. */
 export function colorOf(value: unknown): Rgba | undefined {
     if (typeof value === "string") {
         return parseColor(value);
@@ -345,11 +333,9 @@ export function colorOf(value: unknown): Rgba | undefined {
         }
     }
 
-    // An unknown color space: the object's own sRGB fallback, when it has one.
     return typeof object.hex === "string" ? parseColor(object.hex) : undefined;
 }
 
-/** `#rrggbb`, or `#rrggbbaa` when the color is not opaque. */
 export function toHex(color: Rgba): string {
     const byte = (value: number) =>
         Math.round(clamp(value, 0, 255))
@@ -360,8 +346,7 @@ export function toHex(color: Rgba): string {
     return color.a < 0.995 ? base + byte(color.a * 255) : base;
 }
 
-/** CIE Lab (D65) of an sRGB color, ignoring alpha. */
-export function toLab(color: Rgba): [number, number, number] {
+function toLab(color: Rgba): [number, number, number] {
     const [r, g, b] = [decode(color.r / 255), decode(color.g / 255), decode(color.b / 255)];
     const x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047;
     const y = 0.2126729 * r + 0.7151522 * g + 0.072175 * b;
@@ -372,7 +357,6 @@ export function toLab(color: Rgba): [number, number, number] {
     return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 }
 
-/** CIEDE2000 between two colors (alpha ignored). 1 is barely visible, about 2.3 is a just-noticeable difference. */
 export function deltaE(first: Rgba, second: Rgba): number {
     const [l1, a1, b1] = toLab(first);
     const [l2, a2, b2] = toLab(second);
@@ -430,7 +414,6 @@ export function deltaE(first: Rgba, second: Rgba): number {
     return Math.sqrt((dl / sl) ** 2 + (dc / sc) ** 2 + (dH / sh) ** 2 + rt * (dc / sc) * (dH / sh));
 }
 
-/** Whether two colors are the same within `tolerance` (ΔE 2000) and `alphaTolerance`. */
 export function sameColor(
     first: Rgba,
     second: Rgba,
@@ -440,7 +423,6 @@ export function sameColor(
     return Math.abs(first.a - second.a) <= alphaTolerance && deltaE(first, second) <= tolerance;
 }
 
-/** The relative luminance of an opaque sRGB color (WCAG 2.x). */
 export function luminance(color: Rgba): number {
     return (
         0.2126 * decode(color.r / 255) +
@@ -449,7 +431,6 @@ export function luminance(color: Rgba): number {
     );
 }
 
-/** `color` over an opaque `backdrop`. */
 export function composite(color: Rgba, backdrop: Rgba): Rgba {
     const a = color.a;
 
@@ -461,7 +442,6 @@ export function composite(color: Rgba, backdrop: Rgba): Rgba {
     };
 }
 
-/** The WCAG contrast ratio of a foreground over a background (the foreground blended over it when translucent). */
 export function contrastRatio(foreground: Rgba, background: Rgba): number {
     const base =
         background.a < 1 ? composite(background, { r: 255, g: 255, b: 255, a: 1 }) : background;

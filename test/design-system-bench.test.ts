@@ -1,5 +1,3 @@
-// The design system bench: its scoring rules on small hand cases, its fixtures against their own sources, the reference
-// implementations as a ceiling, and a run with nothing in the tree as a floor. See test/design-system-bench/README.md.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -67,8 +65,6 @@ import { judgeTab, runShots, type Census } from "./design-system-bench/shots.ts"
 const browser = findBrowser();
 const fixtures = loadFixtures();
 
-// ---- color math ----------------------------------------------------------------------------------------------------
-
 test("colors parse in every syntax and agree with an independent conversion", () => {
     const hex = (text: string) => toHex(parseColor(text)!);
 
@@ -108,11 +104,8 @@ test("ΔE 2000 and WCAG contrast match their published values", () => {
     assert.ok(Math.abs(contrastRatio(white, black) - 21) < 0.001);
     assert.ok(Math.abs(contrastRatio(parseColor("#767676")!, white) - 4.54) < 0.01);
     assert.ok(Math.abs(contrastRatio(parseColor("#777")!, white) - 4.48) < 0.01);
-    // A translucent foreground blends over its background before it is measured.
     assert.ok(contrastRatio(parseColor("rgba(0,0,0,0.5)")!, white) < 21 / 2);
 });
-
-// ---- the DTCG reader -----------------------------------------------------------------------------------------------
 
 test("the reader resolves references, inherited types, $root, and mode overrides that flow through primitives", () => {
     const flat = flatten(
@@ -183,8 +176,6 @@ test("lengths, shadows, and font stacks read in every form", () => {
     assert.deepEqual(families(["JetBrains Mono", "monospace"]), ["JetBrains Mono", "monospace"]);
 });
 
-// ---- scoring rules on small hand cases -----------------------------------------------------------------------------
-
 test("precision, recall, and the empty cases", () => {
     assert.deepEqual([prf(4, 5, 4).precision, prf(4, 5, 4).recall], [0.8, 1]);
     assert.equal(prf(0, 0, 0).applicable, false);
@@ -239,7 +230,6 @@ test("sizes: near sizes, tolerance, and the credit of a base unit", () => {
         "a duplicate of a cluster is a false positive",
     );
 
-    // A base of 4 px implies steps; they fill recall but are never extra.
     const implied = scoreSizes([4, 8, 12, 16], [4], [2, 4, 6, 8, 12, 16]);
 
     assert.equal(implied.recall, 1);
@@ -301,13 +291,11 @@ test("a token's role comes from the words in its name", () => {
         "color.error.default": "danger",
         "color.warn": "warning",
         "color.success.default": "success",
-        // Text on a color is a pair, not a role.
         "color.primary-foreground": undefined,
         "color.card-foreground": undefined,
         "color.danger.text": undefined,
         "color.text.on-accent": undefined,
         "color.text.inverse": undefined,
-        // A palette step has no role.
         "color.blue.500": undefined,
         "color.gray.100": undefined,
         "color.input": undefined,
@@ -446,7 +434,6 @@ test("the lint matcher pairs by rule, element, and value", () => {
     );
     assert.deepEqual([match.extra, match.missed], [[], []]);
 
-    // Two values on one element are two findings; a different element or rule is not a match.
     assert.deepEqual(
         matchFindings([{ rule: "contrast", pid: "x" }], [{ rule: "contrast", pid: "y" }]).missed,
         [0],
@@ -521,7 +508,6 @@ test("lint scoring counts false findings, misses, and fixes", () => {
     assert.equal(noisy.fn, 1);
     assert.equal(noisy.byRule["contrast"]!.precision, 0.5);
     assert.deepEqual(noisy.level, { wanted: 1, right: 0 });
-    // The same value on the same element, reported twice, is one finding.
     assert.equal(
         dedupe([
             { rule: "contrast", pid: "a", value: "#fff" },
@@ -547,9 +533,6 @@ test("lint scoring counts false findings, misses, and fixes", () => {
     );
 });
 
-// ---- the fixtures against their own sources ------------------------------------------------------------------------
-
-/** The color literals in a project's source files, comments removed. `node_modules`, `expected.json` and `package.json` are left out. */
 function literals(
     dir: string,
     out: { text: string; line: string }[] = [],
@@ -577,7 +560,6 @@ function literals(
             )) {
                 const before = line.slice(Math.max(0, match.index - 24), match.index);
 
-                // Shadow colors are not palette colors.
                 if (/shadow/i.test(line) || /\d(px|rem)\s+$/.test(before)) {
                     continue;
                 }
@@ -723,8 +705,6 @@ test("the oracle scan scores 1 on every fixture, and an empty scan scores 0", ()
     }
 });
 
-// ---- lint designs --------------------------------------------------------------------------------------------------
-
 const RULES = [
     "off-system-color",
     "off-system-font",
@@ -764,7 +744,6 @@ test("the lint designs: six seeded and two clean, covering every rule, with real
                 );
             }
 
-            // The fix named in an expectation must be a nearest token of the literal.
             if (finding.suggestion !== undefined && parseColor(finding.value ?? "") !== undefined) {
                 const color = parseColor(finding.value!)!;
                 const distances = colors.map((token) => ({
@@ -797,7 +776,6 @@ test("the lint designs: six seeded and two clean, covering every rule, with real
         );
     }
 
-    // A seeded design is bad for the reason it says: the seeded literals are in it.
     assert.match(cases.find((item) => item.name === "seed-off-colors")!.html, /#e9f0fd/);
     assert.ok(seeded.reduce((sum, item) => sum + item.expected.length, 0) >= 30);
 });
@@ -813,7 +791,6 @@ test("the golden tokens.css is current, and the lint system's contrast pairs pas
     assert.ok(pairs.every((pair) => pair.passesEverywhere));
     assert.ok(impliedPairs(system.tokens, system.modes).every((pair) => pair.failing.length === 0));
 
-    // A pair that fails in one mode only does not pass.
     const broken = structuredClone(system.tokens);
 
     broken.find((token) => token.name === "color.text.muted")!.modes.dark!.value = "#222831";
@@ -843,8 +820,6 @@ test("every system in format/ and the lint system read without a problem", () =>
     ]);
 });
 
-// ---- the scan adapter ----------------------------------------------------------------------------------------------
-
 test("a scan's output is read in the shapes it may come in", () => {
     const tree = { color: { bg: { $type: "color", $value: "#fff" } } };
     const dark = { color: { bg: { $value: "#000" } } };
@@ -864,7 +839,6 @@ test("a scan's output is read in the shapes it may come in", () => {
     assert.equal(coerceDraft("not json"), undefined);
     assert.equal(coerceDraft(42), undefined);
 
-    // The 0.26 scan's findings become variables under their own names, so a role can be read from a name.
     const legacy = legacyDraft({
         variables: { "--bg": "#fff", "--radius-md": "8px", "--font-sans": "Inter, sans-serif" },
         colors: [{ value: "#123456" }],
@@ -882,8 +856,6 @@ test("a scan's output is read in the shapes it may come in", () => {
     ]);
     assert.equal(extract(flat).roles.bg?.token, "color.bg");
 });
-
-// ---- the floor, the ceiling, and the command line ------------------------------------------------------------------
 
 test("with nothing in the tree every phase scores 0, says why, and nothing throws", async () => {
     const modules = await loadModules(["tokens", "lint", "docsite", "scan"]);
@@ -976,7 +948,6 @@ test(
             assert.equal(report.docs!.shots.length, 4);
             assert.ok(report.docs!.shots.every((shot) => shot.file !== undefined));
 
-            // Tiles: the first screen, then each section; none taller than 2,000 px; the phone at scale 1.
             for (const shot of report.docs!.shots) {
                 const tiles = shot.tiles!;
 
@@ -1013,7 +984,6 @@ test(
 
         try {
             const good = referenceModules(chromium);
-            // A linter that misses every contrast problem, and sees a problem on a clean page.
             const lazy = {
                 ...good,
                 check: async (...args: Parameters<NonNullable<typeof good.check>>) => {
@@ -1037,7 +1007,6 @@ test(
 
                     return report;
                 },
-                // A scan that forgets the dark mode and names every color token a role it should not.
                 scan: {
                     name: "forgetful",
                     run: (dir: string) => {
@@ -1104,7 +1073,6 @@ test("a dark-first draft is scored by theme: the mode named light is the light t
     assert.equal(score.darkColors.f1, 1);
     assert.equal(score.roles.f1, 1);
     assert.equal(score.darkRoles.f1, 1);
-    // A role that the scan does not make differ between themes is not a dark role: precision stays at most 1.
     const flat = extract(flatten(tree, { light: { color: { bg: { $value: "#ffffff" } } } }));
     const partial = scoreScan(expected, flat);
 
@@ -1112,7 +1080,6 @@ test("a dark-first draft is scored by theme: the mode named light is the light t
         partial.darkRoles.precision <= 1 && partial.darkRoles.matched <= partial.darkRoles.actual,
     );
     assert.equal(partial.darkRoles.matched, 1, "only bg differs between the themes");
-    // The same colors with the files the usual way round score the same.
     assert.equal(scoreScan(expected, extract(flatten(light, { dark: tree }))).darkRoles.f1, 1);
 });
 
@@ -1157,7 +1124,6 @@ test(
         const chromium = (await BenchBrowser.launch())!;
 
         try {
-            // The bench's own compile of the flagship's source: the engine is not involved.
             const result = await checkCss(chromium, goldenCss(flat), flat);
 
             assert.ok(flat.tokens.length > 250, "the flagship is big enough to show the problem");
@@ -1192,9 +1158,6 @@ test("a lint folder can name the system its designs are written for (system.json
     }
 });
 
-// ---- docs frames and the System view ------------------------------------------------------------------------------
-
-/** A PNG made by hand, with a filter on each row (0 none, 1 left, 2 up, 3 average, 4 Paeth), to test the reader. */
 function encodePng(
     width: number,
     height: number,
@@ -1315,7 +1278,6 @@ test("a tab passes only when it renders what the system has", () => {
     assert.equal(judgeTab("Components", 3, seen({ components: 3 })), undefined);
     assert.match(judgeTab("Guidelines", 1, seen({}))!, /no rendered guideline/);
     assert.equal(judgeTab("Guidelines", 1, seen({ prose: 11 })), undefined);
-    // A system with no tokens of the kind may show an empty state, but not a blank panel.
     assert.equal(judgeTab("Motion", 0, seen({ blank: true })), undefined);
     assert.match(judgeTab("Motion", 0, seen({}))!, /nothing at all/);
 });
@@ -1327,7 +1289,6 @@ test(
         const { BenchBrowser, serveFiles } = await import("./design-system-bench/lib/chromium.ts");
         const { checkComponents, waitForDocsReady } =
             await import("./design-system-bench/lib/phase-docs.ts");
-        // Each stage is a `.comp-stage` with a shadow root that a script fills, and the page says `data-docs-ready` at the end.
         const stage = (name: string, cells: string, background: string) =>
             `<article><h3>${name}</h3><div class="comp-stage" style="background:${background};width:600px;min-height:80px"><div class="comp-host"></div></div><script type="text/plain" class="cells">${cells}</script></article>`;
         const page = `<!doctype html><body style="margin:0;background:#eee"><div style="height:3000px"></div>
@@ -1375,7 +1336,6 @@ test(
             assert.deepEqual(result.blank.sort(), ["Flat (one color)", "Labels only (no text)"]);
             await view.close();
 
-            // A page that never says it is ready is let go after the limit.
             const never = await chromium.page(served.url);
 
             await never.open(served.url, { width: 800, height: 900 });
@@ -1503,7 +1463,6 @@ test("an exempt contrast pair (disabled text) is reported apart, with its ratio,
         ],
     );
 
-    // Only exempt pairs fail: the pass rate is 1.
     const only = contrastPhase(
         systemFromFlat(
             flatten({

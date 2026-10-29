@@ -1,17 +1,3 @@
-/**
- * A reference linter. It is not the product: it is a plain, independent implementation of the rules that the lint
- * designs are seeded for, so the bench can show that its expected findings are right (a reasonable linter finds exactly
- * them) and that a perfect run scores 1.0. The bench test runs it on every design. Policy it implements, which the
- * README states as the bench's definition of each rule:
- *
- * - off-system-color / -size / -font: an authored value that is not a `var()`. A literal that equals a token's value is
- *   still a literal. `transparent`, `currentColor`, `inherit`, `0`, `auto`, `%` and keywords are not values.
- * - contrast: text color over the effective background, 4.5:1 (3:1 for large text). Disabled controls are exempt.
- * - tap-target: a control under 24 px is an error, under 44 px a warning.
- * - overflow, image-alt (no `alt` attribute), heading-order (a level skipped going down), missing-viewport,
- *   missing-pid (a control, heading, image or landmark without its own `data-pid`), font-fallback (the first declared
- *   family is not installed), focus-visible (a control with no outline or shadow when focused).
- */
 import type {
     CheckFinding,
     CheckReport,
@@ -193,11 +179,9 @@ const SCRIPT = String.raw`(() => {
     return facts;
 })()`;
 
-/** Colors written in a value: hex, and the functional forms. */
 const COLOR_LITERAL = /#[0-9a-f]{3,8}\b|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\([^)]*\)/gi;
 const LENGTH = /^-?\d*\.?\d+(px|rem|em)$/i;
 
-/** The reference `checkDesign`. */
 export async function referenceCheck(
     browser: BenchBrowser,
     bundle: { content: string; assets: { name: string; type: string; bytes: Buffer }[] },

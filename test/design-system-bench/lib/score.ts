@@ -1,11 +1,6 @@
-/**
- * Scan scoring: read what a scan produced (a DTCG draft) into colors, roles, scales, shadows and fonts, and compare it
- * with a fixture's hand-labelled `expected.json`. The rules are in `../README.md`; every constant is here and named.
- */
 import { colorOf, sameColor, type Rgba } from "./color.ts";
 import {
     families,
-    flatten,
     pixels,
     shadowLayers,
     type FlatSystem,
@@ -13,10 +8,9 @@ import {
     type ShadowLayer,
 } from "./dtcg.ts";
 
-/** Two colors are the same when ΔE 2000 is at most this (a just-noticeable difference is about 2.3). */
 export const COLOR_TOLERANCE = 2;
-/** Two alphas are the same when they differ by at most this. */
-export const ALPHA_TOLERANCE = 0.02;
+const ALPHA_TOLERANCE = 0.02;
+
 /** Two pixel sizes are the same when they differ by at most this (type sizes may be 0.5 px apart in `rem` rounding). */
 export const SIZE_TOLERANCE = 0.26;
 
@@ -33,29 +27,21 @@ export const ROLES = [
 ] as const;
 export type Role = (typeof ROLES)[number];
 
-/** What a fixture's `expected.json` says. */
 export interface Expected {
     name: string;
     description?: string;
-    /** The palette in the default mode: a color, or a color with the near-duplicates that must merge into it. */
     colors: (string | { value: string; near?: string[] })[];
-    /** The values that a dark mode changes (the dark side only). */
     darkColors?: (string | { value: string; near?: string[] })[];
-    /** Roles by name. `light` and `dark` are one color or a list of acceptable ones. */
     roles: Partial<Record<Role, { light: string | string[]; dark?: string | string[] }>>;
-    /** Font sizes in px: a size, or a size with the near sizes that must merge into it. */
     typeScale: (number | { value: number; near?: number[] })[];
     spacing: (number | { value: number; near?: number[] })[];
-    /** The base unit of the spacing scale, when the project has one (Tailwind's `--spacing`). */
     spacingBase?: number;
     radii: (number | { value: number; near?: number[] })[];
     shadows: string[];
-    /** The first family of each font stack. */
     fonts: string[];
     dark: { present: boolean };
 }
 
-/** What was read from a scan's draft. */
 export interface Extracted {
     colors: Rgba[];
     darkColors: Rgba[];
@@ -71,7 +57,6 @@ export interface Extracted {
     darkPresent: boolean;
 }
 
-/** Precision, recall and F1 of one comparison. */
 export interface PRF {
     expected: number;
     actual: number;
@@ -96,7 +81,6 @@ export function prf(expected: number, actual: number, matched: number, credit = 
     return { expected, actual, matched, precision, recall, f1, applicable: true };
 }
 
-/** The largest one-to-one matching between expected entries and found items (Kuhn's algorithm: no greedy order effects). */
 export function maxMatching<E, A>(
     expected: E[],
     actual: A[],
@@ -138,7 +122,6 @@ export function maxMatching<E, A>(
     return matched;
 }
 
-/** Whether a found color is one of the colors in `accept`. */
 function fitsColor(accept: string[], color: Rgba): boolean {
     return accept.some((text) => {
         const wanted = colorOf(text);
@@ -147,7 +130,6 @@ function fitsColor(accept: string[], color: Rgba): boolean {
     });
 }
 
-/** Colors against expected colors (with their near-duplicates). */
 export function scoreColors(expected: Expected["colors"], actual: Rgba[]): PRF {
     const entries = expected.map((entry) =>
         typeof entry === "string" ? [entry] : [entry.value, ...(entry.near ?? [])],
@@ -160,7 +142,6 @@ export function scoreColors(expected: Expected["colors"], actual: Rgba[]): PRF {
     );
 }
 
-/** Pixel sizes against expected sizes (with their near sizes). `extra` items add recall only. */
 export function scoreSizes(
     expected: (number | { value: number; near?: number[] })[],
     actual: number[],
@@ -187,7 +168,6 @@ const sameLayer = (first: ShadowLayer, second: ShadowLayer) =>
     Math.abs(first.spread - second.spread) <= 0.5 &&
     sameColor(first.color, second.color, 4, 0.04);
 
-/** Shadows: the same layers, in order, with each number within half a pixel and each color within ΔE 4. */
 export function scoreShadows(expected: string[], actual: ShadowLayer[][]): PRF {
     const wanted = expected.map((text) => shadowLayers(text));
 
@@ -204,7 +184,7 @@ export function scoreShadows(expected: string[], actual: ShadowLayer[][]): PRF {
     );
 }
 
-export function scoreFonts(expected: string[], actual: string[]): PRF {
+function scoreFonts(expected: string[], actual: string[]): PRF {
     const lower = (list: string[]) => list.map((name) => name.toLowerCase());
 
     return prf(
@@ -214,9 +194,6 @@ export function scoreFonts(expected: string[], actual: string[]): PRF {
     );
 }
 
-// ---- roles ---------------------------------------------------------------------------------------------------------
-
-/** Words that name a role. Names are split at dots, hyphens, underscores, and camel-case humps. */
 const ROLE_WORDS: Record<Role, string[]> = {
     bg: ["bg", "background", "canvas", "page", "app"],
     surface: ["surface", "card", "panel", "elevated", "raised", "popover", "layer"],
@@ -228,7 +205,6 @@ const ROLE_WORDS: Record<Role, string[]> = {
     warning: ["warning", "warn", "caution"],
     success: ["success", "positive", "valid", "confirm"],
 };
-/** Words that name the accent only when no other role word is there (`color.text.primary` is text, not accent). */
 const WEAK_ACCENT = ["primary", "link", "action", "interactive", "highlight"];
 const IGNORED = new Set([
     "color",
@@ -247,7 +223,6 @@ const IGNORED = new Set([
     "dark",
     "alias",
 ]);
-/** The order that settles a name with two role words (`danger.border` is danger; `border.muted` is border). */
 const PRIORITY: Role[] = [
     "danger",
     "warning",
@@ -261,7 +236,6 @@ const PRIORITY: Role[] = [
 ];
 const KNOWN = new Set([...Object.values(ROLE_WORDS).flat(), ...WEAK_ACCENT, ...IGNORED]);
 
-/** The lowercase words of a token path. */
 export function words(path: string[]): string[] {
     return path
         .flatMap((part) => part.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[\s\-_]+/))
@@ -269,7 +243,6 @@ export function words(path: string[]): string[] {
         .filter((word) => word !== "");
 }
 
-/** The role a color token names, or `undefined` when its name says none (a palette step, or "text on accent"). */
 export function roleOf(path: string[]): Role | undefined {
     const all = words(path);
     const found = new Set<Role>();
@@ -320,7 +293,6 @@ export function roleOf(path: string[]): Role | undefined {
     return PRIORITY.find((role) => found.has(role));
 }
 
-/** The words that are the role's own name (`hairline` names a border, but `border` is the border). */
 const CANON: Record<Role, string[]> = {
     bg: ["bg", "background"],
     surface: ["surface"],
@@ -333,10 +305,7 @@ const CANON: Record<Role, string[]> = {
     success: ["success"],
 };
 
-/**
- * How far a token's name is from the plain role name, as [not the role's own word, words that are no role word, path
- * length]. The nearest name is the role's token when several tokens name one role.
- */
+// [not the role's own word, words that are no role word, path length]: the nearest name is the role's token.
 function distance(path: string[], role: Role): [number, number, number] {
     const all = words(path);
 
@@ -347,13 +316,8 @@ function distance(path: string[], role: Role): [number, number, number] {
     ];
 }
 
-/**
- * Which mode of a draft is the light theme and which is the dark one. The files do not say which is the project's
- * default: a dark-first project may keep its dark values in `tokens.json` and put the light theme in `tokens.light.json`.
- * A mode named for dark (`dark`, `night`) is the dark theme and the default is light; a mode named for light (`light`,
- * `day`) is the light theme and the default is dark; with no names and two modes, the second is dark.
- */
-export function themeModes(system: FlatSystem): { light: string; dark: string | undefined } {
+// A dark-first project may keep its dark values in `tokens.json`: the mode names say which is which.
+function themeModes(system: FlatSystem): { light: string; dark: string | undefined } {
     const others = system.modes.slice(1);
     const dark = others.find((mode) => /dark|night/i.test(mode));
 
@@ -376,7 +340,6 @@ const colorEquals = (first: unknown, second: unknown) => {
     return a !== undefined && b !== undefined && sameColor(a, b, 0.5, ALPHA_TOLERANCE);
 };
 
-/** Dimension tokens whose name says they are about `include` and not `exclude`. */
 function dimensions(system: FlatSystem, include: string[], exclude: string[]): FlatToken[] {
     return system.tokens.filter((token) => {
         if (token.type !== "dimension" && token.type !== "number") {
@@ -410,7 +373,6 @@ const NOT_TYPE = [
     ...LEADING,
 ];
 
-/** Read a draft (as `flatten` made it) into what the bench scores. */
 export function extract(system: FlatSystem): Extracted {
     const { light: lightKey, dark } = themeModes(system);
     const colorTokens = system.tokens.filter((token) => token.type === "color");
@@ -467,7 +429,6 @@ export function extract(system: FlatSystem): Extracted {
         }
     }
 
-    // Type sizes: dimension tokens named for type, and the `fontSize` of typography tokens.
     const typeSizes: number[] = [];
 
     for (const token of dimensions(
@@ -525,7 +486,6 @@ export function extract(system: FlatSystem): Extracted {
         const all = words(token.path);
         const last = all.at(-1);
 
-        // `spacing` alone, or `space.base` / `space.unit`: one unit that the steps are multiples of.
         if (token.path.length === 1 || last === "base" || last === "unit") {
             spacingBase ??= size;
         }
@@ -602,12 +562,8 @@ function dedupeShadows(list: ShadowLayer[][]): ShadowLayer[][] {
     return unique;
 }
 
-/** The steps that a base unit implies. They fill gaps in recall and are never counted against precision. */
-export const IMPLIED_STEPS = [
-    0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 20, 24,
-];
+const IMPLIED_STEPS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 20, 24];
 
-/** Everything the bench scores about one scan, against one fixture. */
 export interface ScanScore {
     colors: PRF;
     darkColors: PRF;
@@ -618,13 +574,11 @@ export interface ScanScore {
     radii: PRF;
     shadows: PRF;
     fonts: PRF;
-    /** The names of the roles that were right, wrong, and missed. */
     roleDetail: { right: Role[]; wrong: Role[]; missed: Role[] };
     darkDetected: boolean;
     darkExpected: boolean;
 }
 
-/** Score an extracted scan against a fixture's expectation. */
 export function scoreScan(expected: Expected, found: Extracted): ScanScore {
     const right: Role[] = [];
     const wrong: Role[] = [];
@@ -695,17 +649,6 @@ export function scoreScan(expected: Expected, found: Extracted): ScanScore {
     };
 }
 
-/** Read a draft's files and score them: the entry point for a scan's `{ tokens, modes }`. */
-export function scoreDraft(
-    expected: Expected,
-    draft: { tokens: unknown; modes?: Record<string, unknown> },
-): ScanScore & { problems: string[] } {
-    const system = flatten(draft.tokens, draft.modes ?? {});
-
-    return { ...scoreScan(expected, extract(system)), problems: system.problems };
-}
-
-/** The categories of a scan score that take part in the headline, and the target of each (docs/design/design-system.md). */
 export const SCAN_CATEGORIES = {
     colors: 0.9,
     roles: 0.9,
@@ -720,7 +663,6 @@ export const SCAN_CATEGORIES = {
 
 export type ScanCategory = keyof typeof SCAN_CATEGORIES;
 
-/** Macro-average the scores of several fixtures: each applicable fixture counts once for a category. */
 export function aggregateScans(
     scores: ScanScore[],
 ): Record<ScanCategory, PRF & { fixtures: number }> {

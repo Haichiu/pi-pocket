@@ -1,12 +1,9 @@
-// What the System view asks of the server, and keeps in the store: the design system, a save of the person's edits, a
-// check of a design against it, the documentation page, and the files for code.
 import { downloadFile, splitReport } from "./data.js";
 import { changeNow } from "./unsaved.js";
 
-/** No edits (as `emptyHistory` in `system.js`, which loads with the System view). */
+// Not imported from system.js: that loads only with the System view.
 const emptyHistory = () => ({ past: [], future: [] });
 
-/** The key a check is kept under: the design's version, and the mode of the system and the size it ran at. */
 export const checkKey = (artifact, version, mode, size) => `${artifact}@${version}:${mode}:${size}`;
 
 export function createSystemData(pocket, store, data) {
@@ -26,7 +23,6 @@ export function createSystemData(pocket, store, data) {
         }, 4000);
     };
 
-    /** The system the server sent: shown, with the unsaved edits kept. */
     const took = (result, extra = {}) =>
         store.set({
             system: {
@@ -39,10 +35,6 @@ export function createSystemData(pocket, store, data) {
         });
 
     const api = {
-        /**
-         * Read the system. `quiet` asks only whether it changed (the server answers `unchanged` for the revision this tab has),
-         * and shows nothing while it waits: for the timer and for events.
-         */
         async load({ quiet = false } = {}) {
             const conversation = conversationOf();
 
@@ -91,7 +83,6 @@ export function createSystemData(pocket, store, data) {
             }
         },
 
-        /** Save the unsaved edits. Resolves to whether they were saved. */
         async save() {
             const state = store.get();
             const conversation = state.conversation;
@@ -161,13 +152,11 @@ export function createSystemData(pocket, store, data) {
             }
         },
 
-        /** After a conflict: read the system again, and keep the edits. */
         async reload() {
             store.set({ save: { status: "idle", error: "", problems: [], note: "" } });
             await api.load();
         },
 
-        /** Add a mode (`{}`), or remove one (`null`): the edits to a removed mode go with it. */
         async changeModes(name, value) {
             const conversation = conversationOf();
             const system = store.get().system.data;
@@ -208,7 +197,6 @@ export function createSystemData(pocket, store, data) {
             }
         },
 
-        /** Check a design against the system (it renders the page on the server). */
         async check({ artifact, version, mode, scheme, size }) {
             const conversation = conversationOf();
             const key = checkKey(artifact, version, mode, size);
@@ -221,13 +209,12 @@ export function createSystemData(pocket, store, data) {
                     id: artifact,
                     version,
                     colorScheme: scheme,
-                    // A mode of the system is only named when there is a system (the route refuses one it does not have).
                     ...(mode === undefined ? {} : { mode }),
                     viewport: size,
                 });
 
                 if (current(conversation)) {
-                    // What was accepted is split again from what is known now (the notes may be newer than the check).
+                    // The notes may be newer than the check: split with the current accepted list.
                     const accepted = store.get().notes[artifact]?.accepted;
 
                     put({
@@ -243,10 +230,6 @@ export function createSystemData(pocket, store, data) {
             }
         },
 
-        /**
-         * One tap: a new version of the design with each exact match (a literal that is a token's value) written as `var(--token)`.
-         * Resolves to `{ version, fixed }` for the new version, or null (the server's words are in a notice).
-         */
         async fix({ artifact, version, mode, scheme, size }) {
             const conversation = conversationOf();
 
@@ -273,7 +256,6 @@ export function createSystemData(pocket, store, data) {
             }
         },
 
-        /** Publish the documentation page as a design. Resolves to `{ id, version }`, or null. */
         async publishDocs() {
             const conversation = conversationOf();
 
@@ -292,7 +274,6 @@ export function createSystemData(pocket, store, data) {
             }
         },
 
-        /** Make the zip of the generated files, and save it. */
         async exportCode() {
             const conversation = conversationOf();
 

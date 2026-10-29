@@ -1,31 +1,22 @@
-// The Check dock: a design checked against the design system (and the page's own basics: contrast, tap targets, overflow,
-// alt text, headings). The server renders the page and walks it; this lists what it found, pins each finding to its element
-// on the canvas, and puts one message with all of them in the message box for Pi.
+// The Check dock: the server renders a design and checks it against the design system and the page's own basics; this
+// lists the findings, pins each to its element, and puts one message with all of them in the message box for Pi.
 import { exportViewport, sizeOf } from "./devices.js";
 import { checkMessage } from "./messages.js";
 import { resolveDevice } from "./state.js";
 import { checkKey } from "./system-data.js";
 
-/**
- * The modes a check can be made in: those of the design system (a system has as many as its files say: light, dark,
- * high-contrast…), or light and dark when there is no system to say.
- */
+/** The modes a check can be made in: the design system's, or light and dark when there is none. */
 const modesOf = (s) => {
     const modes = s.system.data?.modes;
 
     return Array.isArray(modes) && modes.length > 0 ? modes : ["light", "dark"];
 };
 
-/** The color scheme of a mode: what the system says of it, else its name. */
 const schemeOf = (s, mode) =>
     s.system.data?.schemes?.[mode] ?? (mode === "dark" ? "dark" : "light");
 
-/**
- * The mode that the canvas shows: the one that goes with the color scheme of the page in it (`dark`: whether that is dark;
- * the canvas follows the app's theme, or the backdrop a person chose). The mode named for the scheme, else the first of that
- * scheme, else the default.
- */
-export function canvasMode(s, dark) {
+/** The mode for the canvas's color scheme (`dark`): the mode named for it, else the first of that scheme, else the default. */
+function canvasMode(s, dark) {
     const modes = modesOf(s);
     const want = dark ? "dark" : "light";
 
@@ -37,9 +28,8 @@ export function canvasMode(s, dark) {
 }
 
 /**
- * The options of a check as they are now: what the person chose, else what the canvas shows. `dark` is whether the app
- * is in a dark scheme (the page in the canvas follows it). `seen` is the mode of the canvas, `mode` the one checked (a
- * mode of the system), `scheme` its color scheme; `modes` are the choices, and `following` says that none was chosen.
+ * The options of a check: what the person chose, else what the canvas shows. `seen` is the canvas's mode, `mode` the one
+ * checked, and `following` says that none was chosen.
  */
 export function checkOptions(s, dark) {
     const device = resolveDevice(s.device, s.width);
@@ -61,7 +51,6 @@ export function checkOptions(s, dark) {
     };
 }
 
-/** An icon for the modes that have one: the others are told by their names. */
 const MODE_ICONS = { light: "sun", dark: "moon" };
 
 const titleOf = (mode) => mode[0].toUpperCase() + mode.slice(1).replace(/[-_]+/g, " ");
@@ -88,19 +77,13 @@ export const RULES = {
     "input-zoom": "Input zoom on phones",
 };
 
-/**
- * Whether a finding is about the page as a whole (a missing `lang` or `main`, a viewport tag): it names no `data-pid`, and its
- * element is the page's own root or body (or none). It has no place on the canvas, so it has no pin: the list holds it.
- */
-export const pageLevel = (finding) =>
+/** A finding about the page as a whole (a missing `lang` or `main`, a viewport tag): it has no pin, the list holds it. */
+const pageLevel = (finding) =>
     !finding.pid &&
     /^(?:|html|body|:root|html\s*>\s*body)$/i.test(String(finding.selector ?? "").trim());
 
-/** Whether a finding has an element to point at (and so a pin on the canvas). */
-export const placedOn = (finding) =>
-    Boolean(finding.pid || finding.selector) && !pageLevel(finding);
+const placedOn = (finding) => Boolean(finding.pid || finding.selector) && !pageLevel(finding);
 
-/** The pins of a report: a finding that names an element (a `data-pid` or a selector), numbered by its place in the list. */
 export function pinsOfReport(report, focus = null) {
     return (report?.findings ?? []).flatMap((finding, index) =>
         placedOn(finding)
@@ -109,7 +92,6 @@ export function pinsOfReport(report, focus = null) {
                       ...(finding.pid ? { pid: finding.pid } : {}),
                       selector: finding.selector || `[data-pid="${finding.pid}"]`,
                       label: index + 1,
-                      // The one that a person tapped in the list comes into view in the page.
                       ...(focus !== null && focus.number === index + 1 ? { reveal: true } : {}),
                   },
               ]
@@ -221,7 +203,6 @@ export function createCheck(env, DockHead) {
         </li>`;
     }
 
-    /** The findings that people accepted, folded: who accepted each and when, and the way to undo it. */
     function Accepted({ list, notes, design, canEdit }) {
         const [open, setOpen] = useState(false);
 
@@ -297,8 +278,6 @@ export function createCheck(env, DockHead) {
         const accepted = report?.accepted ?? [];
         const notes = s.notes[design.id];
 
-        // The design system is read for the line that says what was checked against, and the design's notes for who
-        // accepted what.
         useEffect(() => {
             if (s.system.status === "idle") {
                 void systemData.load({ quiet: true });
@@ -309,11 +288,9 @@ export function createCheck(env, DockHead) {
             }
         }, [design.id]);
 
-        // The findings that one tap can fix: a value that is exactly a token's (`fixable`, from the server).
         const exact = findings.filter(({ finding }) => finding.fixable === true).length;
         const [fixing, setFixing] = useState(false);
 
-        // A new version with each of them written as the token, then the check of that version.
         const fix = async () => {
             setFixing(true);
 
@@ -348,8 +325,7 @@ export function createCheck(env, DockHead) {
                 size: now.size,
             });
 
-        // The mode on the canvas changes while the dock is open (the app's scheme, or the mode in the System view): a check
-        // that was made is made again for the new mode, unless the person chose a mode of their own, or it is already there.
+        // A new canvas mode re-runs the check, unless the person chose a mode or it already exists.
         const before = useRef(options.seen);
 
         useEffect(() => {
@@ -383,7 +359,6 @@ export function createCheck(env, DockHead) {
             );
         };
 
-        // The finding that a tap on its pin opens comes into view in the list.
         useEffect(() => {
             if (!shut && s.checkFocus !== null) {
                 requestAnimationFrame(() =>
@@ -394,8 +369,6 @@ export function createCheck(env, DockHead) {
             }
         }, [s.checkFocus?.at, shut]);
 
-        // On a phone the findings start as a bar at the foot, so that the page keeps the room: the count of findings (by level),
-        // and the one tap that can fix some. A tap on the bar opens the sheet.
         if (shut) {
             const errors = report?.summary.errors ?? 0;
             const warnings = report?.summary.warnings ?? 0;

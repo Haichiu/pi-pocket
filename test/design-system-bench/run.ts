@@ -1,9 +1,3 @@
-/**
- * The design system bench. `node test/design-system-bench/run.ts [--out dir] [--only scan,format,lint,contrast,docs]`
- * prints one JSON object with every metric and writes screenshots and drafts to `--out` (default /tmp/ds-bench).
- * It needs no model. A part that is not in the tree yet scores 0 with a note; it never stops the run.
- * What each number means, and how it is matched: `README.md`.
- */
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -27,13 +21,12 @@ import { BENCH, loadFixtures, scanPhase, type ScanPhase } from "./lib/phase-scan
 import { COLOR_TOLERANCE, SCAN_CATEGORIES, SIZE_TOLERANCE } from "./lib/score.ts";
 import { readFlat, systemFromFlat } from "./lib/system.ts";
 
-export const PHASES = ["scan", "format", "lint", "contrast", "docs"] as const;
-/** `shots` is not in the default run: it starts a throwaway app (`--shots`, or `--only shots`). */
-export const ALL_PHASES = [...PHASES, "shots"] as const;
+const PHASES = ["scan", "format", "lint", "contrast", "docs"] as const;
+const ALL_PHASES = [...PHASES, "shots"] as const;
+
 export type Phase = (typeof ALL_PHASES)[number];
 
-/** Where Stream G's flagship may be, in order. A folder with `.pi/design/` in it, or the contents of `.pi/design/`. */
-export const FLAGSHIP_CANDIDATES = [
+const FLAGSHIP_CANDIDATES = [
     "test/fixtures/design-system/flagship",
     "docs/examples/design-system/pocket",
 ];
@@ -42,19 +35,12 @@ export interface BenchOptions {
     out?: string;
     only?: Phase[];
     modules?: Modules;
-    /** False skips everything that needs Chromium (CSS check, docs page). */
     browser?: boolean;
-    /** Run against the reference implementations (the ceiling check), not the streams' code. */
     reference?: boolean;
-    /** A flagship folder, instead of looking in FLAGSHIP_CANDIDATES. */
     flagship?: string;
-    /** Also take the System view screenshots (a throwaway app) and check that every tab shows its tokens. */
     shots?: boolean;
-    /** The checkout whose throwaway app and flagship the System view shots use. Default: this one. */
     tree?: string;
-    /** A folder of fixture projects (each with `expected.json`), instead of `fixtures/`. */
     fixtures?: string;
-    /** A folder of lint designs (each a folder with `index.html` and `expected-findings.json`), instead of `lint/designs/`. */
     lint?: string;
     log?: (text: string) => void;
 }
@@ -66,18 +52,14 @@ export interface BenchReport {
         modules: Modules["present"];
         flagship: { present: boolean; path?: string };
     };
-    /** Everything that was missing or failed and why, in plain words. */
     notes: string[];
     scan?: Omit<ScanPhase, "drafts">;
     format?: FormatPhase;
     lint?: LintPhase;
     contrast?: ContrastPhase;
     docs?: DocsPhase;
-    /** The System view: every tab, both sizes, both systems, with the check that each shows its tokens. */
     systemView?: ShotsReport;
-    /** 0 to 1 for each phase that ran. The rubric lines they feed: scan 2, lint 3, contrast 4, docs 7. */
     scores: Partial<Record<Phase, number>> & { overall: number };
-    /** Whether each number reaches its target (docs/design/design-system.md, Rubric). */
     targets: Record<string, boolean>;
     matching: {
         colorDeltaE: number;
@@ -86,8 +68,7 @@ export interface BenchReport {
     };
 }
 
-/** The flagship's project folder, or `undefined`. A folder that holds `tokens.json` directly is copied into a project. */
-export function findFlagship(parent: string, explicit?: string): string | undefined {
+function findFlagship(parent: string, explicit?: string): string | undefined {
     for (const candidate of explicit === undefined
         ? FLAGSHIP_CANDIDATES.map((path) => join(ROOT, path))
         : [resolve(explicit)]) {
@@ -108,7 +89,6 @@ export function findFlagship(parent: string, explicit?: string): string | undefi
     return undefined;
 }
 
-/** The flagship's `tokens.css`: the committed `dist/` file, else what the engine compiled. */
 function flagshipCss(project: string | undefined, system: DesignSystem): string {
     const file =
         project === undefined ? undefined : join(project, ".pi", "design", "dist", "tokens.css");
@@ -122,8 +102,7 @@ function flagshipCss(project: string | undefined, system: DesignSystem): string 
     }
 }
 
-/** The hand-written systems that the format phase checks beside the flagship and the scan drafts. */
-export function formatSources(): SystemSource[] {
+function formatSources(): SystemSource[] {
     return [
         { name: "classic", kind: "fixture", project: join(BENCH, "format", "classic") },
         { name: "modern", kind: "fixture", project: join(BENCH, "format", "modern") },
@@ -277,7 +256,6 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
             }
         }
 
-        // The system that the contrast and docs phases read: the flagship, else the bench's own.
         let primary: DesignSystem | undefined;
         let label = "bench";
 
@@ -372,7 +350,6 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
         if (only.includes("shots")) {
             log("phase shots");
 
-            // One folder for the judges: the docs tiles are in `docs/`, the System view PNGs in `system-view/`.
             const view = await runShots({ tree: options.tree, out: join(out, "system-view"), log });
 
             report.systemView = view;
@@ -414,7 +391,6 @@ export async function runBench(options: BenchOptions = {}): Promise<BenchReport>
 
         const run = ALL_PHASES.filter((phase) => only.includes(phase));
 
-        // A phase that failed has no report and scores 0.
         for (const phase of run) {
             report.scores[phase] ??= 0;
         }
@@ -536,6 +512,3 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
         process.exitCode = 2;
     }
 }
-
-// Keep the bench's reader linked for tools that import this module to build a system without the engine.
-export { readFlat, systemFromFlat };

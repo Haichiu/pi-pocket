@@ -1,7 +1,3 @@
-/**
- * The bench's own view of a design system: the CSS that a token compiles to, a `DesignSystem` built straight from DTCG
- * files (the fallback when the tokens engine is missing), the golden `tokens.css` writer, and the contrast pairs.
- */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
@@ -14,13 +10,11 @@ import type {
 import { colorOf, contrastRatio, toHex } from "./color.ts";
 import { flatten, type FlatSystem, type FlatToken } from "./dtcg.ts";
 
-/** The CSS custom property of a token: the path joined by `-`, with `--` in front. */
 export const cssVar = (name: string) => `--${name.replace(/\./g, "-")}`;
 
 const needsQuotes = (family: string) => /[\s]/.test(family) && !/^["']/.test(family);
 
-/** The CSS text of a resolved value of a type. */
-export function cssValue(type: string, value: unknown): string {
+function cssValue(type: string, value: unknown): string {
     if (typeof value === "string") {
         return value;
     }
@@ -67,7 +61,6 @@ export function cssValue(type: string, value: unknown): string {
     return "";
 }
 
-/** The type names that have a plain CSS form. */
 const PLAIN = new Set([
     "color",
     "dimension",
@@ -79,7 +72,6 @@ const PLAIN = new Set([
     "shadow",
 ]);
 
-/** `tokens.css` in the form that the plan fixes: `:root`, then `[data-theme="dark"]`, then the same in a media query. */
 export function goldenCss(flat: FlatSystem): string {
     const tokens = flat.tokens.filter((token) => PLAIN.has(token.type));
     const lines = (mode: string, changed: boolean, indent: string) =>
@@ -127,7 +119,6 @@ function tierOf(token: FlatToken, alias: boolean): TokenTier {
     return alias ? "semantic" : "primitive";
 }
 
-/** A `DesignSystem` built from DTCG files by the bench's own reader. The default mode is named `light`. */
 export function systemFromFlat(flat: FlatSystem, name: string): DesignSystem {
     const modeNames = flat.modes.map((mode) => (mode === "default" ? "light" : mode));
     const tokens: ResolvedToken[] = flat.tokens.map((token) => {
@@ -180,7 +171,6 @@ export function systemFromFlat(flat: FlatSystem, name: string): DesignSystem {
     };
 }
 
-/** Read a `.pi/design/` folder's token files with the bench's reader: `tokens.json` and each `tokens.<mode>.json`. */
 export function readFlat(designDir: string): FlatSystem {
     const read = (file: string) =>
         JSON.parse(readFileSync(join(designDir, file), "utf8")) as unknown;
@@ -197,22 +187,15 @@ export function readFlat(designDir: string): FlatSystem {
     return flatten(read("tokens.json"), modes);
 }
 
-/** A declared contrast pair, with the ratio in each mode. */
 export interface PairResult {
     token: string;
     on: string;
     min: number;
     ratios: Record<string, number | undefined>;
     passesEverywhere: boolean;
-    /** Why the pair is left out of the check ("disabled", "decorative"): WCAG 1.4.3 exempts such text. It is not a failure. */
     exempt?: string;
 }
 
-/**
- * The contrast pairs of a system's tokens (`contrast`: one pair or a list of `{ on, min, exempt? }`), checked in every mode
- * with the bench's own WCAG math. A pair that declares `exempt` is returned with its ratios and the reason, so the caller can
- * report it apart: it is not a failure.
- */
 export function contrastPairs(tokens: ResolvedToken[], modes: string[]): PairResult[] {
     const byName = new Map(tokens.map((token) => [token.name, token]));
     const out: PairResult[] = [];
@@ -249,10 +232,6 @@ export function contrastPairs(tokens: ResolvedToken[], modes: string[]): PairRes
     return out;
 }
 
-/**
- * The text-on-fill pairs that a system implies by its names, whether or not it declares them: every text role over every
- * background role in each mode, at 4.5 (muted text and plain text over bg, surface and subtle fills).
- */
 export function impliedPairs(
     tokens: ResolvedToken[],
     modes: string[],
