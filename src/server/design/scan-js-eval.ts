@@ -400,17 +400,19 @@ export class JsProject {
         return info;
     }
 
-    /** Every name a module exports, with a way to get its value. */
-    exportsOf(file: string, depth = 0): Map<string, Binding> {
+    /** Every name a module exports, with a way to get its value. Each file is read once in a walk (`seen`), so cycles end. */
+    exportsOf(file: string, depth = 0, seen = new Set<string>()): Map<string, Binding> {
         const out = new Map<string, Binding>();
         const info = this.module(file);
 
-        if (info === undefined || depth > 8) {
+        if (info === undefined || depth > 8 || seen.has(file)) {
             return out;
         }
 
+        seen.add(file);
+
         for (const from of info.stars) {
-            for (const [name, binding] of this.exportsOf(from, depth + 1)) {
+            for (const [name, binding] of this.exportsOf(from, depth + 1, seen)) {
                 if (name !== "default" && !out.has(name)) {
                     out.set(name, binding);
                 }

@@ -13,6 +13,7 @@ import {
     readLiteral,
     templateStyles,
 } from "../src/server/design/scan-parse.ts";
+import { JsProject } from "../src/server/design/scan-js-eval.ts";
 import { scanReport, scanTokens, type TokenScan } from "../src/server/design/scan.ts";
 import type { DesignSystem } from "../src/server/design/system-types.ts";
 import { buildSystem } from "../src/server/design/tokens-model.ts";
@@ -2141,4 +2142,19 @@ test("a light-first page with the same twins: the roles take the dark values fro
         system.tokens.filter((each) => /light/.test(each.name)).map((each) => each.name),
         [],
     );
+});
+
+test("star re-exports in a cycle are read once each: a local export wins, then the first star", () => {
+    const files = Array.from({ length: 9 }, (_, i) => `t${i}.js`);
+    const stars = (i: number) =>
+        files.flatMap((each, j) => (j === i ? [] : [`export * from "./${each}";`])).join("\n");
+    const body = (i: number) =>
+        `${stars(i)}\nexport const shared = "s${i}";\n${i > 0 ? `export const first = "f${i}";` : ""}`;
+    const dir = project(Object.fromEntries(files.map((file, i) => [file, body(i)])));
+    const started = Date.now();
+    const out = new JsProject(dir, files).exportsOf("t0.js");
+
+    assert.ok(Date.now() - started < 1000, `${Date.now() - started} ms`);
+    assert.equal(out.get("shared")?.value(), "s0");
+    assert.equal(out.get("first")?.value(), "f1");
 });
