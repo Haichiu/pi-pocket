@@ -448,44 +448,34 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
     const { facts, classified, alt, result, uses } = context;
     const colorVars = classified.filter((entry) => entry.category === "color");
 
-    const lightDefined = colorVars.flatMap((entry) => {
-        const hex = hexOf(entry.lightColor);
+    const defined = (mode: "lightColor" | "darkColor") =>
+        colorVars.flatMap((entry) => {
+            const hex = hexOf(entry[mode]);
 
-        return hex === undefined ? [] : [{ hex, text: entry.lightColor! }];
-    });
-    const darkDefined = colorVars.flatMap((entry) => {
-        const hex = hexOf(entry.darkColor);
-
-        return hex === undefined ? [] : [{ hex, text: entry.darkColor! }];
-    });
+            return hex === undefined
+                ? []
+                : [
+                      {
+                          entry,
+                          hex,
+                          text: entry[mode]!,
+                          name: entry.variable.name,
+                          uses: uses(entry.variable),
+                      },
+                  ];
+        });
+    const light = defined("lightColor");
+    const namedDark = defined("darkColor");
 
     useDefaultColors(facts);
     weighClassRules(facts);
 
-    const lightColors = mergeColors(lightDefined, facts.colors);
-    const darkColors = mergeColors(darkDefined, alt === "dark" ? facts.darkColors : new Map());
-    const namedLight = colorVars.flatMap((entry) => {
-        const hex = hexOf(entry.lightColor);
-        const kinds = facts.varKinds.get(entry.variable.name);
-
-        return hex === undefined
-            ? []
-            : [
-                  {
-                      name: entry.variable.name,
-                      hex,
-                      uses: uses(entry.variable),
-                      ...(kinds === undefined ? {} : { kinds }),
-                  },
-              ];
-    });
-    const namedDark = colorVars.flatMap((entry) => {
-        const hex = hexOf(entry.darkColor);
-
-        return hex === undefined
-            ? []
-            : [{ name: entry.variable.name, hex, uses: uses(entry.variable) }];
-    });
+    const lightColors = mergeColors(light, facts.colors);
+    const darkColors = mergeColors(namedDark, alt === "dark" ? facts.darkColors : new Map());
+    const namedLight = light.map((each) => ({
+        ...each,
+        kinds: facts.varKinds.get(each.name),
+    }));
 
     for (const each of namedLight) {
         const entry = lightColors.get(each.hex);
@@ -493,17 +483,14 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
         entry?.names.push({ name: each.name, uses: each.uses });
 
         if (entry !== undefined && each.kinds !== undefined) {
+            const { kinds } = each;
+
             entry.fact = mergeFact(
                 entry.fact,
-                { ...each.kinds, hex: each.hex, forms: new Map(), order: 0 },
+                { ...kinds, hex: each.hex, forms: new Map(), order: 0 },
                 each.hex,
             );
-            entry.uses +=
-                each.kinds.bg +
-                each.kinds.text +
-                each.kinds.border +
-                each.kinds.fill +
-                each.kinds.other;
+            entry.uses += kinds.bg + kinds.text + kinds.border + kinds.fill + kinds.other;
         }
     }
 
@@ -523,94 +510,69 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
         ? chooseRoles(darkColors, namedDark)
         : {};
 
+    const kindOf: Partial<Record<RoleName, "bg" | "text" | "border">> = {
+        background: "bg",
+        surface: "bg",
+        text: "text",
+        muted: "text",
+        border: "border",
+        accent: "text",
+    };
+
     for (const [role, choice] of Object.entries(lightRoles) as [RoleName, RoleChoice][]) {
-        if (choice.basis === "name") {
-            const source = colorVars.find((entry) => entry.variable.name === choice.source);
-            const dark = hexOf(source?.darkColor);
-
-            if (dark !== undefined) {
-                darkRoles[role] = {
-                    role,
-                    hex: dark,
-                    basis: "name",
-                    source: choice.source,
-                    score: choice.score,
-                };
-            }
-        }
-    }
-
-    // A role that the way its color is used decided may be held by a variable that has a dark value: that is its dark.
-    for (const [role, choice] of Object.entries(lightRoles) as [RoleName, RoleChoice][]) {
-        if (choice.basis !== "use") {
-            continue;
-        }
-
-        const holder = colorVars
-            .filter((entry) => hexOf(entry.lightColor) === choice.hex)
-            .sort((a, b) => uses(b.variable) - uses(a.variable))[0];
+        // The variable that holds a role's color holds its dark value too: the named one, else the most used one.
+        const holder =
+            choice.basis === "name"
+                ? colorVars.find((entry) => entry.variable.name === choice.source)
+                : colorVars
+                      .filter((entry) => hexOf(entry.lightColor) === choice.hex)
+                      .sort((a, b) => uses(b.variable) - uses(a.variable))[0];
         const dark = hexOf(holder?.darkColor);
 
-        if (holder !== undefined && dark !== undefined && dark !== choice.hex) {
+        if (
+            holder !== undefined &&
+            dark !== undefined &&
+            (choice.basis === "name" || dark !== choice.hex)
+        ) {
+            darkRoles[role] = { ...choice, hex: dark, basis: "name", source: holder.variable.name };
+        }
+
+        // A class that has a color in each mode (`.text-gray-900` and `.dark .text-gray-900`) pairs the two.
+        const pair = !result.hasDark
+            ? undefined
+            : [...facts.classRules.values()].find(
+                  (rule) =>
+                      rule.kind === kindOf[role] &&
+                      rule.dark !== undefined &&
+                      rule.light === choice.hex &&
+                      rule.dark !== choice.hex,
+              );
+
+        if (pair !== undefined && darkRoles[role]?.basis !== "name") {
             darkRoles[role] = {
-                role,
-                hex: dark,
-                basis: "name",
-                source: holder.variable.name,
-                score: choice.score,
+                ...choice,
+                hex: pair.dark!,
+                basis: "use",
+                source: "the same class in the dark mode",
             };
         }
     }
 
-    // A class that has a color in each mode (`.text-gray-900` and `.dark .text-gray-900`) pairs the two: the dark color of
-    // the role's class is the role's dark color.
-    if (result.hasDark) {
-        const kindOf: Partial<Record<RoleName, "bg" | "text" | "border">> = {
-            background: "bg",
-            surface: "bg",
-            text: "text",
-            muted: "text",
-            border: "border",
-            accent: "text",
-        };
-
-        for (const [role, choice] of Object.entries(lightRoles) as [RoleName, RoleChoice][]) {
-            const kind = kindOf[role];
-            const pair = [...facts.classRules.values()].find(
-                (rule) =>
-                    rule.kind === kind &&
-                    rule.light !== undefined &&
-                    rule.dark !== undefined &&
-                    rule.light === choice.hex &&
-                    rule.dark !== choice.hex,
-            );
-
-            if (pair !== undefined && darkRoles[role]?.basis !== "name") {
-                darkRoles[role] = {
-                    role,
-                    hex: pair.dark!,
-                    basis: "use",
-                    source: "the same class in the dark mode",
-                    score: choice.score,
-                };
-            }
-        }
-    }
-
-    // A brand or status color that a dark mode merely uses in another hue (links turn light blue, buttons stay brown) is
-    // not that role's dark value: a role keeps its hue across modes.
-    for (const role of ["accent", "danger", "warning", "success"] as const) {
+    // A brand or status color that a dark mode merely uses in another hue (links turn light blue) is not that role's
+    // dark value: a role keeps its hue across modes.
+    for (const role of ["accent", ...STATUS] as const) {
         const lightHex = lightRoles[role]?.hex;
-        const light = lightHex === undefined ? undefined : entryOf(lightHex);
-        const dark = darkRoles[role];
-        const other = dark?.basis === "use" ? entryOf(dark.hex) : undefined;
+        const before = lightHex === undefined ? undefined : entryOf(lightHex);
+        const after = darkRoles[role]?.basis === "use" ? entryOf(darkRoles[role].hex) : undefined;
 
-        if (light !== undefined && other !== undefined && light.c >= 0.05 && other.c >= 0.05) {
-            const gap = Math.abs(((light.h - other.h + 540) % 360) - 180);
-
-            if (gap > 40) {
-                delete darkRoles[role];
-            }
+        if (
+            before !== undefined &&
+            after !== undefined &&
+            before.c >= 0.05 &&
+            after.c >= 0.05 &&
+            hueGap(before.h, after.h) > 40
+        ) {
+            delete darkRoles[role];
         }
     }
 
