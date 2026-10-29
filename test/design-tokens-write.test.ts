@@ -23,6 +23,7 @@ import {
     systemSummary,
     writeDesignSystem,
 } from "../src/server/design/tokens.ts";
+import { readDesignFile } from "../src/server/design/tokens-io.ts";
 
 const dirs: string[] = [];
 
@@ -473,6 +474,22 @@ test("links: a symlinked .pi or .pi/design throws; a symlinked file is a problem
         ["secret.json"],
         "nothing was written through the link",
     );
+});
+
+test("a link at components/ or dist/ is refused for a read, a write, and a drop", () => {
+    const dir = project();
+    const outside = project();
+
+    writeDesignSystem(dir, { tokens: tokens() });
+    writeFileSync(join(outside, "button.html"), "x");
+    writeFileSync(join(outside, "tokens.css"), "x");
+    symlinkSync(outside, design(dir, "components"));
+    assert.throws(() => writeDesignSystem(dir, { components: { button: null } }), /symlink/);
+    assert.throws(() => readDesignFile(dir, "components/button.html"), /symlink/);
+    rmSync(design(dir, "dist"), { recursive: true });
+    symlinkSync(outside, design(dir, "dist"));
+    assert.throws(() => readDesignFile(dir, "dist/tokens.css"), /symlink/);
+    assert.deepEqual(readdirSync(outside).sort(), ["button.html", "tokens.css"]);
 });
 
 test(

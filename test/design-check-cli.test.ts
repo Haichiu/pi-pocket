@@ -65,7 +65,10 @@ test("--help says what it needs; without a browser the exit code is 2; npm run d
         readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8"),
     ).scripts;
 
-    assert.equal(scripts["design:check"], "node src/server/design/check-cli.ts");
+    assert.equal(
+        scripts["design:check"],
+        "node --import ./bin/strip-types.js src/server/design/check-cli.ts",
+    );
 });
 
 test("the arguments are checked: exit 2 and a usage line", async () => {

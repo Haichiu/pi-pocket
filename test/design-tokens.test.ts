@@ -938,3 +938,32 @@ test("scaleOf says which dimension tokens are the type, spacing, and radius scal
         "ease.out": undefined,
     });
 });
+
+test("many missing references have a budget for typo suggestions, so a load stays fast", () => {
+    const shade: Record<string, unknown> = {};
+    const typo: Record<string, unknown> = {};
+
+    for (let i = 0; i < 600; i++) {
+        shade[`shade-${i}-of-the-long-ramp`] = { $value: 1 };
+        typo[`shade-${i}-of-the-long-ramp`] = { $value: `{a.shade-${i}-of-the-long-ramps}` };
+    }
+
+    const missing = errors(build({ a: { $type: "number", ...shade }, b: { ...typo } }));
+
+    assert.equal(missing.length, 200);
+    assert.ok(missing.some((message) => message.includes("Did you mean")));
+    assert.ok(missing.some((message) => !message.includes("Did you mean")));
+});
+
+test("a very long chain of references is a problem, not a stack overflow", () => {
+    const chain: Record<string, unknown> = { t4999: { $value: 1 } };
+
+    for (let i = 0; i < 4999; i++) {
+        chain[`t${i}`] = { $value: `{n.t${i + 1}}` };
+    }
+
+    assert.match(
+        errors(build({ n: { $type: "number", ...chain } }))[0]!,
+        /more than 200 references/,
+    );
+});

@@ -445,9 +445,9 @@ function staleResolved(cwd: string, modes: string[]): string[] {
     }
 }
 
-/** The problems as one key each, to tell which an edit adds. */
+/** The problems as one key each, to tell which an edit adds. A "did you mean" is optional, so it is no part of the key. */
 const keyOf = (problem: SystemProblem) =>
-    `${problem.file ?? ""}|${problem.token ?? ""}|${problem.message}`;
+    `${problem.file ?? ""}|${problem.token ?? ""}|${problem.message.replace(/ (?:Did you mean .*|Add it to tokens\.json first\.)$/, "")}`;
 
 /**
  * Applies `change`, checks the result, and writes the files and a fresh `dist/`. Throws a `DesignSystemError` and
