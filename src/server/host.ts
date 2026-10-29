@@ -513,6 +513,7 @@ export interface PocketHost {
         | "review"
         | "share"
         | "shareTheme"
+        | "reach"
     >;
     /** Updates of Pi Pocket itself (`updates.ts`): its extension's routes are the owner's way to them. */
     readonly updates: Pick<
