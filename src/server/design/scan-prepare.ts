@@ -23,8 +23,6 @@ export interface Prepared {
     index: Map<string, Variable>;
     classified: Classified[];
     alt: "dark" | "light";
-    /** Colors kept for the other mode under names of their own (`$dark-text`), as the roles they stand for. */
-    others: { role: string; entry: Classified }[];
 }
 
 export function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
@@ -174,40 +172,10 @@ export function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
         }
     }
 
-    // `$dark-background`, `$dark-text-muted`: when a project keeps a few colors for the other mode under names that are
-    // roles with a mode word before them, they are that mode's roles, not colors of their own. (`$dark-blue` is a shade.)
-    const mode = alt === "dark" ? /^(?:dark|night)$/ : /^(?:light|day)$/;
-    const loose = classified.flatMap((entry) => {
-        const parts = kebab(entry.variable.name)
-            .replace(/^(?:color|colour|clr)-/, "")
-            .split("-");
-        const at = parts.findIndex((part) => mode.test(part));
-        const rest = parts.filter((_, index) => index !== at);
-        const role =
-            entry.category === "color" && at !== -1 && rest.length > 0
-                ? (["background", "surface", "text", "muted", "border"] as const).find(
-                      (each) => nameScore(each, words(rest.join("-"))) >= 60,
-                  )
-                : undefined;
-
-        return role === undefined ? [] : [{ role, entry, rest: rest.join("-") }];
-    });
-    const others: Prepared["others"] = [];
-
-    const sets = facts.vars.some((fact) => fact.scope === alt);
-
-    if (!sets && loose.length >= 2 && new Set(loose.map((item) => item.role)).size >= 2) {
-        for (const item of loose) {
-            others.push({ role: item.rest, entry: item.entry });
-            item.entry.variable.twin = true;
-        }
-    }
-
     return {
         index,
         classified: classified.filter((entry) => entry.variable.twin !== true),
         alt,
-        others,
     };
 }
 

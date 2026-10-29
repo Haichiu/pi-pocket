@@ -1118,24 +1118,6 @@ test("class rules count by how often markup uses the class, and a class in the d
     assert.equal(roles.muted!.dark, "#9ca3af");
 });
 
-test("variables kept for the other mode as roles with a mode word (a Sass project with $dark-surface and no dark scope)", () => {
-    const scan = scanTokens(
-        project({
-            "_variables.scss": `$app-background: #f5f5f5; $surface-color: #fff; $text-primary: #212121;
-$dark-background: #303030; $dark-surface: #424242; $dark-text: #fff; $dark-blue: #003366; $brand: #1976d2;`,
-        }),
-    );
-    const { roles } = scan.inferred;
-
-    assert.equal(roles.background!.dark, "#303030");
-    assert.equal(roles.surface!.dark, "#424242");
-    assert.equal(roles.text!.dark, "#ffffff");
-    assert.ok(
-        !scan.colors.length || roles.accent!.dark === undefined,
-        "$dark-blue is a shade, not a mode",
-    );
-});
-
 test("a custom property set only for the dark mode takes the Sass variable of the same name as its light value", () => {
     const scan = scanTokens(
         project({
@@ -1426,23 +1408,6 @@ test("status words: good ok positive pass valid are success; bad error critical 
         assert.equal(roles.warning!.dark, "#fbbf24");
         assert.equal(roles.accent, undefined, `${note} is a notice, not the brand`);
     }
-});
-
-test("a status named only in the other mode: the light color is the used one of its hue, and the dark value is the name's", () => {
-    const scan = scanTokens(
-        project({
-            "a.css": `:root { --bg: #fff; --text: #111 }
-.dark { --bg: #0b0c10; --text: #eee; --success: #4ade80; --danger: #f87171 }
-.ok { color: #16a34a } .bad { color: #dc2626 } .ok2 { border-color: #16a34a }`,
-        }),
-    );
-    const { roles } = scan.inferred;
-
-    assert.equal(roles.success!.value, "#16a34a");
-    assert.equal(roles.success!.dark, "#4ade80");
-    assert.equal(roles.danger!.value, "#dc2626");
-    assert.equal(roles.danger!.dark, "#f87171");
-    assert.equal(roles.accent, undefined, "the used green is the success, not the brand");
 });
 
 test("variables that supply one mode (--light-*, --dark-*, --*-dark, --*-light) stay out of the palette in every form", () => {

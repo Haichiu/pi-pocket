@@ -40,8 +40,6 @@ const hueOk = (role: RoleName, color: ColorEntry): boolean => {
 export function chooseRoles(
     colors: Map<string, ColorEntry>,
     named: VarColor[],
-    /** The hue of a status color that the other mode names (`--success` in the dark scope), to find its pair here. */
-    hints: Partial<Record<"danger" | "warning" | "success", number>> = {},
 ): Partial<Record<RoleName, RoleChoice>> {
     const chosen: Partial<Record<RoleName, RoleChoice>> = {};
     const entries = [...colors.values()];
@@ -384,50 +382,8 @@ export function chooseRoles(
 
     const chroma = entries.filter((color) => color.c >= 0.07 && color.rgba.a > 0.9);
 
-    // A status color that the other mode names has its pair in this mode: the used color of the same hue, before the
-    // most used chromatic color is taken for the accent.
-    for (const role of ["danger", "warning", "success"] as const) {
-        const hue = hints[role];
-
-        if (hue === undefined || chosen[role] !== undefined) {
-            continue;
-        }
-
-        const pair = byUse(
-            chroma.filter(
-                (color) =>
-                    !used(color.hex) &&
-                    color.c >= 0.1 &&
-                    color.uses >= 1 &&
-                    Math.abs(((color.h - hue + 540) % 360) - 180) <= 30,
-            ),
-            (color) => color.uses,
-        )[0];
-
-        if (pair !== undefined) {
-            set(role, pair.hex, "use", `used ${pair.uses}× with the hue of the dark ${role}`, 32);
-        }
-    }
-
     if (chosen.accent === undefined) {
-        const statusSingles = new Set(
-            chroma
-                .filter(
-                    (color) =>
-                        !used(color.hex) &&
-                        color.uses <= 1 &&
-                        color.names.length === 0 &&
-                        color.c >= 0.1,
-                )
-                .flatMap((color) =>
-                    (["danger", "warning", "success"] as const).filter((role) =>
-                        hueOk(role, color),
-                    ),
-                ),
-        ).size;
         const top = byUse(
-            // Reds, oranges, and greens that are each used once (all of the statuses at once) are more likely the
-            // statuses than the brand.
             chroma.filter(
                 (color) =>
                     !used(color.hex) &&
@@ -440,15 +396,6 @@ export function chooseRoles(
                             words(each.name).some((word) =>
                                 ["info", "note", "notice"].includes(word),
                             ),
-                    ) &&
-                    !(
-                        statusSingles >= 2 &&
-                        color.uses <= 1 &&
-                        color.names.length === 0 &&
-                        color.c >= 0.1 &&
-                        (["danger", "warning", "success"] as const).some((role) =>
-                            hueOk(role, color),
-                        )
                     ),
             ),
             (color) =>

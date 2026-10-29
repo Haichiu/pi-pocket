@@ -74,60 +74,8 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
     };
 
     const scaleVars = new Set<Classified>();
-    // The colors of each family by step. A family that holds the same colors as another (`brand-ramp`, which a loop turns into
-    // `--brand-50` … `--brand-900`) is the same scale twice: the one with the shorter name is kept.
-    const stepsOf = (list: Classified[]) =>
-        new Map(
-            list.map((entry) => [
-                /(\d{1,3})$/.exec(entry.variable.name)![1]!,
-                hexOf(entry.lightColor ?? entry.darkColor),
-            ]),
-        );
-
-    // Of two such families the better named one stays: one made of custom properties over one made of Sass variables, one
-    // whose name is not a container (`ramp`, `scale`, `palette`, `shades`), then the shorter.
-    const rankOf = (family: string, list: Classified[]) =>
-        (list.some(
-            (entry) => entry.variable.light?.kind === "css" || entry.variable.dark?.kind === "css",
-        )
-            ? 0
-            : 4) +
-        (/(?:^|-)(?:ramp|scale|palette|shades?|steps?|map|colors?|list)(?:-|$)/.test(family)
-            ? 2
-            : 0) +
-        family.length / 100;
-
-    const twin = (family: string, list: Classified[]) => {
-        const mine = stepsOf(list);
-
-        return (
-            mine.size >= 3 &&
-            [...scales].some(([other, otherList]) => {
-                const [theirRank, myRank] = [rankOf(other, otherList), rankOf(family, list)];
-
-                if (
-                    other === family ||
-                    theirRank > myRank ||
-                    (theirRank === myRank && other > family)
-                ) {
-                    return false;
-                }
-
-                const theirs = stepsOf(otherList);
-
-                return (
-                    theirs.size === mine.size &&
-                    [...mine].every(([step, hex]) => hex !== undefined && theirs.get(step) === hex)
-                );
-            })
-        );
-    };
 
     for (const [family, list] of scales) {
-        if (twin(family, list)) {
-            continue;
-        }
-
         if (
             list.length < 2 &&
             !w(

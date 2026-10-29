@@ -351,6 +351,7 @@ export const UNKNOWN = Symbol("unknown");
 export type Literal =
     string | number | boolean | null | typeof UNKNOWN | Literal[] | { [key: string]: Literal };
 
+/** A JavaScript object or array literal, read without running anything: what is not a literal is `UNKNOWN`. */
 export function readLiteral(text: string, start: number): Literal | undefined {
     let at = start;
     let nodes = 0;
@@ -359,97 +360,66 @@ export function readLiteral(text: string, start: number): Literal | undefined {
         while (at < text.length) {
             if (/\s/.test(text[at]!)) {
                 at += 1;
-            } else if (text.startsWith("//", at)) {
-                const end = text.indexOf("\n", at);
+            } else if (text.startsWith("//", at) || text.startsWith("/*", at)) {
+                const end = text.indexOf(text[at + 1] === "/" ? "\n" : "*/", at + 2);
 
-                at = end === -1 ? text.length : end + 1;
-            } else if (text.startsWith("/*", at)) {
-                const end = text.indexOf("*/", at + 2);
-
-                at = end === -1 ? text.length : end + 2;
+                at = end === -1 ? text.length : end + (text[at + 1] === "/" ? 1 : 2);
             } else {
                 break;
             }
         }
     };
 
+    // A template literal with `${…}` is a value the scan cannot know; it is still read to its end.
     const string = (): string | undefined => {
-        const quote = text[at];
-
-        if (quote !== '"' && quote !== "'" && quote !== "`") {
-            return undefined;
-        }
-
+        const quote = text[at]!;
         let out = "";
-        // A template literal with `${…}` is a value we cannot know; it is still read to its end.
-        let dynamic = false;
         let braces = 0;
+        let dynamic = false;
 
-        at += 1;
-
-        while (at < text.length && (text[at] !== quote || braces > 0)) {
+        for (at += 1; at < text.length && (text[at] !== quote || braces > 0); at++) {
             const char = text[at]!;
 
             if (char === "\\") {
-                out += out.length < 2000 ? (text[at + 1] ?? "") : "";
-                at += 2;
-
-                continue;
-            }
-
-            if (quote === "`" && char === "$" && text[at + 1] === "{") {
+                out += text[++at] ?? "";
+            } else if (quote === "`" && char === "$" && text[at + 1] === "{") {
                 dynamic = true;
                 braces += 1;
-                at += 2;
-
-                continue;
-            }
-
-            if (braces > 0 && char === "}") {
-                braces -= 1;
-            } else if (braces > 0 && char === "{") {
-                braces += 1;
-            } else if (out.length < 2000 && braces === 0) {
+                at += 1;
+            } else if (braces > 0) {
+                braces += char === "{" ? 1 : char === "}" ? -1 : 0;
+            } else {
                 out += char;
             }
-
-            at += 1;
         }
 
         at += 1;
 
-        return dynamic ? undefined : out;
+        return dynamic ? undefined : out.slice(0, 2000);
     };
 
     const skipValue = (): typeof UNKNOWN => {
-        let depth = 0;
-
-        while (at < text.length) {
+        for (let depth = 0; at < text.length; at++) {
             const char = text[at]!;
 
             if (char === '"' || char === "'" || char === "`") {
                 string();
-
-                continue;
-            }
-
-            if ("([{".includes(char)) {
+                at -= 1;
+            } else if ("([{".includes(char)) {
                 depth += 1;
-            } else if (")]}".includes(char)) {
+            } else if (")]}".includes(char) || (char === "," && depth === 0)) {
                 if (depth === 0) {
                     break;
                 }
 
-                depth -= 1;
-            } else if (char === "," && depth === 0) {
-                break;
+                depth -= char === "," ? 0 : 1;
             }
-
-            at += 1;
         }
 
         return UNKNOWN;
     };
+
+    const ended = () => at >= text.length || ",}]".includes(text[at]!);
 
     const value = (depth: number): Literal => {
         skip();
@@ -460,23 +430,19 @@ export function readLiteral(text: string, start: number): Literal | undefined {
 
         const char = text[at]!;
 
-        if (char === "{") {
+        if (char === "{" || char === "[") {
+            const close = char === "{" ? "}" : "]";
+            const list: Literal[] = [];
+            const object: { [key: string]: Literal } = {};
+
+            // A closing bracket of another kind (`{ a: 1 ) }`) is read by nothing: the literal ends there.
             at += 1;
 
-            const out: { [key: string]: Literal } = {};
-            let last = -1;
-
-            while (at < text.length) {
+            for (let last = -1; at < text.length && at !== last;) {
                 skip();
-
-                // A closing bracket of another kind (`{ a: 1 ) }`) is read by nothing: the object ends there.
-                if (at === last) {
-                    break;
-                }
-
                 last = at;
 
-                if (text[at] === "}") {
+                if (text[at] === close) {
                     at += 1;
 
                     break;
@@ -484,108 +450,54 @@ export function readLiteral(text: string, start: number): Literal | undefined {
 
                 if (text[at] === ",") {
                     at += 1;
+                } else if (char === "[") {
+                    list.push(value(depth + 1));
 
-                    continue;
-                }
-
-                if (text.startsWith("...", at)) {
+                    if (list.length > 500) {
+                        break;
+                    }
+                } else if (text.startsWith("...", at) || text[at] === "[") {
                     skipValue();
+                } else {
+                    let key: string | undefined;
 
-                    continue;
-                }
+                    if ("\"'`".includes(text[at]!)) {
+                        key = string();
+                    } else {
+                        key = /^[A-Za-z_$][\w$-]*|^-?\d+(?:\.\d+)?/.exec(
+                            text.slice(at, at + 80),
+                        )?.[0];
+                        at += key?.length ?? 0;
+                    }
 
-                if (text[at] === "[") {
-                    skipValue();
+                    skip();
 
-                    continue;
-                }
-
-                let key = string();
-
-                if (key === undefined) {
-                    const bare = /^[A-Za-z_$][\w$-]*|^-?\d+(?:\.\d+)?/.exec(
-                        text.slice(at, at + 80),
-                    );
-
-                    if (bare === null) {
+                    if (key === undefined || text[at] !== ":") {
                         skipValue();
 
                         continue;
                     }
 
-                    key = bare[0];
-                    at += key.length;
-                }
-
-                skip();
-
-                if (text[at] === ":") {
                     at += 1;
 
                     const child = value(depth + 1);
 
                     if (key !== "__proto__" && key !== "constructor" && key !== "prototype") {
-                        out[key] = child;
+                        object[key] = child;
                     }
-                } else {
-                    skipValue();
                 }
             }
 
-            return out;
+            return char === "{" ? object : list;
         }
 
-        if (char === "[") {
-            at += 1;
+        if (char === '"' || char === "'" || char === "`") {
+            const quoted = string();
 
-            const out: Literal[] = [];
-            let last = -1;
-
-            while (at < text.length) {
-                skip();
-
-                if (at === last) {
-                    break;
-                }
-
-                last = at;
-
-                if (text[at] === "]") {
-                    at += 1;
-
-                    break;
-                }
-
-                if (text[at] === ",") {
-                    at += 1;
-
-                    continue;
-                }
-
-                out.push(value(depth + 1));
-
-                if (out.length > 500) {
-                    break;
-                }
-            }
-
-            return out;
-        }
-
-        const before = at;
-        const quoted = string();
-
-        if (quoted === undefined && at > before) {
-            return skipValue();
-        }
-
-        if (quoted !== undefined) {
-            // `"a" + b` and the like are not literals.
             skip();
 
-            return text[at] === "," || text[at] === "}" || text[at] === "]" || at >= text.length
-                ? quoted
-                : skipValue();
+            // `"a" + b` and the like are not literals.
+            return quoted !== undefined && ended() ? quoted : skipValue();
         }
 
         const number = /^-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/i.exec(text.slice(at, at + 40));
@@ -594,9 +506,7 @@ export function readLiteral(text: string, start: number): Literal | undefined {
             at += number[0].length;
             skip();
 
-            return text[at] === "," || text[at] === "}" || text[at] === "]" || at >= text.length
-                ? Number(number[0])
-                : skipValue();
+            return ended() ? Number(number[0]) : skipValue();
         }
 
         const word = /^(true|false|null)\b/.exec(text.slice(at, at + 6));
@@ -612,11 +522,7 @@ export function readLiteral(text: string, start: number): Literal | undefined {
 
     skip();
 
-    if (text[at] !== "{" && text[at] !== "[") {
-        return undefined;
-    }
-
-    return value(0);
+    return text[at] === "{" || text[at] === "[" ? value(0) : undefined;
 }
 
 /** A `#hex` that is a color, not an HTML entity, a link or id, or a selector. */

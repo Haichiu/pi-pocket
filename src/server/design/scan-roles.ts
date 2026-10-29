@@ -37,7 +37,7 @@ export interface ColorRoles {
 }
 
 export function chooseColorRoles(context: InferContext): ColorRoles {
-    const { facts, prep, classified, alt, result, uses } = context;
+    const { facts, classified, alt, result, uses } = context;
     const colorVars = classified.filter((entry) => entry.category === "color");
 
     const lightDefined = colorVars.flatMap((entry) => {
@@ -45,18 +45,11 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
 
         return hex === undefined ? [] : [{ hex, text: entry.lightColor! }];
     });
-    const darkDefined = [
-        ...colorVars.flatMap((entry) => {
-            const hex = hexOf(entry.darkColor);
+    const darkDefined = colorVars.flatMap((entry) => {
+        const hex = hexOf(entry.darkColor);
 
-            return hex === undefined ? [] : [{ hex, text: entry.darkColor! }];
-        }),
-        ...prep.others.flatMap(({ entry }) => {
-            const hex = hexOf(entry.lightColor);
-
-            return hex === undefined ? [] : [{ hex, text: entry.lightColor! }];
-        }),
-    ];
+        return hex === undefined ? [] : [{ hex, text: entry.darkColor! }];
+    });
 
     useDefaultColors(facts);
     weighClassRules(facts);
@@ -78,26 +71,13 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
                   },
               ];
     });
-    const namedDark = [
-        ...colorVars.flatMap((entry) => {
-            const hex = hexOf(entry.darkColor);
+    const namedDark = colorVars.flatMap((entry) => {
+        const hex = hexOf(entry.darkColor);
 
-            return hex === undefined
-                ? []
-                : [
-                      {
-                          name: entry.variable.name,
-                          hex,
-                          uses: uses(entry.variable),
-                      },
-                  ];
-        }),
-        ...prep.others.flatMap(({ role, entry }) => {
-            const hex = hexOf(entry.lightColor);
-
-            return hex === undefined ? [] : [{ name: role, hex, uses: uses(entry.variable) }];
-        }),
-    ];
+        return hex === undefined
+            ? []
+            : [{ name: entry.variable.name, hex, uses: uses(entry.variable) }];
+    });
 
     for (const each of namedLight) {
         const entry = lightColors.get(each.hex);
@@ -119,24 +99,7 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
         }
     }
 
-    // A status color that the other mode names (`--success` set in the dark scope only) tells which color of this mode is the
-    // status: the used color of its hue.
-    const hints: Partial<Record<"danger" | "warning" | "success", number>> = {};
-
-    if (prep.classified.some((entry) => entry.variable.dark !== undefined)) {
-        const pairs = chooseRoles(darkColors, namedDark);
-
-        for (const role of ["danger", "warning", "success"] as const) {
-            const found = pairs[role];
-            const color = found?.basis === "name" ? darkColors.get(found.hex) : undefined;
-
-            if (color !== undefined) {
-                hints[role] = color.h;
-            }
-        }
-    }
-
-    const lightRoles = chooseRoles(lightColors, namedLight, hints);
+    const lightRoles = chooseRoles(lightColors, namedLight);
 
     // A project with one background color, called a surface, has no other page color: the surface is the page too.
     if (lightRoles.background === undefined && lightRoles.surface?.basis === "name") {
@@ -146,8 +109,7 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
 
     const hasDarkVars = classified.some((entry) => entry.variable.dark !== undefined);
 
-    result.hasDark =
-        hasDarkVars || prep.others.length > 0 || (alt === "dark" && facts.darkColors.size > 0);
+    result.hasDark = hasDarkVars || (alt === "dark" && facts.darkColors.size > 0);
 
     const darkRoles: Partial<Record<RoleName, RoleChoice>> = result.hasDark
         ? chooseRoles(darkColors, namedDark)
