@@ -17,6 +17,7 @@
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
 import type { DesignSystem, ModeValue, ResolvedToken, SystemChange } from "./system-types.ts";
 import { EXT, clip, isObject, plain, type Obj } from "./tokens-base.ts";
+import { refName } from "./tokens-values.ts";
 import { buildSystem } from "./tokens-model.ts";
 import type { Draft } from "./scan-scales.ts";
 
@@ -138,6 +139,36 @@ function blocking(
     return undefined;
 }
 
+/** Every reference a token value holds (`{color.blue.500}`), at any depth, as the engine reads them. */
+function referencesIn(value: unknown, found = new Set<string>()): Set<string> {
+    if (typeof value === "string") {
+        for (const match of value.matchAll(/\{([^{}]+)\}/g)) {
+            found.add(refName(match[1]!));
+        }
+    } else if (Array.isArray(value)) {
+        for (const each of value) {
+            referencesIn(each, found);
+        }
+    } else if (isObject(value)) {
+        for (const each of Object.values(value)) {
+            referencesIn(each, found);
+        }
+    }
+
+    return found;
+}
+
+/** The names a token that is added refers to: in its value, its contrast pairs, and each mode's value. */
+function referencesOf(token: AddedToken): Set<string> {
+    const found = referencesIn(token.node);
+
+    for (const each of token.modes) {
+        referencesIn(each.value, found);
+    }
+
+    return found;
+}
+
 /** The whole token to add: the scan's own node, with its type and tier made explicit. */
 function addedNode(node: Obj, token: ResolvedToken): Obj {
     const own = structuredClone(node);
@@ -245,6 +276,31 @@ export function planResync(system: DesignSystem, draft: Draft): ResyncPlan {
         }
 
         added.push(planAdded(node, token, draft, defaultMode, scanDefault, system.modes.slice(1)));
+    }
+
+    // A token that is added can refer to a token that the plan cannot add (a name that is in the way in the system), and
+    // then the reference does not resolve: the write refuses the change whole. Move those to blocked, until stable.
+    const known = new Set([...have.keys(), ...added.map((token) => token.token)]);
+    let again = true;
+
+    while (again) {
+        again = false;
+
+        for (const token of [...added]) {
+            const missing = [...referencesOf(token)].find((name) => !known.has(name));
+
+            if (missing === undefined) {
+                continue;
+            }
+
+            added.splice(added.indexOf(token), 1);
+            known.delete(token.token);
+            blocked.push({
+                token: token.token,
+                why: `its reference {${missing}} is not in the system, and this plan does not add it`,
+            });
+            again = true;
+        }
     }
 
     return {

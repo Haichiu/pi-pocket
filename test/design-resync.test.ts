@@ -5,9 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { designSystemTool } from "../src/server/design/system.ts";
-import { loadDesignSystem } from "../src/server/design/tokens.ts";
+import { loadDesignSystem, writeDesignSystem } from "../src/server/design/tokens.ts";
 import type { ResyncPlan } from "../src/server/design/tokens-resync.ts";
-import { resyncReport } from "../src/server/design/tokens-resync.ts";
+import { planResync, resyncChange, resyncReport } from "../src/server/design/tokens-resync.ts";
+import type { Draft } from "../src/server/design/scan-scales.ts";
 
 const dirs: string[] = [];
 
@@ -316,6 +317,55 @@ test("a second apply adds nothing: resync is idempotent", async () => {
     assert.equal(readFileSync(join(dir, ".pi/design/dist/tokens.css"), "utf8"), css);
 });
 
+test("a token whose reference the plan cannot add is blocked too, so the write goes through", async () => {
+    // The system has a token at color.brand, so the code's color.brand.dark has no group there (a collision). The code's
+    // color.accent.hover refers to it: adding only that one would make the whole write fail on a missing reference.
+    const dir = project();
+
+    await say(
+        run(dir, {
+            action: "init",
+            tokens: { color: { $type: "color", brand: { $value: "#123456" } } },
+        }),
+    );
+
+    const system = loadDesignSystem(dir);
+
+    assert.ok(system !== undefined, "the system saved");
+
+    const draft: Draft = {
+        tokens: {
+            color: {
+                $type: "color",
+                brand: { dark: { $value: "#0a0b0c" } },
+                accent: { hover: { $value: "{color.brand.dark}" } },
+            },
+        },
+        modes: {},
+    };
+    const plan = planResync(system, draft);
+
+    assert.deepEqual(plan.added, [], "neither token can be added");
+    assert.deepEqual(plan.blocked.map((token) => token.token).sort(), [
+        "color.accent.hover",
+        "color.brand.dark",
+    ]);
+    assert.match(
+        resyncReport({ name: system.name, path: ".", files: 1, saved: false, plan }),
+        /color\.accent\.hover: its reference \{color\.brand\.dark\} is not in the system/,
+        "the report says why",
+    );
+
+    // Before this fix the plan added color.accent.hover, and this write threw "The reference {color.brand.dark} does not exist".
+    const change = resyncChange(plan, {
+        path: ".",
+        scannedAt: new Date().toISOString(),
+        tokens: 2,
+    });
+
+    assert.doesNotThrow(() => writeDesignSystem(dir, change));
+});
+
 test("the report fences token names and values from the project, and shows at most 40 lines", () => {
     // A crafted plan: a scan's own values are safe characters, so the hostile ones are put here on purpose.
     const plan: ResyncPlan = {
@@ -349,5 +399,6 @@ test("the report fences token names and values from the project, and shows at mo
 
     assert.match(long, /Not in the code now \(45\):/);
     assert.match(long, /… and 5 more/);
+    // A page with no match gives null here and 0 lines, so the count is not 40 and the assertion fails.
     assert.equal((long.match(/^ {2}space\.\d+$/gm) ?? []).length, 40, "40 lines, then a count");
 });
