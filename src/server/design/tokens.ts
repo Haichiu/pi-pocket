@@ -316,16 +316,32 @@ function applyChange(
         clearProblems(file);
     }
 
-    if (change.name !== undefined || change.description !== undefined) {
+    if (
+        change.name !== undefined ||
+        change.description !== undefined ||
+        change.source !== undefined
+    ) {
         guard("tokens.json");
 
         const top = root();
 
-        if (change.name !== undefined) {
+        if (change.name !== undefined || change.source !== undefined) {
             const extensions = isObject(top.$extensions) ? top.$extensions : {};
             const ext = isObject(extensions[EXT]) ? extensions[EXT] : {};
 
-            ext.name = change.name.trim().slice(0, 80);
+            if (change.name !== undefined) {
+                ext.name = change.name.trim().slice(0, 80);
+            }
+
+            if (change.source !== undefined) {
+                // The provenance of a resync; the rest of the block (the name, the mode, the format) stays.
+                ext.source = {
+                    path: change.source.path.slice(0, 200),
+                    scannedAt: change.source.scannedAt.slice(0, 40),
+                    tokens: change.source.tokens,
+                };
+            }
+
             extensions[EXT] = ext;
             top.$extensions = extensions;
         }
