@@ -7,7 +7,6 @@ import {
     kebab,
     nearColors,
     normalizeColor,
-    type Obj,
     paletteName,
     ROLE_PATHS,
     type RoleName,
@@ -143,67 +142,59 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
             changing.add(light.hex);
         }
 
-        const node: Obj = { $value: lightAlias(light.hex), $type: "color" };
-
         const source = colorVars.find((entry) => entry.variable.name === light.source);
 
         if (light.basis === "name") {
             roleVars.add(light.source);
         }
 
-        book.add(path, node);
+        book.add(path, { $value: lightAlias(light.hex), $type: "color" });
         lightHexOf.set(path.join("."), light.hex);
 
         if (source !== undefined) {
             aliasOf.set(vkey(source.variable), path);
         }
 
-        if (dark !== undefined && dark.hex !== light.hex) {
+        if (changes) {
             pendingDark.push({ path, hex: dark.hex });
         }
 
         const fact = source?.variable.light;
         const at =
-            light.basis === "name"
-                ? fact === undefined
-                    ? undefined
-                    : `${fact.file}${fact.line === undefined ? "" : `:${fact.line}`}`
-                : lightColors.get(light.hex)?.fact?.at;
+            light.basis === "use"
+                ? lightColors.get(light.hex)?.fact?.at
+                : fact === undefined
+                  ? undefined
+                  : `${fact.file}${fact.line === undefined ? "" : `:${fact.line}`}`;
+        // A name that says the role is sure; the way a color is used is a guess, the less so the weaker the sign.
+        const sure = light.score >= (light.basis === "name" ? 85 : 40);
 
         result.roles[role] = {
             token: path.join("."),
             value: light.hex,
-            ...(dark !== undefined && dark.hex !== light.hex ? { dark: dark.hex } : {}),
+            ...(changes ? { dark: dark.hex } : {}),
             basis: light.basis,
             source: light.source,
-            // A name that says the role is sure; the way a color is used is a guess, the less so the weaker the sign.
             confidence:
-                light.basis === "name"
-                    ? light.score >= 85
-                        ? "high"
-                        : "medium"
-                    : light.score >= 40
-                      ? "medium"
-                      : "low",
+                light.basis === "name" ? (sure ? "high" : "medium") : sure ? "medium" : "low",
             ...(at === undefined ? {} : { at }),
         };
     }
 
-    const accent =
-        lightRoles.accent === undefined ? undefined : lightColors.get(lightRoles.accent.hex);
-
-    if (accent !== undefined) {
-        const poolOf = (
-            roles: Partial<Record<RoleName, RoleChoice>>,
-            entries: Map<string, ColorEntry>,
-        ) => {
-            const given = new Set(
-                Object.values(roles)
-                    .map((role) => role?.hex)
-                    .filter((hex): hex is string => hex !== undefined),
-            );
-            // A gray that the mode uses only as text (a dark label on a light button) is a color the project has too.
-            const labels = [...entries.values()]
+    // The text on the accent: the color of the pool that reads best on it. The pool is the mode's page and text, white
+    // and black when the mode has them, and the grays it uses only as text (a dark label on a light button).
+    const onAccent = (
+        accent: ColorEntry,
+        entries: Map<string, ColorEntry>,
+        roles: Partial<Record<RoleName, RoleChoice>>,
+        preferWhite: boolean,
+    ) => {
+        const given = new Set(Object.values(roles).map((role) => role?.hex));
+        const pool = [
+            ...[roles.background?.hex, roles.text?.hex, "#ffffff", "#000000"].filter(
+                (hex): hex is string => hex !== undefined && entries.has(hex),
+            ),
+            ...[...entries.values()]
                 .filter(
                     (each) =>
                         !given.has(each.hex) &&
@@ -213,61 +204,34 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
                         (each.fact?.bg ?? 0) === 0 &&
                         (each.fact?.border ?? 0) === 0,
                 )
-                .map((each) => each.hex);
+                .map((each) => each.hex),
+        ];
 
-            return [
-                ...[roles.background?.hex, roles.text?.hex, "#ffffff", "#000000"].filter(
-                    (hex): hex is string => hex !== undefined && entries.has(hex),
-                ),
-                ...labels,
-            ];
-        };
+        return preferWhite && contrastRatio(parseColor("#ffffff")!, accent.rgba) >= 3
+            ? "#ffffff"
+            : topBy(pool, (hex) => contrastRatio(entries.get(hex)!.rgba, accent.rgba), 1)[0];
+    };
 
-        // White is what a project already puts on its accent when it uses white as a text color and it reads well enough.
-        const whiteText =
-            (facts.colors.get("#ffffff")?.text ?? 0) > 0 && lightColors.has("#ffffff");
+    const accent =
+        lightRoles.accent === undefined ? undefined : lightColors.get(lightRoles.accent.hex);
+    // White is what a project already puts on its accent when it uses white as a text color.
+    const whiteText = (facts.colors.get("#ffffff")?.text ?? 0) > 0 && lightColors.has("#ffffff");
+    const onLight =
+        accent === undefined ? undefined : onAccent(accent, lightColors, lightRoles, whiteText);
 
-        const pick = (
-            accentColor: ColorEntry,
-            entries: Map<string, ColorEntry>,
-            roles: Partial<Record<RoleName, RoleChoice>>,
-            preferWhite: boolean,
-        ) => {
-            const pool = poolOf(roles, entries);
-            const best = topBy(
-                pool,
-                (hex) => {
-                    const color = entries.get(hex)?.rgba;
-
-                    return color === undefined ? 0 : contrastRatio(color, accentColor.rgba);
-                },
-                1,
-            )[0];
-
-            return preferWhite && contrastRatio(parseColor("#ffffff")!, accentColor.rgba) >= 3
-                ? "#ffffff"
-                : best;
-        };
-
-        const onLight = pick(accent, lightColors, lightRoles, whiteText);
+    if (onLight !== undefined) {
         const path = ["color", "text", "on-accent"];
-
-        if (onLight !== undefined) {
-            book.add(path, {
-                $value: lightAlias(onLight),
-                $type: "color",
-            });
-        }
-
         const darkAccent =
             darkRoles.accent === undefined ? undefined : darkColors.get(darkRoles.accent.hex);
+        const onDark =
+            darkAccent === undefined
+                ? undefined
+                : onAccent(darkAccent, darkColors, darkRoles, false);
 
-        if (darkAccent !== undefined) {
-            const onDark = pick(darkAccent, darkColors, darkRoles, false);
+        book.add(path, { $value: lightAlias(onLight), $type: "color" });
 
-            if (onLight !== undefined && onDark !== undefined && onDark !== onLight) {
-                pendingDark.push({ path, hex: onDark });
-            }
+        if (onDark !== undefined && onDark !== onLight) {
+            pendingDark.push({ path, hex: onDark });
         }
     }
 
