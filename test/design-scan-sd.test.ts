@@ -385,6 +385,10 @@ test("globs: **, *, ?, braces; a template, a long pattern, and many ** are refus
     globToRegExp("tokens/**/a/**/b/**/*.json")!.test(`tokens/${"x/".repeat(2000)}c.json`);
     assert.ok(Date.now() - started < 200);
 
+    // Many `*` against a long name do not backtrack (seconds before, under a millisecond now).
+    assert.equal(match(`${"a*".repeat(12)}b.json`, `${"a".repeat(30)}.json`), false);
+    assert.ok(Date.now() - started < 400, `${Date.now() - started} ms`);
+
     assert.deepEqual(
         sdConfigIn("", `{ "source": ["a/*.json"], "include": ["b/*.json"], "platforms": {} }`),
         { dir: "", include: ["b/*.json"], source: ["a/*.json"] },

@@ -31,50 +31,113 @@ export interface SdFile {
 
 // --- The config -----------------------------------------------------------------------------------------------------------
 
-/** A glob as a regular expression: `**`, `*`, `?`, and `{a,b}`. A glob with a template (`${brand}`) is not one. */
-export function globToRegExp(glob: string): RegExp | undefined {
+/** A glob's matcher: `**`, `*`, `?`, and `{a,b}`. A glob with a template (`${brand}`) is not one. */
+export function globToRegExp(glob: string): { test: (path: string) => boolean } | undefined {
     // A template is not a glob, and many `**` make a pattern that is slow on a long path.
     if (/\$\{|\{\{|<%/.test(glob) || glob.length > 200 || (glob.match(/\*\*/g)?.length ?? 0) > 3) {
         return undefined;
     }
 
-    let out = "";
+    // Braces become one glob for each choice (a bounded number), so that each glob is a plain sequence.
+    let globs = [glob];
 
-    for (let at = 0; at < glob.length; at++) {
-        const char = glob[at]!;
+    while (globs.some((each) => each.includes("{"))) {
+        const out: string[] = [];
 
-        if (char === "*") {
-            if (glob[at + 1] === "*") {
-                at += glob[at + 2] === "/" ? 2 : 1;
-                out += "(?:.*/)?";
-            } else {
-                out += "[^/]*";
-            }
-        } else if (char === "?") {
-            out += "[^/]";
-        } else if (char === "{") {
-            const close = glob.indexOf("}", at);
+        for (const each of globs) {
+            const open = each.indexOf("{");
+            const close = each.indexOf("}", open);
+            const inner = each.slice(open + 1, close);
 
-            if (close === -1) {
+            if (open === -1) {
+                out.push(each);
+            } else if (close === -1 || inner.includes("{")) {
                 return undefined;
+            } else {
+                out.push(
+                    ...inner
+                        .split(",")
+                        .map((part) => each.slice(0, open) + part + each.slice(close + 1)),
+                );
+            }
+        }
+
+        if (out.length > 64) {
+            return undefined;
+        }
+
+        globs = out;
+    }
+
+    // Each glob is a list of steps, matched by keeping the set of steps reached (no backtracking): the time grows with
+    // the path's length times the glob's. "deep" is `**/` (any folders, or none), "deep-body" the folders it takes.
+    const programs = globs.map((each) => {
+        const steps: string[] = [];
+
+        for (let at = 0; at < each.length; at++) {
+            if (each[at] === "*" && each[at + 1] === "*") {
+                at += each[at + 2] === "/" ? 2 : 1;
+                steps.push("deep", "deep-body");
+            } else {
+                steps.push(each[at] === "*" ? "star" : each[at] === "?" ? "one" : `=${each[at]}`);
+            }
+        }
+
+        return steps;
+    });
+
+    const run = (steps: string[], path: string) => {
+        let now = new Uint8Array(steps.length + 1);
+        let next = new Uint8Array(steps.length + 1);
+
+        // The steps reached without a character: past a `*`, past `**/`, or into its folders.
+        const close = (set: Uint8Array) => {
+            for (let at = 0; at < steps.length; at++) {
+                if (set[at] === 1 && steps[at] === "star") {
+                    set[at + 1] = 1;
+                } else if (set[at] === 1 && steps[at] === "deep") {
+                    set[at + 1] = 1;
+                    set[at + 2] = 1;
+                }
+            }
+        };
+
+        now[0] = 1;
+        close(now);
+
+        for (let index = 0; index < path.length; index++) {
+            const char = path[index]!;
+
+            next.fill(0);
+
+            for (let at = 0; at < steps.length; at++) {
+                const step = steps[at]!;
+
+                if (now[at] === 0) {
+                    continue;
+                }
+
+                if (step === `=${char}` || (step === "one" && char !== "/")) {
+                    next[at + 1] = 1;
+                } else if (step === "star" && char !== "/") {
+                    next[at] = 1;
+                } else if (step === "deep-body") {
+                    next[at] = 1;
+
+                    if (char === "/") {
+                        next[at + 1] = 1;
+                    }
+                }
             }
 
-            out += `(?:${glob
-                .slice(at + 1, close)
-                .split(",")
-                .map((part) => part.replace(/[.+^$()|[\]\\]/g, "\\$&"))
-                .join("|")})`;
-            at = close;
-        } else {
-            out += char.replace(/[.+^$()|[\]\\]/g, "\\$&");
+            close(next);
+            [now, next] = [next, now];
         }
-    }
 
-    try {
-        return new RegExp(`^${out}$`);
-    } catch {
-        return undefined;
-    }
+        return now[steps.length] === 1;
+    };
+
+    return { test: (path) => programs.some((steps) => run(steps, path)) };
 }
 
 /** The first Style Dictionary config in a config's text, or undefined (`sdConfigsIn` has all of them). */
