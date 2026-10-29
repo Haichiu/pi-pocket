@@ -1,5 +1,3 @@
-// The whole path of a design system, as an agent walks it: scan a project, init from the scan, validate, publish a design
-// that links ds/tokens.css, and check the page. The guide promises three design_system calls; this counts them.
 import { cleanUp, context, newSession, openApp, scriptedModel, work } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -22,7 +20,6 @@ let conversation: ConversationId;
 const host = { fetchPublic: createPublicFetch() } as PocketHost;
 const [artifact] = createArtifacts(host).tools!;
 const system = designSystemTool();
-/** Every tool call of the transcript, in order: the tool's name and the action. */
 const transcript: string[] = [];
 
 before(async () => {
@@ -35,7 +32,6 @@ after(async () => {
     cleanUp();
 });
 
-/** A call of the design_system tool, as the agent loop makes it: the arguments are checked against the tool's schema first. */
 async function call(args: Record<string, unknown>): Promise<string> {
     transcript.push(`design_system ${String(args.action)}`);
 
@@ -104,14 +100,12 @@ test(
         mkdirSync(join(work, "src"), { recursive: true });
         writeFileSync(join(work, "src", "styles.css"), PROJECT_CSS);
 
-        // 1. scan: a report with a draft; nothing is saved.
         const report = await call({ action: "scan" });
 
         assert.match(report, /Color roles \(\d of 9 found\)/);
         assert.match(report, /design_system init fromScan: true|init fromScan/);
         assert.equal(loadDesignSystem(work), undefined, "a scan saves nothing");
 
-        // 2. init from the scan, correcting a role in the same call (the value is typed: a string).
         const made = await call({
             action: "init",
             name: "Harbor",
@@ -121,7 +115,6 @@ test(
 
         assert.match(made, /Design system "Harbor"/);
 
-        // 3. validate: no error.
         const checked = await call({ action: "validate" });
 
         assert.doesNotMatch(checked, /\b[1-9]\d* error/);
@@ -130,7 +123,6 @@ test(
 
         assert.equal(loaded.problems.filter((problem) => problem.level === "error").length, 0);
 
-        // 4. publish: the page links ds/tokens.css and uses only the variables of the summary.
         const byName = (name: string) => loaded.tokens.find((token) => token.name === name)?.cssVar;
         const first = (group: string, type: string) =>
             loaded.tokens.find(
@@ -157,7 +149,6 @@ test(
 
         assert.match(reply, /Attached ds\/tokens\.css from the design system "Harbor"/);
 
-        // 5. check the stored page against the system.
         const bundle = await readBundle(
             host,
             app.harness.snapshot.bind(app.harness),
@@ -189,7 +180,6 @@ test(
             );
         }
 
-        // The calls: three design_system calls made the system, then one publish; the check is not a tool call of the agent's own.
         assert.deepEqual(transcript, [
             "design_system scan",
             "design_system init",
@@ -211,7 +201,6 @@ test("the tool refuses a value that is not a token value, with the schema's word
             } as never,
         );
 
-    // The forms that a DTCG token takes pass: text, a number, a list, a color object, a quantity, a shadow, a whole token.
     for (const value of [
         "#7aa2f7",
         400,
@@ -226,6 +215,5 @@ test("the tool refuses a value that is not a token value, with the schema's word
         assert.doesNotThrow(() => refuse(value), JSON.stringify(value));
     }
 
-    // A nested object where a member should be text or a number, and a function-like value, do not.
     assert.throws(() => refuse({ color: { nested: { deeper: [{}] } } }));
 });
