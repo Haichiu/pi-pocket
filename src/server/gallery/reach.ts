@@ -1,15 +1,8 @@
-/**
- * What a gallery entry can reach, read off its code: the hosts it names, the keys it reads, the programs it starts, and
- * the files it writes; for a theme, its palette. The scan is by literal patterns, on the code with its comments taken
- * out, so it tells what the code says and not what it does: a host built at run time is only said to be built. The
- * results are kept in the gallery's folder, by entry and pinned files, so the code is downloaded once.
- */
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseColors } from "../omarchy.ts";
 import { sha256 } from "./entry.ts";
 
-/** What the scan found, as short words for people. */
 export interface Scanned {
     network: string[];
     keys: string[];
@@ -17,13 +10,11 @@ export interface Scanned {
     files: string[];
 }
 
-/** A theme's palettes, by `colors.toml`'s keys, or null where it has no such file. */
 export interface Palette {
     colors: Record<string, string> | null;
     colorsLight: Record<string, string> | null;
 }
 
-/** What the reading of one entry gives: what it reaches, or why it could not be read. */
 export type Reach =
     | { kind: "extension"; commit: string; scanned: Scanned }
     | { kind: "theme"; commit: string; palette: Palette }
@@ -32,9 +23,7 @@ export type Reach =
 /** Raise it when the scan changes, so results kept from an older scan are made again. */
 export const SCAN_VERSION = 6;
 
-/** The files the scan reads: code that runs. Other files are not downloaded. */
 export const SCAN_FILE = /\.(?:[cm]?[jt]s)$/i;
-/** A theme's palette files, as they are named inside its folder. */
 export const PALETTE_FILES = ["colors.toml", "colors-light.toml"];
 
 const DYNAMIC_ADDRESS = "addresses it builds at run time";
@@ -42,11 +31,7 @@ const DYNAMIC_PROGRAM = "programs it names at run time";
 const WRITTEN_FILES = "files it writes";
 const HOME_FOLDER = "your home folder";
 
-// ─── Comments ──────────────────────────────────────────────────────────────────────
-
-/** What can come before a `/` that starts a regular expression and not a division. */
 const BEFORE_REGEX = /[(,=:[!&|?{};+\-*%<>~^]/;
-/** Words after which a `/` starts a regular expression, though they end in a letter. */
 const KEYWORD_BEFORE_REGEX =
     /(?:^|[^\w$])(return|typeof|void|delete|throw|case|in|of|new|else|do|yield|await)$/;
 
@@ -54,19 +39,22 @@ function keywordBeforeRegex(code: string): boolean {
     const end = code.trimEnd();
     const keyword = KEYWORD_BEFORE_REGEX.exec(end.slice(-12))?.[1];
 
-    // Whitespace or a removed comment after a dot does not make a property name a keyword.
     return keyword !== undefined && !end.slice(0, -keyword.length).trimEnd().endsWith(".");
 }
 
-/**
- * The code without its comments. Strings and regular expressions are kept as they are, so a `//` in an address is not
- * taken for a comment. Line breaks stay, so lines still count. An ambiguous keyword/division line stays literal,
- * including its possible comment, rather than hiding subsequent code.
- */
 export function stripComments(code: string): string {
     let out = "";
+    let tail = "";
     let at = 0;
     let last = "";
+
+    // A separate, whitespace-collapsed tail avoids flattening `out` and preserves long keyword gaps.
+    const append = (text: string) => {
+        const next = text.replace(/\s+/g, " ");
+
+        out += text;
+        tail = (tail + (tail.endsWith(" ") ? next.trimStart() : next)).slice(-64);
+    };
 
     while (at < code.length) {
         const char = code[at]!;
@@ -84,7 +72,7 @@ export function stripComments(code: string): string {
             const end = code.indexOf("*/", at + 2);
             const stop = end === -1 ? code.length : end + 2;
 
-            out += code.slice(at, stop).replace(/[^\n]/g, " ");
+            append(code.slice(at, stop).replace(/[^\n]/g, " "));
             at = stop;
             continue;
         }
@@ -102,13 +90,13 @@ export function stripComments(code: string): string {
                 stop++;
             }
 
-            out += code.slice(at, stop + 1);
+            append(code.slice(at, stop + 1));
             at = stop + 1;
             last = char;
             continue;
         }
 
-        if (char === "/" && (last === "" || BEFORE_REGEX.test(last) || keywordBeforeRegex(out))) {
+        if (char === "/" && (last === "" || BEFORE_REGEX.test(last) || keywordBeforeRegex(tail))) {
             let stop = at + 1;
             let inClass = false;
 
@@ -127,27 +115,25 @@ export function stripComments(code: string): string {
             }
 
             if (code[stop] === "/") {
-                // A contextual identifier can precede division, not a regex. If its supposed closing slash
-                // starts a line comment, keep the rest of this line literally. This can over-report a comment,
-                // but must not turn a commented /* into a block comment that hides subsequent code.
-                if (code[stop + 1] === "/" && keywordBeforeRegex(out)) {
+                // Keep ambiguous line comments literal so a commented /* cannot hide later code.
+                if (code[stop + 1] === "/" && keywordBeforeRegex(tail)) {
                     const end = code.indexOf("\n", stop + 2);
 
                     stop = end === -1 ? code.length : end;
-                    out += code.slice(at, stop);
+                    append(code.slice(at, stop));
                     at = stop;
                     last = "/";
                     continue;
                 }
 
-                out += code.slice(at, stop + 1);
+                append(code.slice(at, stop + 1));
                 at = stop + 1;
                 last = "/";
                 continue;
             }
         }
 
-        out += char;
+        append(char);
         at++;
 
         if (!/\s/.test(char)) {
@@ -158,14 +144,10 @@ export function stripComments(code: string): string {
     return out;
 }
 
-// ─── The scan ────────────────────────────────────────────────────────────────────
-
 const URL_LITERAL = /\b(?:https?|wss?):\/\/([^\s"'`\\/?#:<>()[\]{}$]*)(?::\d+)?([^\s"'`\\]*)/gi;
 const HOST = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/;
-/** Hosts that name no outside service: this machine, standards' namespaces, and examples. */
 const QUIET_HOST =
     /^(?:localhost|127\.[\d.]+|(?:[a-z0-9-]+\.)*(?:w3\.org|example\.com|example\.org|schema\.org|json-schema\.org))$/;
-/** A repository's page on GitHub: `/<owner>/<repo>`, and the pages under it that people read. */
 const REPO_PAGE =
     /^\/[\w.-]+\/[\w.-]+(?:\/(?:tree|blob|issues|pull|pulls|releases|wiki|commit|commits|discussions|actions|tags)(?:\/.*)?)?\/?$/;
 const CALLS_OUT =
@@ -191,9 +173,8 @@ function networkOf(code: string): string[] {
         hosts.add(host);
     }
 
-    // A call that is given something other than a literal can reach any address, whatever hosts the code also names.
     const named = [...hosts]
-        // A host that is another one with more after it ("github.com.helper", from a git config key) names no service.
+        // Ignore git-config pseudo-hosts such as `github.com.helper`.
         .filter((host) => ![...hosts].some((other) => host.startsWith(`${other}.`)))
         .sort();
 
@@ -234,7 +215,7 @@ function keysOf(code: string): string[] {
     }
 
     for (const name of [...names].sort()) {
-        // A name that ends in "_" is the start of one built at run time (`GIT_CONFIG_KEY_${n}`), not a key it reads.
+        // A trailing underscore can be a dynamic key prefix, not a complete secret name.
         if (SECRET_NAME.test(name) && !name.endsWith("_")) {
             keys.add(`environment variable ${name}`);
         }
@@ -247,14 +228,12 @@ function keysOf(code: string): string[] {
     return [...keys].sort();
 }
 
-/** A call that starts a program, with the literal that opens its arguments. */
 const PROGRAM_CALL =
     /(?<![\w$.])(?:(?:child_process|childProcess|cp)\.)?(spawn|spawnSync|execFile|execFileSync|exec|execSync)\s*\(\s*(["'`])((?:\\.|(?!\2)[^\\\n])*)\2/g;
 const CHILD_PROCESS = /\bchild_process\b/;
-/** Code that can start a program or load native code without naming it: as unknown as a program built at run time. */
 const UNNAMED_CODE =
     /\beval\s*\(|\bnew\s+Function\b|\bFunction\s*\(|\bgetBuiltinModule\b|\bprocess\s*\.\s*(?:binding|dlopen)\b|\bimport\s*\((?!\s*(?:["']|`(?!(?:\\.|[^`\\])*\$\{)))|\brequire\s*\((?!\s*(?:["']|`(?!(?:\\.|[^`\\])*\$\{)))/;
-/** A native filename needs a loader call or a path separator, not just text such as `.node` or `versions.node`. */
+// Bound loader gaps to 200 characters to prevent quadratic work on hostile gallery code.
 const NATIVE_FILE =
     /(?:\b(?:require|dlopen)\s*\(|\bcreateRequire\s*\([^)]{0,200}\)\s*\()[^)]{0,200}?["'`][^"'`\n]{0,200}\.node["'`]|["'`][^"'`\n/\\]{0,200}[/\\][^"'`\n]{0,200}\.node["'`]/;
 
@@ -263,7 +242,6 @@ function programsOf(code: string): string[] {
 
     for (const match of code.matchAll(PROGRAM_CALL)) {
         const literal = match[3]!.split("${")[0]!;
-        // A command line (`exec`) starts with its program; the others are given it alone.
         const program = (
             match[1]!.startsWith("exec") && !match[1]!.startsWith("execFile")
                 ? literal.trim().split(/\s+/)[0]
@@ -318,12 +296,10 @@ function filesOf(code: string): string[] {
     return files;
 }
 
-/** What the code of these files says it can reach, as one program: each file has its comments taken out first. */
 export function scanFiles(files: readonly { name: string; text: string }[]): Scanned {
     return scanStripped(files.map((file) => stripComments(file.text)).join("\n"));
 }
 
-/** What one file's code says it can reach. */
 export function scanCode(text: string): Scanned {
     return scanStripped(stripComments(text));
 }
@@ -337,9 +313,6 @@ function scanStripped(code: string): Scanned {
     };
 }
 
-// ─── Themes ──────────────────────────────────────────────────────────────────────
-
-/** A palette file's colors, or null when there is no file or it holds none. */
 function colorsOf(text: string | undefined): Record<string, string> | null {
     if (text === undefined) {
         return null;
@@ -350,7 +323,6 @@ function colorsOf(text: string | undefined): Record<string, string> | null {
     return Object.keys(colors).length === 0 ? null : colors;
 }
 
-/** A theme's palettes from its two palette files' text. The light one is a light palette, as the theme list reads it. */
 export function themePalette(colors: string | undefined, light: string | undefined): Palette {
     const lightColors = colorsOf(light);
 
@@ -360,9 +332,6 @@ export function themePalette(colors: string | undefined, light: string | undefin
     };
 }
 
-// ─── Keeping results ───────────────────────────────────────────────────────────────
-
-/** What identifies a result: the entry, its commit, and its pinned files, so a changed pin is read again. */
 export function reachKey(
     kind: string,
     name: string,
@@ -380,7 +349,6 @@ export function reachKey(
 
 const CACHE_FILE = "reach.json";
 
-/** The results kept in the gallery's folder, by `reachKey`. */
 export async function loadReach(folder: string): Promise<Record<string, Reach>> {
     try {
         const saved = JSON.parse(await readFile(join(folder, CACHE_FILE), "utf8")) as {
@@ -411,7 +379,6 @@ export async function saveReach(folder: string, results: Record<string, Reach>):
     await rename(`${path}.tmp`, path);
 }
 
-/** Whether a kept result still tells about this entry: its kind and commit, and not an error. */
 export function usable(value: unknown, kind: string, commit: string): value is Reach {
     if (typeof value !== "object" || value === null) {
         return false;
@@ -429,7 +396,6 @@ export function usable(value: unknown, kind: string, commit: string): value is R
     );
 }
 
-/** Run `work` on each item, `limit` at a time; the results are in the order of the items. */
 export async function mapLimit<T, R>(
     items: readonly T[],
     limit: number,
