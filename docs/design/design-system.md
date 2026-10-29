@@ -1,6 +1,6 @@
 # Design systems in Design mode (hill climb)
 
-Status: in progress, on `feat/design-system` (off 0.27.0-beta.1). This page is the plan, the contracts between the streams, and the rubric that scores each round. Streams write what they built, and what differs from this page, in `docs/design/ds-notes-<stream>.md`.
+Status: shipped in 0.27.0. This page was the plan, the contracts between the streams, and the rubric that scored each round. What each feature does now is in [features.md](../features.md) and where its code is in [map.md](../map.md).
 
 ## Goal
 
@@ -162,4 +162,4 @@ A panel of two independent judges (different models) scores 0–10 per line with
 
 ## Process
 
-Round 0: this page, `system-types.ts`, worktrees. Round 1: the five streams build in parallel. Then the integrator merges into `feat/design-system`, runs the bench, and asks the judges. Each next round takes the lowest-scoring lines and fixes them, smallest change first, and keeps a change only when the score goes up (or a line rises and none falls). Stop when every line is at 9 or more, or two rounds bring no rise. The integrator records each round's scores in `docs/design/ds-rounds.md`.
+Round 0: this page, `system-types.ts`, worktrees. Round 1: the five streams build in parallel. Then the integrator merges into `feat/design-system`, runs the bench, and asks the judges. Each next round takes the lowest-scoring lines and fixes them, smallest change first, and keeps a change only when the score goes up (or a line rises and none falls). Stop when every line is at 9 or more, or two rounds bring no rise.

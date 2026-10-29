@@ -193,7 +193,7 @@ test("the utilities of the flagship are the ones that a real Tailwind compile ma
     assert.deepEqual(
         now,
         fixture,
-        "the names in tailwind.css changed. If that is meant, compile it with Tailwind 4 (see docs/design/ds-notes-t.md, round 4), and write the utilities to the fixture",
+        "the names in tailwind.css changed. If that is meant, compile it with Tailwind 4 (@tailwindcss/cli over a page of these classes, outside the repository), and write the utilities to the fixture",
     );
     assert.ok(
         now.includes("bg-surface") &&
