@@ -2,6 +2,7 @@ import {
     type App,
     cleanUp,
     lastText,
+    modelTexts,
     newSession,
     openApp,
     owner,
@@ -34,6 +35,18 @@ const real = {
 /** "risky please" calls a tool, which Lancet Guard asks about; everything else is echoed. */
 const route: FauxResponseStep = (request) => {
     const { text } = lastText(request as never);
+
+    if (text === "ask me") {
+        const options = [
+            { label: "Postgres", description: "One server" },
+            { label: "SQLite", description: "A file" },
+        ];
+        const questions = [{ header: "Database", question: "Which database?", options }];
+
+        return fauxAssistantMessage([fauxToolCall("ask", { questions })], {
+            stopReason: "toolUse",
+        });
+    }
 
     return text === "risky please"
         ? fauxAssistantMessage([fauxToolCall("bash", { command: "true" })], {
@@ -1075,6 +1088,25 @@ test("a call's mark keeps its circle while it waits for an approval", real, asyn
         padding: "0px",
         border: "0px",
     });
+});
+
+test("Pi's question shows its answers as buttons a thumb can tap", real, async () => {
+    // The test before fakes a guard that asks about every call.
+    await app.setExtensionEnabled(owner(app), "guard.ts", false);
+    const id = await newSession(app);
+    const heights = `return JSON.stringify([...document.querySelectorAll("button.ask-option")].map((b) => b.offsetHeight))`;
+
+    await fresh();
+    await goTo(id);
+    await app.commands.submit(id, owner(app), { text: "ask me", requestId: "ask-ui" });
+    await until(async () => (await inPage<number[]>(heights)).length === 2, "the answers", 20_000);
+    assert.ok((await inPage<number[]>(heights)).every((height) => height >= 44));
+    await page.evaluate(`document.querySelectorAll("button.ask-option")[1].click()`);
+    await page.evaluate(`document.querySelector(".approval.ask button[type=submit]").click()`);
+    await until(
+        async () => (await modelTexts(app, id)).join().includes("Database: SQLite"),
+        "the answer",
+    );
 });
 
 // Issue #131: a phone on its side with a notch. Another Chromium fakes the safe-area insets on its own page.

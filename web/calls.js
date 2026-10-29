@@ -91,6 +91,23 @@ export function describeCall(call) {
             };
         }
 
+        case "ask": {
+            const questions = Array.isArray(args.questions) ? args.questions : [];
+
+            return {
+                icon: "?",
+                label: "Ask",
+                subject:
+                    questions.length === 1
+                        ? short(String(questions[0]?.question ?? ""), 120)
+                        : questions
+                              .map((each) => each?.header)
+                              .filter(Boolean)
+                              .join(" · "),
+                mono: false,
+            };
+        }
+
         case "subagent":
             return {
                 icon: "⧉",
