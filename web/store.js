@@ -445,6 +445,30 @@ export const scoped = () => Array.isArray(store.state.me?.sessions);
 /** The notices that announce chat messages, here or a mention elsewhere, by id: their session's. Reading its chat takes them down. */
 const chatNotices = new Map();
 
+/**
+ * Set how far this browser read a session's chat, from the session list: `at` is the time of the newest message read, or
+ * 0 for none (the way back from an undo). The open session's own mark follows when it is the one.
+ */
+export function setChatReadAt(id, at) {
+    if (at > 0) {
+        localStorage.setItem(CHAT_READ_PREFIX + id, String(at));
+    } else {
+        localStorage.removeItem(CHAT_READ_PREFIX + id);
+    }
+
+    store.set((state) => {
+        const chatReads = { ...state.chatReads };
+
+        if (at > 0) {
+            chatReads[id] = at;
+        } else {
+            delete chatReads[id];
+        }
+
+        return { chatReads, ...(id === state.conversationId ? { chatRead: at } : {}) };
+    });
+}
+
 /** Everything in the chat counts as read: called while the chat is open. */
 export function markChatRead() {
     const { chat, chatRead, conversationId } = store.state;

@@ -79,6 +79,28 @@ export function markSeen(...ids) {
     }
 }
 
+/** When this browser last looked at each of these sessions (0 for never), to put back with `restoreSeen`. */
+export function seenSnapshot(ids) {
+    return Object.fromEntries(ids.map((id) => [id, store.state.peekSeen?.[id] ?? 0]));
+}
+
+/** Put looks back as `seenSnapshot` took them: what undoes marking sessions read from the list. */
+export function restoreSeen(snapshot) {
+    const peekSeen = { ...store.state.peekSeen };
+
+    for (const [id, at] of Object.entries(snapshot)) {
+        if (at > 0) {
+            localStorage.setItem(SEEN_PREFIX + id, String(at));
+            peekSeen[id] = at;
+        } else {
+            localStorage.removeItem(SEEN_PREFIX + id);
+            delete peekSeen[id];
+        }
+    }
+
+    store.set({ peekSeen });
+}
+
 /**
  * A session whose run ended since this browser last had it open. A run older than the marks are kept counts as seen:
  * its mark may be gone, with the server up all that time.

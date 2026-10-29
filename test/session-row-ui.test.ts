@@ -36,10 +36,15 @@ async function inPage<T>(script: string): Promise<T> {
     return JSON.parse(await page.evaluate(script)) as T;
 }
 
-async function selectTab(name: "Recent" | "Folders" | "Archived"): Promise<void> {
+async function selectTab(name: "Priority" | "Recent" | "Folders" | "Archived"): Promise<void> {
+    // A tab's name is its words, or its label where it is an icon (Archived), and without Priority's count.
+    const tabName = (tab: string) => `
+        const nameOf = (tab) => tab.getAttribute("data-tab") === "archived" ? "Archived" : tab.firstChild.textContent.trim();
+    `;
     const index = await inPage<number>(`
+        ${tabName(name)}
         const tabs = [...document.querySelectorAll(${JSON.stringify(`${list} .session-tabs [role="tab"]`)})];
-        return JSON.stringify(tabs.findIndex((tab) => tab.textContent.trim() === ${JSON.stringify(name)}));
+        return JSON.stringify(tabs.findIndex((tab) => nameOf(tab) === ${JSON.stringify(name)}));
     `);
 
     assert.ok(index >= 0, `${name} tab exists in the current list`);
@@ -47,8 +52,9 @@ async function selectTab(name: "Recent" | "Folders" | "Archived"): Promise<void>
     await until(
         async () =>
             await inPage<boolean>(`
+                ${tabName(name)}
                 const tab = document.querySelector(${JSON.stringify(`${list} .session-tabs [aria-selected="true"]`)});
-                return JSON.stringify(tab?.textContent.trim() === ${JSON.stringify(name)});
+                return JSON.stringify(tab !== null && nameOf(tab) === ${JSON.stringify(name)});
             `),
         `${name} tab selected`,
     );
