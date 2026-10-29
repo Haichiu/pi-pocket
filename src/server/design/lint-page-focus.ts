@@ -54,7 +54,6 @@ for (const control of [...doc.querySelectorAll(pointed)].slice(0, 300)) {
     }
 }
 
-// Focus: put the focus on one element of each kind and see whether anything about it, or around it, changes.
 const focusProps = ['outlineStyle', 'outlineWidth', 'outlineColor', 'boxShadow', 'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor', 'borderTopWidth', 'backgroundColor', 'color', 'textDecorationLine', 'textDecorationColor', 'filter', 'opacity', 'transform', 'backgroundImage'];
 const snapshot = (list) => list.map((node) => { const s = getComputedStyle(node); return focusProps.map((p) => s[p]).join('|'); }).join('||');
 const focusResults = [];
