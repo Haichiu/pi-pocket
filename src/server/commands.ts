@@ -1351,6 +1351,7 @@ export class Commands {
             throw new HttpError(409, "That message has already gone to Pi.");
         }
 
+        // A `/skill:` or prompt template message comes back as it was sent: expanded.
         const [written, files] = splitAttachments(
             userContent({ content: item.content }).text.replace(FROM_PREFIX, ""),
         );
