@@ -1,4 +1,4 @@
-export const JS_NAV = `    // Navigation on a phone.
+export const JS_NAV = `
     var menuButton = $(".icon-btn");
     function navOpen(open) {
         root.classList.toggle("nav-open", open);
@@ -20,20 +20,17 @@ export const JS_NAV = `    // Navigation on a phone.
         }
     });
 
-    // Search: hide the cards, rows, and sections that do not match.
     var field = $("#q");
     var emptyEl = $("#nomatch");
     function search() {
         var query = (field.value || "").trim().toLowerCase();
         var words = query.split(/\\s+/).filter(Boolean);
         var shown = 0;
-        // Rows of the token table that a phone has not drawn yet are in the search too.
         if (words.length > 0 && typeof restoreRows === "function") { restoreRows(); }
         $$("[data-s]").forEach(function (item) {
             var text = item.__q || (item.__q = item.textContent.toLowerCase());
             var hit = words.every(function (word) { return text.indexOf(word) !== -1; });
             if (item.__type !== undefined) {
-                // A table row is also hidden by the table's own filters: hidden when either says so.
                 item.__g = !hit;
                 item.hidden = item.__g || !!item.__l;
             } else {
@@ -51,7 +48,6 @@ export const JS_NAV = `    // Navigation on a phone.
     }
     if (field) { field.addEventListener("input", search); }
 
-    // Scroll spy.
     var links = {};
     $$(".nav a[href^='#']").forEach(function (link) { links[link.getAttribute("href").slice(1)] = link; });
     if ("IntersectionObserver" in window) {

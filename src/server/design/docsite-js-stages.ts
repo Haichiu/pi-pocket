@@ -1,7 +1,6 @@
 import { SANITIZER_JS } from "./docsite-sanitize.ts";
 
-export const JS_STAGES = `    // Mode: the system's own modes. The theme (light or dark) of the page follows the mode. Every token variable
-    // is set on the body for each mode, so nothing else needs to change: component states inherit them.
+export const JS_STAGES = `
     function setMode(mode, theme) {
         root.setAttribute("data-mode", mode);
         root.setAttribute("data-theme", theme);
@@ -64,7 +63,6 @@ export const JS_STAGES = `    // Mode: the system's own modes. The theme (light 
         wrap.appendChild(grid);
         shadow.appendChild(style);
         shadow.appendChild(wrap);
-        // A specimen is a picture of a state: its links and forms go nowhere.
         shadow.addEventListener("click", function (event) {
             var path = event.composedPath();
             for (var i = 0; i < path.length; i++) { if (path[i].localName && path[i].localName.toLowerCase() === "a") { event.preventDefault(); return; } }

@@ -130,7 +130,6 @@ function cleanBlock(text, inRule, depth) {
 function cleanCss(text) { return cleanBlock(String(text).replace(/\\/\\*[\\s\\S]*?(\\*\\/|$)/g, ""), false, 0); }
 function cleanDeclarations(text) { return cleanBlock(String(text).replace(/\\/\\*[\\s\\S]*?(\\*\\/|$)/g, ""), true, 0); }
 
-// Whether an attribute (already on its element's list) may keep its value.
 function okValue(name, value, tag) {
     var flat = value.replace(/[\\u0000-\\u0020\\u007f-\\u009f]+/g, "").toLowerCase();
     if (/(javascript|vbscript|livescript):|data:(text|application)|<\\s*script/.test(flat)) { return false; }
@@ -149,7 +148,7 @@ function copyAttributes(from, to, svg, tag) {
         var value = attribute.value;
         if (name === "style") { value = cleanDeclarations(value); }
         else if (!okValue(name, value, tag)) { return; }
-        try { to.setAttributeNS(attribute.namespaceURI, attribute.name, value); } catch (error) { /* a name that cannot be set is left out */ }
+        try { to.setAttributeNS(attribute.namespaceURI, attribute.name, value); } catch (error) { }
     });
 }
 
@@ -171,7 +170,6 @@ function copyChildren(from, to, state, depth) {
     });
 }
 
-// Builds a new tree in \`to\` from a parsed document: the head's styles first, then the body.
 function cleanInto(parsed, to) {
     var state = { count: 0 };
     copyChildren(parsed.head, to, state, 0);
