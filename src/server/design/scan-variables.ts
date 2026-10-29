@@ -225,16 +225,26 @@ export function follow(
     start: Variable,
     scope: "light" | "dark",
     active: Set<Variable> = new Set(),
+    memo: Map<Variable, { text: string; via?: Variable } | undefined> = new Map(),
 ): { text: string; via?: Variable } | undefined {
     // A variable that arithmetic points back at (`$a: $a * 2`) is not followed into itself.
     if (active.has(start)) {
         return undefined;
     }
 
+    // Each variable is followed once in a walk: `$b: $a + $a; $c: $b + $b; …` does not double the work at each step.
+    if (memo.has(start)) {
+        return memo.get(start);
+    }
+
     active.add(start);
 
     try {
-        return followOnce(index, start, scope, active);
+        const out = followOnce(index, start, scope, active, memo);
+
+        memo.set(start, out);
+
+        return out;
     } finally {
         active.delete(start);
     }
@@ -245,6 +255,7 @@ function followOnce(
     start: Variable,
     scope: "light" | "dark",
     active: Set<Variable>,
+    memo: Map<Variable, { text: string; via?: Variable } | undefined>,
 ): { text: string; via?: Variable } | undefined {
     // A library writes the variables of a theme object under a prefix (`--mantine-color-ink-9` for the theme's `ink` step 9):
     // a name that is not declared is looked for without its first words.
@@ -322,7 +333,9 @@ function followOnce(
         const value = (name: string, kind: "scss" | "less" | "css") => {
             const target = index.get(`${kind}:${name}`);
 
-            return target === undefined ? undefined : follow(index, target, scope, active)?.text;
+            return target === undefined
+                ? undefined
+                : follow(index, target, scope, active, memo)?.text;
         };
 
         text = text.replace(/#\{\s*([^{}]+?)\s*\}/g, (all, expression: string) => {
@@ -346,7 +359,9 @@ function followOnce(
         const math = evalMath(calc === null ? text : calc[1]!, (name, kind) => {
             const target = index.get(`${kind}:${name}`);
 
-            return target === undefined ? undefined : follow(index, target, scope, active)?.text;
+            return target === undefined
+                ? undefined
+                : follow(index, target, scope, active, memo)?.text;
         });
 
         if (math !== undefined) {

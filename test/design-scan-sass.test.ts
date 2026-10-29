@@ -579,3 +579,13 @@ test("a Sass variable that points at itself (`$a: $a * 2`) does not stop the sca
 
     assert.doesNotThrow(() => scanTokens(dir));
 });
+
+test("a chain of 25 Sass variables that each use the last one twice is read fast (minutes before)", () => {
+    const sass = Array.from({ length: 25 }, (_, i) => `$v${i + 1}: $v${i} + $v${i};`).join("\n");
+    const dir = project({ "a.scss": `$v0: 1px;\n${sass}\n.x { width: $v25; }` });
+    const scan = new URL("../src/server/design/scan.ts", import.meta.url).href;
+    const input = `import { scanTokens } from "${scan}"; scanTokens(${JSON.stringify(dir)});`;
+    const child = spawnSync(process.execPath, ["--input-type=module"], { input, timeout: 9e3 });
+
+    assert.equal(child.status, 0, "the scan ends in 9 s");
+});
