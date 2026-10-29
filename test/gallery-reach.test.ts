@@ -134,10 +134,12 @@ test("a call to the network with no host in the code is told as built at run tim
         assert.deepEqual(scanCode(code).network, ["addresses it builds at run time"], code);
     }
 
-    // Only a host in the code counts when there is one; a name that only ends in fetch is no call.
+    // Dynamic calls count alongside literal hosts; a name that only ends in fetch is no call.
     assert.deepEqual(scanCode('prefetch(x); const u = "https://a.dev/x"; fetch(u);').network, [
         "a.dev",
+        "addresses it builds at run time",
     ]);
+    assert.deepEqual(scanCode('fetch( "https://a.dev/x");').network, ["a.dev"]);
     assert.deepEqual(scanCode("prefetch(x);").network, []);
 });
 
@@ -180,6 +182,14 @@ test("the scan names the programs the code starts", () => {
         ["programs it names at run time"],
     );
     assert.deepEqual(scanCode("const x = 1;").programs, []);
+});
+
+test("the scan reports code that can load or run unnamed programs", () => {
+    const calls = "eval|new Function|Function|getBuiltinModule|process.binding|process.dlopen";
+
+    for (const call of `${calls}|import|require|require("./a.node")`.split("|")) {
+        assert.deepEqual(scanCode(`${call}(name)`).programs, ["programs it names at run time"]);
+    }
 });
 
 test("the scan names the files the code writes and the places it reads from", () => {
@@ -253,7 +263,7 @@ test("the scan of several files is one scan of their code", () => {
         { name: "b.ts", text: 'const v = "https://two.dev"; fetch(w);\nwriteFile(a, b);' },
     ]);
 
-    assert.deepEqual(scanned.network, ["one.dev", "two.dev"]);
+    assert.deepEqual(scanned.network, ["one.dev", "two.dev", "addresses it builds at run time"]);
     assert.deepEqual(scanned.files, ["files it writes"]);
 });
 

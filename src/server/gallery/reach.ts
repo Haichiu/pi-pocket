@@ -30,7 +30,7 @@ export type Reach =
     | { kind: "extension" | "theme"; commit: string; error: string };
 
 /** Raise it when the scan changes, so results kept from an older scan are made again. */
-export const SCAN_VERSION = 4;
+export const SCAN_VERSION = 5;
 
 /** The files the scan reads: code that runs. Other files are not downloaded. */
 export const SCAN_FILE = /\.(?:[cm]?[jt]s)$/i;
@@ -170,6 +170,8 @@ const REPO_PAGE =
     /^\/[\w.-]+\/[\w.-]+(?:\/(?:tree|blob|issues|pull|pulls|releases|wiki|commit|commits|discussions|actions|tags)(?:\/.*)?)?\/?$/;
 const CALLS_OUT =
     /(?<![\w$])(?:fetch|fetchPublic)\s*\(|\bnew\s+WebSocket\s*\(|\bhttps?\.request\s*\(/;
+const CALLS_OUT_DYNAMIC =
+    /(?<![\w$])(?:fetch|fetchPublic)\s*\((?!\s*["'`])|\bnew\s+WebSocket\s*\((?!\s*["'`])|\b(?:net|tls|dgram)\b\s*\.\s*(?:connect|createConnection|Socket)\b|\bnode:(?:net|tls|dgram|http2)\b/;
 
 function networkOf(code: string): string[] {
     const hosts = new Set<string>();
@@ -189,14 +191,17 @@ function networkOf(code: string): string[] {
         hosts.add(host);
     }
 
-    if (hosts.size === 0 && CALLS_OUT.test(code)) {
-        return [DYNAMIC_ADDRESS];
-    }
-
-    // A host that is another one with more after it ("github.com.helper", from a git config key) names no service.
-    return [...hosts]
+    // A call that is given something other than a literal can reach any address, whatever hosts the code also names.
+    const named = [...hosts]
+        // A host that is another one with more after it ("github.com.helper", from a git config key) names no service.
         .filter((host) => ![...hosts].some((other) => host.startsWith(`${other}.`)))
         .sort();
+
+    if ((hosts.size === 0 && CALLS_OUT.test(code)) || CALLS_OUT_DYNAMIC.test(code)) {
+        named.push(DYNAMIC_ADDRESS);
+    }
+
+    return named;
 }
 
 const SECRET_NAME = /KEY|TOKEN|SECRET/i;
@@ -246,6 +251,9 @@ function keysOf(code: string): string[] {
 const PROGRAM_CALL =
     /(?<![\w$.])(?:(?:child_process|childProcess|cp)\.)?(spawn|spawnSync|execFile|execFileSync|exec|execSync)\s*\(\s*(["'`])((?:\\.|(?!\2)[^\\\n])*)\2/g;
 const CHILD_PROCESS = /\bchild_process\b/;
+/** Code that can start a program or load native code without naming it: as unknown as a program built at run time. */
+const UNNAMED_CODE =
+    /\beval\s*\(|\bnew\s+Function\b|\bFunction\s*\(|\bgetBuiltinModule\b|\bprocess\s*\.\s*(?:binding|dlopen)\b|\bimport\s*\((?!\s*["'`])|\brequire\s*\((?!\s*["'`])|\.node["'`]/;
 
 function programsOf(code: string): string[] {
     const programs = new Set<string>();
@@ -264,11 +272,13 @@ function programsOf(code: string): string[] {
         }
     }
 
-    if (programs.size === 0 && CHILD_PROCESS.test(code)) {
-        return [DYNAMIC_PROGRAM];
+    const listed = [...programs].sort();
+
+    if ((programs.size === 0 && CHILD_PROCESS.test(code)) || UNNAMED_CODE.test(code)) {
+        listed.push(DYNAMIC_PROGRAM);
     }
 
-    return [...programs].sort();
+    return listed;
 }
 
 const WRITES =
