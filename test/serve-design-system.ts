@@ -1,13 +1,5 @@
-/**
- * A throwaway Pi Pocket for looking at the System view by hand: `test/serve.ts` with a session that has designs
- * (`design-fixtures.ts`) and a design system in its folder (`design-system-fixtures.ts`).
- *
- *   node test/serve-design-system.ts [port] [host] [--no-system | --flagship]     (defaults: 8913 and 127.0.0.13)
- *
- * `--flagship` puts Pi Pocket's own design system (`docs/examples/design-system/pocket`) in the folder instead of "Harbor".
- *
- * Ctrl+C, or the kill it prints, stops it and deletes its data.
- */
+// node test/serve-design-system.ts [port] [host] [--no-system | --flagship]
+
 // helpers.ts first: it points Pi's folder at a temporary one before anything from src/ loads.
 import { cleanUp, newSession, openApp, root, say, scriptedModel, work } from "./helpers.ts";
 import { cpSync } from "node:fs";

@@ -1,7 +1,3 @@
-/**
- * Phase 3 — lint: run `checkDesign` on the seeded designs and the clean ones, with the bench's own system and golden
- * `tokens.css` (so the result does not depend on the tokens engine), and score what it reports.
- */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import type { DesignSystem } from "../../../src/server/design/system-types.ts";
@@ -28,7 +24,6 @@ export interface LintCase {
     description: string;
 }
 
-/** The seeded and clean designs, clean ones last. */
 export function loadLintCases(root = join(LINT_DIR, "designs")): LintCase[] {
     return readdirSync(root, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
@@ -56,11 +51,7 @@ export function loadLintCases(root = join(LINT_DIR, "designs")): LintCase[] {
         .sort((a, b) => Number(a.clean) - Number(b.clean) || a.name.localeCompare(b.name));
 }
 
-/**
- * The bench system that is handed to `checkDesign`. By default it is read by the bench's own reader, so the lint score does
- * not depend on the tokens engine (the format phase checks the engine on this same system). `prefer: "engine"` loads it
- * with `loadDesignSystem`, as the docs phase does, so that components and compiled files are there.
- */
+// Read by the bench's own reader by default, so the lint score does not depend on the tokens engine.
 export function lintSystem(
     modules: Modules,
     prefer: "bench" | "engine" = "bench",
@@ -83,7 +74,6 @@ export function lintSystem(
     };
 }
 
-/** Option shapes for `checkDesign`: the plan does not fix them, so try the likely ones until one is accepted. */
 const OPTION_SHAPES = [
     (width: number, height: number, colorScheme: string) => ({
         viewport: { width, height },
@@ -122,7 +112,6 @@ export interface LintPhase {
     f1: number;
     seeded: LintScore | undefined;
     byRule: LintScore["byRule"];
-    /** Findings on the clean designs, in each color scheme: the target is 0. */
     cleanFindings: number;
     /** Informational, not in the score: the clean designs on the flagship's own CSS, when it defines the same variables. */
     cleanOnFlagship: {
@@ -141,7 +130,6 @@ export interface LintPhase {
     score: number;
 }
 
-/** One design in one color scheme through `checkDesign`. `state.shape` remembers which option shape was accepted. */
 async function runCase(
     check: NonNullable<Modules["check"]>,
     system: DesignSystem,
@@ -222,30 +210,22 @@ async function runCase(
     return entry;
 }
 
-/** The custom properties that a page asks for with `var(--…)`. */
 export const variablesUsed = (html: string) => [
     ...new Set([...html.matchAll(/var\((--[a-z0-9-]+)/gi)].map((match) => match[1]!)),
 ];
 
 export interface FlagshipStyle {
     system: DesignSystem;
-    /** The flagship's `tokens.css`. */
     css: string;
 }
 
-/** The system that a set of lint designs is written for: the bench's own, or one named in `system.json`. */
 export interface LintSystemChoice {
     system: DesignSystem;
-    /** The `tokens.css` that the designs link as `ds/tokens.css`. */
     css: Buffer;
     source: string;
 }
 
-/**
- * A lint folder may hold `system.json`, `{ "project": "docs/examples/design-system/pocket" }`: a project (a folder with
- * `.pi/design/`, relative to the repository or absolute) that its designs are written for. The bench reads it with its own
- * reader and compiles its own `tokens.css`, so the engine is not involved. Without the file, the bench's own system.
- */
+// A lint folder's `system.json` (`{ "project": "<folder>" }`) names the project its designs are written for.
 export function lintSystemFor(root: string): LintSystemChoice | undefined {
     const file = join(root, "system.json");
 
@@ -316,13 +296,11 @@ export async function lintPhase(
                 JSON.stringify(entry, null, 2),
             );
 
-            // A design that failed to run reports nothing: its expected findings are all misses.
             scored.push({ expected: item.clean ? [] : item.expected, found: entry.findings });
         }
     }
 
-    // Beside the score: do the clean designs stay clean on the flagship's own tokens? Only when it defines every variable
-    // that they use (the plan's names), because a missing variable would be the design's fault, not the linter's.
+    // Only when the flagship defines every variable the designs use: a missing one would be the design's fault.
     if (flagship !== undefined) {
         const defined = new Set(
             [...flagship.css.matchAll(/(--[a-z0-9-]+)\s*:/gi)].map((match) => match[1]!),
@@ -383,7 +361,6 @@ export async function lintPhase(
     phase.level = score.level;
     phase.missed = score.missed;
     phase.extra = score.extra;
-    // A run that reports nothing has perfect precision and zero recall, and the F1 says 0: that is right.
     phase.score = phase.f1;
 
     return phase;

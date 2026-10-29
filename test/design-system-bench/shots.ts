@@ -1,16 +1,3 @@
-/**
- * Screenshots of the design system view, for judges, and a check that every tab shows what it should.
- *
- *   node test/design-system-bench/shots.ts <out-dir> [--only harbor|flagship] [--port 8915] [--host 127.0.0.15]
- *   node test/design-system-bench/run.ts --shots [--out dir]        (the same, in the bench's report and folder)
- *
- * It starts a throwaway Pi Pocket (`test/serve-design-system.ts` of this checkout) and its own headless Chromium, saves
- * PNGs, and stops both. The first run uses the small test system (Harbor); the second swaps the flagship into the
- * session's folder and prefixes its files with `flagship-`. For every tab, at the desktop and the phone size, it
- * **asserts that the tab shows its tokens**: a token row, tile, or step for the token tabs, a card for each component, the
- * rendered Markdown for the guidelines. A tab that shows nothing (or an empty state while the system has tokens of that
- * kind) is a failure in the report, with the reason. One failed shot is logged and the run goes on.
- */
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,51 +10,38 @@ import { readFlat } from "./lib/system.ts";
 
 export type Variant = "harbor" | "flagship";
 
-/** What one tab showed. */
 export interface TabResult {
     system: Variant;
     size: "desktop" | "phone";
     tab: string;
-    /** The PNG, relative to the output folder. */
     file?: string;
-    /** Token rows, tiles, or steps that were visible. */
     tokens: number;
-    /** Component cards that were visible (the Components tab). */
     components: number;
-    /** Visible Markdown elements (the Guidelines tab). */
     prose: number;
-    /** How many tokens (or components) the system has of the kind that the tab shows. */
     expected: number;
     ok: boolean;
     reason?: string;
 }
 
-/** The dirty-state shot: one token is edited, and the save bar must show. */
 export interface DirtyResult {
     system: Variant;
     size: "desktop" | "phone";
-    /** The token that was edited. */
     token?: string;
-    /** The save bar (`.dsy-savebar`) was on screen with a size. */
     saveBar: boolean;
     file?: string;
     reason?: string;
 }
 
 export interface ShotsReport {
-    /** The folder with the PNGs. */
     folder: string;
     saved: string[];
     failed: string[];
     tabs: TabResult[];
-    /** One for each system and size: an edited token, and the save bar on screen. */
     dirty: DirtyResult[];
-    /** True when nothing failed and every tab showed its tokens. */
     ok: boolean;
 }
 
 export interface ShotsOptions {
-    /** The checkout that holds `test/serve-design-system.ts` and `docs/examples/design-system/pocket`. Default: this one. */
     tree?: string;
     out: string;
     only?: Variant;
@@ -89,8 +63,6 @@ const TABS = [
 ] as const;
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const q = JSON.stringify;
-
-// ─── The copy of Pi Pocket ──────────────────────────────────────────────────────
 
 interface Copy {
     child: ChildProcess;
@@ -168,10 +140,8 @@ async function stopCopy(copy: Copy) {
     }
 }
 
-/** The system's source folder inside the copy's session folder. */
 const designDir = (copy: Copy) => join(copy.root, "work", ".pi", "design");
 
-/** How many tokens of each kind the system has, from its own files and the bench's own reader. */
 function expectedCounts(copy: Copy): Record<string, number> {
     const counts: Record<string, number> = Object.fromEntries(TABS.map((tab) => [tab, 0]));
 
@@ -212,8 +182,6 @@ function expectedCounts(copy: Copy): Record<string, number> {
 
     return counts;
 }
-
-// ─── Chromium ───────────────────────────────────────────────────────────────────
 
 interface Size {
     name: "desktop" | "phone";
@@ -303,8 +271,6 @@ async function setSize(chromium: Chromium, page: Page, size: Size) {
     }
 }
 
-// ─── Page helpers ───────────────────────────────────────────────────────────────
-
 async function waitFor<T = unknown>(
     page: Page,
     what: string,
@@ -331,7 +297,6 @@ async function waitFor<T = unknown>(
     throw new Error(`Timed out waiting for ${what}${last ? ` (${last})` : ""}`);
 }
 
-/** A DOM click on the first element that matches (and has `text`). */
 async function press(page: Page, selector: string, text?: string) {
     const answer = await page.ev<string>(`
         const matches = [...document.querySelectorAll(${q(selector)})].filter(
@@ -350,7 +315,6 @@ async function press(page: Page, selector: string, text?: string) {
 const has = (selector: string) =>
     `return JSON.stringify(Boolean(document.querySelector(${q(selector)})))`;
 
-/** Let fonts and layout settle: two frames, and the fonts. */
 async function settle(page: Page) {
     await page.ev(`
         await document.fonts.ready;
@@ -360,7 +324,6 @@ async function settle(page: Page) {
     await sleep(250);
 }
 
-/** The Design panel's box, in CSS pixels: the whole panel with its header, not the page around it. */
 async function panelBox(page: Page) {
     return page.ev<{ x: number; y: number; width: number; height: number }>(`
         const inner = document.querySelector(".dsn, .dsy-main, .dsy-empty-system");
@@ -396,7 +359,6 @@ async function openDesign(page: Page) {
     await waitFor(page, "the workspace", has(".dsn-bar, .dsy-empty-system, .dsy-main"));
 }
 
-/** The System view, open, through the picker's pinned "Design system" item. */
 async function openSystem(page: Page) {
     if (!(await page.ev<boolean>(`return Boolean(document.querySelector(".dsy-main"))`))) {
         await press(page, ".dsn-picker");
@@ -415,7 +377,6 @@ async function openSystem(page: Page) {
     }
 }
 
-/** Open a tab and wait until it has stopped loading. Throws when the tab is not offered. */
 async function section(page: Page, name: string) {
     await press(page, ".dsy-tabs [role=tab]", name);
     await waitFor(
@@ -431,7 +392,6 @@ async function section(page: Page, name: string) {
     await page.ev(`document.querySelector(".dsy-scroll")?.scrollTo(0, 0); return "null"`);
 }
 
-/** What the open tab shows: visible token rows, tiles and steps; component cards; rendered Markdown; an empty state. */
 async function census(page: Page) {
     return page.ev<Census>(`
         const scroll = document.querySelector(".dsy-scroll");
@@ -446,7 +406,6 @@ async function census(page: Page) {
     `);
 }
 
-/** Put the mode switch on `which`: a button by its label, or the select of a system with many modes. */
 async function mode(page: Page, which: "Light" | "Dark" | "Both") {
     const labels = which === "Both" ? ["Both", "All", "Side by side"] : [which];
     const answer = await page.ev<string>(`
@@ -502,8 +461,6 @@ async function focusMode(page: Page, on: boolean) {
     }
 }
 
-// ─── One run: one system, both sizes ────────────────────────────────────────────
-
 async function run(
     chromium: Chromium,
     out: string,
@@ -517,7 +474,6 @@ async function run(
     const page = await openPage(chromium);
     const counts = expectedCounts(copy);
 
-    /** Save a PNG of the Design panel. */
     async function shoot(
         size: Size,
         name: string,
@@ -607,7 +563,6 @@ async function run(
                     result.components = seen.components;
                     result.prose = seen.prose;
 
-                    // The assertion: the tab shows what the system has, not some text.
                     result.reason = judgeTab(tab, result.expected, seen);
                     result.ok = result.reason === undefined;
                 });
@@ -659,7 +614,6 @@ async function run(
             });
             await mode(page, "Light").catch(() => {});
 
-            // A dirty state: edit one token (its editor's "Increase" button), and the save bar must be on screen.
             const dirty: DirtyResult = { system: variant, size: size.name, saveBar: false };
 
             dirty.file = await shoot(size, "system-dirty", async () => {
@@ -694,7 +648,6 @@ async function run(
             }
 
             report.dirty.push(dirty);
-            // Back to a clean state for the shots that follow.
             await press(page, ".dsy-savebar button", "Discard").catch(() => {});
             await mode(page, "Light").catch(() => {});
 
@@ -726,8 +679,6 @@ async function run(
                 );
                 await press(page, '.dsn-tabs button[title="Check"]');
                 await waitFor(page, "the check dock", has('.dsn-dock[data-dock="check"]'));
-                // "Run the check", or "Check again" when the dock already holds a report. On a phone the dock starts as a bar
-                // (`.dsy-check-bar`) with its own "Run the check".
                 await waitFor(
                     page,
                     "the check button",
@@ -754,7 +705,6 @@ async function run(
                 );
             });
 
-            // The phone's findings start as a bar, and the page keeps the room: the sheet is the next picture.
             if (size.mobile) {
                 await shoot(size, "check-sheet", async () => {
                     await press(page, ".dsy-check-bar-main");
@@ -768,19 +718,13 @@ async function run(
     }
 }
 
-/** What a tab showed: see `census`. */
 export interface Census {
     tokens: number;
     components: number;
     prose: number;
-    /** An empty-state panel was on screen. */
     blank: boolean;
 }
 
-/**
- * Whether a tab shows what the system has, by what was rendered and not by how much text there is. `expected` is how many
- * tokens (or components) the system has of the kind that the tab shows. Returns why not, or `undefined` when it does.
- */
 export function judgeTab(tab: string, expected: number, seen: Census): string | undefined {
     const shown =
         tab === "Components" ? seen.components : tab === "Guidelines" ? seen.prose : seen.tokens;
@@ -806,7 +750,6 @@ export function judgeTab(tab: string, expected: number, seen: Census): string | 
     return undefined;
 }
 
-/** Take the screenshots and make the report. Never throws: a failure is in the report. */
 export async function runShots(options: ShotsOptions): Promise<ShotsReport> {
     const tree = resolve(options.tree ?? ROOT);
     const host = options.host ?? "127.0.0.15";

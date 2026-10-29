@@ -1,7 +1,3 @@
-/**
- * Phases 4 and 5 — contrast of the declared pairs in every mode, and the documentation page: rendered at 390×844 and
- * 1440×900 in light and dark (the PNGs go to `--out` for the judges), with checks that a person would make by eye.
- */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DesignSystem } from "../../../src/server/design/system-types.ts";
@@ -11,12 +7,10 @@ import { decodePng, distinctColors } from "./png.ts";
 import { contrastPairs, impliedPairs } from "./system.ts";
 
 export interface ContrastPhase {
-    /** `flagship` or `bench` (the bench's own system, until the flagship is in the tree). */
     system: string;
     modes: string[];
     declared: number;
     passing: number;
-    /** The share of declared pairs that pass in every mode. 0 when none are declared. */
     passRate: number;
     failing: {
         token: string;
@@ -24,7 +18,7 @@ export interface ContrastPhase {
         min: number;
         ratios: Record<string, number | undefined>;
     }[];
-    /** Pairs that declare `exempt` ("disabled", "decorative"): WCAG 1.4.3 leaves them out. Shown with their ratios, never a failure, and not in `declared`. */
+    /** Pairs that declare `exempt` are never a failure and are not counted in `declared`. */
     exempt: {
         token: string;
         on: string;
@@ -32,7 +26,6 @@ export interface ContrastPhase {
         exempt: string;
         ratios: Record<string, number | undefined>;
     }[];
-    /** Text over fill pairs that the names imply, declared or not. */
     implied: { pairs: number; passing: number; passRate: number };
     score: number;
 }
@@ -57,7 +50,6 @@ export function contrastPhase(
     }
 
     const all = contrastPairs(system.tokens, system.modes);
-    // An exempt pair is reported apart, with its ratio. It is not a failure and not in the pass rate.
     const pairs = all.filter((pair) => pair.exempt === undefined);
     const round = (ratios: Record<string, number | undefined>) =>
         Object.fromEntries(
@@ -110,14 +102,10 @@ export function contrastPhase(
 export interface DocsShot {
     viewport: string;
     scheme: "light" | "dark";
-    /** The first tile: the first screen. */
     file?: string;
-    /** Every tile, in page order: `docs-<viewport>-<scheme>-<NN>-<section>.png`, each at most 2,000 px high, at scale 1. */
     tiles?: string[];
     height?: number;
-    /** Wider than the viewport: a horizontal scroll. */
     overflowX?: boolean;
-    /** The component stages of the page (`.comp-stage`, one for each component): how many, and how many had text and painted. */
     components?: { count: number; withText: number; painted: number; blank: string[] };
     errors: string[];
     external: string[];
@@ -131,13 +119,11 @@ export interface DocsPhase {
     assets: number;
     shots: DocsShot[];
     checks: Record<string, boolean>;
-    /** Which of the expected sections have a heading. */
     sections: Record<string, boolean>;
     score: number;
     error?: string;
 }
 
-/** The sections that a design-system documentation page has. Matched against its headings, case-insensitive. */
 export const SECTIONS: Record<string, RegExp> = {
     colors: /colou?rs?|palette/i,
     type: /typograph|type scale|typeface|\bfonts?\b/i,
@@ -157,10 +143,6 @@ const VIEWPORTS = [
 export const TILE_HEIGHT = 2000;
 const MAX_TILES = 80;
 
-/**
- * The rectangles to photograph: the first screen, then each top-level section of the page (the `section` elements
- * of `main`, else every `section` with an id, else the parents of the `h2` headings), cut into parts of at most 2,000 px.
- */
 export async function tileRects(
     page: BenchPage,
     viewport: { width: number; height: number },
@@ -211,11 +193,7 @@ const STAGE = ".comp-stage";
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Wait until the page says that it has drawn everything (`data-docs-ready` on `<html>`: the page builds each component
- * state in a shadow root with a script, and sets it last). A page that never sets it is let go after the limit; its
- * component checks then say what is missing.
- */
+// The page sets `data-docs-ready` on <html> last; a page that never does is let go after the limit.
 export async function waitForDocsReady(page: BenchPage, limitMs = 10_000): Promise<boolean> {
     const started = Date.now();
 
@@ -232,7 +210,6 @@ export async function waitForDocsReady(page: BenchPage, limitMs = 10_000): Promi
     return false;
 }
 
-/** Put the page in the scheme through its own switch (so that its component states follow it), else on `data-theme`. */
 async function switchScheme(page: BenchPage, scheme: "light" | "dark"): Promise<void> {
     await page.evaluate(`(() => {
         const theme = ${JSON.stringify(scheme)};
@@ -247,7 +224,6 @@ async function switchScheme(page: BenchPage, scheme: "light" | "dark"): Promise<
     await pause(400);
 }
 
-/** Two frames and a short wait: what painting needs after a scroll. */
 async function settle(page: BenchPage): Promise<void> {
     await page.evaluate(
         `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
@@ -255,7 +231,6 @@ async function settle(page: BenchPage): Promise<void> {
     await pause(200);
 }
 
-/** What each component stage holds: its place on the page, and what its shadow root shows besides the state labels. */
 const stages = (page: BenchPage) =>
     page.evaluate<
         {
@@ -279,10 +254,6 @@ const stages = (page: BenchPage) =>
         return { left: Math.max(0, Math.round(r.left)), top: Math.round(r.top + scrollY), width: Math.ceil(r.width), height: Math.ceil(r.height), name, ready: stage.hasAttribute('data-ready'), cells: cells.length, text };
     })`);
 
-/**
- * Photograph every component stage on its own, in view, and say whether it has text and is not one color. The page is
- * scrolled to each stage first (a thing outside the viewport may not be painted), and the viewport is as tall as a tile.
- */
 export async function checkComponents(
     page: BenchPage,
     width: number,
@@ -425,9 +396,7 @@ export async function docsPhase(
                         colorScheme: scheme,
                     });
 
-                    // The page draws each component state with a script and says when it is done.
                     await waitForDocsReady(page);
-                    // The page's own switch, so that its component states follow the scheme too.
                     await switchScheme(page, scheme);
 
                     shot.overflowX =
@@ -437,7 +406,6 @@ export async function docsPhase(
                         `document.documentElement.scrollHeight`,
                     );
 
-                    // The whole page is taken only to tell light from dark; the files are tiles (below).
                     const png = await page.screenshot(true);
                     const prefix = `docs-${viewport.name}-${scheme}`;
 
@@ -450,14 +418,12 @@ export async function docsPhase(
 
                     shot.tiles = [];
 
-                    // The first screen, at the size of the screen.
                     await save(
                         "first-screen",
                         await page.clipInView(0, 0, viewport.width, viewport.height),
                     );
 
-                    // The rest as tiles of at most 2,000 px. A frame outside the viewport is not painted, so the viewport is
-                    // made as tall as a tile, each tile is scrolled to the top of it, (each state is drawn in the page itself, so there is nothing else to wait for).
+                    // A frame outside the viewport is not painted: make the viewport as tall as a tile.
                     await page.resize(viewport.width, TILE_HEIGHT);
                     await page.evaluate(
                         `document.querySelectorAll('*').forEach((el) => { if (getComputedStyle(el).position === 'sticky') el.style.position = 'relative'; })`,
@@ -517,8 +483,6 @@ export async function docsPhase(
     const sectionRate =
         Object.values(phase.sections).filter(Boolean).length / Object.keys(SECTIONS).length;
 
-    // Every component of the system has a stage on the page, every stage has text in its shadow root (besides the names
-    // of its states), and every stage's screenshot has more than two colors. A component that shows nothing fails both.
     const expectedComponents = system.components.length;
     const components = (
         ok: (shot: DocsShot & { components: NonNullable<DocsShot["components"]> }) => boolean,

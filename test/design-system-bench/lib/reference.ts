@@ -1,9 +1,3 @@
-/**
- * Reference implementations of every contract, built on the bench's own reader. They are the bench's ceiling check: a
- * correct engine, scan, linter and docs page must score 1.0 on the same fixtures, so a lower number from a stream's code
- * is the stream's, and a bench that cannot reach 1.0 with these is broken. They are small and plain on purpose; they are
- * not the product. `node test/design-system-bench/run.ts --reference` runs the bench against them.
- */
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import type {
@@ -22,7 +16,6 @@ import { cssVar, goldenCss, readFlat, systemFromFlat } from "./system.ts";
 
 const read = (path: string) => readFileSync(path, "utf8");
 
-/** Parse one component file (the format in docs/design/design-system.md). */
 export function parseComponent(slug: string, html: string): ComponentSpec {
     const meta = /<script[^>]*id="pocket-component"[^>]*>([\s\S]*?)<\/script>/.exec(html);
     const info = meta === null ? {} : (JSON.parse(meta[1]!) as Record<string, unknown>);
@@ -160,7 +153,6 @@ export function referenceWrite(cwd: string, change: SystemChange): DesignSystem 
     return system;
 }
 
-/** A DTCG draft built from a fixture's expectation: the best a scan can do, in the shape a scan should write. */
 export function draftFromExpected(expected: Expected): Draft {
     const value = (entry: string | { value: string }) =>
         typeof entry === "string" ? entry : entry.value;
@@ -257,11 +249,6 @@ export function draftFromExpected(expected: Expected): Draft {
     return { tokens: tree, modes: expected.dark.present ? { dark } : {} };
 }
 
-/**
- * A component as the real page shows it: an article with its name, and a stage whose states are drawn by a script into a
- * shadow root (`.comp-stage` > `.comp-host`, one `.__c` cell for each state with its `.__l` label). The stage says
- * `data-ready` when drawn, and the page says `data-docs-ready` on `<html>` when every stage is.
- */
 function componentStage(component: ComponentSpec): string {
     const escape = (text: string) => text.replace(/[&<>"]/g, (char) => `&#${char.charCodeAt(0)};`);
     const spec = JSON.stringify({
@@ -299,7 +286,6 @@ const STAGE_SCRIPT = `(function () {
     document.documentElement.setAttribute("data-docs-ready", "");
 })();`;
 
-/** A small, complete documentation page: navigation, every section, swatches, a theme switch. */
 export function referenceDoc(system: DesignSystem): {
     html: string;
     assets: { name: string; content: string }[];
@@ -386,7 +372,6 @@ code{font-size:12px;overflow-wrap:anywhere}</style></head><body>
     return { html, assets: [] };
 }
 
-/** Every contract, implemented by the reference. `browser` is needed by the linter only. */
 export function referenceModules(
     browser: BenchBrowser | undefined,
     fixturesRoot = join(BENCH, "fixtures"),
