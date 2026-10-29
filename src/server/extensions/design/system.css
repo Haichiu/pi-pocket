@@ -1,5 +1,3 @@
-/* The System view (`system-ui.js` loads this when the view is first opened). */
-
 .dsy-bars {
     padding-bottom: 0;
 }
@@ -22,8 +20,6 @@
     padding: 0 11px;
 }
 
-/* The sections and the two buttons are side by side, never one over the other: the bar of sections scrolls where it is,
-   and the buttons keep their place at its end. */
 .dsy-tabbar {
     display: flex;
     align-items: flex-start;
@@ -42,7 +38,6 @@
     align-items: center;
 }
 
-/* Where more sections are out of sight, the bar fades there: the last one in view is not cut off, it goes on. */
 .dsy-tabs[data-more="right"] {
     mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
 }
@@ -79,8 +74,6 @@
     background: var(--accent);
     box-shadow: 0 0 0 2px var(--bg);
 }
-
-/* ─── Layout ───────────────────────────────────────────────── */
 
 .dsy-main {
     display: flex;
@@ -189,8 +182,6 @@
     margin: 0;
     line-height: 1.55;
 }
-
-/* ─── Groups and rows ──────────────────────────────────────── */
 
 .dsy-group {
     margin: 0 0 12px;
@@ -450,7 +441,6 @@
     white-space: nowrap;
 }
 
-/* Side by side on a narrow panel: the two badges go under the name, where there is room for them. */
 .dsn[data-size="narrow"] .dsy-row-main:has(.dsy-badge-mode) {
     flex-wrap: wrap;
 }
@@ -479,8 +469,6 @@
 .dsn[data-size="narrow"] .dsy-values:not(:has(.dsy-badge)) .dsy-hex {
     display: inline;
 }
-
-/* ─── Swatches and badges ──────────────────────────────────── */
 
 .dsy-swatch {
     position: relative;
@@ -544,7 +532,6 @@
     color: var(--err);
 }
 
-/* A pair that is exempt (a disabled or decorative color) is told as a note: neither the green of a pass nor the red of a fail. */
 .dsy-badge.exempt {
     background: var(--dsn-fill-2);
     color: var(--muted);
@@ -571,8 +558,6 @@
     opacity: 0.85;
     font-weight: 500;
 }
-
-/* ─── The editor under a row ───────────────────────────────── */
 
 .dsy-editor {
     display: flex;
@@ -851,8 +836,6 @@
     font-size: 12.5px;
 }
 
-/* ─── The overview, ramps, and tiles ───────────────────────── */
-
 .dsy-overview {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -1021,7 +1004,6 @@
     font-weight: 600;
 }
 
-/* An editor under a row keeps its token's row (the name, and the way to close it) at the top while the editor scrolls. */
 .dsy-row.open > .dsy-row-main {
     position: sticky;
     top: 0;
@@ -1040,7 +1022,6 @@
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
 }
 
-/* Roles as cards: a swatch across the top, the name, the value, and the contrast on its pair. */
 .dsy-tiles[data-size="role"] {
     grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
 }
@@ -1088,13 +1069,11 @@
     display: none;
 }
 
-/* A pair that falls says so in words, not in color alone. */
 .dsy-card-meta .dsy-badge.fail .dsy-badge-level,
 .dsy-card-meta .dsy-badge.exempt .dsy-badge-level {
     display: inline;
 }
 
-/* A label over a run of groups, and the line a group's head may carry after its count. */
 .dsy-section-label {
     display: flex;
     align-items: center;
@@ -1135,7 +1114,6 @@
     font-weight: 600;
 }
 
-/* A ramp as one strip: the steps side by side. */
 .dsy-strip-row {
     padding: 10px 12px 12px;
 }
@@ -1270,8 +1248,6 @@
     background: var(--bg);
 }
 
-/* ─── Type, spacing, motion ────────────────────────────────── */
-
 .dsy-specimen {
     margin: 0;
     padding: 2px 16px 14px;
@@ -1302,7 +1278,6 @@
     text-align: center;
 }
 
-/* A spacing step is a tile: its bar at its own scale (the widest step fills the tile), its name, and its value. */
 .dsy-tiles[data-size="space"] {
     grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
 }
@@ -1428,8 +1403,6 @@
     width: 100%;
     text-align: center;
 }
-
-/* ─── Components and guidelines ────────────────────────────── */
 
 .dsy-component {
     margin: 0 0 12px;
@@ -1589,8 +1562,6 @@
     align-items: center;
     gap: 8px;
 }
-
-/* ─── What shows around the sections ───────────────────────── */
 
 .dsy-search {
     position: sticky;
@@ -1761,7 +1732,6 @@
     font-size: 12px;
 }
 
-/* The save bar: how many edits wait, and the two things to do with them. */
 .dsy-savebar {
     display: flex;
     flex: none;
@@ -1845,7 +1815,6 @@
     }
 }
 
-/* Fingers: bigger targets. */
 @media (pointer: coarse) {
     .dsy-step,
     .dsy-play {
@@ -1885,13 +1854,10 @@
     }
 }
 
-/* A row with a play button has room for its name when the chevron goes: the whole row opens it. */
 .dsn[data-size="narrow"] .dsy-row:has(.dsy-play) .dsy-row-open {
     display: none;
 }
 
-/* A panel of middling width (the chat beside it): the sections wrap under each other, and only the one in use shows its
-   count, so that every section is in view. A narrow one scrolls, with the section in use brought to the middle. */
 .dsn[data-size="medium"] .dsy-tabs {
     flex-wrap: wrap;
     overflow: visible;
@@ -1907,7 +1873,6 @@
     margin-left: 0;
 }
 
-/* ... and a little closer together, so that nine of them very likely fit in one row. */
 .dsn[data-size="medium"] .dsy-tabs {
     gap: 0;
 }
@@ -1920,7 +1885,6 @@
     width: 30px;
 }
 
-/* The bar keeps the room that the picker's name needs; the rest gives way. */
 .dsy-bars .dsn-picker {
     flex: 1 0 142px;
     min-width: 142px;
@@ -1931,8 +1895,6 @@
     gap: 6px;
 }
 
-/* With three modes or more the bar is wider than a 320 px phone: the picker and the mode buttons give way, and More
-   stays in reach. */
 .dsn[data-size="narrow"] .dsy-bars .dsn-picker {
     flex: 1 1 142px;
     min-width: 104px;
@@ -1968,8 +1930,6 @@
 .dsy-scroll:focus-visible {
     outline-offset: -2px;
 }
-
-/* ─── A mode's token that it takes from the default mode, the pairs of a color, and a shadow's parts ─── */
 
 .dsy-inherit {
     display: flex;
@@ -2125,7 +2085,6 @@
     font-size: 12.5px;
 }
 
-/* The save bar keeps its place at the foot of the view while there are edits: the count, undo and redo, give up, and save. */
 .dsy-column > .dsy-savebar {
     position: sticky;
     bottom: 0;
@@ -2142,7 +2101,6 @@
     height: 34px;
 }
 
-/* More than four modes: one button that shows the mode in view and opens the list. */
 .dsy-modemenu {
     display: inline-flex;
     flex: none;
@@ -2164,7 +2122,6 @@
     background: var(--dsn-accent-soft);
 }
 
-/* A bar of sections that goes on says so with a mark at the edge that has more, as well as the fade. */
 .dsy-tabbar {
     position: relative;
 }
@@ -2198,7 +2155,6 @@
     left: 0;
 }
 
-/* A bar of sections that scrolls: it settles on a whole tab at the left, and it shows no tab that is not whole, at rest or not. */
 .dsn[data-size="narrow"] .dsy-tabs {
     scroll-snap-type: x proximity;
     scroll-padding-inline: 26px;
@@ -2216,7 +2172,6 @@
     pointer-events: none;
 }
 
-/* Roles under the step of the scale that they point at. */
 .dsy-by-step + .dsy-by-step {
     border-top: 1px solid var(--dsn-hair);
 }
@@ -2235,12 +2190,10 @@
     padding-top: 8px;
 }
 
-/* A size is a square of its own size (up to 44 px). */
 .dsy-space .dsy-size {
     border-radius: 3px;
 }
 
-/* A shadow tile: the stage, the name, and every layer on a line of its own with its color; the copy of the CSS sits at the corner. */
 .dsy-tiles[data-size="shadow"] {
     grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
 }
