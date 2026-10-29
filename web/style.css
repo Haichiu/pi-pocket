@@ -17642,3 +17642,63 @@ pre.gallery-code {
         margin-left: 0;
     }
 }
+
+/* Reply to a selected passage of Pi's answer: the button by the selection, the quote above the message box, and the
+   quote atop the sent message. */
+.quote-reply-button {
+    position: fixed;
+    z-index: 70;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 92px;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--hair-2);
+    border-radius: 999px;
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.quote-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px;
+    padding: 6px 6px 6px 10px;
+    border-left: 2px solid var(--accent);
+    border-radius: var(--r-row);
+    background: var(--card);
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.quote-strip-text {
+    flex: 1;
+    min-width: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: pre-line;
+}
+
+.reply-quote {
+    margin: 0 0 0.4rem;
+    padding-left: 0.7rem;
+    border-left: 2px solid var(--hair-2);
+    color: var(--muted);
+    white-space: pre-line;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}

@@ -11,6 +11,7 @@ import {
     planAvailable,
     suggestCommands,
 } from "./commands.js";
+import { withQuote } from "./quote-text.js";
 import { loadFiles, mentionAt, mentionText, suggestFiles } from "./files.js";
 import { remember, searchHistory, sentHistory } from "./history.js";
 import {
@@ -695,7 +696,9 @@ export function Composer() {
     const canSend =
         !sending &&
         !uploading &&
-        (text.trim() !== "" || files.some((file) => file.state === "done"));
+        (text.trim() !== "" ||
+            store.state.replyQuote ||
+            files.some((file) => file.state === "done"));
 
     /** What went out stays for ↑; its pastes are done with. */
     const sent = (full) => {
@@ -765,7 +768,7 @@ export function Composer() {
             .map((file) => file.attachment);
         const ok = await attempt(() =>
             actions.submit(
-                full,
+                withQuote(store.state.replyQuote, full),
                 attachments,
                 busy ? sendMode : "followUp",
                 inlineFiles && mentionsFiles,
@@ -781,6 +784,7 @@ export function Composer() {
             }
 
             sent(full);
+            store.set({ replyQuote: null });
             forget(files);
             setFiles([]);
 
@@ -1464,6 +1468,20 @@ export function Composer() {
                                     </button>
                                 </span>`,
                             )}
+                        </div>`
+                    }
+                    ${
+                        store.state.replyQuote &&
+                        html`<div class="quote-strip" data-part="quote-strip">
+                            <${Icon} name="reply" size=${13} />
+                            <span class="quote-strip-text">${store.state.replyQuote}</span>
+                            <button
+                                class="icon-button small"
+                                aria-label="Remove the quote"
+                                onClick=${() => store.set({ replyQuote: null })}
+                            >
+                                <${Icon} name="close" size=${12} />
+                            </button>
                         </div>`
                     }
                     <textarea
