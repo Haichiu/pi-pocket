@@ -3,7 +3,7 @@
 import { Component } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { activityOpen } from "./activity-fold.js";
-import { initials, personColor } from "./avatar.js";
+import { avatarSrc, initials, personColor } from "./avatar.js";
 import { routeSliding } from "./back.js";
 import { browserAvailable, setBrowserOpen } from "./browser.js";
 import { describeCall, describersRevision } from "./calls.js";
@@ -446,7 +446,16 @@ function UserEntry({ entry, view, users }) {
                     style=${`--who:${mark}`}
                     aria-hidden="true"
                 >
-                    ${name ? initials(name) : "›"}
+                    ${
+                        avatarSrc(store.state.users.find((each) => each.id === authorId))
+                            ? html`<img
+                                  src=${avatarSrc(store.state.users.find((each) => each.id === authorId))}
+                                  alt=""
+                              />`
+                            : name
+                              ? initials(name)
+                              : "›"
+                    }
                 </span>
                 ${name && html`<b class="prompt-author" data-part="prompt-author">${name}</b>`}
                 ${entry.at && html`<span class="prompt-time">${clock(entry.at)}</span>`}

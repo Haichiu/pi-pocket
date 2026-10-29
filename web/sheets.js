@@ -21,7 +21,7 @@ import { MemorySheet } from "./sheets/memory.js";
 import { MenuSheet, PlacesSheet } from "./sheets/menu.js";
 import { MessageSheet } from "./sheets/message.js";
 import { ModelPicker } from "./sheets/model.js";
-import { InviteSheet, PeopleSheet } from "./sheets/people.js";
+import { InviteSheet, MyPhoto, PeopleSheet } from "./sheets/people.js";
 import { AuthDialog, ProvidersSheet } from "./sheets/providers.js";
 import { RunningSheet } from "./sheets/running.js";
 import { HooksSheet } from "./sheets/hooks.js";
@@ -378,9 +378,10 @@ function sheetBody(sheet) {
                 title="Your name"
                 label="Shown on your messages to others"
                 initial=${me?.name ?? ""}
-                footer=${html`<button class="button ghost wide sheet-footer signout" onClick=${signOut}>
-                    <${Icon} name="logout" size=${16} /> Sign out
-                </button>`}
+                footer=${html`<${MyPhoto} />
+                    <button class="button ghost wide sheet-footer signout" onClick=${signOut}>
+                        <${Icon} name="logout" size=${16} /> Sign out
+                    </button>`}
                 submit=${async (value) => {
                     await api("me", { name: value });
                     const hello = await api("me");

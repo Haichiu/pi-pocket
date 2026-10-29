@@ -69,6 +69,43 @@ export function initials(name) {
     return (first[0] + (words.length > 1 ? words[1][0] : (first[1] ?? ""))).toUpperCase();
 }
 
+/** The address of a person's picture, or undefined without one. Its version keeps a changed picture from showing stale. */
+export function avatarSrc(person) {
+    return person?.avatar
+        ? `/api/avatar/${encodeURIComponent(person.id)}?v=${person.avatar}`
+        : undefined;
+}
+
+/** A picture file as the small square PNG that is sent: its middle, cropped, at 192px. */
+export async function avatarBlob(file, side = 192) {
+    const bitmap = await createImageBitmap(file);
+    const crop = Math.min(bitmap.width, bitmap.height);
+    const canvas = document.createElement("canvas");
+
+    canvas.width = canvas.height = side;
+    canvas
+        .getContext("2d")
+        .drawImage(
+            bitmap,
+            (bitmap.width - crop) / 2,
+            (bitmap.height - crop) / 2,
+            crop,
+            crop,
+            0,
+            0,
+            side,
+            side,
+        );
+    bitmap.close?.();
+
+    return await new Promise((resolve, reject) =>
+        canvas.toBlob(
+            (blob) => (blob ? resolve(blob) : reject(new Error("That picture could not be read"))),
+            "image/png",
+        ),
+    );
+}
+
 export function Avatar({ person, size = 24 }) {
     const state = person.typing ? "typing" : person.away ? "away" : "";
     const title = person.typing
@@ -82,6 +119,6 @@ export function Avatar({ person, size = 24 }) {
         style=${`--who:${personColor(person.id)};width:${size}px;height:${size}px`}
         title=${title}
     >
-        ${initials(person.name)}
+        ${avatarSrc(person) ? html`<img class="avatar-img" src=${avatarSrc(person)} alt="" />` : initials(person.name)}
     </span>`;
 }

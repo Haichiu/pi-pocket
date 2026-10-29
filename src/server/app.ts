@@ -51,6 +51,7 @@ import type { BrowserState } from "./browser/page.ts";
 import { Collab, REACTIONS } from "./collab.ts";
 import { Commands } from "./commands.ts";
 import { LinkedSessions } from "./linked-sessions.ts";
+import { removeAvatar, saveAvatar } from "./avatars.ts";
 import { APP_ROOT, ConfigStore, modulesWith, type User } from "./config.ts";
 import {
     ArtifactAssetDoc,
@@ -1826,6 +1827,26 @@ export class PocketApp {
         }
     }
 
+    /** Set (bytes) or clear (undefined) someone's picture; everyone's lists show it at once. */
+    setAvatar(user: User, bytes: Buffer | undefined): void {
+        if (bytes === undefined) {
+            removeAvatar(user.id);
+            this.config.updateUser(user.id, { avatar: undefined });
+        } else {
+            saveAvatar(user.id, bytes);
+            this.config.updateUser(user.id, { avatar: Date.now() });
+        }
+
+        this.#peopleChanged();
+
+        for (const pending of this.#rooms.values()) {
+            void pending.then(
+                (room) => room.has(user.id) && room.pushPresence(),
+                () => {},
+            );
+        }
+    }
+
     /** Someone came, went, or changed: remember when they were last here and tell everyone. */
     #peopleChanged(userId?: string): void {
         if (userId !== undefined && this.config.userById(userId) !== undefined) {
@@ -1860,6 +1881,7 @@ export class PocketApp {
                 id: each.id,
                 name: each.name,
                 role: each.role,
+                ...(each.avatar === undefined ? {} : { avatar: each.avatar }),
                 online: this.#online(each.id),
                 ...(each.lastSeen === undefined ? {} : { lastSeen: each.lastSeen }),
                 ...(each.sessions === undefined || scope !== undefined
@@ -2694,6 +2716,7 @@ export class PocketApp {
 
     #forget(userId: string): void {
         this.config.removeUser(userId);
+        removeAvatar(userId);
         this.pushStore?.removeUser(userId);
 
         // Their open tabs end now; reconnecting fails, so they land on the sign-in screen.
