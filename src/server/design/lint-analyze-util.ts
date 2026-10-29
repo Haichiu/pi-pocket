@@ -2,6 +2,13 @@ import type { LengthKind, RgbaTuple, TokenSet } from "./lint-color.ts";
 import type { RawElement } from "./lint-page.ts";
 import type { CheckFinding } from "./system-types.ts";
 
+export type WeightedFinding = CheckFinding & { weight: number };
+
+export const weighted = (finding: CheckFinding, weight = 1): WeightedFinding => ({
+    ...finding,
+    weight,
+});
+
 const MAX_TEXT = 300;
 
 export const clip = (value: unknown, length = MAX_TEXT): string =>
