@@ -3,9 +3,11 @@
  * a decode needs no Figma account, token, or network: the schema is read as data, and the message is walked by an
  * interpreter, never compiled.
  *
- * Everything is bounded: the values, strings, arrays and nodes read, the nesting, and the time. A file this module cannot
- * read throws `FigError` with a reason for a person; `scan-fig.ts` turns that into a note and the scan goes on.
+ * Everything is bounded: the values, strings, arrays and nodes read, the nesting, and the time. A string of the file that a
+ * reason repeats is quoted, one line, and 60 characters at most, so a name cannot break the report's fence. A file this
+ * module cannot read throws `FigError` with a reason for a person; `scan-fig.ts` turns that into a note and the scan goes on.
  */
+import { quoted } from "../fence.ts";
 
 export type Obj = Record<string, unknown>;
 
@@ -87,6 +89,10 @@ export interface Budget {
     limits: FigLimits;
     started: number;
     values: number;
+    /** Definitions decoded: a struct with no fields costs no byte, so this count has a bound of its own. */
+    decoded: number;
+    /** The most definitions that the data's own length allows: one value for each byte, and a floor for a tiny file. */
+    decodedLimit: number;
 }
 
 /** A reader over one buffer: every read is checked against what is left, and each value counts against the budget. */
@@ -254,7 +260,9 @@ export function readSchema(bytes: Buffer, budget: Budget): FigSchema {
         const fieldCount = cursor.varUint();
 
         if (fieldCount > 2000) {
-            fail(`its schema gives "${name}" ${fieldCount} fields, which is not a definition`);
+            fail(
+                `its schema gives ${quoted(name, 60)} ${fieldCount} fields, which is not a definition`,
+            );
         }
 
         const fields: FigField[] = [];
@@ -310,23 +318,37 @@ export function readSchema(bytes: Buffer, budget: Budget): FigSchema {
 
 // --- The message ----------------------------------------------------------------------------------------------------
 
+/** A field's name that must not become a key of a decoded object: it would change the object's prototype. */
+const UNSAFE = new Set(["__proto__", "constructor", "prototype"]);
+
 /** One message decoded by the schema: messages read tagged fields, structs read their fields in order. */
-function decodeDef(
-    cursor: Cursor,
-    schema: FigSchema,
-    def: FigDef,
-    depth: number,
-    budget: FigLimits,
-): Obj {
-    if (depth > budget.depth) {
-        fail(`its data nests deeper than ${budget.depth} levels`);
+function decodeDef(cursor: Cursor, schema: FigSchema, def: FigDef, depth: number): Obj {
+    const limits = cursor.budget.limits;
+
+    if (depth > limits.depth) {
+        fail(`its data nests deeper than ${limits.depth} levels`);
     }
 
-    const out: Obj = {};
+    // A definition is a value, however few bytes it takes. A struct with no fields takes none, so without this count a small
+    // file could ask for a tree of them that grows without bound (and the time check would never run either).
+    cursor.spend();
+
+    if ((cursor.budget.decoded += 1) > cursor.budget.decodedLimit) {
+        fail(
+            `its data asks for more values than its ${cursor.budget.decodedLimit} bytes can hold, so it is not a Figma file`,
+        );
+    }
+
+    // A key from the file must never become the object's prototype: a node could inherit a `type` from it.
+    const out: Obj = Object.create(null) as Obj;
 
     if (def.kind !== "MESSAGE") {
         for (const field of def.fields) {
-            out[field.name] = readField(cursor, schema, field, depth, budget);
+            const value = readField(cursor, schema, field, depth);
+
+            if (!UNSAFE.has(field.name)) {
+                out[field.name] = value;
+            }
         }
 
         return out;
@@ -347,19 +369,17 @@ function decodeDef(
             fail(`its data holds a field (${tag}) that its schema does not name`);
         }
 
-        out[field.name] = readField(cursor, schema, field, depth, budget);
+        const value = readField(cursor, schema, field, depth);
+
+        if (!UNSAFE.has(field.name)) {
+            out[field.name] = value;
+        }
     }
 }
 
-function readField(
-    cursor: Cursor,
-    schema: FigSchema,
-    field: FigField,
-    depth: number,
-    budget: FigLimits,
-): unknown {
+function readField(cursor: Cursor, schema: FigSchema, field: FigField, depth: number): unknown {
     if (!field.array) {
-        return readValue(cursor, schema, field.type, depth, budget);
+        return readValue(cursor, schema, field.type, depth);
     }
 
     if (field.type === "byte") {
@@ -372,7 +392,7 @@ function readField(
 
     const length = cursor.varUint();
 
-    if (length > budget.nodes) {
+    if (length > cursor.budget.limits.nodes) {
         fail(`its data claims a list of ${length} values, which is too many`);
     }
 
@@ -381,19 +401,13 @@ function readField(
     const values: unknown[] = [];
 
     for (let index = 0; index < length; index++) {
-        values.push(readValue(cursor, schema, field.type, depth, budget));
+        values.push(readValue(cursor, schema, field.type, depth));
     }
 
     return values;
 }
 
-function readValue(
-    cursor: Cursor,
-    schema: FigSchema,
-    type: string,
-    depth: number,
-    budget: FigLimits,
-): unknown {
+function readValue(cursor: Cursor, schema: FigSchema, type: string, depth: number): unknown {
     switch (type) {
         case "bool":
             return cursor.byte() !== 0;
@@ -416,10 +430,10 @@ function readValue(
             const def = schema.byName.get(type);
 
             if (def === undefined) {
-                return fail(`its schema names a type that is not in it ("${type}")`);
+                return fail(`its schema names a type that is not in it (${quoted(type, 60)})`);
             }
 
-            return decodeDef(cursor, schema, def, depth + 1, budget);
+            return decodeDef(cursor, schema, def, depth + 1);
         }
     }
 }
@@ -443,8 +457,11 @@ export function readMessage(schema: FigSchema, bytes: Buffer, budget: Budget): O
         fail("its schema has no message to read");
     }
 
-    const cursor = new Cursor(bytes, budget);
-    const message = decodeDef(cursor, schema, root!, 0, budget.limits);
+    // A decoded value must cost at least one byte of the data: a struct with no fields costs none, so a file of them would
+    // grow without bound, and this count stops it.
+    budget.decodedLimit = Math.max(64, bytes.length);
 
-    return message;
+    const cursor = new Cursor(bytes, budget);
+
+    return decodeDef(cursor, schema, root!, 0);
 }

@@ -4,11 +4,14 @@
  * hands the schema and the data to `scan-fig-kiwi.ts`.
  *
  * Nothing is executed, and every read is bounded: the file's size, the size after decompression (a ZIP entry's claim is
- * checked before it is inflated, and the inflate itself has a ceiling), and the entries of the archive. A file this module
- * cannot read throws `FigError` with a reason for a person.
+ * checked before it is inflated, and the inflate itself has a ceiling), and the entries of the archive. One budget covers
+ * every inflate of one file, so the inner `canvas.fig` and the two chunks it holds cannot each take the whole of it. A name
+ * of the archive that a reason repeats is quoted, one line, and 60 characters at most. A file this module cannot read
+ * throws `FigError` with a reason for a person.
  */
 import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
 import { inflateRawSync, inflateSync, zstdDecompressSync } from "node:zlib";
+import { quoted } from "../fence.ts";
 import {
     type Budget,
     type FigLimits,
@@ -159,18 +162,30 @@ function zipEntries(bytes: Buffer, limits: FigLimits): ZipEntry[] {
     return entries;
 }
 
-/** One entry's bytes, inflated with a ceiling on what it may produce. */
-function zipBytes(bytes: Buffer, entry: ZipEntry, limits: FigLimits): Buffer {
-    if (entry.uncompressed > limits.raw) {
+/** What one file has decompressed so far: every step pays from the same budget, so the peak is that budget and no more. */
+interface Spend {
+    used: number;
+}
+
+/** The bytes this file may still decompress. */
+function left(limits: FigLimits, spend: Spend): number {
+    return Math.max(0, limits.raw - spend.used);
+}
+
+/** One entry's bytes, inflated with a ceiling on what it may produce, and counted against the file's budget. */
+function zipBytes(bytes: Buffer, entry: ZipEntry, limits: FigLimits, spend: Spend): Buffer {
+    const room = left(limits, spend);
+
+    if (entry.uncompressed > room) {
         return fail(
-            `"${entry.name}" claims ${entry.uncompressed} bytes after decompression, more than the ${limits.raw} this scan reads`,
+            `its ZIP entry ${quoted(entry.name, 60)} claims ${entry.uncompressed} bytes after decompression, more than the ${room} this scan has left for it`,
         );
     }
 
-    const ceiling = Math.min(limits.raw, entry.uncompressed + 1);
+    const ceiling = Math.min(room, entry.uncompressed + 1);
 
     if (entry.offset + 30 > bytes.length || bytes.readUInt32LE(entry.offset) !== LOCAL) {
-        return fail(`its ZIP entry "${entry.name}" has no local header`);
+        return fail(`its ZIP entry ${quoted(entry.name, 60)} has no local header`);
     }
 
     const nameLength = bytes.readUInt16LE(entry.offset + 26);
@@ -178,22 +193,22 @@ function zipBytes(bytes: Buffer, entry: ZipEntry, limits: FigLimits): Buffer {
     const start = entry.offset + 30 + nameLength + extraLength;
 
     if (start > bytes.length || entry.compressed > bytes.length - start) {
-        return fail(`its ZIP entry "${entry.name}" is cut short`);
+        return fail(`its ZIP entry ${quoted(entry.name, 60)} is cut short`);
     }
 
     const data = bytes.subarray(start, start + entry.compressed);
+    const out =
+        entry.method === 0
+            ? data
+            : entry.method === 8
+              ? inflate(data, ceiling, entry.name)
+              : fail(
+                    `its ZIP entry ${quoted(entry.name, 60)} uses compression ${entry.method}, which is not deflate`,
+                );
 
-    if (entry.method === 0) {
-        return data;
-    }
+    spend.used += out.length;
 
-    if (entry.method !== 8) {
-        return fail(
-            `its ZIP entry "${entry.name}" uses compression ${entry.method}, which is not deflate`,
-        );
-    }
-
-    return inflate(data, ceiling, entry.name);
+    return out;
 }
 
 /** Deflate or zstd, whichever the chunk is, with a ceiling on what it may make. */
@@ -231,6 +246,7 @@ const reasonOf = (error: unknown): string =>
 function container(
     bytes: Buffer,
     limits: FigLimits,
+    spend: Spend,
 ): { container: "zip" | "kiwi"; version: number; schema: Buffer; data: Buffer; entries: string[] } {
     const zip = bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b;
 
@@ -244,8 +260,8 @@ function container(
         return {
             container: "kiwi",
             version,
-            schema: inflate(chunks[0]!, limits.raw, "its schema"),
-            data: inflate(chunks[1]!, limits.raw, "its data"),
+            schema: chunk(chunks[0]!, limits, spend, "its schema"),
+            data: chunk(chunks[1]!, limits, spend, "its data"),
             entries: [],
         };
     }
@@ -259,20 +275,29 @@ function container(
         return fail("it is a ZIP with no canvas.fig in it, so it is not a Figma file");
     }
 
-    const inner = zipBytes(bytes, canvas, limits);
+    const inner = zipBytes(bytes, canvas, limits, spend);
     const { version, chunks } = kiwiChunks(inner, limits);
 
     if (chunks.length < 2) {
-        return fail(`its ${canvas.name} holds ${chunks.length} chunk of data and not 2`);
+        return fail(`its canvas.fig holds ${chunks.length} chunk of data and not 2`);
     }
 
     return {
         container: "zip",
         version,
-        schema: inflate(chunks[0]!, limits.raw, "its schema"),
-        data: inflate(chunks[1]!, limits.raw, "its data"),
+        schema: chunk(chunks[0]!, limits, spend, "its schema"),
+        data: chunk(chunks[1]!, limits, spend, "its data"),
         entries: entries.map((entry) => entry.name),
     };
+}
+
+/** One chunk, inflated within what the file has left, and counted against it. */
+function chunk(bytes: Buffer, limits: FigLimits, spend: Spend, what: string): Buffer {
+    const out = inflate(bytes, left(limits, spend), what);
+
+    spend.used += out.length;
+
+    return out;
 }
 
 /** Decodes a `.fig` in memory: its message, its nodes, and the names of its ZIP entries. */
@@ -281,12 +306,14 @@ export function decodeFig(bytes: Buffer, limits: FigLimits = FIG_LIMITS): FigDec
         return fail("the file is empty");
     }
 
-    const budget: Budget = { limits, started: Date.now(), values: 0 };
-    const opened = container(bytes, limits);
-
-    if (opened.schema.length + opened.data.length > limits.raw) {
-        return fail(`it is more than ${limits.raw} bytes after decompression`);
-    }
+    const budget: Budget = {
+        limits,
+        started: Date.now(),
+        values: 0,
+        decoded: 0,
+        decodedLimit: 0,
+    };
+    const opened = container(bytes, limits, { used: 0 });
 
     const schema = readSchema(opened.schema, budget);
     const message = readMessage(schema, opened.data, budget);

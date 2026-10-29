@@ -169,8 +169,8 @@ export function variablesOf(nodes: Obj[]): { list: FigVariable[]; byKey: Map<str
 }
 // --- Names ----------------------------------------------------------------------------------------------------------
 
-/** Names that the tokens engine refuses, and so cannot be a token's name. */
-const RESERVED = new Set(["__proto__", "constructor", "prototype"]);
+/** Names that the tokens engine refuses, and the keys of `Object` beside them: never a token's name, never a mode's. */
+export const RESERVED = new Set(["__proto__", "constructor", "prototype"]);
 
 /** Words that name what a group holds, and so are not part of a name: `Colors/Brand` is `color.brand`. */
 const GROUP_WORDS: Record<string, RegExp> = {
@@ -238,6 +238,37 @@ export function safePath(named: Named): string[] {
     const last = path.at(-1) ?? "";
 
     return last === "" || RESERVED.has(last) ? [...path.slice(0, -1), "base"] : path;
+}
+
+/**
+ * Makes a path unique among the tokens so far, by a number on its last part: `a`, `a-2`, `a-3`. The count of each base is
+ * kept, so a file of one repeated name costs one step for each token, and the names never grow.
+ */
+export function uniquePath(
+    path: string[],
+    taken: Set<string>,
+    next: Map<string, number>,
+): string[] {
+    const base = path.join(".");
+
+    if (!taken.has(base)) {
+        taken.add(base);
+
+        return path;
+    }
+
+    let index = next.get(base) ?? 2;
+    let name = `${base}-${index}`;
+
+    while (taken.has(name)) {
+        index += 1;
+        name = `${base}-${index}`;
+    }
+
+    next.set(base, index + 1);
+    taken.add(name);
+
+    return [...path.slice(0, -1), `${path.at(-1)}-${index}`];
 }
 
 /** A number as a token value: a length in px, a plain number, or a duration in ms. */

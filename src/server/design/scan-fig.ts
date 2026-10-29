@@ -13,6 +13,7 @@ import { type FigDecoded, decodeFig, readFigBytes } from "./scan-fig-container.t
 import { FigError } from "./scan-fig-kiwi.ts";
 import {
     FONT_NAME,
+    RESERVED,
     type FigVariable,
     type Named,
     typeOf,
@@ -22,6 +23,7 @@ import {
     numberValue,
     safePath,
     stylesOf,
+    uniquePath,
     variablesOf,
 } from "./scan-fig-nodes.ts";
 import { type Imported, addTo } from "./scan-import.ts";
@@ -55,7 +57,7 @@ function withKinds(count: number, word: string, kinds: [number, string][]): stri
     return `${plural(count, word)}${shown.length === 0 ? "" : ` (${shown.join(", ")})`}`;
 }
 
-/** A mode's name as a mode name of the scan: lowercase letters, digits, and hyphens. */
+/** A mode's name as a mode name of the scan: lowercase letters, digits, and hyphens, and never a key of `Object`. */
 function modeNameOf(name: string): string {
     const clean = name
         .toLowerCase()
@@ -63,15 +65,24 @@ function modeNameOf(name: string): string {
         .replace(/^-+|-+$/g, "")
         .slice(0, 40);
 
-    return clean === "" ? "mode" : clean;
+    return clean === "" ? "mode" : RESERVED.has(clean) ? `${clean}-mode` : clean;
 }
 
 const isDarkMode = (name: string): boolean => /(?:^|[^a-z])dark(?:[^a-z]|$)/i.test(name);
 
 // --- The whole file -------------------------------------------------------------------------------------------------
 
-/** The tokens of a decoded `.fig`, and the line that the report gives for it. */
-export function figTokens(decoded: FigDecoded, file: string): FigTokens {
+/** The most time one `.fig` may take to become tokens: past it, the file is read in part and the report says so. */
+export const FIG_TIME_MS = 5000;
+
+/** The tokens of a decoded `.fig`, and the line that the report gives for it. `ms` is for a test that must reach the limit. */
+export function figTokens(
+    decoded: FigDecoded,
+    file: string,
+    options: { ms?: number } = {},
+): FigTokens {
+    const limit = options.ms ?? FIG_TIME_MS;
+    const deadline = Date.now() + limit;
     const nodes = decoded.nodes;
     const collections = collectionsOf(nodes);
     const { list, byKey } = variablesOf(nodes);
@@ -111,17 +122,34 @@ export function figTokens(decoded: FigDecoded, file: string): FigTokens {
     // The path of each variable first: an alias names another variable's path.
     const named = new Map<string, Named & { type: string }>();
     const taken = new Set<string>();
+    const next = new Map<string, number>();
     const firstModes = new Set<string>();
+    const firstOf = new Map<string, string>();
+    const modeById = new Map<string, { id: string; name: string; collection: string }>();
 
+    // A mode is found by its id, so a variable costs its own few modes and not every mode of its collection.
     for (const collection of collections.values()) {
         const first = collection.modes[0];
 
         if (first !== undefined) {
             firstModes.add(modeNameOf(first.name));
+            firstOf.set(collection.id, first.id);
+        }
+
+        for (const mode of collection.modes) {
+            modeById.set(mode.id, { ...mode, collection: collection.id });
         }
     }
 
+    let stopped = false;
+
     for (const variable of list) {
+        if (Date.now() >= deadline) {
+            stopped = true;
+
+            break;
+        }
+
         const kind =
             variable.resolved === "COLOR"
                 ? "color"
@@ -145,13 +173,8 @@ export function figTokens(decoded: FigDecoded, file: string): FigTokens {
         }
 
         const shape = nameFor(kind, variable.name);
-        let path = safePath(shape);
+        const path = uniquePath(safePath(shape), taken, next);
 
-        for (let index = 2; taken.has(path.join(".")); index++) {
-            path = [...path.slice(0, -1), `${path.at(-1)}-${index}`];
-        }
-
-        taken.add(path.join("."));
         named.set(variable.id, { ...shape, path, type: typeOf(variable, shape.measure) });
     }
 
@@ -211,8 +234,7 @@ export function figTokens(decoded: FigDecoded, file: string): FigTokens {
             tally.numbers += 1;
         }
 
-        const collection = collections.get(variable.collection);
-        const first = collection?.modes[0]?.id ?? [...variable.values.keys()][0] ?? "";
+        const first = firstOf.get(variable.collection) ?? [...variable.values.keys()][0] ?? "";
         const value = valueOf(variable, first);
 
         if (value === undefined) {
@@ -227,8 +249,15 @@ export function figTokens(decoded: FigDecoded, file: string): FigTokens {
             alias += 1;
         }
 
-        for (const mode of collection?.modes.slice(1) ?? []) {
-            const changed = valueOf(variable, mode.id);
+        for (const modeId of variable.values.keys()) {
+            const mode = modeId === first ? undefined : modeById.get(modeId);
+
+            // A value in a mode of another collection is not a mode of this variable.
+            if (mode === undefined || mode.collection !== variable.collection) {
+                continue;
+            }
+
+            const changed = valueOf(variable, modeId);
 
             if (changed === undefined || JSON.stringify(changed) === JSON.stringify(value)) {
                 continue;
@@ -258,16 +287,17 @@ export function figTokens(decoded: FigDecoded, file: string): FigTokens {
 
     // The styles: a text style is typography, an effect style a shadow, and a paint style a color.
     const { styles, left: styleLeft } = stylesOf(nodes);
+    let stylesRead = 0;
 
     for (const style of styles) {
-        let path = safePath(style.path);
+        if (Date.now() >= deadline) {
+            stopped = true;
 
-        for (let index = 2; taken.has(path.join(".")); index++) {
-            path = [...path.slice(0, -1), `${path.at(-1)}-${index}`];
+            break;
         }
 
-        taken.add(path.join("."));
-        entries.push({ path, node: style.token });
+        stylesRead += 1;
+        entries.push({ path: uniquePath(safePath(style.path), taken, next), node: style.token });
 
         if (style.kind === "TEXT") {
             tally.typography += 1;
@@ -314,7 +344,8 @@ export function figTokens(decoded: FigDecoded, file: string): FigTokens {
         hoistTypes(tokens);
     }
 
-    const extra: Record<string, Obj> = {};
+    // No prototype: a mode's name is a key, and never a key of `Object` (`constructor`, `__proto__`).
+    const extra: Record<string, Obj> = Object.create(null) as Record<string, Obj>;
 
     for (const [mode, tree] of changes) {
         extra[mode] = dropTypes(fill(tree));
@@ -394,6 +425,12 @@ export function figTokens(decoded: FigDecoded, file: string): FigTokens {
         );
     }
 
+    if (stopped) {
+        notes.push(
+            `Stopped at ${limit} ms, the limit for one Figma file: ${entries.length} of ${plural(list.length, "variable")} and ${stylesRead} of ${plural(styles.length, "style")} were read.`,
+        );
+    }
+
     return {
         file,
         default: tokens,
@@ -431,6 +468,23 @@ export function readFigInto(facts: Facts, file: string, path: string): void {
 }
 
 /**
+ * A mode's tree in the scan's imports: an own key, even for a name that `Object` also has. A plain `into.extra["constructor"]`
+ * would be `Object.constructor`, and the tree would be written into `Object` itself.
+ */
+function modeTree(extra: Record<string, Obj>, mode: string): Obj {
+    if (!Object.hasOwn(extra, mode)) {
+        Object.defineProperty(extra, mode, {
+            value: {},
+            writable: true,
+            enumerable: true,
+            configurable: true,
+        });
+    }
+
+    return extra[mode]!;
+}
+
+/**
  * Adds a `.fig`'s tokens to the scan's imports. A Figma file is sure to be a token source (unlike a JSON file, which may be
  * anything), so even a few tokens are used as they are rather than guessed from the project's CSS.
  */
@@ -444,8 +498,7 @@ export function addFigImport(into: Imported, tokens: FigTokens): void {
     addTo(into.dark, tokens.dark);
 
     for (const [mode, tree] of Object.entries(tokens.extra)) {
-        into.extra[mode] ??= {};
-        addTo(into.extra[mode]!, tree);
+        addTo(modeTree(into.extra, mode), tree);
     }
 
     into.count += tokens.count;
