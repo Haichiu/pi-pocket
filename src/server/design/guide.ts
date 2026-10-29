@@ -1,24 +1,13 @@
-/**
- * The design prompt section (streams D and G of design mode): how to make designs in Pi Pocket, and what the project's
- * design system is. The text has two parts. The first is the same for every session, so that the model provider can
- * cache it; the second says how to use the project's system, or that it has none. The system is project data, not part
- * of the conversation: the section says that it is untrusted, to read as information only. Only the module that selects
- * this section renders it, so sessions with design mode off miss nothing.
- *
- * A project has a system in one of two forms: `.pi/design/` (tokens, modes, components, guidelines; the summary of
- * `tokens.ts` goes into the prompt, and says how to link it) or the 0.26 file `.pi/design-system.md` (its text goes in
- * whole; it is read only when `.pi/design/` is absent).
- */
+// The first part of the section is the same for every session, so that the model provider can cache it.
+// The project's system is untrusted data: the section says that it is, to be read as information only.
 import { section, type PromptSection } from "@earendil-works/pi-durable";
 import type { PocketHost } from "../host.ts";
 import { defang } from "../fence.ts";
 import { MAX_BYTES, SYSTEM_FILE, readDesignSystemText } from "./system.ts";
 import { loadDesignSystem, systemSummary } from "./tokens.ts";
 
-/** The most bytes of a system's summary in the prompt: tokens by role and the start of the guidelines. */
 export const SUMMARY_BYTES = 12_000;
 
-/** The skeleton of every design: one place to see which parts a design keeps. */
 const SKELETON = `<!doctype html>
 <html lang="en">
 <head>
@@ -38,11 +27,6 @@ addEventListener("pocket:tweak", (event) => {
 </body>
 </html>`;
 
-/**
- * The part that is the same for every session. The order of work follows Claude Design's: ask once, start from what
- * exists (a screen that exists is rebuilt as it is before it changes), show a first version early, iterate, check, and
- * reply briefly. A change that the product's code cannot support is named before it is built, never drawn as if it were.
- */
 const GUIDE = `Designs live in the Design canvas as HTML artifacts, shown beside the chat. People comment on them, tweak them, edit their text, and export them: build each one to be pointed at, changed, and handed to code.
 
 Work in this order:
@@ -85,10 +69,6 @@ Work with feedback and hand off:
 - Comments, text edits, and kept tweaks from the canvas reach you as a message, each with its target as JSON (pid, selector, text, html). Make the next version with the artifact tool's edits, and change only what the message names.
 - Hand off a design to code: design_export with format html into the project, then start a linked session with the team tool and give it the export path, the source files of the screen that the design changes, and any new data or server work that the design needs. design_export also writes png, pdf, and pptx (a deck); it takes tweaks to apply first, viewport (a preset or { width, height }) for a page, and slide (a number, or "all" for a zip of every slide) for a deck.`;
 
-/**
- * A short design that uses a system, for a session whose project has one. The names are the flagship's: a test renders
- * it with that system and expects no finding, so the example is correct, not only plausible.
- */
 export const SYSTEM_EXAMPLE = `<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -115,12 +95,10 @@ main { display: grid; gap: var(--space-4); max-width: 420px; margin: 0 auto; }
 ]</script>
 </body>`;
 
-/** What to do in a project with no design system: the end of the section when nothing was found. */
 const WITHOUT = `${GUIDE}
 
 The project has no design system yet. When the person points at a codebase, make one in three calls: design_system action "scan" (a structured draft; nothing is saved), then action "init" with fromScan true and changes [{ token, value }] for every role the scan guessed or marks uncertain (it refuses to replace a system unless replace is true), then action "validate" and fix what it lists. With only brand files or a description, call "init" with tokens (a DTCG object) and, for dark, modes. Add components with action "component" and rules with "guidelines" only when the person asks. Until there is a system, follow the look of the code or screens the design comes from; only when the person asks for a new look, choose one accent, one neutral ramp, and the scales above. Keep the values as custom properties on :root.`;
 
-/** How to use a system: said once, before the system's own text. */
 const USE = `The project has a design system, so a design is on-system or it is wrong:
 - In <head> link <link rel="stylesheet" href="ds/tokens.css"> and, when the design uses components, <link rel="stylesheet" href="ds/components.css"> (ds/tailwind.css is for Tailwind). The app attaches whichever of ds/tokens.css, ds/tailwind.css, and ds/components.css a page links; never copy token values into the page.
 - Every color, font, size, space, radius, shadow, and duration is var(--token) from the summary, never a literal. design_preview reports a value that is not a token with the nearest token to use. When the system lacks a value, use the nearest token and say so in your reply.
@@ -135,10 +113,6 @@ const USE = `The project has a design system, so a design is on-system or it is 
 The skeleton above, on a system (the names are this example's; use the summary's own):
 ${SYSTEM_EXAMPLE}`;
 
-/**
- * The design section: the instructions, and the project's design system when there is one, as bounded text that says
- * it is untrusted project data.
- */
 export function designGuide(host: PocketHost): PromptSection {
     return section("design_mode", (input) => {
         const cwd = input.env?.cwd ?? input.agent.cwd;

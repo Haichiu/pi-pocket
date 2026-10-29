@@ -1,48 +1,32 @@
-/**
- * One-tap fixes (`CheckFix` in `system-types.ts`): rewrite the literals of a page that equal a design-system token
- * exactly, so that they follow the token. A pure function of the page's HTML: no browser, no files.
- *
- * It is careful because the page is untrusted text and a wrong rewrite breaks a design. It reads the page with a small
- * scanner, not with patterns on the whole text: comments, scripts, strings, and `url()` are skipped; only `<style>`
- * elements and `style` attributes are edited; only a declaration of a property that the finding names; only a literal
- * that is a whole value token (a color, a `px` length, a whole `font-family` list); never a `var()` (nor its fallback),
- * a custom property, `@font-face`, or `@keyframes`. A rewrite happens only where the place is certain (see `certain`).
- */
+// The page is untrusted text and a wrong rewrite breaks a design, so the scanner skips comments, scripts, strings, and `url()`.
+// Only `<style>` elements and `style` attributes are edited, only a whole value token (a color, a `px` length, a `font-family` list) in a declaration the finding names,
+// and never a `var()`, a custom property, `@font-face`, or `@keyframes`.
 import { colorObjectCss, parseColor } from "./color.ts";
 import type { CheckFinding, CheckFix, DesignSystem } from "./system-types.ts";
 
 export interface FixResult {
-    /** The page, with the literals replaced by `var(--token)`. */
     content: string;
-    /** How many literals were replaced (one finding can have several places). */
     applied: number;
-    /** A reason for each finding that was not fixed, by the finding's id. */
     skipped: { id: string; reason: string }[];
 }
 
-/** A place that holds a declaration: a `<style>` element's text, or a `style` attribute's value. */
 interface Region {
     start: number;
     end: number;
-    /** For an attribute: the element's `data-pid`, and whether another element has it too. */
     pid?: string;
     inline: boolean;
 }
 
-/** One declaration in a region, with the offsets of its value in the page. */
 interface Declaration {
     property: string;
-    /** The value text with comments and the insides of strings and `url()` blanked, so that the scanner can read it. */
     masked: string;
     start: number;
     end: number;
-    /** The rule's selector, when it is one plain rule (not nested, not inline). */
     selector?: string;
     inline: boolean;
     pid?: string;
 }
 
-/** One place where a finding's literal stands. */
 interface Match {
     start: number;
     end: number;
@@ -55,7 +39,6 @@ const SKIPPED_AT_RULES =
 const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "noscript"]);
 const COLOR_FUNCTIONS = /^(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)$/i;
 
-/** The page's HTML as regions that hold CSS, and how many elements have each `data-pid`. */
 function regions(content: string): { regions: Region[]; pids: Map<string, number> } {
     const found: Region[] = [];
     const pids = new Map<string, number>();
@@ -88,7 +71,6 @@ function regions(content: string): { regions: Region[]; pids: Map<string, number
         const named = /^<([a-zA-Z][a-zA-Z0-9:-]*)/.exec(content.slice(open, open + 40));
 
         if (named === null) {
-            // `</tag>`, `<!doctype>`, `<?x?>`, or a lone `<`.
             const close = content.indexOf(">", open + 1);
 
             at = close === -1 ? content.length : close + 1;
@@ -101,7 +83,6 @@ function regions(content: string): { regions: Region[]; pids: Map<string, number
         let styleValue: { start: number; end: number } | undefined;
         let pid: string | undefined;
 
-        // The attributes, with quotes.
         for (;;) {
             while (index < content.length && /[\s/]/.test(content[index]!)) {
                 index++;
@@ -190,7 +171,6 @@ function regions(content: string): { regions: Region[]; pids: Map<string, number
     return { regions: found, pids };
 }
 
-/** The few entities that matter in a `style` attribute or a `data-pid`. */
 function decode(text: string): string {
     return text
         .replace(/&quot;/g, '"')
@@ -200,7 +180,7 @@ function decode(text: string): string {
         .replace(/&amp;/g, "&");
 }
 
-/** The same text with comments, the insides of strings, and unquoted `url()` blanked to `x` (or a space): same length. */
+/** The text with comments, the insides of strings, and unquoted `url()` blanked to `x` (or a space): the same length, so that offsets stay true. */
 function mask(text: string): string {
     const out = text.split("");
     let i = 0;
@@ -255,7 +235,6 @@ function mask(text: string): string {
     return out.join("");
 }
 
-/** The declarations of one region, with the selector of the rule that holds each. */
 function declarations(content: string, region: Region): Declaration[] {
     // In a `style` attribute a quote may be an entity: `&quot;` stands for `"` (same length, so that offsets stay true).
     const text = region.inline
@@ -345,7 +324,6 @@ function declarations(content: string, region: Region): Declaration[] {
     return out;
 }
 
-/** A selector without its extra spaces, for comparing the page's with a finding's. */
 function normalizeSelector(selector: string): string {
     return selector
         .replace(/\s+/g, " ")
@@ -353,7 +331,6 @@ function normalizeSelector(selector: string): string {
         .trim();
 }
 
-/** The top-level tokens of a value that can hold a color, a `px` length, or neither: with their offsets. */
 function tokens(masked: string): { text: string; start: number; end: number }[] {
     const out: { text: string; start: number; end: number }[] = [];
     let i = 0;
@@ -369,7 +346,6 @@ function tokens(masked: string): { text: string; start: number; end: number }[] 
 
         let end = i;
 
-        // A word, a number with a unit, or a hex color; a function runs to its closing parenthesis.
         while (end < masked.length && /[^\s,/(]/.test(masked[end]!)) {
             end++;
         }
@@ -387,7 +363,6 @@ function tokens(masked: string): { text: string; start: number; end: number }[] 
                 }
             }
 
-            // Only a color function is a value of its own; any other (`var()`, `calc()`, gradients) is left alone.
             if (COLOR_FUNCTIONS.test(name)) {
                 out.push({ text: masked.slice(i, end), start: i, end });
             }
@@ -410,7 +385,6 @@ const sameColor = (
     Math.abs(a.b - b.b) <= 0.5 / 255 &&
     Math.abs(a.a - b.a) <= 0.006;
 
-/** The token of a fix, checked against the system again: it exists and still holds the literal in the mode. */
 function verify(fix: CheckFix, system: DesignSystem): string | undefined {
     const token = system.tokens.find(
         (each) => each.name === fix.token && each.cssVar === fix.cssVar,
@@ -468,7 +442,6 @@ function verify(fix: CheckFix, system: DesignSystem): string | undefined {
     return undefined;
 }
 
-/** A font family list as names: lower case, no quotes. */
 function families(text: string): string[] {
     return decode(text)
         .split(",")
@@ -481,7 +454,6 @@ function families(text: string): string[] {
         .filter((name) => name !== "");
 }
 
-/** The places in `declaration` where the fix's literal stands. */
 function placesIn(
     content: string,
     declaration: Declaration,
@@ -490,7 +462,6 @@ function placesIn(
     const base = declaration.start;
 
     if (fix.kind === "font") {
-        // The whole value is the list, from its first to its last character that is not a space (read in the original).
         const original = content.slice(declaration.start, declaration.end);
         const trimmed = original.trim();
         const lead = original.length - original.trimStart().length;
@@ -526,13 +497,7 @@ function placesIn(
     return found;
 }
 
-/**
- * Replace the literals that equal a token exactly (see the file's comment). A finding is fixed where the place is
- * certain: an inline style of the one element that has the finding's `data-pid`; a rule whose selector is the finding's;
- * or the only place in the page that sets the property to the literal. Where several places match and none is certain,
- * a finding is fixed only when the findings that were given are at least as many as the places (they are the same
- * defect: fix them together); a single finding is skipped, and the reason says so.
- */
+// A finding is fixed where the place is certain: the inline style of the one element with the finding's `data-pid`, a rule with the finding's selector, or the only place that sets the property to the literal.
 export function applyExactFixes(
     content: string,
     findings: CheckFinding[],
@@ -585,7 +550,6 @@ export function applyExactFixes(
             }
         }
 
-        // A font list is a match only when the whole list equals the token's.
         const real =
             fix.kind === "font"
                 ? matches.filter(
@@ -604,7 +568,6 @@ export function applyExactFixes(
             continue;
         }
 
-        // A finding that stands for several elements (see `groupFindings`) knows all of them.
         const where = finding.elements ?? [{ selector: finding.selector, pid: finding.pid }];
         const owns = new Set(
             where

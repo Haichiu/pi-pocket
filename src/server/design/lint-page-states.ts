@@ -1,7 +1,4 @@
-/**
- * A part of the script that `lint.ts` runs inside a rendered design (see `lint-page.ts`): the first pass of the walk: the backdrop behind each element, and what can paint over text. The parts are one
- * function body, in this order: setup, values, literals, states, elements, checks, focus. Plain JavaScript in a string.
- */
+// Plain JavaScript in a string: one part of the page script of `lint-page.ts`. The parts form one function body, so they share its locals.
 export const PAGE_STATES = String.raw`// ---------------------------------------------------------------------------------------------------------------------
 // The walk.
 

@@ -1,7 +1,4 @@
-/**
- * A part of the script that `lint.ts` runs inside a rendered design (see `lint-page.ts`): values that the page wrote as literals in its own CSS (with a system). The parts are one
- * function body, in this order: setup, values, literals, states, elements, checks, focus. Plain JavaScript in a string.
- */
+// Plain JavaScript in a string: one part of the page script of `lint-page.ts`. The parts form one function body, so they share its locals.
 export const PAGE_LITERALS = String.raw`// ---------------------------------------------------------------------------------------------------------------------
 // Authored literals. With a system, a color, length, or font written as a literal in the page's own CSS is hard-coded
 // even when its value equals a token: it does not follow the token. The page's rules say which values were authored (a

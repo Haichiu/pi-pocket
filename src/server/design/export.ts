@@ -30,9 +30,7 @@ export type SaveDesignOptions = {
     cwd: string;
     viewport?: string | DesignViewport;
     path?: string;
-    /** Tweak values to apply before the export (as the Design canvas sets them). */
     tweaks?: TweakValues;
-    /** The color scheme and the `data-theme` of a design system's mode to draw the export in (see `modeFor`). */
     colorScheme?: "light" | "dark";
     theme?: string;
     /** For a deck's PNG: the slide (from 1, default 1), or `all` for a zip with a PNG of every slide. */
@@ -40,7 +38,6 @@ export type SaveDesignOptions = {
     signal?: AbortSignal;
 };
 
-/** What a slide option and tweaks add to an export. */
 export type ExportView = {
     tweaks?: TweakValues;
     slide?: number | "all";
@@ -174,7 +171,6 @@ export async function exportDesign(
         const slides: { image: Buffer; text: string }[] = [];
         let total = 0;
 
-        // Slide images are taken at twice the pixels, so a slide stays sharp when it is shown large.
         await page.setScale(size, pptxScale(slideSize));
 
         for (const [index, text] of texts.entries()) {

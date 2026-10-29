@@ -1,7 +1,4 @@
-/**
- * A part of the script that `lint.ts` runs inside a rendered design (see `lint-page.ts`): the walk over each element: colors, fonts, sizes, contrast, tap targets, overflow, and what needs a pid. The parts are one
- * function body, in this order: setup, values, literals, states, elements, checks, focus. Plain JavaScript in a string.
- */
+// Plain JavaScript in a string: one part of the page script of `lint-page.ts`. The parts form one function body, so they share its locals.
 export const PAGE_ELEMENTS = String.raw`for (const el of nodes) {
     const state = states.get(el);
 

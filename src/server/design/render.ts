@@ -17,11 +17,9 @@ export const VIEWPORTS = {
 
 export type ViewportName = keyof typeof VIEWPORTS;
 export type TweakValues = Record<string, string | number | boolean>;
-/** A step before a screenshot: hover, click, or focus the first element that a selector matches. */
 export type DesignAction = { type: "hover" | "click" | "focus"; selector: string };
 export type DesignViewport = { width: number; height: number };
 const LIMIT_MS = 90_000;
-/** How long a render may wait for a free slot, and how many may wait at once. */
 const QUEUE_MS = 300_000;
 const QUEUE_LENGTH = 16;
 // Keep the /a/ page policy and add a separate, stricter render-only policy. CSP policies intersect.
@@ -30,10 +28,6 @@ const ARTIFACT_CSP =
 const RENDER_CSP =
     "sandbox allow-scripts allow-modals; frame-src 'none'; worker-src 'none'; object-src 'none'; connect-src http: https:;";
 
-/**
- * A limit on what runs at once, with a first-in, first-out queue for the rest. A wait ends when its signal aborts, when
- * it has waited too long, or (at once) when the queue is full.
- */
 export class Slots {
     readonly #limit: number;
     readonly #queue: number;
@@ -55,7 +49,6 @@ export class Slots {
         return this.#waiting.length;
     }
 
-    /** Resolves with a function that gives the slot back (safe to call twice). */
     async acquire(signal?: AbortSignal): Promise<() => void> {
         signal?.throwIfAborted();
 
@@ -120,7 +113,6 @@ export class Slots {
     }
 }
 
-/** At most 2 renders at once; the rest wait their turn. */
 const renders = new Slots(2, QUEUE_LENGTH);
 
 /** The default slide size of a deck, as the canvas lays slides out. */
@@ -144,7 +136,6 @@ export function parseSlideSize(value: string): DesignViewport {
     return { width, height };
 }
 
-/** Tweak values from a tool or a route: up to 40 names (up to 80 characters), each a short string, a number, or a switch. */
 export function tweakValues(value: unknown): TweakValues {
     if (value === undefined || value === null) {
         return {};
@@ -182,7 +173,6 @@ export function tweakValues(value: unknown): TweakValues {
     return out;
 }
 
-/** Actions from a tool: up to 10 steps, each with a selector of up to 300 characters. */
 export function designActions(value: unknown): DesignAction[] {
     if (value === undefined || value === null) {
         return [];
@@ -470,10 +460,7 @@ export class DesignPage {
         return result.result?.value;
     }
 
-    /**
-     * Run a script in an isolated world: it sees the page's DOM and styles but none of the page's own scripts, so a page
-     * cannot change the objects that the script uses. The checks run this way.
-     */
+    // An isolated world: the script sees the page's DOM and styles but none of the page's own scripts, so a page cannot change the objects that the script uses.
     async evaluateIsolated(expression: string): Promise<Json> {
         const tree = await this.send("Page.getFrameTree");
         const world = await this.send("Page.createIsolatedWorld", {
@@ -497,10 +484,6 @@ export class DesignPage {
         return result.result?.value;
     }
 
-    /**
-     * Load the design's page (or another HTML page of its bundle) at a viewport. `scale` is the device pixel ratio the
-     * screenshots are taken at.
-     */
     async load(
         viewport: DesignViewport,
         options: { scale?: number; page?: string } = {},
@@ -529,7 +512,6 @@ export class DesignPage {
         await this.settle();
     }
 
-    /** The viewport and the pixel ratio of what the page paints, without a reload. */
     async setScale(viewport: DesignViewport, scale = 1): Promise<void> {
         await this.send("Emulation.setDeviceMetricsOverride", {
             ...viewport,
@@ -538,7 +520,6 @@ export class DesignPage {
         });
     }
 
-    /** Wait (bounded) for fonts and images, then two frames. */
     async settle(): Promise<void> {
         await this.evaluateIsolated(`Promise.race([
             Promise.all([document.fonts.ready, ...Array.from(document.images, image => image.decode().catch(() => {}))]),
@@ -546,16 +527,10 @@ export class DesignPage {
         ]).then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))`);
     }
 
-    /**
-     * Put the design in a state: a color scheme (`prefers-color-scheme`), a theme (`data-theme` on the root, when the
-     * page sets none), and tweak values as the Design canvas sets them (CSS custom properties, and a `pocket:tweak`
-     * event for every name).
-     */
     async applyView(
         view: {
             colorScheme?: "light" | "dark";
             theme?: string;
-            /** Replace a `data-theme` that the page has (a mode asked for by name). */
             forceTheme?: boolean;
             tweaks?: TweakValues;
         } = {},
@@ -598,10 +573,6 @@ export class DesignPage {
         await this.settle();
     }
 
-    /**
-     * Do what a person would before a screenshot: hover, click, or focus the first element that matches a selector.
-     * A step that cannot run (no match, no box) is reported in the answer and skipped.
-     */
     async act(actions: DesignAction[]): Promise<string[]> {
         const notes: string[] = [];
 
@@ -721,7 +692,6 @@ export class DesignPage {
         return parseSlideSize(typeof value === "string" ? value : "");
     }
 
-    /** A PDF. A page's pages are as wide as `viewport`, so its layout matches the screen; a deck's follow its slides. */
     async pdf(viewport?: DesignViewport): Promise<string> {
         const deck = await this.isDeck();
 
