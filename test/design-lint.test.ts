@@ -133,6 +133,20 @@ test("a token set holds one mode of the system, and modes pick by color scheme",
         named: true,
     });
     assert.throws(() => modeFor(system, "light", "sepia"), /no mode "sepia"/);
+    // A dark default mode: a light scheme shows the light mode (tokens.css's media query), so the check compares with it.
+    const night = {
+        ...system,
+        modes: ["dark", "day"],
+        schemes: { dark: "dark", day: "light" },
+    } as typeof system;
+
+    assert.deepEqual(modeFor(night, "light"), {
+        mode: "day",
+        scheme: "light",
+        theme: "day",
+        named: false,
+    });
+    assert.deepEqual(modeFor(night, "dark"), { mode: "dark", scheme: "dark", named: false });
     // A reference keeps its resolved value; a component token is not on a scale.
     const aliased = token("color.alias", "color", { colorSpace: "srgb", components: [1, 0, 0] });
 

@@ -163,7 +163,7 @@ export interface ModeView {
 
 /**
  * The mode of `system` that a check at `colorScheme` compares with. A named mode is validated and draws in its own
- * scheme (`system.schemes`); without a name, a dark scheme takes the `dark` mode when the system has one.
+ * scheme (`system.schemes`); without a name, the mode that `tokens.css` shows at that scheme.
  */
 export function modeFor(
     system: DesignSystem,
@@ -180,11 +180,22 @@ export function modeFor(
         return { mode, scheme: system.schemes?.[mode] ?? colorScheme, theme: mode, named: true };
     }
 
-    if (colorScheme === "dark" && system.modes.includes("dark") && system.modes[0] !== "dark") {
-        return { mode: "dark", scheme: "dark", theme: "dark", named: false };
+    // The mode that `tokens.css` shows at this scheme without a data-theme: the default mode in its own scheme, else the
+    // mode of its media query (named for the scheme, else the first of that scheme), as `preferred` in tokens-compile.ts.
+    const base = system.modes[0] ?? "light";
+    const other =
+        (system.schemes?.[base] ?? "light") === colorScheme
+            ? undefined
+            : (system.modes.find((each) => each !== base && each === colorScheme) ??
+              system.modes.find(
+                  (each) => each !== base && (system.schemes?.[each] ?? "light") === colorScheme,
+              ));
+
+    if (other !== undefined) {
+        return { mode: other, scheme: colorScheme, theme: other, named: false };
     }
 
-    return { mode: system.modes[0] ?? "light", scheme: colorScheme, named: false };
+    return { mode: base, scheme: colorScheme, named: false };
 }
 
 /** What the page script resolved for the system's tokens, put back into the token set. */
