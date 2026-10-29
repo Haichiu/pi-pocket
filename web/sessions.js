@@ -2174,8 +2174,20 @@ function AllSessions({ compact = false }) {
                 const toggle = still ? undefined : () => foldable && toggleGroup(group.key);
                 const rows = visibleRows(group, asking, allNeeds);
                 // Priority's header buttons: dismiss what failed, mark what finished read.
+                // Only the failures this person can deal with: a viewer cannot dismiss a failed subagent.
                 const failedRows =
-                    group.slot === "needs" ? group.rows.filter((row) => !row.session.waiting) : [];
+                    group.slot === "needs"
+                        ? group.rows.filter((row) => {
+                              const need = needOf(row.session);
+
+                              return (
+                                  need === "failed" ||
+                                  (need === "agents" &&
+                                      steers &&
+                                      (row.session.failedAgents ?? []).length > 0)
+                              );
+                          })
+                        : [];
                 const action =
                     group.slot === "needs" && failedRows.length > 1
                         ? {
