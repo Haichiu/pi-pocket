@@ -56,6 +56,12 @@ const INHERITED = new Set(["__proto__", "constructor", "prototype"]);
 const tokenName = (name: string): boolean =>
     TOKEN_NAME.test(name) && !name.split(".").some((part) => INHERITED.has(part));
 const KEY = /^[\w-]{8,64}$/;
+/** The compiled files a page links as `ds/…` (as the artifact tool attaches them). */
+const DESIGN_FILES = {
+    "ds/tokens.css": "css",
+    "ds/tailwind.css": "tailwind",
+    "ds/components.css": "components",
+} as const;
 
 /** The artifact the documentation page is published as: each publish adds a version of it. */
 export const DOCS_ID = "design-system-docs";
@@ -888,6 +894,23 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             }
 
             const content = result.content;
+            // The fix writes var(--token) for the system as it is now: the `ds/` files the version carries are a snapshot of
+            // when it was published, and may not define those tokens yet, so the new version gets the current ones.
+            const fresh = new Map<string, { asset: ArtifactAsset; bytes: Buffer }>();
+
+            for (const [name, key] of Object.entries(DESIGN_FILES)) {
+                const bytes = Buffer.from(system.compiled[key], "utf8");
+
+                fresh.set(name, {
+                    asset: {
+                        hash: createHash("sha256").update(bytes).digest("hex"),
+                        size: bytes.length,
+                        type: assetType(name),
+                    },
+                    bytes,
+                });
+            }
+
             const made = await request.commit(async (tx) => {
                 const items = await tx.doc(ArtifactsDoc, request.conversation.id);
                 const current = Object.hasOwn(items.items, id) ? items.items[id] : undefined;
@@ -910,10 +933,21 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
 
                 const next = current.versions.at(-1)!.version + 1;
                 const { inline: _inline, ...copy } = original;
+                const assets = { ...copy.assets };
+
+                for (const [name, each] of fresh) {
+                    if (Object.hasOwn(assets, name)) {
+                        await tx.doc(ArtifactAssetDoc, each.asset.hash, {
+                            base64: each.bytes.toString("base64"),
+                        });
+                        assets[name] = each.asset;
+                    }
+                }
 
                 // The version's record, assets and all, with a call id of its own that no real call matches; the page is new.
                 current.versions.push({
                     ...copy,
+                    ...(copy.assets === undefined ? {} : { assets }),
                     version: next,
                     callId,
                     size: Buffer.byteLength(content),
