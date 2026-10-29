@@ -393,7 +393,18 @@ export async function scanProject(
         radii: first.inferred.radii.length > 0,
         shadows: first.inferred.shadows > 0,
     };
-    const second = await scanInWorker(root, { evidence, have }, left);
+    let second: TokenScan;
+
+    try {
+        second = await scanInWorker(root, { evidence, have }, left);
+    } catch (error) {
+        // The first pass is whole: when the second one is stopped, the first is the answer.
+        if (error instanceof Error && error.message === STOPPED) {
+            return first;
+        }
+
+        throw error;
+    }
 
     second.inferred.sources.unshift(
         `Rendered: ${evidence.pages.map((each) => each.page).join(", ")} shown in a browser${evidence.pages.some((each) => each.dark !== undefined) ? ", in light and dark" : ""}; the files' own values come first.`,
