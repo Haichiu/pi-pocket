@@ -9,6 +9,7 @@ import { browserAvailable, setBrowserOpen } from "./browser.js";
 import { describeCall, describersRevision } from "./calls.js";
 import { DiffBlock } from "./diff.js";
 import { LinkedSessions } from "./linked-sessions.js";
+import { splitQuote } from "./quote-text.js";
 import { fromServer } from "./seen.js";
 import { defineItem, slotItems, slotKey } from "./slots.js";
 import { Highlighted, InlineArtifact } from "./rich.js";
@@ -470,7 +471,7 @@ function UserEntry({ entry, view, users }) {
                         ${
                             via
                                 ? html`<${FencedText} text=${body} />`
-                                : html`<${MentionedText} text=${skill ? skill[3] : body} />`
+                                : html`<${QuotedText} text=${skill ? skill[3] : body} />`
                         }
                     </div>`
                 }
@@ -511,6 +512,18 @@ function UserEntry({ entry, view, users }) {
             </div>
         </div>
     </div>`;
+}
+
+/** A message that opens with a quoted passage of Pi's reply: the passage in a quote block, then the words. */
+function QuotedText({ text }) {
+    const quote = splitQuote(text);
+
+    if (!quote) {
+        return html`<${MentionedText} text=${text} />`;
+    }
+
+    return html`<blockquote class="reply-quote" data-part="reply-quote">${quote.passage}</blockquote>
+        ${quote.rest && html`<${MentionedText} text=${quote.rest} />`}`;
 }
 
 function Collapsible({ text, limit = 600 }) {

@@ -34,6 +34,7 @@ import { Drawer, RailNav, ResizeHandle, SessionList, toSessions } from "./sessio
 // Loaded for what it does: it gives replies' Markdown the component for pages, images, and diffs in code blocks.
 import "./rich.js";
 import { takeShare } from "./share.js";
+import { QuoteReplyButton } from "./quote-reply.js";
 import { Sheets } from "./sheets.js";
 import { defineItem, slotItems } from "./slots.js";
 import { branchAvailable, headLabel } from "./sheets/branch.js";
@@ -575,6 +576,7 @@ function App() {
         <${Drawer} />
         <${PipHost} />
         <${Sheets} />
+        <${QuoteReplyButton} />
         <${LauncherHost} />
         <${Notices} />
     </div>`;
