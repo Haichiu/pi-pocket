@@ -17,8 +17,9 @@ export const MAX_TOKENS = 3000;
 export const MAX_COMPONENTS = 60;
 export const MAX_ROLES = 240;
 export const MAX_PALETTE = 480;
-const MAX_SPECIMENS = 120;
 export const MAX_STATES = 16;
+const MAX_SPECIMENS = 120;
+
 /** The most bytes of page: an artifact holds 2 MB, and the page keeps room under that. */
 export const MAX_PAGE = 1_800_000;
 
