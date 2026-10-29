@@ -143,6 +143,7 @@ Each is a `data-part` attribute. Some elements have two (`data-part="composer-bu
 | `prompt-head`, `author-mark`, `prompt-author`   | Its head: who sent it and when; their initials; their name                                                    |
 | `prompt-text`                                   | What it says (its skill chip, words, and files)                                                               |
 | `reply`                                         | Pi's answer                                                                                                   |
+| `reply-quote`                                   | The passage a reply quotes, at the top of a message (since 0.27.0)                                            |
 | `reply-actions`                                 | The row under an answer: react, discuss, pin, copy                                                            |
 | `activity`, `activity-head`, `activity-chevron` | A group of what Pi did, its head (what it did, how long), and the chevron that opens it                       |
 | `timeline`                                      | The open group's steps, on a rule                                                                             |
@@ -164,6 +165,7 @@ Each is a `data-part` attribute. Some elements have two (`data-part="composer-bu
 | `dock`                                    | What sits above the message box: the queue and the bars                                                                 |
 | `subagents-bar`                           | The subagents' bar                                                                                                      |
 | `message-box`                             | The box you type in, with its buttons                                                                                   |
+| `quote-strip`                             | Above the box: the passage a reply quotes, with a button to remove it (since 0.27.0)                                    |
 | `composer-tools`                          | The row of buttons in it                                                                                                |
 | `composer-button`                         | Each of its own buttons: Places, Attach, Plan, the mic, Steer and Queue, Stop, and an extension's button (since 0.19.0) |
 | `plan-chip`, `mode-switch`, `stop-button` | Plan, Steer and Queue, and Stop, each also a `composer-button`                                                          |
@@ -180,6 +182,8 @@ Each is a `data-part` attribute. Some elements have two (`data-part="composer-bu
 | `sheet`                              | A sheet: a bottom sheet on phones, a window on wide screens. `data-sheet` says which (`appearance`, `menu`, `model`, …; `ext` for an extension's) |
 | `sheet-head`, `sheet-body`           | Its title bar, and what it holds                                                                                                                  |
 | `menu`                               | The menu, on wide screens (it is the sheet `menu` on phones)                                                                                      |
+| `session-menu`                       | The right-click menu on a session row (since 0.27.0)                                                                                              |
+| `quote-reply-button`                 | The Reply button that shows over selected text (since 0.27.0)                                                                                     |
 | `launcher`                           | The launcher (Ctrl/⌘+K)                                                                                                                           |
 | `launcher-input`, `launcher-filters` | Its search field, and the search types under it                                                                                                   |
 | `launcher-group`, `launcher-row`     | A group's heading, and each result                                                                                                                |
