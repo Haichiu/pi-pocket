@@ -97,13 +97,16 @@ export function describeCall(call) {
             return {
                 icon: "?",
                 label: "Ask",
+                // A peek line's call has its short scalar arguments only (`peekArgs`), so no questions.
                 subject:
-                    questions.length === 1
-                        ? short(String(questions[0]?.question ?? ""), 120)
-                        : questions
-                              .map((each) => each?.header)
-                              .filter(Boolean)
-                              .join(" · "),
+                    questions.length === 0
+                        ? "the person"
+                        : questions.length === 1
+                          ? short(String(questions[0]?.question ?? ""), 120)
+                          : questions
+                                .map((each) => each?.header)
+                                .filter(Boolean)
+                                .join(" · "),
                 mono: false,
             };
         }
