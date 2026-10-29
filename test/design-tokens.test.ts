@@ -954,3 +954,16 @@ test("many missing references have a budget for typo suggestions, so a load stay
     assert.ok(missing.some((message) => message.includes("Did you mean")));
     assert.ok(missing.some((message) => !message.includes("Did you mean")));
 });
+
+test("a very long chain of references is a problem, not a stack overflow", () => {
+    const chain: Record<string, unknown> = { t4999: { $value: 1 } };
+
+    for (let i = 0; i < 4999; i++) {
+        chain[`t${i}`] = { $value: `{n.t${i + 1}}` };
+    }
+
+    assert.match(
+        errors(build({ n: { $type: "number", ...chain } }))[0]!,
+        /more than 200 references/,
+    );
+});

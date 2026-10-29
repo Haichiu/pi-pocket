@@ -131,6 +131,9 @@ class Report {
     }
 }
 
+/** The longest chain of references that is followed; a longer one is a problem, not a stack overflow. */
+const MAX_REFERENCE_CHAIN = 200;
+
 /** The edit distance of two strings, for "did you mean". */
 function distance(a: string, b: string): number {
     if (Math.abs(a.length - b.length) > 4) {
@@ -690,6 +693,14 @@ export function buildSystem(raw: RawSystem): DesignSystem {
                             `Reference cycle: ${[...turned, turned[0]!].join(" → ")}. Make one of them a real value.`,
                             source.file,
                             turned[0],
+                        );
+                    }
+
+                    if (stack.length >= MAX_REFERENCE_CHAIN) {
+                        return report.error(
+                            `A chain of more than ${MAX_REFERENCE_CHAIN} references is not resolved. Make one of them a real value.`,
+                            source.file,
+                            def.name,
                         );
                     }
 
