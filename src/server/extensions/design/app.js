@@ -1,6 +1,4 @@
-// The workspace of Design, made when the panel first opens (`index.js` loads this file then, and not at the app's start): the
-// designs' data, the actions on them, and the workspace itself. The parts that a person may never use (the docks, the
-// compare and variation views, the System view) load again when they are first needed (`workspace.js`).
+// The workspace of Design: `index.js` loads this file when the panel first opens, not at the app's start.
 import { openSheet, store as app } from "/store.js";
 import { createData, designsOf } from "./data.js";
 import { clampSize } from "./devices.js";
@@ -12,10 +10,7 @@ import { createWorkspace } from "./workspace.js";
 /** The most the message box takes (`insertText`). */
 const BOX_LIMIT = 90_000;
 
-/**
- * The workspace on `store` (made by `index.js`): `{ Workspace, data, systemData, stop }`. `shell.style(name)` loads a
- * stylesheet of the module and resolves when it applies.
- */
+/** `shell.style(name)` loads a stylesheet of the module and resolves when it applies. */
 export function createApp(pocket, store, shell) {
     const data = createData(pocket, store);
     const systemData = createSystemData(pocket, store, data);
@@ -36,9 +31,7 @@ export function createApp(pocket, store, shell) {
         /** The page's frame, for the parts that talk to it (the slide strip): `{ send, goto, supported }`, or null. */
         frame: { current: null },
         canEdit,
-        /** Whether the app is in a dark theme (kept in the store, so that what shows it draws again when it changes). */
         darkTheme: () => store.get().appDark,
-        /** Whether the page in the canvas is in a dark scheme: the backdrop a person chose, else the app's theme. */
         canvasDark: (state) =>
             state.backdrop === "dark" || (state.backdrop === "auto" && state.appDark),
         sizeClass: (state) => {
@@ -118,7 +111,6 @@ export function createApp(pocket, store, shell) {
             });
         },
         setView(view) {
-            // Variations fill the room: the side panel goes.
             store.set({
                 view,
                 mode: view === "canvas" ? store.get().mode : "view",
@@ -209,15 +201,12 @@ export function createApp(pocket, store, shell) {
     };
 
     Object.assign(env, {
-        /** Hide the conversation, so the panel has the whole width; or show it again. */
         toggleFocus() {
             store.set((s) => ({ focus: !s.focus }));
         },
-        /** The design the System view shows its edits on (the System view stays). */
         previewDesign(id) {
             store.set({ artifact: id, version: null, slide: 0 });
         },
-        /** Show the System view in place of the design. Its code loads, and its words are read, as it opens. */
         openSystem() {
             store.set({
                 view: "system",
@@ -230,14 +219,9 @@ export function createApp(pocket, store, shell) {
             });
             void systemData.load({ quiet: store.get().system.status === "ready" });
         },
-        /**
-         * Show a finding of the page check on the page: its pin, scrolled into view in the frame, and the room (the canvas)
-         * is brought to it too (`pocket-pin` in `canvas.js`).
-         */
         focusFinding(number) {
             store.set({ checkFocus: { number, at: Date.now() } });
         },
-        /** The open design's Check dock. */
         openCheck() {
             store.set({ view: "canvas", mode: "view", dock: "check", draft: null });
         },
@@ -245,7 +229,6 @@ export function createApp(pocket, store, shell) {
 
     const { Workspace } = createWorkspace(env);
 
-    // Pi published or changed something: the server's list (groups, kinds) is read again.
     let signature = "";
     let seen = null;
     let later = 0;

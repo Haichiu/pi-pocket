@@ -1,6 +1,3 @@
-/* The workspace of Design: the bars, the canvas, the docks, the picker. The System view has its own sheet, `system.css`, which loads
-   with it. */
-
 /*
  * Design: the canvas beside the chat. It uses the app's own tokens (--bg, --text, --muted, --accent, --line, --ok, --warn,
  * --err) and mixes the rest from them, so a theme that changes those changes the canvas with the app.
@@ -1334,11 +1331,6 @@ button.dsn-chip {
     }
 }
 
-/* ═══════════════════════════════════════════════════════════════
- * The System view: the design system as a place to work in
- * ═══════════════════════════════════════════════════════════════ */
-
-/* Focus mode: the conversation goes, and the panel has the whole width. */
 html[data-dsn-focus] .layout.paneling:has(.ext-panel[data-module="design"]) > .pane {
     display: none;
 }
@@ -1350,7 +1342,6 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
     border-left: 0;
 }
 
-/* What the picker says it is: a palette, and the system's name. */
 .dsn-list > li:has(> .dsy-pinned) {
     margin-bottom: 4px;
     padding-bottom: 6px;
@@ -1449,8 +1440,6 @@ button.dsy-chip:disabled {
     color: var(--err);
 }
 
-/* ─── The Check dock ───────────────────────────────────────── */
-
 .dsy-check-options {
     display: flex;
     flex-wrap: wrap;
@@ -1467,7 +1456,6 @@ button.dsy-chip:disabled {
     min-width: 0;
 }
 
-/* A long mode name ("High contrast") is cut with dots (its title has the whole name), never run into its icon. */
 .dsn-seg button > span {
     min-width: 0;
     overflow: hidden;
@@ -1610,7 +1598,6 @@ button.dsy-chip:disabled {
     background: var(--dsn-accent-soft);
 }
 
-/* The check's two buttons share a row, and on a narrow panel its options are icons: the findings keep the room. */
 .dsy-check-foot {
     flex-direction: row;
 }
@@ -1628,8 +1615,6 @@ button.dsy-chip:disabled {
 .dsn[data-size="narrow"] .dsy-check-options .dsn-seg button span {
     display: none;
 }
-
-/* ─── The findings on a phone: a bottom sheet, with the page above it ─── */
 
 .dsn-dock[data-sheet="true"] {
     height: var(--sheet, 62%);
@@ -1710,7 +1695,7 @@ button.dsy-pin-button[aria-pressed="true"] {
     }
 }
 
-/* Words for a screen reader only: always in the page, so that a change in them is read out. */
+/* Always in the page, so that a change in it is read out. */
 .dsy-sr {
     position: absolute;
     width: 1px;
@@ -1723,7 +1708,6 @@ button.dsy-pin-button[aria-pressed="true"] {
     white-space: nowrap;
 }
 
-/* The mode list gives way to the picker's name: it keeps what its longest word needs, and no more. */
 .dsy-modeselect {
     flex: 0 1 auto;
     min-width: 0;
@@ -1733,7 +1717,6 @@ button.dsy-pin-button[aria-pressed="true"] {
     width: 108px;
 }
 
-/* Where the keyboard is: a ring of two pixels on every control of the view and its dock, and it never hides under a neighbor. */
 .dsn-dock :focus-visible {
     outline: 2px solid var(--focus-ring, var(--accent));
     outline-offset: 1px;
@@ -1743,7 +1726,6 @@ button.dsy-pin-button[aria-pressed="true"] {
     outline-offset: -2px;
 }
 
-/* One tap for the findings that are exactly a token's value. */
 .dsy-fixbar {
     display: flex;
     flex-wrap: wrap;
@@ -1759,7 +1741,6 @@ button.dsy-pin-button[aria-pressed="true"] {
     flex: 1 1 160px;
 }
 
-/* The findings of a check on a phone, shut: one bar at the foot with the count by level and the one tap that fixes. */
 .dsn-dock[data-shut="true"] {
     height: auto;
     max-height: none;
@@ -1795,7 +1776,6 @@ button.dsy-pin-button[aria-pressed="true"] {
     gap: 6px;
 }
 
-/* The counts by level keep their words on one line; the bar gives way in the title ("10 findings"), not in them. */
 .dsy-check-bar-main .dsy-tag {
     flex: none;
     letter-spacing: 0;
@@ -1813,8 +1793,6 @@ button.dsy-pin-button[aria-pressed="true"] {
     transform: rotate(180deg);
     color: var(--muted);
 }
-
-/* ─── Accepted findings: a button on each finding, and a folded group below the list ─── */
 
 .dsy-finding-actions {
     display: flex;

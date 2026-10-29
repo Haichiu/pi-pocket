@@ -2,9 +2,7 @@
  * Design: a canvas beside the chat for interactive designs. It shows an HTML artifact in a frame at phone, tablet, and
  * desktop sizes, keeps its versions to compare and go back to, holds shared comments pinned to elements, edit and tweak
  * modes, a grid for variations, and a present mode for decks, and hands each change to Pi as a message for the person to
- * send. The agent's side (tools, prompt guide, export) is in `../design/`; this module is the workspace. The System view
- * (the project's design system: read, edit, check a design against it, publish, export) has its routes in
- * `design/system-routes.ts`.
+ * send. The agent's side (tools, prompt guide, export) is in `../design/`; this module is the workspace.
  */
 import { randomUUID } from "node:crypto";
 import { defineExtension } from "@earendil-works/pi-durable";
@@ -26,7 +24,7 @@ type DesignArtifact = ArtifactMeta & { group?: string; kind?: string };
 const MAX_COMMENT = 2000;
 const MAX_COMMENTS = 200;
 const MAX_ACCEPTED = 500;
-/** A finding's id: its rule and ten hex digits of where it is, and a count when the same one repeats (`contrast-1a2b3c4d5e-2`). */
+/** A finding's id: rule, ten hex digits, optional repeat count (`contrast-1a2b3c4d5e-2`). */
 const FINDING_ID = /^[a-z][a-z-]{0,40}-[0-9a-f]{10}(?:-\d{1,3})?$/;
 const MAX_ITEMS = 100;
 const MAX_KNOBS = 40;
@@ -422,8 +420,6 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
         steer,
     );
 
-    // Accept a finding of the Check for this design (a decision that the finding is fine as it is), by its stable id: it is
-    // everyone's, with who accepted it and when, and "undo" takes it back. The Check lists it apart and does not count it.
     web.conversationRoute(
         "POST",
         "c/:conversation/designs/:artifact/accepted",
@@ -469,7 +465,6 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
         steer,
     );
 
-    // Undo an accept: the finding is counted again.
     web.conversationRoute(
         "DELETE",
         "c/:conversation/designs/:artifact/accepted/:finding",
@@ -696,7 +691,6 @@ export default async function createDesign(host: PocketHost, web?: ExtensionWeb)
 
     // Export (`POST export`) is the agent side's; the file comes through core's download route.
     designRoutes(web, host);
-    // The System view: read and edit the design system, check a design against it, publish its docs, export it for code.
     systemRoutes(web, host);
 
     return extension;

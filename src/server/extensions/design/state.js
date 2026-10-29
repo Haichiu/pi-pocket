@@ -67,12 +67,10 @@ export function loadPrefs() {
     const saved = read(localStorage, PREFS) ?? {};
 
     return {
-        // Until the person picks a size, the canvas follows the panel: the phone's frame on a phone (`auto`).
         device: ["mobile", "tablet", "desktop", "slide", "custom"].includes(saved.device)
             ? saved.device
             : "auto",
         custom: saved.custom ?? { w: 800, h: 600 },
-        // `auto` follows the panel: the width of the room on a phone, the whole page elsewhere (`zoomOf` in `devices.js`).
         zoom:
             ["fit", "width", "auto"].includes(saved.zoom) || typeof saved.zoom === "number"
                 ? saved.zoom
@@ -164,7 +162,6 @@ export function initialState() {
         ...loadPrefs(),
         width: 0,
         conversation: null,
-        /** Focus mode: the conversation is hidden, and the panel has the whole width. */
         focus: false,
         ...sessionState(),
     };
@@ -181,9 +178,7 @@ export function systemState() {
         /** The mode the view shows: a mode's name, `both` (side by side), or null for the default one. */
         sysMode: null,
         sysSection: "colors",
-        /** The token whose editor is open. */
         sysOpen: null,
-        /** The groups the person folded, by id. */
         sysFolded: {},
         /** The long groups the person opened in full, by id. */
         sysAll: {},
@@ -195,7 +190,6 @@ export function systemState() {
         sysPane: "system",
         /** The last save: `idle`, `saving`, `failed` (with `error` and `problems`), `conflict`, or `saved` (with `note`). */
         save: { status: "idle", error: "", problems: [], note: "" },
-        /** Whether the guidelines are open for editing. */
         sysWriting: false,
         /** Custom properties the open design shows now: the unsaved edits and the mode in view. */
         previewVars: {},

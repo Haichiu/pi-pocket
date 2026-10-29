@@ -30,7 +30,6 @@ function fromOklab(l, a, b, alpha = 1) {
     };
 }
 
-/** OKLab of an sRGB color (0–255). */
 function toOklab({ r, g, b }) {
     const lr = decode(r / 255);
     const lg = decode(g / 255);
@@ -300,12 +299,10 @@ export function parseColor(input) {
 
 const hex2 = (value) => clamp(Math.round(value), 0, 255).toString(16).padStart(2, "0");
 
-/** `#rrggbb`, or `#rrggbbaa` when the color is not opaque. */
 export function toHex({ r, g, b, a = 1 }) {
     return `#${hex2(r)}${hex2(g)}${hex2(b)}${a < 1 ? hex2(a * 255) : ""}`;
 }
 
-/** The color as `oklch(0.72 0.12 260)`, with an alpha when it is not opaque. */
 export function toOklchText(color) {
     const { l, c, h } = toOklch(color);
     const round = (value, digits) => String(Math.round(value * 10 ** digits) / 10 ** digits);
@@ -314,11 +311,9 @@ export function toOklchText(color) {
     return `oklch(${round(l, 3)} ${round(c, 3)} ${round(h, 1)}${alpha})`;
 }
 
-/** The color as `rgb(r g b / a)`. */
 export const toRgbText = ({ r, g, b, a = 1 }) =>
     `rgb(${r} ${g} ${b}${a < 1 ? ` / ${Math.round(a * 100) / 100}` : ""})`;
 
-/** The CSS a swatch is painted with, from a DTCG value; an empty string when it cannot be read. */
 export function swatchCss(value) {
     const color = parseColor(value);
 
@@ -342,12 +337,10 @@ export function writeColor(color, like) {
     return toHex(color);
 }
 
-/** Relative luminance (WCAG 2.2) of an opaque color. */
 export function luminance({ r, g, b }) {
     return 0.2126 * decode(r / 255) + 0.7152 * decode(g / 255) + 0.0722 * decode(b / 255);
 }
 
-/** `top` painted over `bottom` (an opaque color). */
 export function over(top, bottom) {
     const a = top.a ?? 1;
 
