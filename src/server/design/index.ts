@@ -10,6 +10,7 @@ import {
     mergeNotJudged,
     modeFor,
     notJudgedText,
+    renderedMode,
     reportOf,
 } from "./lint.ts";
 import {
@@ -277,6 +278,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                 const scheme = picked?.scheme ?? colorScheme;
 
                 return withRender(bundle, host, context.abortSignal, async (page) => {
+                    let checked = picked?.mode;
                     const output: Output = [];
                     const reports: { view: string; report: CheckReport }[] = [];
 
@@ -303,10 +305,13 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                             }
 
                             try {
+                                // The mode the page really shows (a data-theme of its own), as the Check tab does.
+                                checked = await renderedMode(page, system, args.mode, picked?.mode);
+
                                 return await checkPage(page, system, {
                                     viewport: size,
                                     colorScheme: scheme,
-                                    mode: picked?.mode,
+                                    mode: checked,
                                 });
                             } catch (error) {
                                 notes.push(
@@ -338,7 +343,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                                 view,
                                 report: reportOf(
                                     mergeFindings(found),
-                                    { viewport: size, colorScheme: scheme, mode: picked?.mode },
+                                    { viewport: size, colorScheme: scheme, mode: checked },
                                     found[0]!.summary.elements,
                                     system === undefined,
                                     mergeNotJudged(found),
@@ -359,7 +364,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
 
                     output.push({
                         type: "text",
-                        text: renderNotes(page, checks ? reports : [], system, picked?.mode, notes),
+                        text: renderNotes(page, checks ? reports : [], system, checked, notes),
                     });
 
                     return {

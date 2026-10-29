@@ -1931,9 +1931,22 @@
     gap: 6px;
 }
 
+/* With three modes or more the bar is wider than a 320 px phone: the picker and the mode buttons give way, and More
+   stays in reach. */
+.dsn[data-size="narrow"] .dsy-bars .dsn-picker {
+    flex: 1 1 142px;
+    min-width: 104px;
+}
+
+.dsn[data-size="narrow"] .dsy-modes {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
 .dsn[data-size="narrow"] .dsy-modes button {
-    min-width: 32px;
-    padding: 0 6px;
+    flex: 1 1 auto;
+    min-width: 26px;
+    padding: 0 4px;
 }
 
 .dsy-search:focus-within {
