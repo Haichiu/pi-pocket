@@ -356,9 +356,14 @@ export class Mode {
     }
 
     /** A value with every reference in it replaced and its math done; composite values member by member. */
-    evaluate(raw: unknown, stack: string[]): unknown {
+    evaluate(raw: unknown, stack: string[], depth = 0): unknown {
+        // A value nested deeper than a token's needs (`[[[…]]]`) is not read.
+        if (depth > LIMITS.depth) {
+            return undefined;
+        }
+
         if (Array.isArray(raw)) {
-            const items = raw.slice(0, 16).map((item) => this.evaluate(item, stack));
+            const items = raw.slice(0, 16).map((item) => this.evaluate(item, stack, depth + 1));
 
             return items.some((item) => item === undefined) ? undefined : items;
         }
@@ -367,7 +372,7 @@ export class Mode {
             const out: Obj = {};
 
             for (const [name, member] of Object.entries(raw).slice(0, 24)) {
-                const value = this.evaluate(member, stack);
+                const value = this.evaluate(member, stack, depth + 1);
 
                 if (value === undefined) {
                     // A member that the engine has no use for (`textCase`) may refer to a token that is not there.
