@@ -31,6 +31,7 @@ import {
 } from "./peeks.js";
 import { closePip, openPip, PipHost, pipAvailable, togglePip } from "./pip.js";
 import { Drawer, RailNav, ResizeHandle, SessionList, toSessions } from "./sessions.js";
+import { SessionTabs } from "./session-tabs.js";
 // Loaded for what it does: it gives replies' Markdown the component for pages, images, and diffs in code blocks.
 import "./rich.js";
 import { takeShare } from "./share.js";
@@ -529,7 +530,7 @@ function App() {
                     : page
                       ? html`<${ExtensionPage} key=${`${state.page.module}:${state.page.id}`} />`
                       : inConversation
-                        ? html`<${Topbar} />
+                        ? html`${prefs().sessionTabs && html`<${SessionTabs} />`}<${Topbar} />
                     ${
                         peeking &&
                         tiles.length > 0 &&

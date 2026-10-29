@@ -172,6 +172,9 @@ export const PARTS = [
     "topbar",
     "topbar-title",
     "topbar-sub",
+    "tabstrip",
+    "tabstrip-tab",
+    "tabstrip-name",
     // The conversation
     "transcript",
     "prompt-row",

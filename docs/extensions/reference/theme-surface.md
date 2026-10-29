@@ -124,6 +124,7 @@ Each is a `data-part` attribute. Some elements have two (`data-part="composer-bu
 | `home-list`                                                         | The session list as a phone's home screen                                                                                                                                                      |
 | `pane`                                                              | The conversation's window (or the subagents board, or an extension's page)                                                                                                                     |
 | `topbar`, `topbar-title`, `topbar-sub`                              | The conversation's title bar, its title, and the line under it (folder, branch)                                                                                                                |
+| `tabstrip`, `tabstrip-tab`, `tabstrip-name`                         | The session tabs above the title bar: the strip, each tab (`data-state`, its `--folder` color), and its name                                                                                   |
 
 ### The conversation
 

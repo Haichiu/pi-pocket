@@ -61,6 +61,11 @@ const DEFAULTS = {
     sidebar: "open",
     /** The open sidebar's width, its borders, the rail, and the list's: a 254px list. */
     sidebarWidth: 312,
+    /**
+     * How sessions are switched: false for the sidebar's list; true for tabs, a strip of the numbered sessions above the
+     * conversation (`session-tabs.js`), which Appearance pairs with the folded sidebar.
+     */
+    sessionTabs: false,
     /** How the session list groups: "recent" (by day) or "folder". */
     group: "recent",
     /** Other sessions' live work as peek tiles beside the session (a strip on narrow screens). Off until turned on. */
@@ -614,6 +619,7 @@ export function apply() {
         tiling: p.tiling ? "on" : "off",
         motion: motionLevel(),
         rail: p.sidebar === "rail" ? "on" : "off",
+        sessionTabs: p.sessionTabs ? "on" : "off",
         density: p.density,
         width: WIDTHS[p.width] ? p.width : "comfortable",
     };

@@ -1108,6 +1108,124 @@ kbd {
     }
 }
 
+/* ─── Session tabs: a strip of the numbered sessions above the top bar (Appearance → Sidebar and tabs) ─── */
+
+.tabstrip {
+    flex: none;
+    display: flex;
+    gap: 5px;
+    padding: calc(env(safe-area-inset-top) + 6px) calc(var(--inset-r) + 20px) 0
+        calc(var(--inset-l) + 20px);
+    background: var(--bg);
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.tabstrip::-webkit-scrollbar {
+    display: none;
+}
+
+/* The strip has the safe area now: the bar under it does not take it again. */
+.tabstrip + .topbar {
+    min-height: calc(46px + 12px * var(--space-y));
+    padding-top: 0;
+}
+
+.tabstrip-tab {
+    position: relative;
+    flex: 1 0 40px;
+    min-height: 14px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    color: var(--muted);
+    transition: color var(--t-hover) var(--ease-out);
+}
+
+.tabstrip-tab.on {
+    color: var(--text);
+}
+
+/* The segment: a track, and its fill, which grows from the left to the open one. */
+.tabstrip-bar {
+    position: relative;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--hair-2);
+    transition: background-color var(--t-hover) var(--ease-out);
+}
+
+.tabstrip-bar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--folder, var(--accent));
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--t-in) var(--ease-out);
+}
+
+.tabstrip-tab.on .tabstrip-bar::after {
+    transform: scaleX(1);
+}
+
+@media (hover: hover) {
+    .tabstrip-tab:not(.on):hover {
+        color: var(--text);
+    }
+
+    .tabstrip-tab:not(.on):hover .tabstrip-bar {
+        background: color-mix(in srgb, var(--folder, var(--accent)) 40%, var(--hair-2));
+    }
+}
+
+/* Working: the track breathes; waiting for you: the warning color, as the rail's numbers show it. */
+.tabstrip-tab[data-state="working"]:not(.on) .tabstrip-bar {
+    animation: pulse 1.4s var(--ease-out) infinite;
+}
+
+.tabstrip-tab[data-state="waiting"] {
+    color: var(--warn);
+}
+
+.tabstrip-tab[data-state="waiting"] .tabstrip-bar {
+    background: var(--warn-line, var(--warn));
+}
+
+.tabstrip-tab[data-state="waiting"].on .tabstrip-bar::after {
+    background: var(--warn);
+}
+
+.tabstrip-name {
+    display: none;
+    padding: 6px 0 4px;
+    font-size: 12px;
+    line-height: 1.3;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tabstrip-tab[data-state="unread"] .tabstrip-name {
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* Names show where the strip has room: a phone shows the bars alone, and the top bar names the open session. */
+@media (min-width: 700px) {
+    .tabstrip {
+        gap: 8px;
+        padding-top: 10px;
+    }
+
+    .tabstrip-name {
+        display: block;
+    }
+}
+
 /* Its buttons: quiet, and lit in the accent while what they open is open. */
 .topbar .icon-button {
     width: 36px;
