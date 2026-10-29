@@ -191,7 +191,13 @@ test("a field under 16px is a warning on a phone, with the token to use", browse
     const phone = await check(page("", body), { viewport: "mobile" });
     const zoom = ofRule(phone, "input-zoom");
 
-    // An unstyled input has the size of the browser, not of the page: it is not judged.\n    assert.deepEqual(zoom.map((item) => item.pid).sort(), ["area", "inherit", "sel", "small"]);
+    // An unstyled input has the size of the browser, not of the page: it is not judged.
+    assert.deepEqual(zoom.map((item) => item.pid).sort(), ["area", "sel", "small"]);
+    assert.deepEqual(
+        onPid(phone, "input-zoom", "small")!.elements!.map((item) => item.pid),
+        ["small", "inherit"],
+        "a field with font: inherit is judged: it is in the finding of the other 14px field",
+    );
     assert.equal(zoom[0]!.level, "warning");
     assert.match(
         onPid(phone, "input-zoom", "small")!.message,
