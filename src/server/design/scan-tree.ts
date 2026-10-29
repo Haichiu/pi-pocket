@@ -170,13 +170,22 @@ export function assemble(
     renamed: Map<string, string>,
 ): Obj {
     const paths = new Set(entries.map((entry) => entry.path.join(".")));
+    // Each name that is the start of a longer one (`color.primary` of `color.primary.foreground`), found once.
+    const groups = new Set<string>();
+
+    for (const other of paths) {
+        for (let at = other.indexOf("."); at !== -1; at = other.indexOf(".", at + 1)) {
+            groups.add(other.slice(0, at));
+        }
+    }
+
     const root: Obj = {};
 
     for (const entry of entries) {
         const name = entry.path.join(".");
         let path = entry.path;
 
-        if ([...paths].some((other) => other.startsWith(`${name}.`))) {
+        if (groups.has(name)) {
             path = [...entry.path, paths.has(`${name}.default`) ? "base" : "default"];
             renamed.set(name, path.join("."));
         }

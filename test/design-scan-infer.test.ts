@@ -2182,3 +2182,11 @@ test("a theme object shared on 5 levels (30 keys each) is walked within a budget
 
     assert.equal(spawnSync(process.execPath, ["-"], { input, timeout: 9e3 }).status, 0);
 });
+
+test("10,000 custom properties are read in linear time (13 s before)", () => {
+    const css = `:root {\n${Array.from({ length: 10_000 }, (_, i) => `--a${i}: ${i}px;`).join("\n")}\n}`;
+    const started = Date.now();
+
+    scanTokens(project({ "a.css": css }));
+    assert.ok(Date.now() - started < 5000, `${Date.now() - started} ms`);
+});

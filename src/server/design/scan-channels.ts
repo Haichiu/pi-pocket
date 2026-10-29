@@ -75,9 +75,14 @@ export function resolveChannels(facts: Facts): void {
         by.get(variable.scope)?.set(variable.name, variable.value);
     }
 
+    // Built once: a copy for each property made the scan quadratic in the number of properties.
+    const lookups = {
+        default: by.get("default")!,
+        dark: new Map([...by.get("default")!, ...by.get("dark")!]),
+    };
+
     for (const variable of facts.vars) {
-        const values = by.get(variable.scope === "dark" ? "dark" : "default")!;
-        const lookup = new Map([...by.get("default")!, ...values]);
+        const lookup = lookups[variable.scope === "dark" ? "dark" : "default"];
 
         // The channels: `37 99 235`, `222.2 47.4% 11.2%`.
         const kind = facts.channels.get(variable.name);
