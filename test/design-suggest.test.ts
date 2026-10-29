@@ -209,7 +209,7 @@ test(
     browser,
     async () => {
         const system = loadDesignSystem(
-            join(import.meta.dirname, "fixtures", "design-system", "flagship"),
+            join(import.meta.dirname, "..", "docs", "examples", "design-system", "pocket"),
         )!;
         const assets = [
             { name: "ds/tokens.css", type: "text/css", bytes: Buffer.from(system.compiled.css) },

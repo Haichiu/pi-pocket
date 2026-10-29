@@ -1119,7 +1119,7 @@ test(
         const { BenchBrowser } = await import("./design-system-bench/lib/chromium.ts");
         const { checkCss } = await import("./design-system-bench/lib/css-check.ts");
         const flat = readFlat(
-            join(BENCH, "..", "fixtures", "design-system", "flagship", ".pi", "design"),
+            join(BENCH, "..", "..", "docs", "examples", "design-system", "pocket", ".pi", "design"),
         );
         const chromium = (await BenchBrowser.launch())!;
 

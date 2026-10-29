@@ -26,10 +26,7 @@ const ALL_PHASES = [...PHASES, "shots"] as const;
 
 export type Phase = (typeof ALL_PHASES)[number];
 
-const FLAGSHIP_CANDIDATES = [
-    "test/fixtures/design-system/flagship",
-    "docs/examples/design-system/pocket",
-];
+const FLAGSHIP_CANDIDATES = ["docs/examples/design-system/pocket"];
 
 export interface BenchOptions {
     out?: string;

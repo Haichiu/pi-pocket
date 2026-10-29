@@ -695,7 +695,7 @@ async function realpath(path: string): Promise<string> {
 
 test("design_preview and design_export take a mode of the system", browser, async () => {
     const flagship = loadDesignSystem(
-        join(import.meta.dirname, "fixtures", "design-system", "flagship"),
+        join(import.meta.dirname, "..", "docs", "examples", "design-system", "pocket"),
     )!;
 
     await publish({

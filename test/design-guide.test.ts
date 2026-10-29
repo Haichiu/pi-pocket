@@ -201,7 +201,7 @@ test("the file comes from the environment's folder when there is one", async () 
     assert.doesNotMatch(fromAgent, /the other folder's system/);
 });
 
-const FLAGSHIP = fileURLToPath(new URL("./fixtures/design-system/flagship", import.meta.url));
+const FLAGSHIP = fileURLToPath(new URL("../docs/examples/design-system/pocket", import.meta.url));
 
 function withSystem(): string {
     const dir = folder();

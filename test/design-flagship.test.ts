@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { contrastRatio, parseColor } from "../src/server/design/docsite-color.ts";
@@ -8,7 +6,6 @@ import type { DesignSystem, ResolvedToken } from "../src/server/design/system-ty
 import { loadSystem } from "./design-system-loader.ts";
 
 const EXAMPLE = fileURLToPath(new URL("../docs/examples/design-system/pocket", import.meta.url));
-const FIXTURE = fileURLToPath(new URL("./fixtures/design-system/flagship", import.meta.url));
 
 const system = (): DesignSystem => {
     const loaded = loadSystem(EXAMPLE);
@@ -208,33 +205,6 @@ test("every contrast pair passes in every mode, and text roles pass on every gro
                 `border.focus on ${bg} in ${mode}`,
             );
         }
-    }
-});
-
-/** Every file under a folder, relative, sorted. `dist/` is generated (test/design-dist.test.ts checks it), not a source. */
-function files(root: string, at = root): string[] {
-    return readdirSync(at, { withFileTypes: true })
-        .filter((entry) => entry.name !== "dist")
-        .flatMap((entry) =>
-            entry.isDirectory()
-                ? files(root, join(at, entry.name))
-                : [relative(root, join(at, entry.name))],
-        )
-        .sort();
-}
-
-test("the bench's copy of the flagship is the same files as the example", () => {
-    const names = files(EXAMPLE);
-
-    assert.ok(names.length >= 14, names.join(", "));
-    assert.deepEqual(files(FIXTURE), names);
-
-    for (const name of names) {
-        assert.equal(
-            readFileSync(join(FIXTURE, name), "utf8"),
-            readFileSync(join(EXAMPLE, name), "utf8"),
-            name,
-        );
     }
 });
 
