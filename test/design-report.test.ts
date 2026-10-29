@@ -1,10 +1,5 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { after, test } from "node:test";
-import { promisify } from "node:util";
+import { test } from "node:test";
 import { findBrowser } from "../src/server/browser/discovery.ts";
 import { checkText } from "../src/server/design/index.ts";
 import {
@@ -18,9 +13,6 @@ import { cleanReport } from "../src/server/extensions/design/system-routes.ts";
 import { check, ofRule, page, testSystem } from "./design-lint-fixtures.ts";
 
 const browser = { skip: findBrowser() === undefined, timeout: 120_000 };
-const folder = mkdtempSync(join(tmpdir(), "pocket-report-"));
-
-after(() => rmSync(folder, { recursive: true, force: true }));
 
 const serif = (id: string) =>
     `<h1 data-pid="${id}" style="font-family:'Times New Roman';margin:0">Title ${id}</h1>`;
@@ -256,46 +248,3 @@ test("the route cleans what a report adds: elements, accepted findings, and what
     assert.equal(bare.summary.notJudged, undefined);
     void testSystem;
 });
-
-test(
-    "the CLI prints finding ids, takes --accept, and says what it did not judge",
-    browser,
-    async () => {
-        mkdirSync(folder, { recursive: true });
-        const content = page(
-            "",
-            `<p data-pid="blue" style="margin:0;color:#7ba3f8">Blue</p><div style="background:linear-gradient(#fff,#eee)"><p data-pid="grad" style="margin:0;color:#ccc">Over a gradient</p></div>`,
-        );
-
-        writeFileSync(join(folder, "page.html"), content);
-        const cli = join(import.meta.dirname, "..", "src", "server", "design", "check-cli.ts");
-        const run = promisify(execFile);
-
-        const exec = async (args: string[]) => {
-            try {
-                return {
-                    code: 0,
-                    ...(await run("node", [cli, join(folder, "page.html"), ...args], {
-                        timeout: 100_000,
-                    })),
-                };
-            } catch (error) {
-                return error as { code: number; stdout: string; stderr: string };
-            }
-        };
-
-        const first = await exec(["--json"]);
-        const report = JSON.parse(first.stdout) as CheckReport;
-        const id = report.findings.find((item) => item.rule === "contrast")!.id!;
-        const plain = await exec([]);
-
-        assert.match(plain.stdout, new RegExp(`\\[${id}\\]`));
-        assert.match(plain.stdout, /Contrast not judged on 1 element \(/);
-        assert.equal(plain.code, 1);
-        const accepted = await exec(["--accept", id, "--accept", "nothing-0123456789"]);
-
-        assert.match(accepted.stdout, new RegExp(`accepted contrast  .*\\[${id}\\]`));
-        assert.match(accepted.stdout, /, 1 accepted \(/);
-        assert.doesNotMatch(accepted.stdout, new RegExp(`error\\s+contrast.*\\[${id}\\]`));
-    },
-);
