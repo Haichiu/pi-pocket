@@ -1,44 +1,62 @@
-export interface Rgba {
-    r: number;
-    g: number;
-    b: number;
-    a: number;
-}
+import {
+    encodeSrgb,
+    fromHsl as unitHsl,
+    luminance as unitLuminance,
+    NAMED_COLORS,
+    oklabOf,
+    oklabToLinear,
+    parseHex as unitHex,
+    type Rgba,
+} from "./color.ts";
+
+// Channels here run from 0 to 255, not from 0 to 1 as in color.ts.
+export type { Rgba };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-const NAMED: Record<string, string> = {
-    black: "#000000",
-    white: "#ffffff",
-    transparent: "#00000000",
-    red: "#ff0000",
-    green: "#008000",
-    blue: "#0000ff",
-    gray: "#808080",
-    grey: "#808080",
-    yellow: "#ffff00",
-    orange: "#ffa500",
-    purple: "#800080",
-    cyan: "#00ffff",
-    magenta: "#ff00ff",
-};
+const toBytes = (color: Rgba): Rgba => ({
+    r: color.r * 255,
+    g: color.g * 255,
+    b: color.b * 255,
+    a: color.a,
+});
+
+const toUnits = (color: Rgba): Rgba => ({
+    r: clamp(color.r, 0, 255) / 255,
+    g: clamp(color.g, 0, 255) / 255,
+    b: clamp(color.b, 0, 255) / 255,
+    a: color.a,
+});
+
+const NAMES = new Set([
+    "black",
+    "white",
+    "red",
+    "green",
+    "blue",
+    "gray",
+    "grey",
+    "yellow",
+    "orange",
+    "purple",
+    "cyan",
+    "magenta",
+]);
 
 function parseHex(text: string): Rgba | undefined {
-    const match = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(text);
+    const color = text.startsWith("#") ? unitHex(text.toLowerCase()) : undefined;
 
-    if (match === null) {
-        return undefined;
+    return color === undefined ? undefined : toBytes(color);
+}
+
+function parseName(text: string): Rgba | undefined {
+    const name = text.toLowerCase();
+
+    if (name === "transparent") {
+        return { r: 0, g: 0, b: 0, a: 0 };
     }
 
-    let digits = match[1]!;
-
-    if (digits.length <= 4) {
-        digits = [...digits].map((digit) => digit + digit).join("");
-    }
-
-    const byte = (at: number) => parseInt(digits.slice(at, at + 2), 16);
-
-    return { r: byte(0), g: byte(2), b: byte(4), a: digits.length === 8 ? byte(6) / 255 : 1 };
+    return NAMES.has(name) ? parseHex(NAMED_COLORS.get(name)!) : undefined;
 }
 
 function channel(text: string, scale: number): number | undefined {
@@ -60,32 +78,15 @@ function alphaOf(text: string | undefined): number {
     return clamp(channel(text, 1) ?? 1, 0, 1);
 }
 
-function fromHsl(h: number, s: number, l: number, a: number): Rgba {
-    const sat = clamp(s, 0, 100) / 100;
-    const light = clamp(l, 0, 100) / 100;
-    const hue = ((h % 360) + 360) % 360;
-    const k = (n: number) => (n + hue / 30) % 12;
-    const f = (n: number) =>
-        light - sat * Math.min(light, 1 - light) * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
-
-    return { r: f(0) * 255, g: f(8) * 255, b: f(4) * 255, a };
-}
+const fromHsl = (h: number, s: number, l: number, a: number): Rgba => ({
+    ...toBytes(unitHsl(h, s / 100, l / 100, 1)),
+    a,
+});
 
 function fromOklab(l: number, a: number, b: number, alpha: number): Rgba {
-    const lp = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-    const mp = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-    const sp = (l - 0.0894841775 * a - 1.291485548 * b) ** 3;
-    const lin = [
-        4.0767416621 * lp - 3.3077115913 * mp + 0.2309699292 * sp,
-        -1.2684380046 * lp + 2.6097574011 * mp - 0.3413193965 * sp,
-        -0.0041960863 * lp - 0.7034186147 * mp + 1.707614701 * sp,
-    ].map((v) => {
-        const c = clamp(v, 0, 1);
+    const channels = oklabToLinear(l, a, b).map((value) => encodeSrgb(clamp(value, 0, 1)) * 255);
 
-        return (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055) * 255;
-    });
-
-    return { r: lin[0]!, g: lin[1]!, b: lin[2]!, a: alpha };
+    return { r: channels[0]!, g: channels[1]!, b: channels[2]!, a: alpha };
 }
 
 function parseFunctional(text: string): Rgba | undefined {
@@ -147,7 +148,7 @@ export function parseColor(value: unknown): Rgba | undefined {
     if (typeof value === "string") {
         const text = value.trim();
 
-        return parseHex(text) ?? parseFunctional(text) ?? parseHex(NAMED[text.toLowerCase()] ?? "");
+        return parseHex(text) ?? parseFunctional(text) ?? parseName(text);
     }
 
     if (value !== null && typeof value === "object") {
@@ -225,15 +226,7 @@ export function over(color: Rgba, ground: Rgba): Rgba {
     };
 }
 
-export function luminance(color: Rgba): number {
-    const [r, g, b] = [color.r, color.g, color.b].map((value) => {
-        const unit = clamp(value, 0, 255) / 255;
-
-        return unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
-    });
-
-    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-}
+export const luminance = (color: Rgba): number => unitLuminance(toUnits(color));
 
 export function contrastRatio(foreground: Rgba, ground: Rgba): number {
     const base = ground.a < 1 ? over(ground, { r: 255, g: 255, b: 255, a: 1 }) : ground;
@@ -265,17 +258,7 @@ export function readableOn(color: Rgba): "#000000" | "#ffffff" {
 }
 
 export function toOklchText(color: Rgba): string {
-    const lin = [color.r, color.g, color.b].map((value) => {
-        const unit = clamp(value, 0, 255) / 255;
-
-        return unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
-    });
-    const l = Math.cbrt(0.4122214708 * lin[0]! + 0.5363325363 * lin[1]! + 0.0514459929 * lin[2]!);
-    const m = Math.cbrt(0.2119034982 * lin[0]! + 0.6806995451 * lin[1]! + 0.1073969566 * lin[2]!);
-    const s = Math.cbrt(0.0883024619 * lin[0]! + 0.2817188376 * lin[1]! + 0.6299787005 * lin[2]!);
-    const lightness = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
-    const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
-    const b = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+    const [lightness, a, b] = oklabOf(toUnits(color));
     const chroma = Math.hypot(a, b);
     const hue = chroma < 0.002 ? 0 : (Math.atan2(b, a) * 180) / Math.PI;
     const alpha = color.a < 0.999 ? ` / ${Math.round(color.a * 100)}%` : "";
