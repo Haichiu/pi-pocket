@@ -30,7 +30,7 @@ export type Reach =
     | { kind: "extension" | "theme"; commit: string; error: string };
 
 /** Raise it when the scan changes, so results kept from an older scan are made again. */
-export const SCAN_VERSION = 3;
+export const SCAN_VERSION = 4;
 
 /** The files the scan reads: code that runs. Other files are not downloaded. */
 export const SCAN_FILE = /\.(?:[cm]?[jt]s)$/i;
@@ -48,11 +48,20 @@ const HOME_FOLDER = "your home folder";
 const BEFORE_REGEX = /[(,=:[!&|?{};+\-*%<>~^]/;
 /** Words after which a `/` starts a regular expression, though they end in a letter. */
 const KEYWORD_BEFORE_REGEX =
-    /(?:^|[^\w$.])(?:return|typeof|void|delete|throw|case|in|of|new|else|do|yield|await)$/;
+    /(?:^|[^\w$])(return|typeof|void|delete|throw|case|in|of|new|else|do|yield|await)$/;
+
+function keywordBeforeRegex(code: string): boolean {
+    const end = code.trimEnd();
+    const keyword = KEYWORD_BEFORE_REGEX.exec(end.slice(-12))?.[1];
+
+    // Whitespace or a removed comment after a dot does not make a property name a keyword.
+    return keyword !== undefined && !end.slice(0, -keyword.length).trimEnd().endsWith(".");
+}
 
 /**
  * The code without its comments. Strings and regular expressions are kept as they are, so a `//` in an address is not
- * taken for a comment. Line breaks stay, so lines still count.
+ * taken for a comment. Line breaks stay, so lines still count. An ambiguous keyword/division line stays literal,
+ * including its possible comment, rather than hiding subsequent code.
  */
 export function stripComments(code: string): string {
     let out = "";
@@ -99,12 +108,7 @@ export function stripComments(code: string): string {
             continue;
         }
 
-        if (
-            char === "/" &&
-            (last === "" ||
-                BEFORE_REGEX.test(last) ||
-                KEYWORD_BEFORE_REGEX.test(out.trimEnd().slice(-12)))
-        ) {
+        if (char === "/" && (last === "" || BEFORE_REGEX.test(last) || keywordBeforeRegex(out))) {
             let stop = at + 1;
             let inClass = false;
 
@@ -123,6 +127,19 @@ export function stripComments(code: string): string {
             }
 
             if (code[stop] === "/") {
+                // A contextual identifier can precede division, not a regex. If its supposed closing slash
+                // starts a line comment, keep the rest of this line literally. This can over-report a comment,
+                // but must not turn a commented /* into a block comment that hides subsequent code.
+                if (code[stop + 1] === "/" && keywordBeforeRegex(out)) {
+                    const end = code.indexOf("\n", stop + 2);
+
+                    stop = end === -1 ? code.length : end;
+                    out += code.slice(at, stop);
+                    at = stop;
+                    last = "/";
+                    continue;
+                }
+
                 out += code.slice(at, stop + 1);
                 at = stop + 1;
                 last = "/";
