@@ -1,7 +1,7 @@
 // Style Dictionary sources and other token folders in the scan: files in several folders, in the classic form
 // (`value`, references with `.value`) and the DTCG form (`$value`), merged in source order, with brands and themes as modes.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -385,6 +385,10 @@ test("globs: **, *, ?, braces; a template, a long pattern, and many ** are refus
     globToRegExp("tokens/**/a/**/b/**/*.json")!.test(`tokens/${"x/".repeat(2000)}c.json`);
     assert.ok(Date.now() - started < 200);
 
+    // Many `*` against a long name do not backtrack (seconds before, under a millisecond now).
+    assert.equal(match(`${"a*".repeat(12)}b.json`, `${"a".repeat(30)}.json`), false);
+    assert.ok(Date.now() - started < 400, `${Date.now() - started} ms`);
+
     assert.deepEqual(
         sdConfigIn("", `{ "source": ["a/*.json"], "include": ["b/*.json"], "platforms": {} }`),
         { dir: "", include: ["b/*.json"], source: ["a/*.json"] },
@@ -698,4 +702,18 @@ test("hostile configs run in bounded time: thousands of `source: [`, templates w
         ["dark", "light"],
     );
     assert.ok(Date.now() - started < 3000, `${Date.now() - started} ms`);
+});
+
+test("a config's source glob does not lead out of the project: not by `../`, not by a folder link", () => {
+    const outside = project({
+        "private.json": { font: { family: { $type: "fontFamily", $value: "OUTSIDE_SENTINEL" } } },
+    });
+
+    for (const glob of ["../out/*.json", "external/*.json"]) {
+        const dir = project({ "app/config.json": { source: [glob], platforms: { css: {} } } });
+
+        symlinkSync(outside, join(dir, "out"));
+        symlinkSync(outside, join(dir, "app", "external"));
+        assert.ok(!scanReport(scanTokens(join(dir, "app"))).includes("OUTSIDE_SENTINEL"), glob);
+    }
 });

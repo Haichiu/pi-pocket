@@ -10,7 +10,15 @@ import {
     sdConfigsIn,
 } from "./scan-import-sd-config.ts";
 import { isObject } from "./scan-import-convert.ts";
-import { closeSync, constants, fstatSync, openSync, readdirSync, readSync } from "node:fs";
+import {
+    closeSync,
+    constants,
+    fstatSync,
+    lstatSync,
+    openSync,
+    readdirSync,
+    readSync,
+} from "node:fs";
 import { extname, join, relative, sep } from "node:path";
 
 /** Folders that hold other people's code or build output, not the project's own styles. */
@@ -164,9 +172,41 @@ function wanted(rel: string, name: string): boolean {
     return !name.endsWith(".d.ts");
 }
 
+/**
+ * Whether `dir` (a relative path with `/`) is a real folder inside `root`: no `..`, no absolute path, and no symlink on
+ * the way. A project's config names such folders, and it must not lead the scan out of the project.
+ */
+export function folderInside(root: string, dir: string): boolean {
+    let path = root;
+
+    for (const part of dir === "" ? [] : dir.split("/")) {
+        if (part === "" || part === "." || part === ".." || part.includes("\\")) {
+            return false;
+        }
+
+        path = join(path, part);
+
+        try {
+            const info = lstatSync(path);
+
+            if (info.isSymbolicLink() || !info.isDirectory()) {
+                return false;
+            }
+        } catch {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 /** The `.json` files under a Tokens Studio folder (three levels, a bounded number), added to `found`. */
 function studioSets(root: string, dir: string, depth: number, found: string[]): void {
     let entries;
+
+    if (!folderInside(root, dir)) {
+        return;
+    }
 
     try {
         entries = readdirSync(join(root, dir), { withFileTypes: true }).sort((a, b) =>

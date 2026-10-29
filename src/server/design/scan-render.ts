@@ -117,6 +117,9 @@ export async function renderEvidence(
     plan: RenderPlan,
     signal?: AbortSignal,
 ): Promise<RenderedEvidence> {
+    // A scan that was cancelled before it got here starts no browser.
+    signal?.throwIfAborted();
+
     const bundle = {
         meta: {},
         version: 1,
