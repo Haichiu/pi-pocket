@@ -25,7 +25,18 @@ import {
     USE_PROPERTY,
     USE_ROLE,
 } from "./lint-suggest.ts";
-import { PAGE_SCRIPT, type PageInput, type RawElement, type RawPage } from "./lint-page.ts";
+import { PAGE_SCRIPT, type PageInput, type RawPage } from "./lint-page.ts";
+import {
+    clip,
+    elementOf,
+    lengthsOf,
+    more,
+    num,
+    plural,
+    rgbaOf,
+    rgbOf,
+    tokenRef,
+} from "./lint-analyze-util.ts";
 import {
     type DesignAction,
     type DesignPage,
@@ -84,46 +95,6 @@ const nearestPassing = (
     use?: string,
 ) => passing(set, fg, back, needed, contrastOf, use);
 const SAME_LENGTH = 0.5;
-const MAX_TEXT = 300;
-
-const clip = (value: unknown, length = MAX_TEXT): string =>
-    typeof value === "string" ? value.slice(0, length) : "";
-const num = (value: unknown, fallback = 0): number =>
-    typeof value === "number" && Number.isFinite(value) ? value : fallback;
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
-const more = (count: number) => (count > 1 ? ` (and ${plural(count - 1, "more element")})` : "");
-
-function elementOf(raw: RawElement | undefined): {
-    selector: string;
-    pid?: string;
-    rect?: CheckFinding["rect"];
-} {
-    const rect = raw?.rect;
-
-    return {
-        selector: clip(raw?.selector, 500),
-        ...(typeof raw?.pid === "string" && raw.pid !== "" ? { pid: clip(raw.pid, 200) } : {}),
-        ...(rect === undefined
-            ? {}
-            : {
-                  rect: {
-                      x: num(rect.x),
-                      y: num(rect.y),
-                      width: num(rect.width),
-                      height: num(rect.height),
-                  },
-              }),
-    };
-}
-
-const rgbaOf = (value: unknown): RgbaTuple | undefined =>
-    Array.isArray(value) && value.length === 4 && value.every((item) => Number.isFinite(item))
-        ? [value[0], value[1], value[2], value[3]]
-        : undefined;
-const rgbOf = (value: unknown): [number, number, number] | undefined =>
-    Array.isArray(value) && value.length >= 3 && value.slice(0, 3).every(Number.isFinite)
-        ? [value[0], value[1], value[2]]
-        : undefined;
 
 interface ModeView {
     mode: string;
@@ -190,14 +161,6 @@ const LENGTH_PROPERTIES: Record<string, string[]> = {
         "border-bottom-left-radius",
     ],
 };
-
-const lengthsOf = (set: TokenSet, kind: LengthKind) =>
-    set.lengths.filter(
-        (token): token is typeof token & { px: number } =>
-            token.kind === kind && token.px !== undefined,
-    );
-
-const tokenRef = (token: { cssVar: string }) => `var(${token.cssVar})`;
 
 function suggestFont(set: TokenSet, list: string) {
     const wanted = familyList(list).filter(isGenericFamily).at(-1);
