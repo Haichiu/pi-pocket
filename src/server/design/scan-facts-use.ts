@@ -1,7 +1,7 @@
 import { colorsIn, commaParts, type Decl, isDarkSelector, parts, px } from "./scan-parse.ts";
 import { nameScore, words } from "./scan-colors.ts";
 import { addVar, bump, type ColorFact, emptyKinds, type Facts, type Kinds } from "./scan-facts.ts";
-import { noteChannels } from "./scan-channels.ts";
+import { noteChannels } from "./scan-variables.ts";
 
 const COLOR_PROPERTY: [RegExp, "bg" | "text" | "border" | "fill" | "shadow"][] = [
     [

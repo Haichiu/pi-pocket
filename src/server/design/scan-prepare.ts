@@ -1,10 +1,9 @@
 import { commaParts, px } from "./scan-parse.ts";
 import { luminance, mixColors, parseColor, type Rgba, toHex } from "./color.ts";
-import { nameScore, words } from "./scan-colors.ts";
+import { kebab, nameScore, words } from "./scan-colors.ts";
 import { type Category, type Facts, type Kinds } from "./scan-facts.ts";
 import { colorFact, ingest } from "./scan-facts-use.ts";
 import { TAILWIND_3_COLORS, TAILWIND_4_COLORS } from "./scan-tailwind.ts";
-import { kebab } from "./scan-util.ts";
 import { channelColor, evalMath, follow, type Variable, variables } from "./scan-variables.ts";
 import { categorize } from "./scan-categorize.ts";
 

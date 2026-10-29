@@ -1,8 +1,7 @@
-import { words } from "./scan-colors.ts";
+import { type Obj, slug, words } from "./scan-colors.ts";
 import { type Category } from "./scan-facts.ts";
 import { stackOf } from "./scan-facts-use.ts";
 import { bezier, shadowValue } from "./scan-scales.ts";
-import { type Obj, slug } from "./scan-util.ts";
 import { type Variable } from "./scan-variables.ts";
 import { GRADIENT, LENGTH } from "./scan-categorize.ts";
 

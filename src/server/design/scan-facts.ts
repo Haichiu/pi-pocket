@@ -1,6 +1,6 @@
 import { type Scope } from "./scan-parse.ts";
 import { type Imported } from "./scan-import.ts";
-import { noteChannels } from "./scan-channels.ts";
+import { noteChannels } from "./scan-variables.ts";
 import type { Skipped } from "./scan-files.ts";
 
 const w = (text: string) => text.split(" ");

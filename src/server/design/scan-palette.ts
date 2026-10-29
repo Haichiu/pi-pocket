@@ -3,18 +3,23 @@ import {
     type ColorEntry,
     distance,
     entryOf,
+    hexOf,
+    kebab,
     nearColors,
+    normalizeColor,
+    type Obj,
     paletteName,
     ROLE_PATHS,
-    type RoleChoice,
     type RoleName,
+    slug,
+    vkey,
+    w,
 } from "./scan-colors.ts";
 import { type Classified } from "./scan-prepare.ts";
 import { topBy } from "./scan-scales.ts";
-import { hexOf, kebab, normalizeColor, type Obj, slug, vkey, w } from "./scan-util.ts";
 import { type Variable } from "./scan-variables.ts";
 import { pathOf } from "./scan-tree.ts";
-import { type ColorRoles, type InferContext } from "./scan-roles.ts";
+import { type ColorRoles, type InferContext, type RoleChoice } from "./scan-roles.ts";
 
 export function paletteTokens(context: InferContext, roles: ColorRoles): void {
     const { facts, classified, alt, result, book, aliasOf, uses } = context;

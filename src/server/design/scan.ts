@@ -11,7 +11,7 @@ import {
     renderProject,
 } from "./scan-render.ts";
 import { ingestStyles } from "./scan-facts-use.ts";
-import { resolveChannels } from "./scan-channels.ts";
+import { resolveChannels } from "./scan-variables.ts";
 import { LIMITS, collectFiles, readHead, type Skipped } from "./scan-files.ts";
 import { colorsIn } from "./scan-parse.ts";
 import { type Facts, newFacts } from "./scan-facts.ts";

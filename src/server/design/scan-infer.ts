@@ -1,5 +1,5 @@
 import { px } from "./scan-parse.ts";
-import { type Category, type Facts } from "./scan-facts.ts";
+import type { Category, Facts } from "./scan-facts.ts";
 import {
     Book,
     breakpointScale,
@@ -12,12 +12,11 @@ import {
     spacingScale,
 } from "./scan-scales.ts";
 import { finishImports } from "./scan-import.ts";
-import { reviewScales } from "./scan-review.ts";
 import { buildSystem } from "./tokens-model.ts";
 import { chooseColorRoles, type InferContext } from "./scan-roles.ts";
 import { paletteTokens } from "./scan-palette.ts";
-import { kebab, type Obj, slug, vkey } from "./scan-util.ts";
-import { type Variable } from "./scan-variables.ts";
+import { kebab, type Obj, slug, vkey } from "./scan-colors.ts";
+import type { Variable } from "./scan-variables.ts";
 import { assemble, dropTypes, hoistTypes, nameOf, nodeFor, pathOf, rewrite } from "./scan-tree.ts";
 import { pageIsDark, prepare, resolveDeferred } from "./scan-prepare.ts";
 
@@ -281,4 +280,43 @@ function remove(tree: Obj, path: string[]): void {
 
         delete chain[at - 1]![path[at - 1]!];
     }
+}
+
+const THIN = { values: 3, uses: 4 } as const;
+
+const total = (map: Map<unknown, number | { count: number }>): number =>
+    [...map.values()].reduce<number>(
+        (sum, value) => sum + (typeof value === "number" ? value : value.count),
+        0,
+    );
+
+export function reviewScales(facts: Facts, explicit: Set<Category>, result: Inferred): string[] {
+    const lines: string[] = [];
+    const thin = (distinct: number, uses: number) => distinct < THIN.values || uses < THIN.uses;
+
+    const guess = (category: Category, label: string, distinct: number, uses: number) => {
+        if (!explicit.has(category) && distinct > 0 && thin(distinct, uses)) {
+            lines.push(
+                `${label} (guessed from use: ${distinct} value${distinct === 1 ? "" : "s"}, ${uses} use${uses === 1 ? "" : "s"})`,
+            );
+        }
+    };
+
+    guess("text", "type scale", result.typeScale.sizes.length, total(facts.sizes));
+    guess("space", "spacing", result.spacing.steps.length, total(facts.spacing));
+    guess("radius", "radii", result.radii.length, total(facts.radii));
+    guess("shadow", "shadows", result.shadows, total(facts.shadows));
+    guess("font", "fonts", Object.keys(result.fonts).length, total(facts.fonts));
+
+    // Spacing values that fit no step of the scale are left out of it: a person decides what to do with them.
+    if (result.spacing.off.length > 0) {
+        lines.push(
+            `spacing (${result.spacing.off.length} value${result.spacing.off.length === 1 ? "" : "s"} fit no step of the ${result.spacing.base ?? 4}px grid: ${result.spacing.off
+                .slice(0, 6)
+                .map((size) => `${size}px`)
+                .join(", ")}${result.spacing.off.length > 6 ? ", …" : ""})`,
+        );
+    }
+
+    return lines;
 }
