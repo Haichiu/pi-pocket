@@ -30,7 +30,7 @@ export type Reach =
     | { kind: "extension" | "theme"; commit: string; error: string };
 
 /** Raise it when the scan changes, so results kept from an older scan are made again. */
-export const SCAN_VERSION = 1;
+export const SCAN_VERSION = 2;
 
 /** The files the scan reads: code that runs. Other files are not downloaded. */
 export const SCAN_FILE = /\.(?:[cm]?[jt]s)$/i;
@@ -46,6 +46,9 @@ const HOME_FOLDER = "your home folder";
 
 /** What can come before a `/` that starts a regular expression and not a division. */
 const BEFORE_REGEX = /[(,=:[!&|?{};+\-*%<>~^]/;
+/** Words after which a `/` starts a regular expression, though they end in a letter. */
+const KEYWORD_BEFORE_REGEX =
+    /(?:^|[^\w$.])(?:return|typeof|void|delete|throw|case|in|of|new|else|do|yield|await)$/;
 
 /**
  * The code without its comments. Strings and regular expressions are kept as they are, so a `//` in an address is not
@@ -96,7 +99,12 @@ export function stripComments(code: string): string {
             continue;
         }
 
-        if (char === "/" && (last === "" || BEFORE_REGEX.test(last))) {
+        if (
+            char === "/" &&
+            (last === "" ||
+                BEFORE_REGEX.test(last) ||
+                KEYWORD_BEFORE_REGEX.test(out.trimEnd().slice(-12)))
+        ) {
             let stop = at + 1;
             let inClass = false;
 
