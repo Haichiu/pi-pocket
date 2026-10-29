@@ -9,6 +9,7 @@
  * Everything it reads is untrusted data and reaches Pi fenced.
  */
 import { lstatSync, realpathSync } from "node:fs";
+import { Worker } from "node:worker_threads";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
 import { expandSassFiles } from "./scan-sass-eval.ts";
@@ -323,6 +324,42 @@ export function scanTokens(root: string, rendered?: Rendered): TokenScan {
     };
 }
 
+/** The most time and heap the static scan may take: it runs in a worker, which is stopped when it passes them. */
+const WORKER = { ms: 20_000, heapMb: 256 };
+const STOPPED =
+    "The scan stopped: it used too much time or memory. Scan a smaller folder with path.";
+
+/** `scanTokens` in a worker thread, so that the server's event loop goes on; stopped after `ms` or past the heap limit. */
+function scanInWorker(
+    root: string,
+    rendered: Rendered | undefined,
+    ms: number,
+): Promise<TokenScan> {
+    return new Promise((resolve, reject) => {
+        const worker = new Worker(new URL("./scan-worker.ts", import.meta.url), {
+            workerData: { root, rendered },
+            resourceLimits: { maxOldGenerationSizeMb: WORKER.heapMb },
+        });
+        const timer = setTimeout(
+            () => {
+                reject(new Error(STOPPED));
+                void worker.terminate();
+            },
+            Math.max(0, ms),
+        );
+
+        worker.once("message", (scan: TokenScan) => resolve(scan));
+        worker.once("error", (error: Error & { code?: string }) =>
+            reject(error.code === "ERR_WORKER_OUT_OF_MEMORY" ? new Error(STOPPED) : error),
+        );
+        // The first of these settles the promise: a worker that ends without a scan was stopped.
+        worker.once("exit", () => {
+            clearTimeout(timer);
+            reject(new Error(STOPPED));
+        });
+    });
+}
+
 /**
  * The scan with the project's pages shown in a browser when the files leave something out: the static scan first, then, when
  * the project has an HTML page (or a built output), the page as the browser computed it, in light and in dark, read after
@@ -332,7 +369,12 @@ export async function scanProject(
     root: string,
     options: { render?: boolean; signal?: AbortSignal } = {},
 ): Promise<TokenScan> {
-    const first = scanTokens(root);
+    // Both static passes share one time limit (PI_SCAN_TIME_MS sets it, for the tests); the browser is not counted.
+    let left = Number(process.env.PI_SCAN_TIME_MS) || WORKER.ms;
+    const started = Date.now();
+    const first = await scanInWorker(root, undefined, left);
+
+    left -= Date.now() - started;
 
     if (options.render === false || process.env.PI_SCAN_RENDER === "0") {
         return first;
@@ -351,7 +393,7 @@ export async function scanProject(
         radii: first.inferred.radii.length > 0,
         shadows: first.inferred.shadows > 0,
     };
-    const second = scanTokens(root, { evidence, have });
+    const second = await scanInWorker(root, { evidence, have }, left);
 
     second.inferred.sources.unshift(
         `Rendered: ${evidence.pages.map((each) => each.page).join(", ")} shown in a browser${evidence.pages.some((each) => each.dark !== undefined) ? ", in light and dark" : ""}; the files' own values come first.`,
