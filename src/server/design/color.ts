@@ -60,9 +60,11 @@ const D50_WHITE = [0.3457 / 0.3585, 1, (1 - 0.3457 - 0.3585) / 0.3585] as const;
 const decodeSrgb = (v: number) =>
     Math.sign(v) *
     (Math.abs(v) <= 0.04045 ? Math.abs(v) / 12.92 : ((Math.abs(v) + 0.055) / 1.055) ** 2.4);
-const encodeSrgb = (v: number) =>
+
+export const encodeSrgb = (v: number) =>
     Math.sign(v) *
     (Math.abs(v) <= 0.0031308 ? 12.92 * Math.abs(v) : 1.055 * Math.abs(v) ** (1 / 2.4) - 0.055);
+
 const decodeA98 = (v: number) => Math.sign(v) * Math.abs(v) ** (563 / 256);
 const ALPHA2020 = 1.09929682680944;
 const BETA2020 = 0.018053968510807;
@@ -85,19 +87,20 @@ const fromXyz = (xyz: readonly [number, number, number], a: number): Rgba =>
     fromLinear(multiply(XYZ_TO_SRGB, xyz), a);
 
 // Björn Ottosson's matrices.
-export function fromOklab(l: number, a: number, b: number, alpha: number): Rgba {
+export function oklabToLinear(l: number, a: number, b: number): [number, number, number] {
     const lp = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3;
     const mp = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3;
     const sp = (l - 0.0894841775 * a - 1.291485548 * b) ** 3;
 
-    return fromLinear(
-        [
-            4.0767416621 * lp - 3.3077115913 * mp + 0.2309699292 * sp,
-            -1.2684380046 * lp + 2.6097574011 * mp - 0.3413193965 * sp,
-            -0.0041960863 * lp - 0.7034186147 * mp + 1.707614701 * sp,
-        ],
-        alpha,
-    );
+    return [
+        4.0767416621 * lp - 3.3077115913 * mp + 0.2309699292 * sp,
+        -1.2684380046 * lp + 2.6097574011 * mp - 0.3413193965 * sp,
+        -0.0041960863 * lp - 0.7034186147 * mp + 1.707614701 * sp,
+    ];
+}
+
+export function fromOklab(l: number, a: number, b: number, alpha: number): Rgba {
+    return fromLinear(oklabToLinear(l, a, b), alpha);
 }
 
 function fromLab(l: number, a: number, b: number, alpha: number): Rgba {
@@ -116,7 +119,7 @@ function fromLab(l: number, a: number, b: number, alpha: number): Rgba {
     return fromXyz(multiply(D50_TO_D65, xyz50), alpha);
 }
 
-function fromHsl(h: number, s: number, l: number, alpha: number): Rgba {
+export function fromHsl(h: number, s: number, l: number, alpha: number): Rgba {
     const hue = (((h % 360) + 360) % 360) / 30;
     const sat = clamp(s);
     const light = clamp(l);
@@ -230,7 +233,7 @@ function percentage(token: string): number | undefined {
     return value === undefined ? undefined : value / 100;
 }
 
-function parseHex(text: string): Rgba | undefined {
+export function parseHex(text: string): Rgba | undefined {
     const digits = text.slice(1);
 
     if (!/^[0-9a-f]+$/.test(digits) || ![3, 4, 6, 8].includes(digits.length)) {
@@ -446,16 +449,23 @@ export function toOklab(color: Rgba): { l: number; a: number; b: number } {
     return { l, a: c * Math.cos(rad), b: c * Math.sin(rad) };
 }
 
-export function toOklch(color: Rgba): { l: number; c: number; h: number } {
+export function oklabOf(color: Rgba): [number, number, number] {
     const r = decodeSrgb(color.r);
     const g = decodeSrgb(color.g);
     const b = decodeSrgb(color.b);
     const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
     const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
     const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
-    const lightness = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
-    const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
-    const bb = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+
+    return [
+        0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+        1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+        0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+    ];
+}
+
+export function toOklch(color: Rgba): { l: number; c: number; h: number } {
+    const [lightness, a, bb] = oklabOf(color);
     const chroma = Math.hypot(a, bb);
     const hue = chroma < 0.0004 ? 0 : ((((Math.atan2(bb, a) * 180) / Math.PI) % 360) + 360) % 360;
 

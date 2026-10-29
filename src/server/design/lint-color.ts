@@ -1,31 +1,13 @@
-import { colorObjectCss, contrastRatio, toHex } from "./color.ts";
+import { colorObjectCss, contrastRatio, oklabOf, toHex } from "./color.ts";
 import type { DesignSystem, ModeValue, ResolvedToken } from "./system-types.ts";
 
 export type RgbaTuple = [number, number, number, number];
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
-/** sRGB (0 to 255) to OKLab, by Björn Ottosson's matrices. */
-export function toOklab(red: number, green: number, blue: number): [number, number, number] {
-    const linear = (channel: number) => {
-        const value = channel / 255;
-
-        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-    };
-
-    const r = linear(red);
-    const g = linear(green);
-    const b = linear(blue);
-    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
-    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
-    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
-
-    return [
-        0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
-        1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
-        0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
-    ];
-}
+/** sRGB channels from 0 to 255 to OKLab. */
+export const toOklab = (red: number, green: number, blue: number): [number, number, number] =>
+    oklabOf({ r: red / 255, g: green / 255, b: blue / 255, a: 1 });
 
 // The OKLab distance times 100: about 1 is the smallest step a person sees, 0.4 is one 8-bit step. The alpha difference in percent is added.
 export function colorDistance(a: RgbaTuple, b: RgbaTuple): number {
