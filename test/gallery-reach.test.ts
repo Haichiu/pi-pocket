@@ -236,6 +236,17 @@ test("a regular expression after a keyword does not hide the code after it", () 
     }
 });
 
+test("division after contextual identifiers or spaced property keywords keeps later calls", () => {
+    for (const expression of ["of", "yield", "await", "a. return", `a.${" ".repeat(24)}return`]) {
+        const scanned = scanCode(
+            `${expression} / 2 // /*\nspawn("sh"); fetch("https://risk.example.net/x");\n// */`,
+        );
+
+        assert.deepEqual(scanned.network, ["risk.example.net"], expression);
+        assert.deepEqual(scanned.programs, ["sh"], expression);
+    }
+});
+
 test("the scan of several files is one scan of their code", () => {
     const scanned = scanFiles([
         { name: "a.ts", text: 'const u = "https://one.dev";' },
