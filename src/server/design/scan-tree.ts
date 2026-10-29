@@ -1,4 +1,3 @@
-/** The DTCG draft of the scan (stream T): a token's group and name, the node that holds its value, and the tree that is assembled from them. */
 import { words } from "./scan-colors.ts";
 import { type Category } from "./scan-facts.ts";
 import { stackOf } from "./scan-facts-use.ts";
@@ -64,16 +63,13 @@ const FALLBACK_NAME: Record<Category, string> = {
     gradient: "base",
 };
 
-/** Words that name a role, or its colors (`hover`-ed or `dark`-ened): such a color is nested, not a role of its own. */
 const ROLE_WORDS = new Set(
     "accent brand primary link highlight danger error destructive critical negative warning warn caution success positive valid ok bg background canvas page surface card panel elevated raised popover layer text fg foreground ink content muted subtle dim faint quiet tertiary border divider outline stroke line separator hairline".split(
         " ",
     ),
 );
 
-/** The token path of a project variable: its group, and its name without the group's own prefix. */
 export function nameOf(variable: Variable, category: Category): string {
-    // `borderRadius` and `border-radius` are one name.
     const stripped = variable.name
         .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
         .toLowerCase()
@@ -95,9 +91,6 @@ export function pathOf(variable: Variable, category: Category): string[] {
     return [GROUPS[category], name === "" ? FALLBACK_NAME[category] : name];
 }
 
-// --- Values --------------------------------------------------------------------------------------------------------
-
-/** The DTCG node for a variable's value in a category, or undefined when the value does not fit. */
 export function nodeFor(category: Category, text: string, colorText?: string): Obj | undefined {
     switch (category) {
         case "color":
@@ -147,7 +140,6 @@ export function nodeFor(category: Category, text: string, colorText?: string): O
         }
 
         default: {
-            // A dimension: text, space, radius, breakpoint, tracking, size.
             if (!LENGTH.test(text)) {
                 return undefined;
             }
@@ -162,15 +154,11 @@ export function nodeFor(category: Category, text: string, colorText?: string): O
     }
 }
 
-// --- The draft -----------------------------------------------------------------------------------------------------
-
-/** Nested objects from flat tokens. A token that is also a group (`color.primary` and `color.primary.foreground`) becomes `….default`. */
 export function assemble(
     entries: { path: string[]; node: Obj }[],
     renamed: Map<string, string>,
 ): Obj {
     const paths = new Set(entries.map((entry) => entry.path.join(".")));
-    // Each name that is the start of a longer one (`color.primary` of `color.primary.foreground`), found once.
     const groups = new Set<string>();
 
     for (const other of paths) {
@@ -203,7 +191,6 @@ export function assemble(
     return root;
 }
 
-/** Hoists a `$type` shared by every token of a top-level group onto the group. */
 export function hoistTypes(root: Obj): void {
     for (const group of Object.values(root)) {
         if (typeof group !== "object" || group === null || "$value" in group) {
@@ -245,7 +232,6 @@ export function hoistTypes(root: Obj): void {
 
             strip(group as Obj);
 
-            // `$type` first, so the file reads naturally.
             const rest = { ...(group as Obj) };
 
             for (const key of Object.keys(group as Obj)) {
@@ -257,7 +243,6 @@ export function hoistTypes(root: Obj): void {
     }
 }
 
-/** A mode file needs no `$type`: a token takes it from the default mode. */
 export function dropTypes(node: Obj): Obj {
     for (const [key, child] of Object.entries(node)) {
         if (
@@ -277,7 +262,6 @@ export function dropTypes(node: Obj): Obj {
     return node;
 }
 
-/** Rewrites `{name}` references to tokens that were renamed. */
 export function rewrite(node: unknown, renamed: Map<string, string>): unknown {
     if (typeof node === "string") {
         return node.replace(/\{([^{}]+)\}/g, (all, name: string) =>

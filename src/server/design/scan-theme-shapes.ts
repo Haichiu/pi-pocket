@@ -1,18 +1,3 @@
-/**
- * Theme objects found by their shape, not by the library (stream T). A project's colors are in objects the scan has no name
- * for: an in-house design system's `export const themes = { light, dark }`, a ramp as an array of eleven shades, a Material UI
- * shaped `palette.primary.main`, a vendor's `BrandVariants`, a plugin's `addBase({ ':root': { '--c': '37 99 235' } })`, a
- * JSON file of seed colors. The modules are read across files (`scan-js-eval.ts`), so that `background: gray[0]` is a color,
- * and every object of a module is looked at for these shapes:
- *
- * - a ramp: five to thirteen colors in an array, or in an object with steps for keys (`50`, `100`, … `950`);
- * - a role object: three or more keys that name a role (`background`, `surface`, `text`, `muted`, `border`, `primary`,
- *   `danger`…) with a color, or with a group of colors (`main`, `light`, `dark`, `contrastText`);
- * - a mode container: keys that name a mode (`light`, `dark`, `night`) each holding such an object, or selectors that do
- *   (`:root`, `.dark`, `[data-theme=dark]`), whose keys are custom properties (`--c-brand`).
- *
- * The values become variables of the facts, as if a stylesheet had declared them, in the mode the names say.
- */
 import { parseColor } from "./color.ts";
 import { addVar, type Category, type Facts } from "./scan-facts.ts";
 import { hasAntdTheme } from "./scan-facts-antd.ts";
@@ -28,7 +13,6 @@ const ROLE_WORDS = new Set(
     ),
 );
 
-/** The words of a key: `textMuted`, `text-muted`, `text_muted`, `colorNeutralBackground1`. */
 const wordsOf = (key: string) =>
     key
         .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -40,7 +24,6 @@ const wordsOf = (key: string) =>
 const isObject = (value: Literal | undefined): value is { [key: string]: Literal } =>
     typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** Whether a text is a color written out (a hex, or a color function). */
 const isColor = (value: Literal | undefined): value is string =>
     typeof value === "string" &&
     /^\s*(?:#[0-9a-f]{3,8}|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(.*\))\s*$/i.test(value) &&
@@ -52,7 +35,6 @@ const isNamedColor = (value: Literal | undefined): value is string =>
 
 const isShade = (value: Literal | undefined) => isColor(value) || isNamedColor(value);
 
-/** A group of colors: `{ main, light, dark, contrastText }`, `{ default, paper }`, `{ 50: …, 500: … }`. */
 function isColorGroup(value: Literal | undefined): boolean {
     if (!isObject(value)) {
         return false;
@@ -91,7 +73,6 @@ function isRampObject(value: { [key: string]: Literal }): boolean {
     return steps.length >= 5 && steps.length >= entries.length * 0.7;
 }
 
-/** The mode that a key of a container names: `dark`, `light`, a selector for one; undefined for a key that is neither. */
 function modeOfKey(key: string): Scope | undefined {
     if (/^(?::root|html|body|\.|\[|@media|&)/.test(key) || /[.[#:]/.test(key)) {
         return isDarkSelector(key)
@@ -122,7 +103,6 @@ const GENERIC = new Set([
     "export",
 ]);
 
-/** Reads every theme object of the scripts and JSON files under `root` into the facts. */
 export function shapeThemes(facts: Facts, root: string, files: string[]): void {
     const scripts = files.filter(
         (rel) => /\.(?:[cm]?[jt]sx?|json)$/i.test(rel) && !/\.d\.[cm]?ts$/.test(rel),
@@ -136,7 +116,6 @@ export function shapeThemes(facts: Facts, root: string, files: string[]): void {
     const seen = new Set<string>();
     let candidates = 0;
 
-    // Scales that a typography module exports: `export const sizes = [12, 14, 16]`, `export const families = { sans: '…' }`.
     for (const rel of scripts
         .filter((each) =>
             /typograph|(?:^|\/)(?:fonts?|type|text)[\w.-]*\.[cm]?[jt]sx?$/i.test(each),
@@ -257,7 +236,6 @@ export function shapeThemes(facts: Facts, root: string, files: string[]): void {
     }
 }
 
-/** Whether a file is worth evaluating: it holds colors, or names roles. */
 function looksLikeTheme(rel: string, text: string): boolean {
     if (
         /(?:^|\/)(?:package|package-lock|tsconfig[\w.-]*|jsconfig|composer|manifest|\.eslintrc|babel\.config|vercel|netlify)\.json$/.test(
@@ -288,15 +266,11 @@ function looksLikeTheme(rel: string, text: string): boolean {
     return colors >= 3 || roles >= 4;
 }
 
-/** Whether the file being read is an Ant Design theme, which has a reader of its own for its sizes. */
 let flatOff = false;
 
 type Emit = (name: string, value: string, scope: Scope, hint?: Category) => void;
 
-/**
- * The reader shares a constant that is used twice, so `{ k0: c, …, k29: c }` on a few levels is a tree of millions of
- * objects to walk. In one file, the walk takes one object at most 16 times, and at most 5,000 objects in all.
- */
+// A shared constant makes a tree of millions of objects to walk: one file takes an object at most 16 times, and at most 5,000 objects in all.
 let walkBudget = 0;
 let walkVisits = new Map<object, number>();
 
@@ -336,7 +310,6 @@ function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: E
 
     const entries = Object.entries(node);
 
-    // Mantine: `primaryColor: 'kelp'` names a ramp of `colors`, and `primaryShade` the step that is the primary color.
     if (typeof node.primaryColor === "string" && isObject(node.colors)) {
         const chosen = node.colors[node.primaryColor];
         const shade = node.primaryShade;
@@ -377,7 +350,6 @@ function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: E
         }
     }
 
-    // Custom properties: `{ '--c-brand': '37 99 235' }`.
     const properties = entries.filter(
         ([key, child]) =>
             key.startsWith("--") && (typeof child === "string" || typeof child === "number"),
@@ -391,7 +363,6 @@ function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: E
         return;
     }
 
-    // A mode container: `{ light: {…}, dark: {…} }` or `{ ':root': {…}, '.dark': {…} }`.
     const containers = entries.filter(
         ([key, child]) => modeOfKey(key) !== undefined && isObject(child),
     );
@@ -422,7 +393,6 @@ function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: E
         roles(node, here, emit);
         flat(node, path, here, emit);
 
-        // Other keys of the object (`palette: { mode, primary: {…}, grey: {…} }`) may hold ramps.
         for (const [key, child] of entries) {
             if ((isObject(child) && !isColorGroup(child)) || Array.isArray(child)) {
                 walk(child, [...path, key], here, depth + 1, emit);
@@ -452,7 +422,6 @@ function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: E
 
     flat(node, path, here, emit);
 
-    // Mantine's `headings: { sizes: { h1: { fontSize: rem(40) } } }` and a `typography` block of variants.
     for (const key of ["headings", "typography"]) {
         const block = node[key];
         const sizes = isObject(block) && isObject(block.sizes) ? block.sizes : block;
@@ -492,7 +461,6 @@ function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: E
 
 const SCALES = new Set<Category>(["font", "text", "space", "radius", "shadow", "duration", "ease"]);
 
-/** A scale of a theme (`fontSizes`, `spacing`, `radius`, `shadows`) whose values are known. */
 function scale(node: Literal, path: string[], category: Category, mode: Scope, emit: Emit): void {
     const found: { path: string[]; value: string }[] = [];
 
@@ -507,7 +475,6 @@ function scale(node: Literal, path: string[], category: Category, mode: Scope, e
     }
 }
 
-/** A ramp is a family of colors named for the key that holds it. */
 function ramp(path: string[], steps: [string, string][], mode: Scope, emit: Emit): void {
     const family = [...path]
         .reverse()
@@ -524,7 +491,6 @@ function ramp(path: string[], steps: [string, string][], mode: Scope, emit: Emit
     }
 }
 
-/** The colors of a role object, by their keys. */
 function roles(node: { [key: string]: Literal }, mode: Scope, emit: Emit): void {
     const found: { path: string[]; value: string }[] = [];
 
@@ -550,7 +516,6 @@ function roles(node: { [key: string]: Literal }, mode: Scope, emit: Emit): void 
     }
 }
 
-/** Sizes, radii, shadows, and families in a flat dictionary of tokens named for what they are (`fontSizeBase300`, `borderRadiusLarge`). */
 function flat(node: { [key: string]: Literal }, path: string[], mode: Scope, emit: Emit): void {
     if (flatOff) {
         return;
