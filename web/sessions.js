@@ -19,6 +19,7 @@ import {
     actions,
     attempt,
     canSteer,
+    chatReadStored,
     collab,
     navigate,
     notify,
@@ -518,7 +519,7 @@ function markRead(list, { say = true } = {}) {
         }
 
         for (const [id, before, read] of chats) {
-            if ((store.state.chatReads[id] ?? 0) === read) {
+            if (chatReadStored(id) === read) {
                 setChatReadAt(id, before);
             }
         }
@@ -1331,8 +1332,13 @@ function AllSessions({ compact = false }) {
                 opened.current = {
                     id: openId,
                     slot: slotsShown.current.get(openId) ?? null,
-                    asked: shown.some((session) => session.id === openId && session.waiting),
+                    asked: false,
                 };
+            }
+
+            // A call that waits there, then or since: once it is answered, the row goes where it goes now.
+            if (shown.some((session) => session.id === openId && session.waiting)) {
+                opened.current.asked = true;
             }
 
             const { groups, slots } = priorityGroups(
@@ -1855,9 +1861,9 @@ function AllSessions({ compact = false }) {
         }
 
         // Not drawn yet (the list has not heard of the answer): each draw looks again, and after a while the list takes
-        // the focus, so it never stays on a button that went away.
+        // the focus (its first row, or the list itself when no row shows), so it never stays on a button that went away.
         const timer = setTimeout(() => {
-            box?.querySelector("button.session")?.focus();
+            (box?.querySelector("button.session") ?? box)?.focus();
             setFocusReview(null);
         }, FOCUS_WAIT_MS);
 
@@ -2129,6 +2135,7 @@ function AllSessions({ compact = false }) {
         <div
             class="session-items"
             ref=${list}
+            tabindex="-1"
             onScroll=${(event) => !compact && (listKept.scroll = event.currentTarget.scrollTop)}
         >
             ${!sessionsLoaded && html`<${LoadingSessions} />`}

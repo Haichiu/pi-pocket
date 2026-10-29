@@ -332,3 +332,31 @@ test("Undo after Mark all read leaves a session read since as it is", real, asyn
     await new Promise((resolve) => setTimeout(resolve, 300));
     assert.equal(await exists(rowIn("ready", second)), false, "the second stays read");
 });
+
+test("an open session that gets a call and has it answered leaves Needs you", real, async () => {
+    const id = await newSession(app);
+
+    await click('.sidebar .session-tabs [data-tab="priority"]');
+    await app.commands.submit(id, owner(app), { text: "fail now", requestId: "priority-held" });
+    await present(`${rowIn("needs", id)} [data-part="session-dismiss"]`, "the failure");
+    // Opened, it is read: it stays in Needs you while open.
+    await page.evaluate(`
+        const { navigate } = await import("/store.js");
+
+        navigate(${Number(id)});
+    `);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.ok(await exists(rowIn("needs", id)), "still in Needs you while open");
+
+    // A call comes, and is answered: nothing needs you there any more, so the row leaves.
+    const answer = ask(id, "npm run build", 4_000);
+
+    await present(`${rowIn("needs", id)} [data-review]`, "its Review");
+
+    const waiting = app.approvals.all().find((each) => each.conversationId === id);
+
+    assert.ok(waiting);
+    app.approvals.answer(waiting.id, { allow: false, by: "test" });
+    await answer;
+    await gone(rowIn("needs", id), "the row, out of Needs you");
+});

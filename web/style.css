@@ -4701,6 +4701,11 @@ pre.diff .del {
     padding: 0 4px 4px;
 }
 
+/* The list itself takes the focus only when no row is left to take it (after the last answer in Priority). */
+.session-items:focus-visible {
+    outline-offset: -2px;
+}
+
 /* A bar that slides from item to item: the folded rail's open session. */
 .slide-y {
     position: absolute;
