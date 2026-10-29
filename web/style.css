@@ -10435,6 +10435,8 @@ textarea.notes {
 
 .font-menu {
     display: grid;
+    /* The label, then the control in the rest: the ligatures row is as tall as the font menus beside it. */
+    grid-template-rows: auto 1fr;
     gap: 4px;
     font-size: 12px;
     color: var(--muted);
@@ -10442,6 +10444,13 @@ textarea.notes {
 
 .font-menu .switch {
     justify-self: start;
+}
+
+/* The switch and its reset on one line, centered in the height of the font menus beside them. */
+.font-ligatures {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .font-menu strong {
