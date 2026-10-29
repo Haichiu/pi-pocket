@@ -2171,3 +2171,14 @@ console.log(Object.keys(readLiteral("{ a: f(1)), b: 2 }", 0)).join());`;
 
     assert.equal(child.stdout.trim(), "a");
 });
+
+test("a theme object shared on 5 levels (30 keys each) is walked within a budget (hours before)", () => {
+    const keys = (i: number) => Array.from({ length: 30 }, (_, j) => `k${j}: c${i - 1}`).join();
+    const levels = [1, 2, 3, 4, 5].map((i) => `const c${i} = { ${keys(i)} };`).join("\n");
+    const colors = `const c0 = { primary: "#123", border: "#456", muted: "#789" };\n${levels}`;
+    const dir = project({ "tailwind.config.js": `${colors}\nmodule.exports = { colors: c5 };` });
+    const scan = import.meta.resolve("../src/server/design/scan.ts");
+    const input = `import { scanTokens } from "${scan}"; scanTokens(${JSON.stringify(dir)});`;
+
+    assert.equal(spawnSync(process.execPath, ["-"], { input, timeout: 9e3 }).status, 0);
+});

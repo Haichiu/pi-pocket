@@ -226,6 +226,8 @@ export function shapeThemes(facts: Facts, root: string, files: string[]): void {
         let exported = 0;
 
         flatOff = antd;
+        walkBudget = 5000;
+        walkVisits = new Map();
 
         for (const [name, binding] of project.exportsOf(rel)) {
             if (++exported > 80) {
@@ -291,9 +293,22 @@ let flatOff = false;
 
 type Emit = (name: string, value: string, scope: Scope, hint?: Category) => void;
 
+/**
+ * The reader shares a constant that is used twice, so `{ k0: c, …, k29: c }` on a few levels is a tree of millions of
+ * objects to walk. In one file, the walk takes one object at most 16 times, and at most 5,000 objects in all.
+ */
+let walkBudget = 0;
+let walkVisits = new Map<object, number>();
+
 function walk(node: Literal, path: string[], mode: Scope, depth: number, emit: Emit): void {
-    if (depth > 7) {
+    const visits = typeof node === "object" && node !== null ? (walkVisits.get(node) ?? 0) : 0;
+
+    if (depth > 7 || visits >= 16 || --walkBudget < 0) {
         return;
+    }
+
+    if (typeof node === "object" && node !== null) {
+        walkVisits.set(node, visits + 1);
     }
 
     if (Array.isArray(node)) {
