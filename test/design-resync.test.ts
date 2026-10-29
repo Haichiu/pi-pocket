@@ -404,7 +404,6 @@ test("the report fences token names and values from the project, and shows at mo
     assert.match(long, /Not in the code now \(45\):/);
     assert.match(long, /… and 5 more/);
     // A page with no match gives null here and 0 lines, so the count is not 40 and the assertion fails.
-    // Fails when the report lists more or fewer than 40 lines: no match gives [] (length 0), not 40.
     assert.equal((long.match(/^ {2}space\.\d+$/gm) ?? []).length, 40, "40 lines, then a count");
 });
 
