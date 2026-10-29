@@ -1,4 +1,3 @@
-// What a gallery entry can reach: the scan of its code, a theme's palette, and the route's answer with its cache.
 import { cleanUp, openApp, root, scriptedModel } from "./helpers.ts";
 import { scanCode, scanFiles, stripComments, themePalette } from "../src/server/gallery/reach.ts";
 import assert from "node:assert/strict";
@@ -10,7 +9,6 @@ import { after, before, test } from "node:test";
 const dataDir = join(root, "gallery-reach-data");
 const INDEX = "https://raw.githubusercontent.com/TannerMidd/pi-pocket-extensions/HEAD/index.json";
 
-/** What the stand-in for the network serves, by address, and which addresses were asked for. */
 const served = new Map<string, string>();
 let asked: string[] = [];
 let app: Awaited<ReturnType<typeof openApp>>;
@@ -97,8 +95,6 @@ after(async () => {
     cleanUp();
 });
 
-// ─── The scan ──────────────────────────────────────────────────────────────────────
-
 test("the scan names the hosts in address literals, and leaves out those that name no outside service", () => {
     const scanned = scanCode(`
         const a = "https://api.openai.com/v1/chat";
@@ -115,7 +111,7 @@ test("the scan names the hosts in address literals, and leaves out those that na
     `);
 
     assert.deepEqual(scanned.network, ["api.openai.com", "hooks.slack.com", "stream.example.net"]);
-    // A git config key that holds an address ("credential.https://github.com.helper") is not a second host.
+    // The Git credential setting resembles a host but names no service.
     assert.deepEqual(
         scanCode(
             'run("git", ["-c", "credential.https://github.com.helper=", "fetch"]); const u = "https://github.com";',
@@ -134,7 +130,6 @@ test("a call to the network with no host in the code is told as built at run tim
         assert.deepEqual(scanCode(code).network, ["addresses it builds at run time"], code);
     }
 
-    // Dynamic calls count alongside literal hosts; a name that only ends in fetch is no call.
     assert.deepEqual(scanCode('prefetch(x); const u = "https://a.dev/x"; fetch(u);').network, [
         "a.dev",
         "addresses it builds at run time",
@@ -161,7 +156,7 @@ test("the scan names the keys the code reads", () => {
         "openrouter key from Pi",
     ]);
     assert.deepEqual(scanCode("const x = process.env.HOME;").keys, []);
-    // A name built at run time from a prefix is not a key the code reads.
+    // This template names a key prefix, not a complete secret.
     assert.deepEqual(scanCode("env[`GIT_CONFIG_KEY_${n}`] = name;").keys, []);
 });
 
@@ -281,8 +276,6 @@ test("the scan of several files is one scan of their code", () => {
     assert.deepEqual(scanned.files, ["files it writes"]);
 });
 
-// ─── Themes ──────────────────────────────────────────────────────────────────────
-
 test("a theme's palette is read from its colors files, and null where it has none", () => {
     const dark = 'mode = "dark"\nbackground = "#101010"\nforeground = "#eeeeee" # light on dark\n';
     const light = 'background = "#ffffff"\nforeground = "#111111"\n';
@@ -297,8 +290,6 @@ test("a theme's palette is read from its colors files, and null where it has non
     });
     assert.deepEqual(themePalette(undefined, undefined), { colors: null, colorsLight: null });
 });
-
-// ─── The route's answer ──────────────────────────────────────────────────────────
 
 const chat = `/** Calls out. */
 import { spawn } from "node:child_process";
@@ -334,7 +325,6 @@ test("the answer covers extensions and themes, reads only code and palette files
 
     assert.deepEqual(Object.keys(answered).sort(), ["chatty", "dusk", "tampered"]);
 
-    // Each result names the pinned files it was read for, so the app shows it only beside those.
     for (const each of Object.values(answered)) {
         assert.match(each.pin, /^[0-9a-f]{64}$/);
     }
@@ -365,7 +355,6 @@ test("the answer covers extensions and themes, reads only code and palette files
     assert.equal(entries.tampered?.commit, bad);
     assert.match((entries.tampered as { error: string }).error, /SHA-256/);
     assert.ok(!("scanned" in entries.tampered!));
-    // Neither the logo nor the font nor the theme's other files were asked for.
     assert.deepEqual(
         asked.filter((url) => /logo|woff2|theme\.json/.test(url)),
         [],
@@ -383,7 +372,6 @@ test("a second call downloads nothing for what was read, and a failure is tried 
     assert.equal(again.entries.chatty?.kind, "extension");
     assert.ok("error" in again.entries.tampered!);
 
-    // Fixed in the index (a new pin): it is read, and kept.
     const fixed = "export default () => {};\n";
 
     await index(
@@ -406,7 +394,6 @@ test("a second call downloads nothing for what was read, and a failure is tried 
     await app.gallery.reach();
     assert.deepEqual(asked, []);
 
-    // On disk: only what the index lists now.
     const kept = JSON.parse(readFileSync(join(dataDir, "gallery", "reach.json"), "utf8")) as {
         results: Record<string, unknown>;
     };
@@ -453,8 +440,7 @@ test("an extension installed at the same commit is read from its installed files
         assert.ok(existsSync(join(dataDir, "extensions", `${name}.ts`)));
     }
 
-    // "here" is gone from the network: its answer comes from the folder. "edited" was changed there since: the answer
-    // is about the pinned code, downloaded.
+    // An unchanged install must work offline; an edited install must use the pinned download.
     served.delete(url("here"));
     writeFileSync(join(dataDir, "extensions", "edited.ts"), 'fetch("https://not-pinned.dev");\n');
     asked = [];
