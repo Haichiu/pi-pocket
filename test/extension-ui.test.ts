@@ -394,8 +394,7 @@ test(
         await until(() => hasLabel("App row"), "the default App row without a session");
         assert.equal(await hasLabel("Session row"), false, "a Session row needs a session");
         await inPage(`(await import("/store.js")).closeSheet(); return "null";`);
-        // A sheet that closes takes its history entry off a moment later (`back.js`, with a traversal that waits for
-        // the browser). A route written before then is undone by that traversal when the browser is slow: wait for it.
+        // A closing sheet takes its history entry off a moment later: a route written before then is undone.
         await until(
             async () =>
                 (await inPage<number>(
@@ -663,7 +662,6 @@ test("Lancet Guard stays on until its inline confirmation is accepted", real, as
     await app.setExtensionEnabled(owner(app), "guard.ts", true);
     await page.navigate(`${base}/s/${session}`);
     await until(() => has(".composer"), "the conversation");
-    // As the status line's guard opens it: Installed, with the built-in modules unfolded.
     await inPage(
         `(await import("/store.js")).openSheet({ type: "extensions", tab: "installed", show: "built-in" }); return "null";`,
     );

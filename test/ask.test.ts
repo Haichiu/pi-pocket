@@ -1,4 +1,3 @@
-// Pi's `ask` tool (`extensions/ask.ts`): questions with answers to pick, on a card that `host.ask` shows and checks.
 import { cleanUp, lastText, newSession, openApp, owner, scriptedModel, until } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";

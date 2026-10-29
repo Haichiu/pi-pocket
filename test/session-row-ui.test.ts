@@ -37,7 +37,6 @@ async function inPage<T>(script: string): Promise<T> {
 }
 
 async function selectTab(name: "Priority" | "Recent" | "Folders" | "Archived"): Promise<void> {
-    // A tab's name is its words, or its label where it is an icon (Archived), and without Priority's count.
     const tabName = (tab: string) => `
         const nameOf = (tab) => tab.getAttribute("data-tab") === "archived" ? "Archived" : tab.firstChild.textContent.trim();
     `;
@@ -341,7 +340,6 @@ test("a session marked unread shows it until it is opened", real, async () => {
     await marked([], "opening it read it");
 });
 
-/** A right-click on a row at (`dx`, `dy`) inside it: whether the browser's own menu was stopped. */
 const rightClick = (id: ConversationId, keys: { shiftKey?: boolean; ctrlKey?: boolean } = {}) =>
     inPage<{ stopped: boolean; x: number; y: number }>(`
         const button = document.querySelector(${JSON.stringify(`${row(id)} > .session`)});
@@ -362,7 +360,6 @@ const rightClick = (id: ConversationId, keys: { shiftKey?: boolean; ctrlKey?: bo
         return JSON.stringify({ stopped: event.defaultPrevented, x, y });
     `);
 
-/** The right-click menu as it shows: its items' labels and where it is, or null when it is shut. */
 const menuShown = () =>
     inPage<{ items: string[]; left: number; top: number } | null>(`
         const menu = document.querySelector('.sheet-host:not(.leaving) [data-part="session-menu"]');
@@ -379,7 +376,6 @@ const menuShown = () =>
         });
     `);
 
-/** Click one of the right-click menu's items by its label. */
 const menuChoose = (label: string) =>
     page.evaluate(`
         [...document.querySelectorAll('.sheet-host:not(.leaving) [data-part="session-menu"] [role="menuitem"]')]
@@ -406,7 +402,6 @@ test(
 
         await fresh();
 
-        // At the pointer, with the row's actions; Esc closes it.
         const { at, shown } = await menuOpens(active, "the menu");
 
         assert.deepEqual([shown.left, shown.top], [at.x, at.y], "its corner at the pointer");
@@ -426,7 +421,6 @@ test(
         await page.press("Escape");
         await settled({ sheet: null, path: "/" }, "Esc closes it, and nothing opened");
 
-        // Shift keeps the browser's own menu; Ctrl (a Mac's right-click) selects instead.
         assert.equal(
             (await rightClick(active, { shiftKey: true })).stopped,
             false,
@@ -440,7 +434,6 @@ test(
         await new Promise((resolve) => setTimeout(resolve, 200));
         await settled({ sheet: null }, "neither opens the menu");
 
-        // Select, then the menu offers to let go of the selection.
         await menuOpens(active, "the menu again");
         await menuChoose("Select");
         await settled({ sheet: null }, "selected, and the menu closed");
@@ -499,7 +492,6 @@ test(
             "the Pinned group in pin order",
         );
 
-        // Move to top shows only where it moves something, and moves it.
         assert.ok(
             !(await menuOpens(other, "the first pin's menu")).shown.items.includes("Move to top"),
         );

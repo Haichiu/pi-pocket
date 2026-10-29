@@ -1,5 +1,3 @@
-// Opening a file that is already shown reads it again, in the sheet and in the Files tile (issue 187): the text on screen
-// is the file's current text, not the text of the first read.
 import {
     type App,
     cleanUp,
@@ -35,23 +33,19 @@ let browsers: Browsers;
 let page: BrowserPage;
 let base = "";
 
-/** Run a script in the page and read back the JSON it returns. */
 async function inPage<T>(script: string): Promise<T> {
     return JSON.parse(await page.evaluate(script)) as T;
 }
 
-/** Wait until a script in the page returns true. */
 const see = (script: string, what: string, timeoutMs = 10_000) =>
     until(async () => (await inPage<boolean>(script)) === true, what, timeoutMs);
 
-/** Wait until the open viewer's lines say `text`. */
 const shows = (text: string) =>
     see(
         `return JSON.stringify(document.querySelector(".file-view")?.textContent.includes(${JSON.stringify(text)}) === true)`,
         `the viewer to show ${text}`,
     );
 
-/** A session page at the given size. */
 async function opened(viewport: (typeof VIEWPORTS)[keyof typeof VIEWPORTS]) {
     const id = await newSession(app);
 

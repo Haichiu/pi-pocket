@@ -241,8 +241,7 @@ test(
             (await app.gallery.installed()).items.find((item) => item.name === NAME);
         const settle = () => new Promise((resolve) => setTimeout(resolve, 450));
 
-        // The test before turns the gallery off, leaves the extension installed, and its index read, all in the
-        // shared data folder.
+        // The test before leaves the gallery off and the extension installed, in the shared data folder.
         await app.setExtensionEnabled(owner(app), "gallery.ts", true);
 
         if ((await installed()) !== undefined) {

@@ -1,5 +1,3 @@
-// What the session list says of a session for Priority: the call it waits on, why its run failed, and which of its
-// subagents failed with nobody dealing with it.
 import {
     type App,
     cleanUp,
@@ -58,7 +56,6 @@ after(async () => {
     cleanUp();
 });
 
-/** A call waiting for someone in `id`, as Lancet Guard asks; nothing answers it but the test. */
 function ask(id: ConversationId, subject: string, createdAt: number, extra = {}): string {
     const request = {
         id: `priority-${++calls}`,
@@ -96,7 +93,6 @@ test("a session that waits carries its oldest call, and how many wait", async ()
         at: 1_000,
         count: 2,
     });
-    // Answered, the next oldest takes its place.
     assert.equal(app.approvals.answer(first, { allow: false, by: "test" }), true);
     assert.equal(row(id).approval?.id, second);
     assert.equal(row(id).approval?.count, 1);
@@ -143,13 +139,11 @@ test("failed subagents nobody dealt with are named, and leave when dealt with", 
     assert.equal(named!.name, "flaky");
     assert.equal(named!.conversationId, Number(child.conversationId));
     assert.equal(row(id).subagents?.failed, 1);
-    // A call that its subagent waits on counts for the session, which names the subagent's conversation.
     const key = ask(child.conversationId, "ls", 5_000);
 
     assert.equal(row(id).waiting, true);
     assert.equal(row(id).approval?.conversationId, Number(child.conversationId));
     app.approvals.answer(key, { allow: false, by: "test" });
-    // Dealing with it takes the failure off the row, by the time it failed.
     const answer = await app.commands.dismissSubagent(child.conversationId, owner(app), named!.at);
 
     assert.equal(answer.dismissed, true);
