@@ -38,7 +38,10 @@ export function assignTypes(defs: Map<string, Def>, report: Report): void {
             // A missing target is reported when the value is resolved.
             const other = defs.get(refName(target));
 
-            type = other === undefined ? undefined : typeOf(other, [...visiting, def.name]);
+            type =
+                other === undefined || visiting.length >= MAX_REFERENCE_CHAIN
+                    ? undefined
+                    : typeOf(other, [...visiting, def.name]);
         } else {
             type = inferType(def.base.value);
 
