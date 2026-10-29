@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { scanReport, scanTokens, type TokenScan } from "../src/server/design/scan.ts";
 import { globToRegExp, sdConfigIn } from "../src/server/design/scan-import-sd.ts";
+import { type Entry, Mode, flatten } from "../src/server/design/scan-import-eval.ts";
 import { modeOfConfigFile, sdConfigsIn } from "../src/server/design/scan-import-sd-config.ts";
 import type { DesignSystem } from "../src/server/design/system-types.ts";
 import { buildSystem } from "../src/server/design/tokens-model.ts";
@@ -716,4 +717,12 @@ test("a config's source glob does not lead out of the project: not by `../`, not
         symlinkSync(outside, join(dir, "app", "external"));
         assert.ok(!scanReport(scanTokens(join(dir, "app"))).includes("OUTSIDE_SENTINEL"), glob);
     }
+});
+
+test("references that double a token's text at each level stop at a limit (the heap filled before)", () => {
+    const chain = Array.from({ length: 24 }, (_, i) => [`c${i + 1}`, { $value: `{c${i}}{c${i}}` }]);
+    const entries = new Map<string, Entry>();
+
+    flatten(Object.fromEntries([["c0", { $value: "ab" }], ...chain]), entries, { left: 100 });
+    assert.equal(new Mode(entries).valueOf("c24"), undefined);
 });

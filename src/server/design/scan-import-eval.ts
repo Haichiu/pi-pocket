@@ -15,7 +15,15 @@ const OPTIONAL_MEMBERS = new Set([
     "paragraphIndent",
 ]);
 
-export const LIMITS = { sets: 40, tokens: 5000, depth: 12, refs: 24, text: 400 } as const;
+export const LIMITS = {
+    sets: 40,
+    tokens: 5000,
+    depth: 12,
+    refs: 24,
+    text: 400,
+    // The text that references make: `{a}{a}` at each level doubles it.
+    made: 4000,
+} as const;
 
 /** A token of a set, with the type that its group gave it. */
 export interface Entry {
@@ -417,7 +425,11 @@ export class Mode {
             (_, braced: string | undefined, dollar: string | undefined) => {
                 const found = this.valueOf(this.keyOf(braced ?? dollar ?? ""), stack);
 
-                if (found === undefined || (typeof found === "object" && found !== null)) {
+                if (
+                    found === undefined ||
+                    (typeof found === "object" && found !== null) ||
+                    String(found).length > LIMITS.made
+                ) {
                     missing = true;
 
                     return "";
@@ -427,7 +439,8 @@ export class Mode {
             },
         );
 
-        if (missing) {
+        // A text that grew past the limit is not read: the token is left out.
+        if (missing || replaced.length > LIMITS.made) {
             return undefined;
         }
 
