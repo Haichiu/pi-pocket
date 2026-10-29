@@ -303,7 +303,13 @@ export function readDesignFile(
         return undefined;
     }
 
-    const path = join(cwd, DESIGN_DIR, ...name.split("/"));
+    const parts = name.split("/");
+
+    if (parts.length === 2 && kindOf(join(cwd, DESIGN_DIR, parts[0]!), parts[0]!) !== "directory") {
+        return undefined;
+    }
+
+    const path = join(cwd, DESIGN_DIR, ...parts);
 
     if (kindOf(path, name) !== "file") {
         return undefined;
@@ -373,6 +379,23 @@ export function writeFiles(cwd: string, files: Map<string, string | null>): Writ
             throw new Error(`Refusing to write ${name}.`);
         }
 
+        // Check the parent for removals too: O_NOFOLLOW on the final name cannot protect it.
+        if (parts.length === 2) {
+            if (content === null) {
+                const kind = kindOf(dir, parts[0]!);
+
+                if (kind === undefined) {
+                    continue;
+                }
+
+                if (kind !== "directory") {
+                    throw new Error(`${parts[0]!} must be a folder.`);
+                }
+            } else {
+                ensureFolder(dir, parts[0]!);
+            }
+        }
+
         // A link at the file itself is replaced or removed as a link; nothing writes through it.
         const present = lstatOf(path);
 
@@ -383,10 +406,6 @@ export function writeFiles(cwd: string, files: Map<string, string | null>): Writ
             }
 
             continue;
-        }
-
-        if (parts.length === 2) {
-            ensureFolder(dir, parts[0]!);
         }
 
         const bytes = Buffer.from(content, "utf8");
