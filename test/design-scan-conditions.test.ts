@@ -1,6 +1,3 @@
-// Themes with a value for each condition, in the config of a library: Panda CSS and Chakra v3 `semanticTokens`
-// (`{ value: { base: "{colors.gray.50}", _dark: "{colors.gray.950}" } }`, `_osDark`, nested conditions, `DEFAULT` in a group,
-// conditions the config defines), and Ant Design's `ThemeConfig` (`token`, `components`, `algorithm`).
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,7 +22,6 @@ function project(files: Record<string, string>): string {
     return dir;
 }
 
-/** The light and dark color of each role the scan found. */
 function roles(scan: TokenScan) {
     return Object.fromEntries(
         Object.entries(scan.inferred.roles).map(([role, info]) => [role, [info.value, info.dark]]),

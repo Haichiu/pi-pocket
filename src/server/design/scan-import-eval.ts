@@ -1,9 +1,3 @@
-/**
- * The shared reading of token files (stream T): a token file's tokens flattened to dotted paths, a mode of them with every
- * reference followed (`{color.primary}`, `{color.primary.value}`, `$color.primary`), math evaluated (`{spacing.base} * 2`),
- * and color modifiers applied, and the tree of a mode in the DTCG form that the engine reads. Tokens Studio and Style
- * Dictionary files both go through it.
- */
 import { convert, isObject, type Obj } from "./scan-import-convert.ts";
 import { mixColors, parseColor, type Rgba, toHex } from "./color.ts";
 
@@ -25,7 +19,6 @@ export const LIMITS = {
     made: 4000,
 } as const;
 
-/** A token of a set, with the type that its group gave it. */
 export interface Entry {
     path: string[];
     node: Obj;
@@ -44,7 +37,6 @@ export const LIGHT = new Set(["light", "day", "daylight"]);
 export const hasWord = (text: string, list: Set<string>) =>
     words(text).some((word) => list.has(word));
 
-/** The tokens of one set, flat, by dotted path. A group's `type` (or `$type`) goes to the tokens under it. */
 export function flatten(tree: Obj, into: Map<string, Entry>, budget: { left: number }): void {
     const visit = (node: Obj, path: string[], inherited: string | undefined, depth: number) => {
         const own =
@@ -89,8 +81,6 @@ export function flatten(tree: Obj, into: Map<string, Entry>, budget: { left: num
     visit(tree, [], undefined, 0);
 }
 
-// --- Math ---------------------------------------------------------------------------------------------------------------
-
 interface Quantity {
     n: number;
     unit: string;
@@ -111,12 +101,6 @@ const FUNCTIONS: Record<string, (args: number[]) => number> = {
 const NUMBER = /^(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/i;
 const UNIT = /^(?:px|rem|em|%|pt|vw|vh|ms|s|deg)(?![a-z])/i;
 
-/**
- * The value of an arithmetic text (`16px * 2`, `(8 + 4) / 2`, `round(10.5 * 1.5)`), or undefined when the text is not
- * arithmetic: a color, a word, or a value that is only a number. A recursive descent over numbers with a unit, `+ - * /`,
- * parentheses, and a few functions. Units: `a px + b px` is px, a number with a length is that length, and the same unit
- * over itself is a ratio.
- */
 function calculate(text: string): string | undefined {
     let source = text.trim();
 
@@ -300,9 +284,6 @@ function calculate(text: string): string | undefined {
     }
 }
 
-// --- Resolution ---------------------------------------------------------------------------------------------------------
-
-/** A color moved `ratio` of the way to another, mixed in sRGB (what Tokens Studio's lighten, darken, and mix do). */
 const towards = (color: Rgba, other: Rgba, ratio: number): Rgba =>
     mixColors(
         "srgb",
@@ -310,10 +291,8 @@ const towards = (color: Rgba, other: Rgba, ratio: number): Rgba =>
         { color: other, percent: ratio * 100 },
     );
 
-/** `{a.b.c}` and the oldest `$a.b.c`: the dotted path of a reference. */
 const REFERENCE = /\{([^{}]+)\}|(?<![\w$])\$([A-Za-z_][\w-]*(?:\.[\w-]+)+)/g;
 
-/** The tokens of one mode, ready to read: references followed, math evaluated, color modifiers applied. */
 export class Mode {
     entries: Map<string, Entry>;
     done = new Map<string, unknown>();
@@ -323,7 +302,6 @@ export class Mode {
         this.entries = entries;
     }
 
-    /** The key of an entry for a reference text. */
     keyOf(reference: string): string {
         const key = reference.trim().split(".").map(segment).join(".");
 
@@ -331,7 +309,6 @@ export class Mode {
         return this.entries.has(key) ? key : key.replace(/\.\$?value$/, "");
     }
 
-    /** The value of a token with every reference followed. Undefined when it cannot be (a loop, a missing token). */
     valueOf(key: string, stack: string[] = []): unknown {
         if (this.done.has(key)) {
             return this.done.get(key);
@@ -355,7 +332,6 @@ export class Mode {
         return value;
     }
 
-    /** A value with every reference in it replaced and its math done; composite values member by member. */
     evaluate(raw: unknown, stack: string[], depth = 0): unknown {
         // A value nested deeper than a token's needs (`[[[…]]]`) is not read.
         if (depth > LIMITS.depth) {
@@ -396,7 +372,6 @@ export class Mode {
         const text = raw.slice(0, LIMITS.text).trim();
         let missing = false;
 
-        // `rgba({color.red}, 0.5)`: a color with an alpha.
         const alpha =
             /^rgba?\(\s*(\{[^{}]+\}|\$[\w.-]+|#[0-9a-f]{3,8})\s*,\s*(\d*\.?\d+%?)\s*\)$/i.exec(
                 text,
@@ -452,7 +427,6 @@ export class Mode {
         return calculate(replaced) ?? replaced;
     }
 
-    /** `$extensions["studio.tokens"].modify`: alpha, lighten, darken, or mix, on a color. */
     modify(value: unknown, entry: Entry): unknown {
         const extension = isObject(entry.node.$extensions)
             ? (entry.node.$extensions["studio.tokens"] as unknown)
@@ -493,7 +467,6 @@ export class Mode {
     }
 }
 
-/** The tree of a mode as a DTCG tree: references kept where a token is only a reference, every other value followed. */
 export function tokensOf(mode: Mode): { tree: Obj; flat: Map<string, Obj> } {
     const tree: Obj = {};
     const flat = new Map<string, Obj>();
@@ -554,10 +527,6 @@ export function tokensOf(mode: Mode): { tree: Obj; flat: Map<string, Obj> } {
     return { tree, flat };
 }
 
-/**
- * The tokens of a mode whose value differs from the default's, as a tree (the mode's file holds only what changes). A
- * token that the default mode lacks is left out, and counted.
- */
 export function changesBetween(
     base: Map<string, Obj>,
     mode: Map<string, Obj>,

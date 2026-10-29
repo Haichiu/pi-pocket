@@ -1,9 +1,3 @@
-/**
- * One token of a token file as a DTCG token (stream T). Style Dictionary (`value`, `type`), Tokens Studio (`value` and
- * `type` with `sizing`, `fontFamilies`, `boxShadow`, `lineHeights`, ...), and DTCG (`$value`, `$type`) are all read; a
- * value that has no unit gets the one its type implies, a font weight that is a name gets its number, and the members of
- * a type style, a shadow, and a border are put in the forms that the tokens engine reads.
- */
 import { colorsIn } from "./scan-parse.ts";
 import { shadowValue } from "./scan-scales.ts";
 
@@ -12,7 +6,6 @@ export type Obj = Record<string, unknown>;
 export const isObject = (value: unknown): value is Obj =>
     typeof value === "object" && value !== null && !Array.isArray(value);
 
-// Tokens Studio and Style Dictionary type names to DTCG types.
 const TYPES: Record<string, string> = {
     color: "color",
     dimension: "dimension",
@@ -55,7 +48,6 @@ const LENGTH_TYPES = new Set([
     "dimension",
 ]);
 
-/** The weights that Figma and CSS name, by the name with no space or hyphen, lowercase. */
 const WEIGHTS: Record<string, number> = {
     thin: 100,
     hairline: 100,
@@ -75,8 +67,7 @@ const WEIGHTS: Record<string, number> = {
     heavy: 900,
 };
 
-/** A font weight as a number when it is a name (`Bold`, `Semi Bold`, `Bold Italic`) or a number in text. */
-export function weightOf(value: unknown): unknown {
+function weightOf(value: unknown): unknown {
     if (typeof value === "number") {
         return value;
     }
@@ -159,7 +150,6 @@ function shadowLayer(layer: unknown): unknown {
     };
 }
 
-/** A type style as the engine reads it: its five members, in their forms. Tokens Studio's other members are left out. */
 function typographyOf(value: Obj): Obj {
     const out: Obj = {};
     const family = value.fontFamily ?? value.fontFamilies;
@@ -191,7 +181,6 @@ function typographyOf(value: Obj): Obj {
     return out;
 }
 
-/** A border as the engine reads it: color, width, style. */
 function borderOf(value: Obj): Obj {
     return {
         ...(value.color === undefined ? {} : { color: value.color }),
@@ -200,7 +189,6 @@ function borderOf(value: Obj): Obj {
     };
 }
 
-/** One token node as a DTCG token, or undefined when it is not one that the engine can hold. */
 export function convert(node: Obj, inherited: string | undefined): Obj | undefined {
     const value = node.$value ?? node.value;
 
@@ -261,7 +249,6 @@ export function convert(node: Obj, inherited: string | undefined): Obj | undefin
         out = borderOf(out);
     }
 
-    // A number that is not one (`AUTO`) is no token.
     if (type === "number" && typeof out === "string" && !out.trim().startsWith("{")) {
         return undefined;
     }

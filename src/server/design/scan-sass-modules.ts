@@ -1,18 +1,7 @@
-/**
- * The module system of Sass (stream T): a stylesheet that is `@use`d is a module with variables, functions, and mixins of
- * its own, loaded under a namespace (`@use "palette" as p`, then `p.$blue-500`, `p.mix()`), or opened into the user's scope
- * (`as *`). `@forward` hands a module's members on, with a prefix (`as list-*`) and a choice of members (`show`, `hide`),
- * and `@use … with ($a: 1)` configures the `!default` variables of a module before it runs. A module that is configured
- * is a second copy of the module, as in Sass. The members whose names start with `-` or `_` are private.
- *
- * The variables, functions, and mixins that a project declares are also kept in one flat environment (the `Project`), as
- * the scan did before modules: a name that no module explains (a stylesheet that is compiled together with others
- * through a build tool, a package that is not in the repository) is looked up there.
- */
+// A configured module is a second copy, as in Sass. A name that no module explains is looked up in the flat `Project` environment.
 import { splitTop, type Stmt } from "./scan-sass-stmt.ts";
 import type { Value } from "./scan-sass-values.ts";
 
-/** A function or a mixin. */
 export interface Fn {
     params: { name: string; fallback: string | undefined; rest: boolean }[];
     body: Stmt[];
@@ -24,14 +13,12 @@ export interface Fn {
 
 type Kind = "vars" | "functions" | "mixins";
 
-/** The flat environment that is the fallback of every module. */
 export interface Flat {
     vars: Map<string, Value>;
     functions: Map<string, Fn>;
     mixins: Map<string, Fn>;
 }
 
-/** What `@forward` hands on: a module, a prefix, and the names that are shown or hidden (`$name` for a variable). */
 export interface Forward {
     module: Module;
     prefix: string;
@@ -45,18 +32,12 @@ export class Module {
     vars = new Map<string, Value>();
     functions = new Map<string, Fn>();
     mixins = new Map<string, Fn>();
-    /** The modules loaded with `@use … as ns`, by namespace; a built-in module (`sass:color`) is its name. */
     uses = new Map<string, Module | string>();
-    /** The modules whose members are open in this one: `@use … as *`, and what `@import` brings in. */
     opened: Module[] = [];
     forwards: Forward[] = [];
-    /** The configuration of `@use … with (…)`: the values of the `!default` variables. */
     config: Map<string, Value> | undefined;
-    /** The built-in modules opened with `@use "sass:math" as *`. */
     openBuiltins: string[] = [];
-    /** The configured variables that a `!default` assignment has taken. */
     applied = new Set<string>();
-    /** What the stylesheet makes once run. */
     text = "";
 
     constructor(rel: string, flat: Flat, config?: Map<string, Value>) {
@@ -65,7 +46,6 @@ export class Module {
         this.config = config;
     }
 
-    /** A member of the module as another module sees it: its own, or one that it forwards. */
     member<T>(kind: Kind, name: string, depth = 0): T | undefined {
         if (/^[-_]/.test(name) || depth > 12) {
             return undefined;
@@ -105,7 +85,6 @@ export class Module {
         return undefined;
     }
 
-    /** A member by its bare name, from inside the module: its own, the open modules', then the project's. */
     lookup<T>(kind: Kind, name: string, flat = true): T | undefined {
         const own = this[kind].get(name) as T | undefined;
 
@@ -124,7 +103,6 @@ export class Module {
         return flat ? (this.flat[kind].get(name) as T | undefined) : undefined;
     }
 
-    /** The module a namespace names; undefined when there is none, a string for a built-in module. */
     namespace(name: string): Module | string | undefined {
         return this.uses.get(name);
     }
@@ -140,22 +118,15 @@ export class Module {
     }
 }
 
-// --- The rules ------------------------------------------------------------------------------------------------------------
-
-/** A `@use` or `@forward` rule, read. */
-export interface ModuleRule {
+interface ModuleRule {
     path: string;
-    /** `as p` (a namespace), `as *` (open), or none. */
     namespace: string | undefined;
-    /** `as list-*` of `@forward`. */
     prefix: string;
-    /** The entries of `with (…)`, as written: `$a: 1`, `$b: red !default`. */
     config: string[];
     show: string[] | undefined;
     hide: string[] | undefined;
 }
 
-/** The index after the parenthesis that closes the one at `open`. */
 function parenEnd(source: string, open: number): number {
     let depth = 0;
     let quote = "";
@@ -177,7 +148,6 @@ function parenEnd(source: string, open: number): number {
     return source.length;
 }
 
-/** What follows `@use` or `@forward`: `"path" as ns with ($a: 1)`, `"path" as list-* hide a, $b`. */
 export function parseModuleRule(rest: string): ModuleRule | undefined {
     const head = /^\s*(["'])([^"'\n]{1,300})\1\s*/.exec(rest);
 
@@ -238,7 +208,6 @@ export function parseModuleRule(rest: string): ModuleRule | undefined {
     return rule;
 }
 
-/** The namespace a module has when none is given: the last part of its path, without an extension or a `_`. */
 export function defaultNamespace(path: string): string {
     return (
         path
@@ -247,8 +216,6 @@ export function defaultNamespace(path: string): string {
             .replace(/\..*$/, "") || "module"
     );
 }
-
-// --- Finding a file -------------------------------------------------------------------------------------------------------
 
 const normalize = (path: string) => {
     const out: string[] = [];
@@ -264,11 +231,7 @@ const normalize = (path: string) => {
     return out.join("/");
 };
 
-/**
- * The file a `@use` or `@import` names, among the project's files. Sass looks beside the stylesheet first, and then in the
- * load paths (a project's `includePaths`, which the scan does not know): any folder of the project is one, the nearest
- * first. A name may leave out the extension and the `_` of a partial, and name a folder with an `_index`.
- */
+// Beside the stylesheet first, then in the load paths (which the scan does not know): any folder of the project is one, the nearest first.
 export function resolveModule(
     from: string,
     request: string,
@@ -300,7 +263,6 @@ export function resolveModule(
     const extensions = /\.(?:scss|sass)$/i.test(name) ? [""] : [".scss", ".sass"];
     const fromDir = from.includes("/") ? from.slice(0, from.lastIndexOf("/")) : "";
 
-    // Beside the stylesheet, then up the folders (a load path at each level).
     for (let base = fromDir; ; base = base.slice(0, Math.max(0, base.lastIndexOf("/")))) {
         for (const candidate of forms(base)) {
             for (const extension of extensions) {
@@ -315,7 +277,6 @@ export function resolveModule(
         }
     }
 
-    // Anywhere in the project, the nearest folder first.
     let best: string | undefined;
     let bestScore = -1;
 
@@ -339,7 +300,6 @@ export function resolveModule(
     return best;
 }
 
-/** How many folders two paths share at the start. */
 function commonDirs(a: string, b: string): number {
     const left = a.split("/").filter(Boolean);
     const right = b.split("/");

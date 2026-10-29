@@ -1,8 +1,4 @@
-/**
- * The file walk of the design system scan (stream T): finds the style files of a project, ranks them by how likely they
- * are to hold the design (a stylesheet called `theme.css` before a deep component file), and reads each one bounded.
- * The walk never follows a symlink, so a project cannot lead it out of the folder.
- */
+// The walk never follows a symlink, so a project cannot lead it out of the folder.
 import {
     SD_CONFIG_NAME,
     type SdConfig,
@@ -21,7 +17,6 @@ import {
 } from "node:fs";
 import { extname, join, relative, sep } from "node:path";
 
-/** Folders that hold other people's code or build output, not the project's own styles. */
 const SKIP = new Set([
     "node_modules",
     ".git",
@@ -59,19 +54,16 @@ const SKIP = new Set([
     ".husky",
 ]);
 
-/** Why a folder is not walked, for the report: the first match of its name. Dot folders (`.git`) are not reported. */
 const FOLDER_WHY: [RegExp, string][] = [
     [/^(?:node_modules|vendors?|bower_components|third[-_]?party)$/i, "vendored code"],
     [/^(?:dist|build|out|coverage|target|exports|storybook-static)$/i, "build output"],
 ];
 
-/** A file or folder that the scan did not read, and why. */
 export interface Skipped {
     path: string;
     why: string;
 }
 
-/** Dot folders that hold a project's styles. */
 const DOT_STYLE_FOLDERS = new Set([".storybook", ".vitepress", ".vuepress", ".docusaurus"]);
 
 const STYLE =
@@ -80,24 +72,17 @@ const TOKEN_JSON =
     /(?:^|\/)(?:design-?tokens?|tokens?|properties|brands?|themes?|style-?dictionary|dictionary)\/(?:[^/]+\/)*[^/]+\.json$|(?:^|\/)(?:config|[\w.-]*config|[\w.-]*[.-]config[.-][\w-]+|config[.-][\w-]+|\.styledictionaryrc)\.json$|(?:^|\/)(?:[^/]*tokens?[^/]*|[^/]*theme[^/]*|[^/]*(?:figma|studio|design-?system|material|m3)[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
 
 export const LIMITS = {
-    /** Files read. */
     files: 400,
-    /** Candidate files kept for ranking. */
     candidates: 3000,
-    /** Entries looked at in the walk. */
     entries: 20_000,
     depth: 8,
-    /** Bytes read from one file. */
     fileBytes: 200_000,
     /** Bytes read from one token file: a Tokens Studio file of a large system is more than a stylesheet. */
     jsonBytes: 1_500_000,
-    /** Bytes read in all. */
     totalBytes: 8_000_000,
-    /** Characters kept of a value in the report. */
     valueChars: 200,
 } as const;
 
-/** How likely a file is to hold the design, for ordering: higher is read first. */
 export function priority(rel: string): number {
     const name = rel.split("/").at(-1)!.toLowerCase();
     const extension = extname(name);
@@ -127,7 +112,6 @@ export function priority(rel: string): number {
         score += 8;
     }
 
-    // Tokens Studio writes `$themes.json` and `$metadata.json` beside a file for each token set.
     if (/(?:^|\/)\$(?:themes|metadata)\.json$/.test(rel)) {
         score += 30;
     }
@@ -157,7 +141,6 @@ export function priority(rel: string): number {
     return score - rel.split("/").length * 2;
 }
 
-/** Whether a file is worth reading at all. */
 function wanted(rel: string, name: string): boolean {
     if (!STYLE.test(name)) {
         return TOKEN_JSON.test(rel) && name.endsWith(".json");
@@ -172,10 +155,7 @@ function wanted(rel: string, name: string): boolean {
     return !name.endsWith(".d.ts");
 }
 
-/**
- * Whether `dir` (a relative path with `/`) is a real folder inside `root`: no `..`, no absolute path, and no symlink on
- * the way. A project's config names such folders, and it must not lead the scan out of the project.
- */
+// A project's config names such folders; none may lead the scan out of the project (no `..`, no absolute path, no symlink).
 export function folderInside(root: string, dir: string): boolean {
     let path = root;
 
@@ -200,7 +180,6 @@ export function folderInside(root: string, dir: string): boolean {
     return true;
 }
 
-/** The `.json` files under a Tokens Studio folder (three levels, a bounded number), added to `found`. */
 function studioSets(root: string, dir: string, depth: number, found: string[]): void {
     let entries;
 
@@ -236,7 +215,6 @@ function studioSets(root: string, dir: string, depth: number, found: string[]): 
     }
 }
 
-/** The files to read under `root`, best first, and whether a limit left some out. */
 export function collectFiles(root: string): {
     files: string[];
     partial: boolean;
@@ -310,8 +288,6 @@ export function collectFiles(root: string): {
 
     walk(root, 0);
 
-    // The sets of a Tokens Studio folder have names of their own (`global.json`, `brand/acme.json`): the files beside
-    // `$themes.json` or `$metadata.json` are read too.
     for (const dir of new Set(
         found
             .filter((rel) => /(?:^|\/)\$(?:themes|metadata)\.json$/.test(rel))
@@ -320,7 +296,6 @@ export function collectFiles(root: string): {
         studioSets(root, dir, 0, found);
     }
 
-    // A Style Dictionary config names its token files by globs: the folders they start in are read too.
     for (const rel of [...found].filter((each) =>
         SD_CONFIG_NAME.test((each.split("/").at(-1) ?? "").replace(/\.(?:json|[cm]?[jt]s)$/i, "")),
     )) {
@@ -355,7 +330,7 @@ export function collectFiles(root: string): {
                     .replace(/^\.\//, "")
                     .split("/")
                     .filter((_, at, all) => at < all.length - 1)
-                    .filter((part, at, all) =>
+                    .filter((_, at, all) =>
                         all.slice(0, at + 1).every((each) => !/[*?{$]/.test(each)),
                     );
 
@@ -398,7 +373,7 @@ export function collectFiles(root: string): {
     return { files: ranked.slice(0, LIMITS.files), partial, skipped };
 }
 
-/** The first `limit` bytes of a file as text (a stylesheet's size by default); it reads no more and never follows a link. */
+/** Reads no more than `limit` bytes and never follows a link. */
 export function readHead(path: string, limit: number = LIMITS.fileBytes): string {
     const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
 

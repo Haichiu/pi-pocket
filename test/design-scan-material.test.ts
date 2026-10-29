@@ -1,5 +1,3 @@
-// Material 3 exports in the scan: the Theme Builder's CSS (a file or a class for each scheme, with --md-sys-color-*) and its
-// JSON ("schemes", "palettes"). M3 roles take this system's names; contrast schemes are modes; no warning or success is made up.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -427,7 +425,6 @@ test("a hand-made export: no background means the surface is the page too; a fon
         "Roboto",
         "sans-serif",
     ]);
-    // Colors that the project's own styles use, and Material does not have, stay; the ones that Material has are not twice.
     const colors = system.tokens
         .filter((each) => each.type === "color" && each.modes.light!.alias === undefined)
         .map((each) => each.modes.light!.hex);

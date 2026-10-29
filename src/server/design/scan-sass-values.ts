@@ -1,9 +1,3 @@
-/**
- * Sass values and the functions on them (stream T): numbers with units, strings, colors in Sass's own model (channels of
- * 0 to 255 and HSL, so that `lighten()`, `mix()`, `scale-color()`, and `adjust-color()` give what Sass gives), lists, and
- * maps. The functions of the global scope and of the modules (`color.`, `math.`, `map.`, `list.`, `string.`, `meta.`) that
- * a palette written in Sass uses. A function that is not here gives `undefined`: the caller leaves that value as it was.
- */
 import { NAMED_COLORS } from "./color.ts";
 
 export interface Num {
@@ -11,26 +5,25 @@ export interface Num {
     n: number;
     unit: string;
 }
-export interface Str {
+interface Str {
     t: "str";
     s: string;
     quoted: boolean;
 }
-/** A color: channels 0 to 255 (not rounded until they are written), alpha 0 to 1. */
-export interface Col {
+interface Col {
     t: "color";
     r: number;
     g: number;
     b: number;
     a: number;
 }
-export interface Lst {
+interface Lst {
     t: "list";
     items: Value[];
     sep: "comma" | "space";
     bracket: boolean;
 }
-export interface MapV {
+interface MapV {
     t: "map";
     entries: [Value, Value][];
 }
@@ -38,7 +31,7 @@ export interface Bool {
     t: "bool";
     b: boolean;
 }
-export interface Nul {
+interface Nul {
     t: "null";
 }
 export type Value = Num | Str | Col | Lst | MapV | Bool | Nul;
@@ -56,10 +49,8 @@ export const list = (items: Value[], sep: "comma" | "space" = "comma", bracket =
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
-/** Truthy as in Sass: everything but `false` and `null`. */
 export const truthy = (value: Value) => !(value.t === "null" || (value.t === "bool" && !value.b));
 
-/** A color from text (`#abc`, `#aabbcc`, `#aabbccdd`, a name), or undefined. */
 export function colorFromText(text: string): Col | undefined {
     const hex = /^#([0-9a-f]{3,8})$/i.exec(text.trim());
 
@@ -88,9 +79,6 @@ export function colorFromText(text: string): Col | undefined {
     return named === undefined ? undefined : colorFromText(named);
 }
 
-// --- Color models ---------------------------------------------------------------------------------------------------------
-
-/** HSL as Sass has it: hue in degrees, saturation and lightness in percent. */
 function toHsl(color: Col): [number, number, number] {
     const r = color.r / 255;
     const g = color.g / 255;
@@ -157,7 +145,6 @@ function fromHsl(hue: number, saturation: number, lightness: number, alpha: numb
     };
 }
 
-/** `mix($c1, $c2, $weight)`: Sass's weighting, which takes both alphas into account. */
 function mix(first: Col, second: Col, weight: number): Col {
     const w = weight / 100;
     const normal = w * 2 - 1;
@@ -174,7 +161,6 @@ function mix(first: Col, second: Col, weight: number): Col {
     };
 }
 
-/** Text for a color: `#rrggbb`, or `rgba(r, g, b, a)` when it is not opaque. */
 export function colorText(color: Col): string {
     const byte = (value: number) => clamp(Math.round(value), 0, 255);
 
@@ -185,11 +171,8 @@ export function colorText(color: Col): string {
     return `rgba(${byte(color.r)}, ${byte(color.g)}, ${byte(color.b)}, ${Number(color.a.toFixed(3))})`;
 }
 
-// --- Text -----------------------------------------------------------------------------------------------------------------
-
 const round = (value: number) => Number(value.toFixed(10));
 
-/** CSS text for a value, as Sass writes it. */
 export function text(value: Value): string {
     switch (value.t) {
         case "num":
@@ -253,7 +236,6 @@ export const equal = (a: Value, b: Value): boolean =>
                 ? a.b === b.b
                 : a.t === b.t && text(a) === text(b);
 
-/** The items of a value as a list (a map is a list of pairs, a single value is a list of one). */
 export function itemsOf(value: Value): Value[] {
     if (value.t === "list") {
         return value.items;
@@ -265,8 +247,6 @@ export function itemsOf(value: Value): Value[] {
 
     return value.t === "null" ? [] : [value];
 }
-
-// --- Functions ------------------------------------------------------------------------------------------------------------
 
 type Args = { positional: Value[]; named: Map<string, Value> };
 
@@ -284,11 +264,9 @@ const asColor = (value: Value | undefined): Col | undefined => {
 /** `$amount` as a percentage-points number: `20%` is 20, and a bare 0.2 is 0.2 (Sass wants a percent). */
 const points = (value: Value | undefined) => (value?.t === "num" ? value.n : undefined);
 
-/** The argument at a position or by name. */
 const arg = (args: Args, at: number, name: string): Value | undefined =>
     args.named.get(name) ?? args.positional[at];
 
-/** The names of a function in the global scope and in its module: `color.mix` and `mix` are one. */
 const ALIASES: Record<string, string> = {
     "color.adjust": "adjust-color",
     "color.scale": "scale-color",
@@ -346,7 +324,6 @@ const ALIASES: Record<string, string> = {
     opacity: "alpha",
 };
 
-/** A color and the HSL or RGB changes of `adjust-color`, `scale-color`, and `change-color`. */
 function recolor(
     kind: "adjust" | "scale" | "change",
     color: Col,
@@ -409,10 +386,8 @@ function recolor(
     return out;
 }
 
-/** Whether a function has a built-in name (`color.adjust`, `math.div`). */
 export const hasBuiltin = (name: string) => name in ALIASES;
 
-/** A constant of a built-in module: `math.$pi`. */
 export function builtinConstant(library: string, name: string): Value | undefined {
     const constants: Record<string, number> = {
         pi: Math.PI,
@@ -427,10 +402,6 @@ export function builtinConstant(library: string, name: string): Value | undefine
         : undefined;
 }
 
-/**
- * A call of a Sass function that is built in, or undefined when it is not one that is here (or its arguments are not
- * what it takes): the caller then writes the call as CSS.
- */
 export function callBuiltin(rawName: string, args: Args): Value | undefined {
     const name = ALIASES[rawName] ?? rawName;
     const first = args.positional[0];
@@ -605,7 +576,6 @@ export function callBuiltin(rawName: string, args: Args): Value | undefined {
         case "alpha":
             return color === undefined ? undefined : num(round(color.a));
 
-        // Numbers.
         case "math-div": {
             const [a, b] = [asNum(args.positional[0]), asNum(args.positional[1])];
 
@@ -670,7 +640,6 @@ export function callBuiltin(rawName: string, args: Args): Value | undefined {
                 : num(clamp(b.n, a.n, c.n), b.unit || a.unit);
         }
 
-        // Strings.
         case "unquote":
             return first?.t === "str" ? str(first.s, false) : first;
         case "quote":
@@ -706,7 +675,6 @@ export function callBuiltin(rawName: string, args: Args): Value | undefined {
                 : undefined;
         }
 
-        // Lists and maps.
         case "length":
             return first === undefined
                 ? undefined
@@ -777,7 +745,6 @@ export function callBuiltin(rawName: string, args: Args): Value | undefined {
                 entries.find(([each]) => key !== undefined && keyOf(each) === keyOf(key))?.[1] ??
                 NULL;
 
-            // Further keys go into nested maps.
             for (const next of args.positional.slice(2)) {
                 found =
                     found.t === "map"

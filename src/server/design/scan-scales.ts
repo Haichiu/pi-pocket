@@ -1,8 +1,3 @@
-/**
- * The scales of the design system scan (stream T): the type scale, fonts, weights, line heights, spacing, radii, shadows,
- * motion, and breakpoints that a project does not name in variables, read from how it uses them. Each function adds
- * tokens to the `Book` and notes to the result; none runs when the project already names that kind of token.
- */
 import { colorsIn, commaParts, parts, px } from "./scan-parse.ts";
 import type { RoleName } from "./scan-colors.ts";
 import type { Category, Facts, SizeFact } from "./scan-facts.ts";
@@ -14,8 +9,7 @@ export interface Draft {
     modes: Record<string, Obj>;
 }
 
-/** One role as the report shows it. */
-export interface RoleInfo {
+interface RoleInfo {
     token: string;
     value: string;
     dark?: string;
@@ -27,11 +21,9 @@ export interface RoleInfo {
     at?: string;
 }
 
-/** The scan's conclusions, for the report and for the tests. */
 export interface Inferred {
     draft: Draft;
     roles: Partial<Record<RoleName, RoleInfo>>;
-    /** Palette families and their sizes. */
     palette: Record<string, number>;
     typeScale: { base?: string; sizes: string[]; ratio?: number };
     fonts: Record<string, string>;
@@ -40,23 +32,16 @@ export interface Inferred {
     shadows: number;
     motion: { durations: string[]; easings: string[] };
     breakpoints: string[];
-    /** Whether the project has a second mode (a dark mode in most; a light one in a dark-first project). */
     hasDark: boolean;
-    /** The names of the modes: the default, and the other one when there is one. */
     modes: { default: string; alt: string };
-    /** What the scan could not decide, or left out. */
     notes: string[];
-    /** How many tokens came from a token file instead of a guess. */
     imported: number;
-    /** Tokens the engine refused, dropped from the draft. */
     dropped: string[];
-    /** What the scan read as it is, not as a guess: a Material 3 export, for the top of the report. */
     sources: string[];
-    /** The scales that are a thin guess, one line each, for the top of the report. */
     review: string[];
 }
 
-export const BEZIER: Record<string, number[]> = {
+const BEZIER: Record<string, number[]> = {
     ease: [0.25, 0.1, 0.25, 1],
     "ease-in": [0.42, 0, 1, 1],
     "ease-out": [0, 0, 0.58, 1],
@@ -64,7 +49,6 @@ export const BEZIER: Record<string, number[]> = {
     linear: [0, 0, 1, 1],
 };
 
-/** An easing as a DTCG cubicBezier value (an array of four numbers), or undefined. */
 export function bezier(text: string): number[] | undefined {
     const keyword = BEZIER[text.trim().toLowerCase()];
 
@@ -92,7 +76,6 @@ export function bezier(text: string): number[] | undefined {
         : undefined;
 }
 
-/** A CSS shadow as DTCG layers; the text itself when it cannot be taken apart. */
 export function shadowValue(text: string): unknown {
     const layers: Obj[] = [];
 
@@ -129,7 +112,6 @@ export function shadowValue(text: string): unknown {
     return layers.length === 1 ? layers[0] : layers;
 }
 
-/** A shadow's size, for ordering: blur and offset of its largest layer. */
 export function elevation(value: unknown): number {
     const layers = Array.isArray(value)
         ? (value as Obj[])
@@ -147,7 +129,6 @@ export function elevation(value: unknown): number {
     );
 }
 
-/** Tokens being gathered: by path, with a version for the dark mode. */
 export class Book {
     tokens = new Map<string, { path: string[]; node: Obj }>();
     dark = new Map<string, { path: string[]; node: Obj }>();
@@ -169,7 +150,7 @@ export class Book {
     }
 }
 
-export const WEIGHT_NAMES: Record<number, string> = {
+const WEIGHT_NAMES: Record<number, string> = {
     100: "thin",
     200: "extralight",
     300: "light",
@@ -180,7 +161,6 @@ export const WEIGHT_NAMES: Record<number, string> = {
     800: "extrabold",
     900: "black",
 };
-/** Tailwind's own sizes, for the utility classes (`text-sm`, `rounded-lg`) that a project uses without defining them. */
 const TAILWIND_TEXT: Record<string, string> = {
     xs: "0.75rem",
     sm: "0.875rem",
@@ -218,14 +198,12 @@ const TAILWIND_WEIGHT: Record<string, [string, number]> = {
     black: ["black", 900],
 };
 
-export const SIZE_BELOW = ["sm", "xs", "2xs"];
-export const SIZE_ABOVE = ["lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl"];
+const SIZE_BELOW = ["sm", "xs", "2xs"];
+const SIZE_ABOVE = ["lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl"];
 
 export const rounded = (value: number) => Math.round(value * 100) / 100;
 export const topBy = <T>(list: T[], key: (item: T) => number, limit: number) =>
     [...list].sort((a, b) => key(b) - key(a)).slice(0, limit);
-
-// --- Scales --------------------------------------------------------------------------------------------------------
 
 export function fontScale(
     facts: Facts,
@@ -254,7 +232,6 @@ export function fontScale(
     }
 
     if (explicit.has("font")) {
-        // A monospace family the project uses in a rule while its named stacks have none.
         const covered = new Set(
             named.map((entry) => (entry.node.$value as string[])[0]?.toLowerCase()),
         );
@@ -312,7 +289,6 @@ export function fontScale(
             return undefined;
         }
 
-        // A system stack with no named family still gets a role.
         book.add(path, { $value: stack, $type: "fontFamily" });
         used.set(kind, { path, stack });
         result.fonts[path.join(".")] = stack.join(", ");
@@ -374,7 +350,6 @@ export function sizeScale(
 ): void {
     const sizes = [...facts.sizes].filter(([size]) => size >= 9 && size <= 96);
 
-    // Tailwind's own sizes, named as Tailwind names them: the ones a project uses and does not define itself.
     if (facts.tailwind && facts.classText.size >= 1 && (explicit.has("text") || sizes.length < 3)) {
         for (const [name] of topBy([...facts.classText], ([, count]) => count, 9)) {
             if (TAILWIND_TEXT[name] !== undefined && !book.has(["text", name])) {
@@ -402,7 +377,6 @@ export function sizeScale(
     }
 
     if (explicit.has("text")) {
-        // The project names some sizes; the others it uses join them, named by their size (`text.40` is 40px).
         const named = [...book.tokens.values()]
             .filter((entry) => entry.path[0] === "text")
             .map((entry) => px(String(entry.node.$value)) ?? -99);
@@ -434,7 +408,6 @@ export function sizeScale(
         return;
     }
 
-    // The sizes used most, in order of size.
     let kept = topBy(merged, ([, fact]) => fact.count + fact.body * 2 + fact.heading, 10).sort(
         (a, b) => a[0] - b[0],
     );
@@ -449,7 +422,6 @@ export function sizeScale(
 
     let base = bodyAt(kept);
 
-    // Only as many sizes as there are names: drop the least used at the ends.
     while (base > SIZE_BELOW.length || kept.length - base - 1 > SIZE_ABOVE.length) {
         const first = kept[0]!;
         const last = kept.at(-1)!;
@@ -616,14 +588,12 @@ export function spacingScale(
         ([, count]) => count,
         12,
     ).sort((a, b) => a[0] - b[0]);
-    // A project that names some of its spacing keeps those names; the other values it uses join them.
     const own = explicit.has("space") ? named() : [];
     const fresh = kept.filter(([size]) =>
         own.every((value) => Math.abs(value - size) > 1 || size < 4),
     );
 
     for (const [size] of fresh) {
-        // Named in steps of 4px, as Tailwind does: 16px is `space.4`, 2px is `space.0-5`, 10px is `space.2-5`.
         const path = ["space", String(rounded(size / 4)).replace(".", "-")];
 
         if (!book.has(path)) {
@@ -646,7 +616,6 @@ export function radiusScale(
     explicit: Set<Category>,
     result: Inferred,
 ): void {
-    // Tailwind's `rounded-lg` and the like: the names a project uses and does not define itself.
     if (
         facts.tailwind &&
         facts.classRadius.size > 0 &&
@@ -662,7 +631,6 @@ export function radiusScale(
         }
     }
 
-    // A radius the project uses that its own tokens do not cover (within a pixel) joins them.
     const has = (key: string) =>
         [...book.tokens.values()].some(
             (entry) =>
@@ -675,7 +643,6 @@ export function radiusScale(
     if (explicit.has("radius")) {
         const extra: [string, { count: number; text: string }][] = [];
 
-        // Extras a pixel apart are one (3px and 4px).
         for (const [key, fact] of [...facts.radii]
             .filter(([each]) => !has(each) && (each === "full" || Number(each) >= 2))
             .sort((a, b) => b[1].count - a[1].count)) {
@@ -700,7 +667,6 @@ export function radiusScale(
         );
 
         for (const [key, fact] of extra.slice(0, 6)) {
-            // Named by their size, as spacing is: `radius.4` is 4px.
             const name = key === "full" ? "full" : key.replace(".", "-");
 
             if (!taken.has(name)) {
@@ -726,7 +692,6 @@ export function radiusScale(
         return;
     }
 
-    // Radii a pixel apart are one radius (6px and 7px): the more used one stands for both.
     const clusters: [string, { count: number; text: string }][] = [];
 
     for (const [key, fact] of [...facts.radii]
@@ -760,7 +725,6 @@ export function radiusScale(
     });
 
     if (facts.radii.has("full")) {
-        // The pill value the project wrote (`999px`), as it wrote it.
         const text = facts.radii.get("full")!.text;
         const value = /^[\d.]+(?:px|rem|em)$/.test(text) ? text : "9999px";
 
@@ -769,7 +733,6 @@ export function radiusScale(
     }
 }
 
-/** Whether two shadows are alike: the same layers, offsets within a pixel, blur within two, and the same color. */
 function sameShadow(a: unknown, b: unknown): boolean {
     const layers = (value: unknown) => (Array.isArray(value) ? value : [value]) as Obj[];
     const first = layers(a);
@@ -799,13 +762,7 @@ function sameShadow(a: unknown, b: unknown): boolean {
     );
 }
 
-export function shadowScale(
-    facts: Facts,
-    book: Book,
-    explicit: Set<Category>,
-    result: Inferred,
-): void {
-    // Shadows that differ by a pixel or two (`0 2px 4px` and `0 2px 5px`) are one: the more used stands for both.
+export function shadowScale(facts: Facts, book: Book, result: Inferred): void {
     const clusters: { text: string; value: unknown; count: number }[] = [];
 
     for (const [text, count] of [...facts.shadows].sort((a, b) => b[1] - a[1])) {
@@ -828,7 +785,6 @@ export function shadowScale(
     const rings: typeof clusters = [];
     const lifts: typeof clusters = [];
 
-    // A project that names some of its shadows keeps them; the others it uses join them.
     const own = [...book.tokens.values()]
         .filter((entry) => entry.path[0] === "shadow")
         .map((entry) => entry.node.$value);
@@ -960,7 +916,6 @@ export function breakpointScale(
         return;
     }
 
-    // 1100px and 1101px are one breakpoint: the more used stands for both.
     const clusters: [number, number][] = [];
 
     for (const [size, count] of [...facts.breakpoints].sort((a, b) => b[1] - a[1])) {

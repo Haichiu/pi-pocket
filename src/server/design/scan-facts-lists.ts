@@ -1,9 +1,7 @@
-/** Themes written as lists and by mode (stream T): daisyUI theme lists, Mantine shades, Chakra `semanticTokens`, and objects named for a mode. */
 import { NAMED_COLORS } from "./color.ts";
 import { colorsIn, type Literal, readLiteral, type Scope } from "./scan-parse.ts";
 import { addVar, type Category, type Facts, GENERIC } from "./scan-facts.ts";
 
-/** The keys of a JavaScript theme, and what each holds. */
 export const THEME_KEYS: Record<string, Category> = {
     colors: "color",
     color: "color",
@@ -38,16 +36,12 @@ export const THEME_KEYS: Record<string, Category> = {
     easings: "ease",
     easing: "ease",
     zIndex: "z",
-    // A typography block: `h1: { fontSize: "2.5rem" }` (read by `typographyVars`, not as a scale).
     typography: "text",
-    // Mantine: `headings: { fontFamily, sizes: { h1: { fontSize } } }` and a monospace family.
     headings: "text",
     fontFamilyMonospace: "font",
-    // Mantine's `other: { bodyLight: "#fff", bodyDark: "#1a1b1e" }`: only the values that are colors are read.
     other: "color",
 };
 
-/** A leaf of a theme object: the path of keys, and its text. */
 export function leaves(
     literal: Literal,
     path: string[],
@@ -67,7 +61,6 @@ export function leaves(
     } else if (Array.isArray(literal)) {
         const strings = literal.filter((item): item is string => typeof item === "string");
 
-        // A palette as a list of shades (Mantine, Chakra): `brand: ["#eff5ff", …, "#2c4478"]` is `brand-0` to `brand-9`.
         if (
             category === "color" &&
             strings.length >= 5 &&
@@ -75,14 +68,12 @@ export function leaves(
         ) {
             strings.forEach((value, at) => out.push({ path: [...path, String(at)], value }));
         } else if (category === "shadow") {
-            // A list of shadows (Material's elevations) is one token each; `none` is no shadow.
             strings.forEach((value, at) => {
                 if (value.trim() !== "none") {
                     out.push({ path: [...path, String(at)], value });
                 }
             });
         } else if (strings.length > 0) {
-            // A font stack is a list of names; a Tailwind font size is [size, { lineHeight }].
             out.push({
                 path,
                 value:
@@ -98,7 +89,6 @@ export function leaves(
             out.push({ path, value: String(literal[0]) });
         }
     } else if (typeof literal === "object" && literal !== null) {
-        // Panda and Chakra v3 write a token as `{ value: "#f9fafb" }` (and may add `description` and `type`).
         const only = Object.keys(literal).every((key) =>
             ["value", "description", "type", "deprecated", "extensions"].includes(key),
         );
@@ -127,7 +117,6 @@ export function leaves(
     }
 }
 
-/** The mode that a name stands for (`darkTheme`, `theme_light`, `NIGHT`): dark, light, or none. */
 export function modeOf(name: string): Scope | undefined {
     const words = name
         .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -149,10 +138,6 @@ export function modeOf(name: string): Scope | undefined {
         : undefined;
 }
 
-/**
- * A list of themes, each an object with one key (daisyUI: `themes: [{ mytheme: { primary: "#570df8", … } }, { dark: … }]`):
- * a theme named for a mode is that mode; the first other one is the default.
- */
 export function themeList(
     facts: Facts,
     file: string,
@@ -207,10 +192,6 @@ export function themeList(
     }
 }
 
-/**
- * A block named for a mode whose keys are colors (`dark: { canvas: "#101114", ink: "#f2f3f5" }`), where the theme has no
- * `colors` key around them: the project's variables for that mode.
- */
 export function modeBlocks(
     facts: Facts,
     file: string,
@@ -272,7 +253,6 @@ export function modeBlocks(
     }
 }
 
-/** A color that a semantic token names: the color itself, or a path into the palette (`gray.50`, `colors.brand.500`). */
 function paletteColor(
     ref: string,
     tree: Record<string, Literal>,
@@ -308,12 +288,10 @@ function paletteColor(
         node = node.DEFAULT ?? node.default ?? node.value;
     }
 
-    // A token written `{ value: "#fff" }` (Panda, Chakra v3), also as the DEFAULT of a group.
     if (typeof node === "object" && node !== null && !Array.isArray(node)) {
         node = node.value;
     }
 
-    // A color keyword that the palette does not name (`white`, `transparent`) is the color.
     if (node === undefined && path.length === 1 && NAMED_COLORS.has(path[0]!.toLowerCase())) {
         return path[0]!.toLowerCase();
     }
@@ -321,7 +299,6 @@ function paletteColor(
     return typeof node === "string" ? node : undefined;
 }
 
-/** The conditions that a Panda or Chakra config defines: `conditions: { extend: { dark: ".dark &", night: "[data-theme=night] &" } }`. */
 function conditionsIn(text: string, env: ReadonlyMap<string, Literal>): Map<string, string> {
     const out = new Map<string, string>();
 
@@ -351,7 +328,6 @@ function conditionsIn(text: string, env: ReadonlyMap<string, Literal>): Map<stri
     return out;
 }
 
-/** What a condition key stands for: the base value, the dark or the light mode, or nothing (a state such as `_hover`). */
 function conditionScope(
     key: string,
     conditions: ReadonlyMap<string, string>,
@@ -368,7 +344,6 @@ function conditionScope(
         return named;
     }
 
-    // A condition the config names for itself: `night: "[data-theme=night] &"`, `contrast: "@media (prefers-contrast: more)"`.
     const selector = conditions.get(name);
 
     return selector === undefined
@@ -376,13 +351,6 @@ function conditionScope(
         : (modeOf(selector.replace(/[^\w]+/g, " ")) ?? undefined);
 }
 
-/**
- * Semantic tokens with a value for each condition, in the forms of Chakra and Panda: `semanticTokens.colors`, a name
- * with `{ value: { base: "{colors.gray.50}", _dark: "{colors.gray.950}" } }` (v3, Panda), `{ default: "gray.50",
- * _dark: "gray.900" }` (v2), a plain `value: "{colors.green.600}"`, `DEFAULT` inside a group, conditions nested in a
- * condition, and conditions the config defines (`_night`). A color is written as itself or as a reference into the palette.
- * Each is a variable with a value for each mode.
- */
 export function semanticTokens(
     facts: Facts,
     file: string,
@@ -393,7 +361,6 @@ export function semanticTokens(
 ): void {
     const conditions = conditionsIn(text, env);
 
-    // `semanticTokens: { … }`, `semanticTokens: defineSemanticTokens({ … })`, `semanticTokens: tokens`, or just `semanticTokens`.
     const heads = [
         ...text.matchAll(
             /(?<![\w$.])semanticTokens\s*(?::\s*(?:[A-Za-z_$][\w$.]*\s*\(\s*)?(?=\{)|:\s*(?=[A-Za-z_$])|(?=\s*[,}]))/g,
@@ -434,7 +401,6 @@ export function semanticTokens(
             }
         };
 
-        /** The text of a value that may be a condition's own object (`_dark: { base: "{colors.red.400}", _hover: … }`). */
         const plain = (node: Literal | undefined): Literal | undefined => {
             if (typeof node !== "object" || node === null || Array.isArray(node)) {
                 return node;
@@ -449,7 +415,6 @@ export function semanticTokens(
             return undefined;
         };
 
-        /** A token's values by condition. `modes` is the object of conditions, or a string. */
         const conditional = (path: string[], modes: Literal): void => {
             if (typeof modes === "string") {
                 add(path, modes, base);
@@ -499,14 +464,12 @@ export function semanticTokens(
                 return;
             }
 
-            // A token of v3 and Panda: `{ value: … }`, the value a string or an object of conditions.
             if (node.value !== undefined && path.length > 0) {
                 conditional(path, node.value);
 
                 return;
             }
 
-            // A token of v2: the conditions are the keys (`default`, `_dark`).
             const keys = Object.keys(node);
 
             if (
@@ -537,5 +500,3 @@ export function semanticTokens(
         walk(colors as Literal, []);
     }
 }
-
-// --- Whole files ---------------------------------------------------------------------------------------------------

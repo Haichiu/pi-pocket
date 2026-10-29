@@ -1,12 +1,6 @@
-/**
- * What the scan is not sure of (stream T), for the top of its report: the scales that were guessed from how the project
- * uses a value, on too little to be sure of, and the spacing values that fit no step. A scale that comes from the
- * project's own variables is not listed: the project said it.
- */
 import type { Category, Facts } from "./scan-facts.ts";
 import type { Inferred } from "./scan-scales.ts";
 
-/** Values or uses below these make a guess thin. */
 const THIN = { values: 3, uses: 4 } as const;
 
 const total = (map: Map<unknown, number | { count: number }>): number =>
@@ -15,7 +9,6 @@ const total = (map: Map<unknown, number | { count: number }>): number =>
         0,
     );
 
-/** One line for each scale that is a thin guess, by category, and for the spacing values that are off the grid. */
 export function reviewScales(facts: Facts, explicit: Set<Category>, result: Inferred): string[] {
     const lines: string[] = [];
     const thin = (distinct: number, uses: number) => distinct < THIN.values || uses < THIN.uses;

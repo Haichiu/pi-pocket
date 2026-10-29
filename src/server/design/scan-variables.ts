@@ -1,7 +1,3 @@
-/**
- * The variables of a project, for the scan (stream T): the winning declaration of each in each mode, the twins that supply
- * one mode of another variable, and the values followed through `var()`, Sass variables, interpolation, and arithmetic.
- */
 import { type Category, type Facts, type VarFact } from "./scan-facts.ts";
 import { kebab, vkey } from "./scan-util.ts";
 
@@ -10,14 +6,11 @@ export interface Variable {
     kind: VarFact["kind"];
     light?: VarFact;
     dark?: VarFact;
-    /** A value from the other mode's scope, used only when the default scope has none. */
     spare?: VarFact;
-    /** It holds the other mode's value of another variable (`--dark-bg` beside `--bg`). */
     twin?: boolean;
     hint?: Category;
 }
 
-/** The winning declaration of each variable in each scope: the best ranked file, and the last in that file. */
 export function variables(facts: Facts, alt: "dark" | "light"): Variable[] {
     const map = new Map<string, Variable>();
     const better = (a: VarFact | undefined, b: VarFact) =>
@@ -60,12 +53,7 @@ export function variables(facts: Facts, alt: "dark" | "light"): Variable[] {
     );
 }
 
-/**
- * Variables that a project keeps for the other mode under their own names (`--dark-bg`, `--bg-dark`, `$night-ink`) are
- * the other mode's value of the plain variable (`--bg`): they are not colors of their own. A dark-named variable that the
- * plain one points at in the dark scope (`--bg: var(--dark-bg)`) is one for sure; without that, three pairs make a scheme,
- * and a name that has a `-light` or `-main` sibling (`primary-dark` beside `primary-light`) is a shade, not a mode.
- */
+// A dark-named variable that the plain one points at in the dark scope (`--bg: var(--dark-bg)`) is one for sure; without that, three pairs make a scheme, and a name with a `-light` or `-main` sibling (`primary-dark` beside `primary-light`) is a shade, not a mode.
 function pairModeTwins(map: Map<string, Variable>, alt: "dark" | "light"): void {
     const mode = alt === "dark" ? /^(?:dark|night|dk|drk|d)$/ : /^(?:light|day|lt|lgt|l)$/;
     const plain = (name: string) => kebab(name).replace(/^(?:color|colour|clr)-/, "");
@@ -126,17 +114,12 @@ function pairModeTwins(map: Map<string, Variable>, alt: "dark" | "light"): void 
     }
 }
 
-/**
- * `bodyLight`/`bodyDark`, `text-light`/`text-dark`: two variables, one for each mode, with no plain variable between
- * them, are one variable with two values. Two such pairs make a scheme.
- */
 function pairModeSuffixes(map: Map<string, Variable>, alt: "dark" | "light"): void {
     const ends = alt === "dark" ? (["light", "dark"] as const) : (["dark", "light"] as const);
     const stems = new Map<string, { first?: Variable; second?: Variable }>();
 
     for (const variable of map.values()) {
         const words = kebab(variable.name).replace(/^-/, "").split("-");
-        // The mode word is at the end (`bg-light`) or at the start (`light-bg`).
         const at = [ends[0], ends[1]].includes(words.at(-1) as never)
             ? words.length - 1
             : [ends[0], ends[1]].includes(words[0] as never)
@@ -189,10 +172,6 @@ function pairModeSuffixes(map: Map<string, Variable>, alt: "dark" | "light"): vo
     }
 }
 
-/**
- * A custom property that a project sets only in the other mode (`[data-bs-theme="dark"] { --bs-body-bg: #16181d }`) is the
- * other mode's value of the Sass or Less variable of the same name (`$body-bg`), which holds the default.
- */
 function pairSassNames(map: Map<string, Variable>, alt: "dark" | "light"): void {
     const plain = (name: string) =>
         kebab(name).replace(/^(?:bs|ifm|sl|mui|ant|chakra|mantine|pico|vt)-/, "");
@@ -219,7 +198,6 @@ function pairSassNames(map: Map<string, Variable>, alt: "dark" | "light"): void 
     }
 }
 
-/** A variable's value with its references followed. `via` is the variable it points at first. */
 export function follow(
     index: Map<string, Variable>,
     start: Variable,
@@ -282,7 +260,6 @@ function followOnce(
     };
 
     let current = start;
-    // Sass interpolation of one variable (`#{$dark-bg}`) is the variable.
     const bare = (value: string | undefined) => value?.replace(/#\{\s*([$@][\w-]+)\s*\}/g, "$1");
     let text = bare(
         (scope === "dark" ? (current.dark ?? current.light) : (current.light ?? current.dark))
@@ -328,7 +305,6 @@ function followOnce(
         return undefined;
     }
 
-    // Interpolation inside a longer value or with arithmetic (`0 1px 2px #{$shadow-ink}`, `#{$space * 2}`): the value.
     if (text.includes("#{")) {
         const value = (name: string, kind: "scss" | "less" | "css") => {
             const target = index.get(`${kind}:${name}`);
@@ -349,7 +325,6 @@ function followOnce(
         });
     }
 
-    // SCSS and Less arithmetic (`$space-1 * 3`), and CSS `calc()` over custom properties (`calc(var(--radius) - 2px)`).
     const calc = /^calc\((.*)\)$/s.exec(text.trim());
 
     if (
@@ -372,7 +347,6 @@ function followOnce(
     return { text: text.trim(), via };
 }
 
-/** `$a * 3`, `($a + 4px) / 2`: arithmetic on lengths, with variables looked up by `value`. Undefined if it cannot. */
 export function evalMath(
     text: string,
     value: (name: string, kind: "scss" | "less" | "css") => string | undefined,
@@ -488,7 +462,6 @@ export function evalMath(
         : `${Math.round(result.n * 1000) / 1000}${result.unit}`;
 }
 
-/** The channels of a color written without its function: `222.2 47.4% 11.2%` (HSL) is how shadcn writes them. */
 export function channelColor(text: string, name: string): string | undefined {
     if (
         /^\d+(?:\.\d+)?(?:deg)?[ ,]+\d+(?:\.\d+)?%[ ,]+\d+(?:\.\d+)?%(?:\s*\/\s*[\d.]+%?)?$/.test(

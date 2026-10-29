@@ -1,4 +1,3 @@
-/** What a variable holds, from its value's syntax and its name (stream T): a shadow, a duration, an easing, a radius, a font stack. */
 import { commaParts, px } from "./scan-parse.ts";
 import { parseColor } from "./color.ts";
 import { type Category, type Facts, namespaceOf } from "./scan-facts.ts";
@@ -10,19 +9,14 @@ export const LENGTH = /^-?(?:\d+\.?\d*|\.\d+)(?:px|rem|em|%|vw|vh|ch|pt)?$/;
 const FONT_WORDS =
     /sans-serif|serif|monospace|system-ui|ui-sans-serif|ui-monospace|ui-serif|cursive/i;
 
-/** What a variable holds, from where it is set, its value, and then its name. */
 const COLOR_TOKEN =
     /^(?:#[0-9a-f]{3,8}|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix|var|light-dark)\(.*\)|transparent|currentcolor|[a-z]{3,20})$/i;
 
-/** A CSS gradient (not a `url()`): safe characters only, since the value is written into a token file and a stylesheet. */
+// Safe characters only: the value is written into a token file and a stylesheet.
 export const GRADIENT =
     /^(?:repeating-)?(?:linear|radial|conic)-gradient\([\w\s,.%#()/+*-]{4,360}\)$/i;
 
-/**
- * Whether a value is a `box-shadow`: one or more comma-separated layers, each with two to four lengths (offsets, blur,
- * spread), at most one color (first or last), and perhaps `inset`.
- */
-export function looksLikeShadow(text: string): boolean {
+function looksLikeShadow(text: string): boolean {
     const layers = commaParts(text.trim());
 
     if (

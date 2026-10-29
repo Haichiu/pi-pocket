@@ -1,5 +1,3 @@
-// The structured scan: what it reads (CSS, SCSS, Less, Tailwind, JS themes, token files), the roles and scales it
-// infers, the dark mode, and that its draft always loads in the tokens engine.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -36,7 +34,6 @@ function project(files: Record<string, string>): string {
     return dir;
 }
 
-/** The draft as a loaded system; it must have no error. */
 function load(scan: TokenScan): DesignSystem {
     const system = buildSystem({
         folder: "scan",
@@ -60,8 +57,6 @@ const token = (system: DesignSystem, name: string) =>
     system.tokens.find((each) => each.name === name);
 const hex = (system: DesignSystem, name: string, mode = "light") =>
     token(system, name)?.modes[mode]?.hex;
-
-// --- Reading ------------------------------------------------------------------------------------------------------
 
 test("parseStyles: scopes, at-rules, nesting, strings, and variables", () => {
     const decls = parseStyles(`
@@ -204,8 +199,6 @@ test("templateStyles: CSS-in-JS, with the code inside ${} left out", () => {
     assert.deepEqual(blocks, ["color: var(--js); background: #fff;", "body{margin:0}", "gap: 4px"]);
 });
 
-// --- A plain stylesheet ---------------------------------------------------------------------------------------------
-
 const PLAIN = {
     "src/styles.css": `:root {
   --bg: #ffffff; --bg-elevated: #f6f7f9; --text: #1a1b26; --text-muted: #6b7280; --border: #e5e7eb;
@@ -263,14 +256,12 @@ test("a plain stylesheet: the nine roles by name, in light and dark, and the pro
         "text roles carry a contrast pair",
     );
 
-    // The project's variables keep their names.
     assert.equal(token(system, "radius.md")!.modes.light!.css, "8px");
     assert.equal(token(system, "space.4")!.modes.light!.css, "16px");
     assert.equal(token(system, "font.sans")!.modes.light!.css, "Inter, system-ui, sans-serif");
     assert.ok(token(system, "shadow.md"), "a shadow is parsed into layers");
     assert.equal(token(system, "font.body")!.modes.light!.alias, "font.sans");
 
-    // The scales it read from use.
     assert.deepEqual(scan.inferred.typeScale.sizes, ["sm 13px", "base 16px", "lg 24px", "xl 32px"]);
     assert.deepEqual(scan.inferred.motion.durations, ["fast 150ms", "slow 200ms"]);
     assert.deepEqual(scan.inferred.breakpoints, ["sm 768px", "md 1024px"]);
@@ -305,8 +296,6 @@ test("the report lists the roles, the scales, and the draft, fenced", () => {
         "the report ends with the exact next call",
     );
 });
-
-// --- Tailwind -----------------------------------------------------------------------------------------------------
 
 const TAILWIND = {
     "src/app.css": `@import "tailwindcss";
@@ -345,13 +334,10 @@ test("Tailwind v4: @theme namespaces keep their names, the dark class is the dar
     assert.equal(token(system, "radius.lg")!.modes.light!.css, "0.75rem");
     assert.ok(token(system, "ease.snappy"));
     assert.ok(token(system, "shadow.card"));
-    // `--text-hero--line-height` is a part of `--text-hero`, not a token.
     assert.equal(token(system, "text.hero")!.modes.light!.css, "4rem");
     assert.ok(!system.tokens.some((each) => /line-height/.test(each.name)));
-    // Tailwind's own sizes for the classes the project uses.
     assert.equal(token(system, "text.sm")!.modes.light!.css, "0.875rem");
     assert.equal(token(system, "text.2xl")!.modes.light!.css, "1.5rem");
-    // Steps of 4px from p-4, md:p-6, gap-2, px-8.
     assert.deepEqual(scan.inferred.spacing.steps, [8, 16, 24, 32]);
     assert.equal(token(system, "space.4")!.modes.light!.css, "16px");
     assert.equal(
@@ -393,8 +379,6 @@ module.exports = {
     );
 });
 
-// --- SCSS, JS themes ------------------------------------------------------------------------------------------------
-
 test("SCSS variables and maps, and a TypeScript theme object, in one project", () => {
     const scan = scanTokens(
         project({
@@ -424,7 +408,6 @@ $body-bg: $white; $body-color: $gray-900; .btn { color: $brand-primary; backgrou
     );
     assert.equal(hex(system, "color.bg.page"), "#ffffff", "$body-bg follows $white");
     assert.equal(hex(system, "color.border.default"), "#dfe6e9");
-    // The map's entries are variables of their own.
     assert.equal(token(system, "space.3")!.modes.light!.css, "1rem");
     assert.equal(token(system, "space.5")!.modes.light!.css, "3rem");
     // The three kinds do not collide: `sm` is a size, a radius, a shadow, and a breakpoint.
@@ -434,8 +417,6 @@ $body-bg: $white; $body-color: $gray-900; .btn { color: $brand-primary; backgrou
     assert.equal(token(system, "breakpoint.sm")!.modes.light!.css, "640px");
     assert.equal(scan.inferred.dropped.length, 0);
 });
-
-// --- Token files ----------------------------------------------------------------------------------------------------
 
 test("a project that keeps tokens in a DTCG file gets them back as they are, with a dark file for the dark mode", () => {
     const scan = scanTokens(
@@ -530,8 +511,6 @@ test("Style Dictionary and Tokens Studio files are converted: value, type, sizin
     assert.equal(token(system, "global.primary")!.description, "Brand");
 });
 
-// --- A messy page ---------------------------------------------------------------------------------------------------
-
 test("a messy page: near-duplicate colors are one, roles come from use, and the draft says what is off the grid", () => {
     const scan = scanTokens(
         project({
@@ -573,8 +552,6 @@ h1 { font-family: 'Playfair Display', serif; font-size: 42px; color:#1b1b1b }
         "21px and the like are reported as off the grid",
     );
 });
-
-// --- Safety and limits ------------------------------------------------------------------------------------------------
 
 test("the draft always loads: a token the engine refuses is dropped, not saved", () => {
     const scan = scanTokens(
@@ -672,8 +649,6 @@ test("a project with nothing to read gives a draft with no tokens, and the repor
     assert.match(scanReport(scanTokens(project({ "readme.md": "x" }))), /found no style files/);
 });
 
-// --- A dark-first project with color-mix() ----------------------------------------------------------------------------
-
 const DARK_FIRST = {
     "web/style.css": `:root {
   --o-bg: #1a1b26; --o-fg: #a9b1d6; --o-fg-bright: #c0caf5; --o-accent: #7aa2f7; --o-red: #f7768e; --o-yellow: #e0af68; --o-green: #9ece6a;
@@ -718,7 +693,6 @@ test("a dark-first project: dark is the default mode, light is the file, color-m
         scanReport(scan),
         /Modes: dark \(default\), light \(tokens\.light\.json drafted\); the project is dark first/,
     );
-    // `--step-mark-size` is not a type step.
     assert.ok(!token(system, "text.mark-size"));
     assert.equal(
         token(system, "size.step-mark-size")?.modes.dark!.css ??
@@ -747,8 +721,6 @@ test("breakpoints a pixel apart are one", () => {
 
     assert.deepEqual(scan.inferred.breakpoints, ["sm 640px", "md 1100px"]);
 });
-
-// --- What the bench taught -------------------------------------------------------------------------------------------
 
 test("SCSS arithmetic is computed, and a theme object named for dark is the dark mode", () => {
     const scan = scanTokens(
@@ -870,8 +842,6 @@ test("scanDesignSystem is the draft alone, as the bench calls it", async () => {
     assert.ok((draft.tokens.color as Record<string, unknown>).bg);
     assert.deepEqual(draft, scanTokens(dir).draft);
 });
-
-// --- Round 2: what real libraries and stylesheets do ------------------------------------------------------------------
 
 test("a library's variable prefix is not part of the name: --bs-body-bg is the page, --bs-border-color the border", () => {
     const scan = scanTokens(
@@ -1052,8 +1022,6 @@ body { background: #faf3e9; color: #333 } a { color: #3366cc } .btn { background
         "the link blue's dark value is kept, on the blue",
     );
 });
-
-// --- Round 2b: themes written in other forms -----------------------------------------------------------------------------
 
 const modesOf = (scan: TokenScan) => Object.keys(scan.draft.modes);
 
@@ -1248,8 +1216,6 @@ test("a theme object with blocks for each mode under one key: colors: { light: {
     assert.equal(scan.inferred.roles.background!.dark, "#0a0a0a");
     assert.equal(scan.inferred.roles.accent!.dark, "#66aaff");
 });
-
-// --- Round 2c: more forms of the same ideas -------------------------------------------------------------------------------
 
 test("a WordPress block theme: the palette, sizes and presets of theme.json, and styles/dark.json for the dark mode", () => {
     const scan = scanTokens(
@@ -1513,8 +1479,6 @@ $primary-map: (500: #2196f3, 700: #1976d2);`,
     assert.equal(scan.inferred.roles.warning, undefined);
 });
 
-// --- Round 2d: theme libraries -----------------------------------------------------------------------------------------
-
 test("a theme file with any name: Vuetify's themes object, with a const for the light theme", () => {
     const scan = scanTokens(
         project({
@@ -1612,8 +1576,6 @@ test("Material 3 names: on-surface is the text and on-surface-variant the quiet 
     );
 });
 
-// --- Round 3: the report says how sure it is, where from, and what to call next -----------------------------------------
-
 test("each role has a confidence and a file:line; comments do not move the lines; the report ends with the next call", () => {
     const scan = scanTokens(
         project({
@@ -1682,8 +1644,6 @@ test("a scan of a folder names the folder in the next call, and a project with n
         /Next call: design_system with action init and tokens/,
     );
 });
-
-// --- Round 3b: dark mode in SCSS, scales without tokens, dark-first pages ----------------------------------------------
 
 test("SCSS dark mode written as a mixin: @include dark-mode { … }, a mixin that wraps the dark mode, and if($theme == dark, …)", () => {
     const scan = scanTokens(
@@ -1871,8 +1831,6 @@ test("a one-off used once is left out of a large palette, kept in a small one; a
     assert.ok(count(big) <= 14, `${count(big)} colors out of 20 one-offs`);
     assert.deepEqual(big.inferred.spacing.steps, [8], "6px used once is no step");
 });
-
-// --- Round 3c: classes of input, not one project --------------------------------------------------------------------------
 
 test("a shadow is found by its value, whatever the name: elev, elevation, depth, lift, z1, raise, with layers, inset, a variable color, a color first", () => {
     const scan = scanTokens(

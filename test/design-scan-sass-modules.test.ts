@@ -1,6 +1,4 @@
-// The module system of Sass in the scan: `@use` with a namespace, `as *`, `@forward` with a prefix, `show` and `hide`,
-// `@use … with (…)`, and the members of other modules (`p.$blue-500`, `p.fn()`, `@include p.mixin`). The expected values are
-// what Dart Sass makes of the same files (checked with `sass` itself), not what the evaluator makes.
+// The expected values are what Dart Sass makes of the same files (checked with `sass` itself), not what the evaluator makes.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,7 +29,6 @@ function project(files: Record<string, string>): string {
     return dir;
 }
 
-/** The custom properties that the evaluated entry file makes, by name. */
 function made(files: Record<string, string>, entry: string): Record<string, string> {
     const out = expandSassFiles(Object.entries(files).map(([rel, text]) => ({ rel, text })));
     const text = out.get(entry);
@@ -303,8 +300,6 @@ test("a module that is not in the project is read as it was written, and a file 
     );
 });
 
-// A generated palette: hues and stops in maps, a loop that makes every shade, a function that picks one, all forwarded
-// through an index and used by a mixin in another module and by the entry. The values are Dart Sass's.
 const GENERATED: Record<string, string> = {
     "scss/tokens/_colors.scss": `@use "sass:map";
 @use "sass:color";

@@ -1,16 +1,13 @@
-/** The color roles of the scan (stream T): a color for each role, from the names of the project's variables first and from how the colors are used second. */
 import { contrastRatio } from "./color.ts";
 import { type Kinds } from "./scan-facts.ts";
 import { type ColorEntry, distance, type RoleName, ROLES, w } from "./scan-color-base.ts";
 import { nameScore, words } from "./scan-color-names.ts";
 
-/** What decides a role's color. */
 export interface RoleChoice {
     role: RoleName;
     hex: string;
     /** `name` when a variable's name chose it; `use` when how the color is used did. */
     basis: "name" | "use";
-    /** The variable (or the usage) that chose it, for the report. */
     source: string;
     score: number;
 }
@@ -19,16 +16,12 @@ export interface VarColor {
     name: string;
     hex: string;
     uses: number;
-    /** How the variable is used as a color: as a background, as text, as a border. */
     kinds?: Kinds;
     /** The platform whose naming this variable follows, when that says more than the name does. */
     platform?: "wordpress";
 }
 
-/**
- * The words of a variable's name. WordPress block themes call the page `base` and the text `contrast` (Twenty Twenty-Four
- * and after), which no other system reads that way.
- */
+// WordPress block themes (Twenty Twenty-Four and after) call the page `base` and the text `contrast`.
 const wordsOf = (variable: VarColor): string[] => {
     const all = words(variable.name);
 
@@ -56,10 +49,7 @@ const hueOk = (role: RoleName, color: ColorEntry): boolean => {
     }
 };
 
-/**
- * Chooses a color for each role. Variable names come first (a variable called `--bg-surface` is the surface), the way
- * the colors are used second. `colors` are all the project's colors; `named` are those that variables hold.
- */
+// `colors` is every color of the project; `named` is the subset that variables hold.
 export function chooseRoles(
     colors: Map<string, ColorEntry>,
     named: VarColor[],
@@ -85,7 +75,7 @@ export function chooseRoles(
 
     const entry = (hex: string) => colors.get(hex);
 
-    // 1. Names: the best fitting variable for each role, the page background first (the others are judged against it).
+    // Names first, the page background first: the others are judged against it.
     const pickNamed = (
         role: RoleName,
         bg: ColorEntry | undefined,
@@ -304,7 +294,6 @@ export function chooseRoles(
         }
     }
 
-    // 2. Use: what the names did not settle.
     const neutral = entries.filter((color) => color.c < 0.06 && color.rgba.a > 0.9);
     const pageSource = (hex: string) => `used on the page ${hex}`;
 
@@ -561,5 +550,3 @@ export function chooseRoles(
 
     return chosen;
 }
-
-// --- Palette names ----------------------------------------------------------------------------------------------------

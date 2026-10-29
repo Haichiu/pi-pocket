@@ -1,7 +1,3 @@
-/**
- * How a project uses its values (stream T): each declaration is counted by what it sets (a color for the background, the
- * text, or a border; a font stack; a size; a space; a radius; a shadow; a duration; an easing), and its variables recorded.
- */
 import { colorsIn, commaParts, type Decl, isDarkSelector, parts, px } from "./scan-parse.ts";
 import { nameScore, words } from "./scan-colors.ts";
 import { addVar, bump, type ColorFact, emptyKinds, type Facts, type Kinds } from "./scan-facts.ts";
@@ -22,7 +18,6 @@ const COLOR_PROPERTY: [RegExp, "bg" | "text" | "border" | "fill" | "shadow"][] =
     [/^(?:box-shadow|text-shadow|filter|drop-shadow)$/, "shadow"],
 ];
 
-/** Selectors of the page's root: `body`, `html`, `:root`, `#app`, `#root`, `main`. */
 const ROOTISH =
     /^(?:html|body|:root|#root|#app|#__next|main|\.app|\.App|#app-root|\.(?:page|wrapper|layout|site|shell|root|app-shell|page-wrapper|site-wrapper|app-wrapper|container|screen|safeArea|safe-area)|#(?:page|wrapper|main|site|layout))(?:[.#:[][^\s,>+~]*)?$/;
 
@@ -75,7 +70,6 @@ export function colorFact(
     return fact;
 }
 
-/** Records the colors in a declaration's value as uses. */
 function useColors(facts: Facts, decl: Decl, dark: boolean): void {
     const known = COLOR_PROPERTY.find(([pattern]) => pattern.test(decl.prop))?.[1];
     // Any other property may still hold a literal color (`filter: drop-shadow(… #000)`); a color name counts only where
@@ -118,8 +112,6 @@ function useColors(facts: Facts, decl: Decl, dark: boolean): void {
         );
     }
 
-    // A rule with one class (`.text-gray-900 { color: #111827 }`, `.dark .text-gray-900 { color: #f9fafb }`) is that
-    // class's color in its mode: used as often as markup uses the class, and paired with its other mode.
     const single = /^(?:[^\s,]*\s+)?\.([\w-]+)$/.exec(decl.selector.trim());
 
     if (
@@ -146,9 +138,6 @@ function useColors(facts: Facts, decl: Decl, dark: boolean): void {
     }
 }
 
-// --- Other uses ----------------------------------------------------------------------------------------------------
-
-/** The family names of a `font-family` value, quotes removed; undefined for `inherit` or a `var()`. */
 export function stackOf(value: string): string[] | undefined {
     if (/^(?:inherit|initial|unset|revert)$/i.test(value.trim()) || /^var\(/i.test(value.trim())) {
         return undefined;
@@ -296,11 +285,9 @@ const SASS_PROPS =
 const SCALE_PROPS =
     /^(?:padding|margin|gap|row-gap|column-gap|border-radius|font-size)(?:-[a-z-]+)?$/;
 
-/** Counts a declaration (not a custom property) in all the tallies. */
 export function ingest(facts: Facts, decl: Decl): void {
     noteChannels(facts, decl.value);
 
-    // A length variable shows what it is for by the property that takes it: `padding: var(--size-4)` is spacing.
     if (decl.value.includes("var(")) {
         const group = SPACING_PROPS.test(decl.prop)
             ? "space"
@@ -338,7 +325,6 @@ export function ingest(facts: Facts, decl: Decl): void {
                     /(?<![\w-])(?:tint-color|shade-color|shift-color|darken|lighten|desaturate|fade-in|fade-out|transparentize|opacify|adjust-hue|mix)\(/.test(
                         decl.value,
                     ) ||
-                    // A call of the project's own function (`space(3)`, `rem(24)`) or of map.get: resolved with the Sass.
                     /(?<![\w.-])(?:map[.-]get|(?!(?:calc|var|rgba?|hsla?|oklch|oklab|lab|lch|hwb|color|color-mix|clamp|min|max|minmax|repeat|url|attr|env|translate\w*|rotate\w*|scale\w*|linear-gradient|radial-gradient|conic-gradient|cubic-bezier|steps|counter|format|local|image-set|fit-content|blur|drop-shadow|brightness|contrast|saturate|sepia|invert|grayscale|opacity|hue-rotate)\()[a-z][\w-]*\(\s*-?[\d.$'"])/i.test(
                         decl.value,
                     )) &&
@@ -472,10 +458,7 @@ export function ingest(facts: Facts, decl: Decl): void {
     }
 }
 
-// --- Variables -----------------------------------------------------------------------------------------------------
-
-/** The light and the dark text of a value with `light-dark(a, b)` in it (each call made its first or its second). */
-export function lightDark(value: string): [string, string] | undefined {
+function lightDark(value: string): [string, string] | undefined {
     let light = "";
     let dark = "";
     let at = 0;
@@ -549,7 +532,6 @@ export function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
                   decl.scope === "default" && !decl.inline ? { ...decl, scope: mode } : decl,
               );
 
-    // `light-dark(a, b)` is two values: `a` in the light mode, `b` in the dark one.
     const expanded = decls.flatMap((decl): Decl[] => {
         const pair = decl.value.includes("light-dark(") ? lightDark(decl.value) : undefined;
 
@@ -603,7 +585,6 @@ export function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
             continue;
         }
 
-        // `map-merge($theme-colors, ("brand": #6f42c1))` adds the entries of its last map.
         const merged = /^map-merge\(\s*[$\w.-]+\s*,\s*(\(.*\))\s*\)$/s.exec(decl.value);
         const mapText = merged === null ? decl.value : merged[1]!;
 
@@ -613,7 +594,6 @@ export function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
             continue;
         }
 
-        // `$surface: if($theme == dark, #1a1c21, #ffffff)`: a value for each mode.
         const choice =
             /^if\(\s*\$[\w-]+\s*==\s*['"]?(dark|night|light|day)['"]?\s*,([\s\S]*)\)$/i.exec(
                 decl.value,

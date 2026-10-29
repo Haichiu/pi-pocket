@@ -1,4 +1,3 @@
-// The top of the scan's report: "Review these", the roles and scales the scan is not sure of, and the files it left out.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,7 +24,6 @@ function project(files: Record<string, string>): string {
 
 const report = (dir: string) => scanReport(scanTokens(dir));
 
-/** The "Review these" block of a report: its lines, up to the first blank line. */
 const review = (text: string) => {
     const at = text.indexOf("Review these");
 
@@ -63,7 +61,6 @@ test("the roles chosen on weak evidence and the roles with no color are listed f
         lines.some((line) => /no color found for .*success/.test(line)),
         lines.join("\n"),
     );
-    // The review list comes before the roles, so a person sees it first.
     assert.ok(text.indexOf("Review these") < text.indexOf("Color roles"));
 });
 
@@ -82,7 +79,6 @@ test("the scales that are a thin guess are listed by category, and the spacing v
     assert.match(scales, /type scale \(guessed from use: 1 value, 1 use\)/);
     assert.match(scales, /shadows \(guessed from use/);
     assert.match(scales, /fit no step of the \d+px grid: /);
-    // A scale that comes from variables is the project's word, so it is not listed.
     assert.doesNotMatch(review(report(project({ "a.css": CLEAN }))).join("\n"), /scale/);
 });
 

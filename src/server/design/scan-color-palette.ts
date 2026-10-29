@@ -1,7 +1,5 @@
-/** The palette names of the scan (stream T): a color's family by hue, and its step by lightness. */
 import { type ColorEntry } from "./scan-color-base.ts";
 
-/** The hue family of a color: `gray` when it has almost no chroma. */
 export function family(color: { c: number; h: number }): string {
     if (color.c < 0.045) {
         return "gray";
@@ -31,7 +29,6 @@ export function family(color: { c: number; h: number }): string {
 
 export const STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] as const;
 
-/** The lightness step (50 lightest, 950 darkest) of a color, on the scale of Tailwind's palette. */
 export function step(l: number): number {
     const limits: [number, number][] = [
         [0.976, 50],
@@ -49,10 +46,7 @@ export function step(l: number): number {
     return limits.find(([limit]) => l > limit)?.[1] ?? 950;
 }
 
-/**
- * Names primitives by family and step. `taken` is every path in use (joined by "."); a color whose name is taken moves
- * to the nearest free step. A translucent color keeps its alpha in the name.
- */
+// A taken name moves to the nearest free step; a translucent color keeps its alpha in the name.
 export function paletteName(color: ColorEntry, taken: Set<string>): string[] {
     // Pure white and pure black are not a step of anything.
     if (color.hex === "#ffffff" && !taken.has("color.white")) {

@@ -1,21 +1,10 @@
-/**
- * The script that reads a rendered page (stream T): what the browser computed, kept to the values the page's author set.
- * It runs in an isolated world of the private Chromium of `render.ts`, so the page's own scripts cannot change what it
- * uses. A value counts only when the author's styles made it: the page is read with its styles and again with every
- * stylesheet and inline style off, and a value that is the same in both is the browser's own (the blue of a link, the
- * grey of a button, the 8px margin of the body) and left out. The answer is plain data, bounded in size.
- */
+// Runs in an isolated world, so the page's own scripts cannot change what it uses. A value that is the same with and without the author's styles is the browser's own, and is left out.
 
-/** Weighted values of a page, by computed text (`rgb(37, 99, 235)`, `16px`, `Inter, sans-serif`). */
 export type Weights = Record<string, number>;
 
-/** What one reading of a page holds. */
 export interface Reading {
-    /** Custom properties of the root, as computed (`var()` followed), by name. */
     vars: Record<string, string>;
-    /** The color of the page: the body's background, else the root's, and the root's text color. */
     page: { bg: string; text: string; bgAuthored: boolean; textAuthored: boolean };
-    /** How many elements were read. */
     count: number;
     /** Backgrounds (area in px² ÷ 100), by kind of element and then by color. */
     bg: Record<string, Weights>;
@@ -28,24 +17,17 @@ export interface Reading {
     size: Record<string, Weights>;
     space: Weights;
     weight: Weights;
-    /** Elements named for a status (class or id words): the colors they set, by status. */
     status: Record<string, { bg: Weights; text: Weights; border: Weights }>;
-    /** Buttons that have a background of their own, in page order. */
     buttons: { bg: string; color: string; area: number; primary: boolean }[];
 }
 
-/** The input of the script. */
 export interface ProbeInput {
-    /** Custom property names to read on the root. */
     vars: string[];
     /** Also read the page with no style, to leave out the browser's own values (the first reading only). */
     bare: boolean;
 }
 
-/**
- * The function that makes a reading, as source text. It takes a `ProbeInput`. It reads at most 2,500 elements and
- * keeps the 60 heaviest values of each kind.
- */
+// Reads at most 2,500 elements and keeps the 60 heaviest values of each kind.
 export const PROBE_SOURCE = String.raw`(input) => {
     const root = document.documentElement;
     const body = document.body;

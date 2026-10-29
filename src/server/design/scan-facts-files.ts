@@ -1,4 +1,3 @@
-/** The files of a project, read into facts (stream T): style files, scripts, and markup, by their extension. */
 import {
     colorsIn,
     indentedToBraces,
@@ -50,7 +49,6 @@ const WEIGHT_CLASS =
 const SPACING_CLASS =
     /(?<![\w-])(?:p|px|py|pt|pr|pb|pl|ps|pe|m|mx|my|mt|mr|mb|ml|ms|me|gap|gap-x|gap-y|space-x|space-y)-(\d+(?:\.\d+)?)(?![\w-])/g;
 
-/** The theme-like file names: a JavaScript file with these may hold a design theme. */
 // A script that writes styles: styled-components, Emotion, Stitches, makeStyles, a style prop or an `sx` prop.
 const STYLED =
     /\bstyled\s*[.(]|\bcss\s*`|createGlobalStyle|keyframes\s*`|makeStyles|createUseStyles|\bsx\s*=|style\s*=\s*\{|\bcva\s*\(|\bglobalStyle\b|StyleSheet\.create|\bstyle\s*:\s*\{|\bstyles\s*:\s*\[?\s*`/;
@@ -62,18 +60,15 @@ const THEME_CONTENT =
 const THEMEISH =
     /(?:^|\/)(?:tailwind\.config|[^/]*(?:theme|tokens?|colors?|palette|design|variables|styles?|constants?|config)[^/]*)\.(?:[cm]?[jt]s|tsx?)$|(?:^|\/)(?:theme|themes|tokens|design-tokens|styles|design|constants)\/(?:[^/]+\/)*[^/]+\.[cm]?[jt]sx?$|(?:^|\/)[^/]*(?:tokens|theme|design)[^/]*\/(?:[^/]+\/)*[^/]+\.[cm]?[jt]sx?$/i;
 
-/** The line of the file where a block of it starts, or undefined when the block is not a part of the file as it is. */
 function lineOfBlock(raw: string, block: string): number | undefined {
     const at = raw.indexOf(block);
 
     return at === -1 ? undefined : 1 + (raw.slice(0, at).match(/\n/g)?.length ?? 0);
 }
 
-/** Reads one file's text into the facts. `extension` is the lower-case ending with its dot. */
 export function ingestFile(facts: Facts, rel: string, extension: string, raw: string): void {
     const text = stripComments(raw);
     const parts = rel.split("/");
-    // `dark.less`, `theme.dark.css`, `variables-night.scss`, `themes/dark/colors.css`.
     const named = modeOf(parts.at(-1)!.replace(/\.[^.]+$/, ""));
     const mode = named ?? (parts.length > 1 ? modeOf(parts.at(-2)!) : undefined);
 
@@ -86,7 +81,6 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
         raw = wordpressNames(raw);
     }
 
-    // `@function space($n) { @return $n * 4px; }`: a call `space(3)` is then 12px.
     if (extension === ".scss" || extension === ".sass") {
         for (const match of text.matchAll(
             /@function\s+([\w-]+)\s*\(\s*\$([\w-]+)[^)]*\)\s*\{\s*@return\s+([^;]+);/g,
@@ -100,14 +94,12 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
         }
     }
 
-    // `$x` and `@x` are uses of a stylesheet variable.
     if (extension === ".scss" || extension === ".sass" || extension === ".less") {
         for (const match of text.matchAll(/[$@]([A-Za-z_][\w-]*)(?!\s*:)/g)) {
             bump(facts.varUse, match[1]!);
         }
     }
 
-    // `var(--x)` is a use of a variable, wherever it is written.
     for (const match of text.matchAll(/var\(\s*--([\w-]+)/g)) {
         bump(facts.varUse, match[1]!);
     }
@@ -125,7 +117,6 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
 
     importMaterial(facts.imported, rel, raw);
 
-    // A Style Dictionary config in JavaScript names the token files by globs.
     if (
         /^\.(?:[cm]?[jt]s)$/.test(extension) &&
         /\bplatforms\b/.test(raw) &&
@@ -140,7 +131,6 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
             importTokens(facts.imported, rel, raw);
         }
 
-        // Ant Design's theme editor exports its `ThemeConfig` as JSON: `{ "token": { "colorPrimary": "#1677ff" } }`.
         if (hasAntdTheme(raw)) {
             themeVars(facts, rel, raw);
         }
@@ -190,7 +180,6 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
     if (isPage || isScript) {
         let seen = 0;
 
-        // Tailwind's default colors by class: `bg-slate-200`, `text-white`, `border-red-500/50`.
         for (const match of text.matchAll(DEFAULT_COLOR_CLASS)) {
             if (++seen > 8000) {
                 break;
@@ -205,7 +194,6 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
 
         seen = 0;
 
-        // Tailwind's arbitrary values: `bg-[#fff4d6]`, `text-[rgb(0,0,0)]`.
         for (const match of text.matchAll(
             /(?<![\w-])(bg|text|border|fill|stroke|ring|outline|from|to|via)-\[(#[0-9a-fA-F]{3,8}|(?:rgba?|hsla?|oklch|oklab)\([^\])]*\))\]/g,
         )) {
@@ -277,7 +265,6 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
                 break;
             }
 
-            // Tailwind's step is a multiple of 0.25rem (4px).
             bump(facts.classSpacing, Number(match[1]) * 4);
         }
 

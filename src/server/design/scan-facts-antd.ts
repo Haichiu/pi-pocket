@@ -1,18 +1,8 @@
-/**
- * Ant Design themes (stream T): a `ThemeConfig`, `{ token: { colorPrimary, colorBgContainer, fontSize, borderRadius, … },
- * components: { … }, algorithm: theme.darkAlgorithm }`, in a file of its own (`light.ts`, `dark.ts`), as a `theme` prop of
- * `ConfigProvider`, or in one object with the algorithm switched at run time. The seed tokens are read as variables named
- * for what they are (`colorBgLayout` is the page, `colorBgContainer` a surface, `colorText`, `colorTextSecondary`,
- * `colorBorder`, `colorPrimary` the accent, `colorError` the danger), numbers are pixels, and an object whose algorithm is
- * the dark one (or whose name or file says dark) holds the dark mode. The tokens of one component are left out: they are
- * that component's own, not the design's.
- */
 import { readLiteral, type Literal, type Scope } from "./scan-parse.ts";
 import { addVar, type Category, type Facts } from "./scan-facts.ts";
 import { modeOf } from "./scan-facts-lists.ts";
 import { closeOf, openAround, topLevelValue } from "./scan-braces.ts";
 
-/** How a seed token is read: the name of the variable, and what it is. */
 function seed(
     key: string,
     value: Literal,
@@ -72,15 +62,12 @@ function seed(
     return undefined;
 }
 
-/** Whether a file has an Ant Design theme: it uses Ant Design and sets `token`. */
 export const hasAntdTheme = (text: string) =>
     USES_ANTD.test(text) && /(?<![\w$.])["']?token["']?\s*:\s*\{/.test(text);
 
-/** Whether a file uses Ant Design: an import from it, a `ThemeConfig`, or one of its algorithms. */
 const USES_ANTD =
     /from\s+["']antd["']|ThemeConfig|ConfigProvider|@ant-design|\b(?:dark|default|compact)Algorithm\b|["']color(?:BgContainer|BgLayout|BgElevated)["']\s*:/;
 
-/** The spans of `components: { … }` in a file that uses Ant Design: what is in them is one component's own. */
 export function antdComponentSpans(text: string): { at: number; end: number }[] {
     if (!USES_ANTD.test(text)) {
         return [];
@@ -95,7 +82,6 @@ export function antdComponentSpans(text: string): { at: number; end: number }[] 
         });
 }
 
-/** Reads the Ant Design theme objects of a file into `facts`. `scopeAt` says which mode the name of an object stands for. */
 export function antdTheme(
     facts: Facts,
     file: string,

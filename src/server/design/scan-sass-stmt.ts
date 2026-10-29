@@ -1,18 +1,9 @@
-/**
- * The statements of a Sass stylesheet (stream T): `$x: expression;`, `@each … { … }`, `selector { … }`, `property: value;`. The
- * text is cut at `;` and at `{ … }`, with strings, comments, parentheses, and `#{}` skipped over and not read into. A
- * statement keeps the line it starts on and the text as it was written.
- */
 import { Unsupported } from "./scan-sass-expr.ts";
 
 export interface Stmt {
-    /** The line of the source where it starts. */
     line: number;
-    /** What is before a `{` or `;`. */
     head: string;
-    /** The statements in `{ … }`, or undefined for one that ends with `;`. */
     body: Stmt[] | undefined;
-    /** The text of the statement as it was written, for when it cannot be run. */
     raw: string;
 }
 
@@ -24,7 +15,6 @@ export const LIMITS = {
     output: 600_000,
 } as const;
 
-/** The statements of a block of text. Strings, comments, parentheses, and `#{}` are skipped over, not read into. */
 export function statementsOf(source: string, firstLine: number, depth = 0): Stmt[] {
     if (depth > LIMITS.depth) {
         throw new Unsupported("nested too deep");
@@ -67,7 +57,6 @@ export function statementsOf(source: string, firstLine: number, depth = 0): Stmt
             continue;
         }
 
-        // Where a statement starts: the first character that is not white space after the last one ended.
         if (blank && !/\s/.test(char)) {
             headLine = line;
             headStart = at;
@@ -150,7 +139,6 @@ export function statementsOf(source: string, firstLine: number, depth = 0): Stmt
             let index = at + 1;
             let inner = at;
 
-            // Find the matching brace, skipping strings and comments.
             for (; index < source.length && level > 0; index++) {
                 const each = source[index]!;
 
@@ -214,7 +202,6 @@ export function statementsOf(source: string, firstLine: number, depth = 0): Stmt
     return out;
 }
 
-/** A text split at a separator outside parentheses, brackets, strings, and `#{}`. */
 export function splitTop(source: string, separator: string): string[] {
     const parts: string[] = [];
     let depth = 0;
@@ -248,7 +235,6 @@ export function splitTop(source: string, separator: string): string[] {
     return parts;
 }
 
-/** The names that a stylesheet loads with `@use` and `@import`, as written (`"variables"`, `"./theme/colors"`). */
 export function dependenciesOf(source: string): string[] {
     return [...source.matchAll(/@(?:use|import|forward)\s+((?:["'][^"']+["']\s*,?\s*)+)/g)].flatMap(
         (match) => [...match[1]!.matchAll(/["']([^"']+)["']/g)].map((each) => each[1]!),
