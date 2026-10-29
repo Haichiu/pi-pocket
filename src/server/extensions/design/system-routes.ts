@@ -1,8 +1,6 @@
 /**
  * The System view's routes (`/api/x/design/c/:conversation/system…`): read the project's design system, write changes to
- * it, check a design against it, publish its documentation page as an artifact, and export it for code. Everyone who sees
- * the session reads; people who steer write. Every body is data from a browser: its shape and size are checked here, the
- * values of tokens by the engine (`system-api.ts`).
+ * it, check a design against it, publish its documentation page as an artifact, and export it for code.
  */
 import { createHash } from "node:crypto";
 import { lstatSync } from "node:fs";
@@ -39,7 +37,6 @@ import {
     writeDesignSystem,
 } from "./system-api.ts";
 
-/** What one save may carry: the number of token changes, the size of one value, the guidelines. */
 export const LIMITS = {
     set: 500,
     value: 8192,
@@ -50,20 +47,18 @@ export const LIMITS = {
 
 const MODE_NAME = /^[a-z][a-z0-9-]{0,31}$/;
 const TOKEN_NAME = /^[A-Za-z0-9_-]{1,64}(?:\.[A-Za-z0-9_-]{1,64}){0,7}$/;
-/** A name that is a place on every object: never a group or a token, whatever the engine does with it. */
+// Names that exist on every object: never a group or a token.
 const INHERITED = new Set(["__proto__", "constructor", "prototype"]);
 
 const tokenName = (name: string): boolean =>
     TOKEN_NAME.test(name) && !name.split(".").some((part) => INHERITED.has(part));
 const KEY = /^[\w-]{8,64}$/;
-/** The compiled files a page links as `ds/…` (as the artifact tool attaches them). */
 const DESIGN_FILES = {
     "ds/tokens.css": "css",
     "ds/tailwind.css": "tailwind",
     "ds/components.css": "components",
 } as const;
 
-/** The artifact the documentation page is published as: each publish adds a version of it. */
 export const DOCS_ID = "design-system-docs";
 const VIEWPORTS = {
     mobile: { width: 390, height: 844 },
@@ -99,7 +94,6 @@ const coordinate = (value: unknown): number =>
         ? Math.round(Math.max(-1e7, Math.min(1e7, value)) * 10) / 10
         : 0;
 
-/** The change the editor makes to a token: a JSON value of a known shape, bounded in depth, width, and size. */
 function cleanValue(web: Pick<ExtensionWeb, "error">, value: unknown, depth = 0): unknown {
     const bad = () => web.error(400, "A token value is text, a number, a list, or a small object.");
 
@@ -154,10 +148,6 @@ function cleanValue(web: Pick<ExtensionWeb, "error">, value: unknown, depth = 0)
     throw bad();
 }
 
-/**
- * The body of a save, as a change the engine writes. The editor changes single tokens (`set`), adds or removes a mode
- * (`modes`: `{}` adds, `null` removes), and edits the guidelines; the whole token files are Pi's to write.
- */
 export function cleanChange(
     web: Pick<ExtensionWeb, "error">,
     body: Readonly<Record<string, unknown>>,
@@ -199,7 +189,6 @@ export function cleanChange(
         });
     }
 
-    // A mode's file stops setting a token (it takes the default mode's value again): the token and the mode, and no more.
     if (body.remove !== undefined) {
         if (!Array.isArray(body.remove) || body.remove.length > LIMITS.set) {
             throw web.error(400, `A save gives up to ${LIMITS.set} values back.`);
@@ -283,7 +272,6 @@ export function cleanChange(
     return { change, baseRevision: body.baseRevision as string | undefined };
 }
 
-/** A short fingerprint of what the view shows: the tokens, the components, the guidelines. */
 export function revisionOf(system: DesignSystem): string {
     return createHash("sha256")
         .update(
@@ -299,7 +287,6 @@ export function revisionOf(system: DesignSystem): string {
         .slice(0, 16);
 }
 
-/** The system as the browser gets it: no compiled files but the components' CSS, plus their sizes. */
 export function viewOf(system: DesignSystem) {
     return {
         name: system.name,
@@ -310,7 +297,6 @@ export function viewOf(system: DesignSystem) {
         components: system.components,
         guidelines: system.guidelines,
         problems: system.problems,
-        // Notes that need no action (an exempt contrast pair), and the tokens each mode's file sets itself.
         ...(system.notes === undefined ? {} : { notes: system.notes }),
         ...(system.overrides === undefined ? {} : { overrides: system.overrides }),
         componentsCss: system.compiled.components,
@@ -330,18 +316,12 @@ export function viewOf(system: DesignSystem) {
     };
 }
 
-/** A report as the app reads it: the open findings, and the ones that a person accepted, apart and not in the counts. */
 export type CheckedReport = CheckReport & {
     accepted: CheckFinding[];
-    /** The ids of every finding, accepted or not, as the engine ordered them: an undo puts one back in its place. */
     order: string[];
 };
 
-/**
- * What a report from the page check holds, cut to a fixed shape: its words come from the page. The findings whose `id` is in
- * `accepted` (a person decided that they are fine) go to `accepted`, and the counts are of the open ones only; an engine that
- * returns its own `accepted` list is read the same way.
- */
+// The report holds text from the page: every field is cut to a fixed shape.
 export function cleanReport(
     report: CheckReport,
     system?: DesignSystem,
@@ -355,7 +335,6 @@ export function cleanReport(
         Array.isArray(value) ? value.slice(0, 2000) : [];
     const engines = (report as { accepted?: unknown } | undefined)?.accepted;
 
-    // What is not a finding (a rule the app does not know, a null) is skipped before it counts toward the limit.
     for (const [each, apart] of [
         ...listed(report?.findings).map((one) => [one, false] as const),
         ...listed(engines).map((one) => [one, true] as const),
@@ -402,7 +381,6 @@ export function cleanReport(
             elements: Math.max(0, Math.round(coordinate(report?.summary?.elements))),
             byRule,
             ...(set.length > 0 ? { accepted: set.length } : {}),
-            // What the check could not judge (contrast on an uncertain background), so that silence can be trusted.
             ...(left !== undefined && coordinate(left.count) > 0
                 ? {
                       notJudged: {
@@ -420,7 +398,6 @@ export function cleanReport(
     };
 }
 
-/** One finding in the fixed shape, or none for what is not a finding of a rule the app knows. */
 function cleanFinding(
     each: CheckFinding,
     system: DesignSystem | undefined,
@@ -433,13 +410,11 @@ function cleanFinding(
     const rect = each.rect;
     const fix = each.fix;
 
-    // Whether one tap can fix it: the engine says (`fixable`), else it is an exact match that the stand-in can rewrite.
     const fixable =
         (each as { fixable?: unknown }).fixable === true || isFixable(each, system, mode);
 
     return {
         ...(typeof each.id === "string" ? { id: clip(each.id, 60) } : {}),
-        // A grouped finding (one rule, value, and fix on several elements) lists its elements, each with a pin.
         ...(Array.isArray(each.elements) && each.elements.length > 1
             ? {
                   elements: each.elements.slice(0, 12).map((item) => ({
@@ -460,7 +435,6 @@ function cleanFinding(
                   })),
               }
             : {}),
-        // A fixable finding keeps what `applyExactFixes` needs; it checks the system again before it rewrites.
         ...(typeof fix === "object" &&
         fix !== null &&
         ["color", "length", "font"].includes(fix.kind) &&
@@ -497,10 +471,9 @@ function cleanFinding(
     };
 }
 
-/** Whether the old Markdown design system is there: a plain file, never a link. */
 function legacySize(cwd: string): number | null {
     try {
-        // Neither the folder nor the file is a link.
+        // Links are refused: only a plain folder and file count.
         if (!lstatSync(join(cwd, ".pi")).isDirectory()) {
             return null;
         }
@@ -513,10 +486,7 @@ function legacySize(cwd: string): number | null {
     }
 }
 
-/**
- * What a person is told when the engine refuses a change: the engine's problems in a line (its own message is written for
- * Pi: it ends with "Fix them and call again"), else its message cut. The problems go along, cut to a fixed shape.
- */
+// The engine's own message is written for Pi ("Fix them and call again"), so the problems are shown instead.
 export function refusal(error: unknown): { failed: string; problems: SystemProblem[] } {
     const list = (error as { problems?: unknown } | null)?.problems;
     const problems: SystemProblem[] = (Array.isArray(list) ? list : [])
@@ -547,7 +517,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
     const view = { conversation: "conversation", access: "view" } as const;
     const steer = { conversation: "conversation", access: "steer" } as const;
 
-    /** Saves go one at a time for each folder: a save reads the revision and writes, and no other may come between. */
+    // One save at a time for each folder: a save reads the revision and writes, and no other may come between.
     const queues = new Map<string, Promise<unknown>>();
 
     const exclusive = async <T>(cwd: string, work: () => Promise<T> | T): Promise<T> => {
@@ -571,7 +541,6 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         return cwd;
     };
 
-    /** The loaded system, or a 404; read failures answer with their words. */
     const load = async (cwd: string): Promise<DesignSystem | undefined> => {
         try {
             return await loadDesignSystem(cwd);
@@ -585,7 +554,6 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
 
     const changed = (conversation: number) => web.send("system", { conversation });
 
-    // The system, or what a project has in its place. `?revision=` answers `unchanged` when the browser has the latest.
     web.conversationRoute(
         "GET",
         "c/:conversation/system",
@@ -627,8 +595,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     );
                 }
 
-                // A mode is added or removed here, never rewritten: `{}` for a mode that is there would empty its file, and the
-                // default mode is the tokens file itself.
+                // `{}` for a mode that is there would empty its file, and the default mode is the tokens file itself.
                 for (const [mode, body] of Object.entries(change.modes ?? {})) {
                     if (body === null && !current.modes.includes(mode)) {
                         throw web.error(400, "There is no such mode.");
@@ -646,8 +613,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     }
                 }
 
-                // The view changes tokens that are there, in modes that are there: a name that is not either is a bug of the
-                // caller, and the engine would make a new token or a new mode file of it.
+                // The engine would make a new token or mode file of a name that is not there.
                 for (const entry of change.set ?? []) {
                     if (!current.modes.includes(entry.mode)) {
                         throw web.error(400, `There is no mode “${entry.mode}”.`);
@@ -658,8 +624,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     }
                 }
 
-                // A removal gives a mode's value back to the default mode: it is for a token that the mode's own file sets. In the
-                // default mode it would delete the token, and the engine would take that as meant.
+                // In the default mode a removal would delete the token, and the engine would take that as meant.
                 for (const entry of change.remove ?? []) {
                     if (!current.modes.includes(entry.mode)) {
                         throw web.error(400, `There is no mode “${entry.mode}”.`);
@@ -688,7 +653,6 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             });
 
             if ("failed" in result) {
-                // A change the engine refuses is the person's to fix, so it answers with the words, in the answer's body.
                 return { ok: false, error: result.failed, problems: result.problems };
             }
 
@@ -699,10 +663,6 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         steer,
     );
 
-    /**
-     * What a check and a fix take from a body: the design and version, and how the page is looked at (a mode of the system, a
-     * color scheme, a size). The body is checked here; a mode that the system does not have is refused with its words.
-     */
     const checkTarget = async (request: ConversationWebRequest) => {
         const id = typeof request.body.id === "string" ? request.body.id : "";
         const version = request.body.version;
@@ -732,8 +692,6 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         const cwd = folderOf(request);
         const system = await load(cwd);
 
-        // A mode of the system: the page is checked against it, in the color scheme that the system gives it (the
-        // scheme asked for, when the person asked for one).
         if (mode !== undefined && system !== undefined && !system.modes.includes(mode)) {
             throw web.error(
                 400,
@@ -753,7 +711,6 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         return { id, version: version as number | undefined, options, system, mode: checked };
     };
 
-    /** The ids of the findings that people accepted for a design: the check leaves them out of its counts and a fix leaves them be. */
     const acceptedOf = async (
         request: ConversationWebRequest,
         id: string,
@@ -768,7 +725,6 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         return new Set(Object.keys(item?.accepted ?? {}));
     };
 
-    // Check a design against the system: the page is rendered and walked in a private Chromium (`checkDesign`).
     web.conversationRoute(
         "POST",
         "c/:conversation/system/check",
@@ -785,7 +741,6 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     request.context,
                 );
                 const accepted = await acceptedOf(request, id);
-                // The ids are the engine's to leave out (`accepted`); `cleanReport` makes the same split when it did not.
                 const asked: CheckOptions & { accepted?: readonly string[] } = {
                     ...options,
                     ...(accepted.size > 0 ? { accepted: [...accepted] } : {}),
@@ -811,10 +766,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         steer,
     );
 
-    // "Fix the exact matches": a new version of the design with each literal that is a token's value written as `var(--token)`.
-    // The page is checked again here (what is rewritten follows what the check finds now, not what a browser says), and no run
-    // of Pi is made. Like "Go back to this one" it is a version, written in one commit with the version's assets kept, and
-    // the key makes a repeat of the same tap find the version it made.
+    // The key makes a repeat of the same tap find the version it made.
     web.conversationRoute(
         "POST",
         "c/:conversation/system/fix",
@@ -841,7 +793,6 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 index !== undefined && Object.hasOwn(index.items, id) ? index.items[id] : undefined;
             const again = known?.versions.find((each) => each.callId === callId);
 
-            // The same tap again: the version that it made.
             if (again !== undefined) {
                 return { id, version: again.version, fixed: 0, again: true };
             }
@@ -898,8 +849,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             }
 
             const content = result.content;
-            // The fix writes var(--token) for the system as it is now: the `ds/` files the version carries are a snapshot of
-            // when it was published, and may not define those tokens yet, so the new version gets the current ones.
+            // The version's `ds/` files are a snapshot and may not define these tokens yet: the new version gets the current ones.
             const fresh = new Map<string, { asset: ArtifactAsset; bytes: Buffer }>();
 
             for (const [name, key] of Object.entries(DESIGN_FILES)) {
@@ -948,7 +898,6 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     }
                 }
 
-                // The version's record, assets and all, with a call id of its own that no real call matches; the page is new.
                 current.versions.push({
                     ...copy,
                     ...(copy.assets === undefined ? {} : { assets }),
@@ -977,8 +926,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         steer,
     );
 
-    // The documentation page as an artifact: a new version of `design-system-docs`, bundle assets and all. The key makes a
-    // repeat of the same tap find the version it made.
+    // The key makes a repeat of the same tap find the version it made.
     web.conversationRoute(
         "POST",
         "c/:conversation/system/docs",
@@ -1062,7 +1010,6 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 const assets = Object.fromEntries(
                     [...prepared].map(([name, each]) => [name, each.asset]),
                 );
-                // Made by the view, not by a tool call: no task runs it, and the call id matches no real call.
                 const record = {
                     version: next,
                     taskId: 0,
@@ -1101,8 +1048,6 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         steer,
     );
 
-    // The generated files as a zip, written in the session's `exports/` folder; the browser downloads it through the core
-    // route, as it does a design's export.
     web.conversationRoute(
         "POST",
         "c/:conversation/system/export",

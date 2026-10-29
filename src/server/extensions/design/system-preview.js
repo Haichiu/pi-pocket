@@ -1,6 +1,3 @@
-// What the open design is told while the System view has edits or shows a mode: the custom properties that differ from what
-// the design gets from the saved default mode. The store keeps it (`previewVars`), and the canvas sends it through the
-// bridge, so the design shows the edits live whether or not the view is on the screen.
 import { createModel, previewVars, tokenEdits, unsavedCount } from "./system.js";
 
 export function watchPreview(store) {
@@ -22,8 +19,6 @@ export function watchPreview(store) {
         let vars = {};
         const data = s.system.data;
 
-        // With the view on the screen: the mode in view (the default one for side by side). Without it: only the edits, in the
-        // default mode, so a design that was left shows the unsaved changes until they are saved or given up.
         if (data && (s.view === "system" || unsavedCount(data, s.history) > 0)) {
             const mode =
                 s.view === "system" && data.modes.includes(s.sysMode) ? s.sysMode : data.modes[0];
