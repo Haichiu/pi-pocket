@@ -153,10 +153,6 @@ function useListing(shared) {
     return shared ?? { data, problem, loading, load };
 }
 
-/**
- * A steady mark for an extension or theme: its icon, or the first letter of its name, in a color of the theme picked
- * from its name, so the same one looks the same everywhere. Small and square, drawn with a hairline.
- */
 export function Tile({ name, title, icon = null, large = false }) {
     const letter = (title ?? name ?? "?").trim().charAt(0).toUpperCase() || "?";
 
@@ -169,11 +165,9 @@ export function Tile({ name, title, icon = null, large = false }) {
     </span>`;
 }
 
-/** "a", "a and b", "a, b and c". */
 const sentence = (items) =>
     items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items.at(-1)}` : (items[0] ?? "");
 
-/** What each hook lets a module see, in words. */
 const HOOK_WORDS = {
     beforeTool: "tool calls, before they run",
     afterTool: "tool results",
@@ -182,13 +176,9 @@ const HOOK_WORDS = {
     onYield: "the end of each turn",
 };
 
-/** The last reach read, so a list opened again shows its facts at once. */
 let lastReach = null;
 
-/**
- * What each entry's pinned code reaches, and each theme's palette (`GET x/gallery/reach`): read after the index, and
- * never in the way of it. A server from before the route answers 404: the facts then wait for a restart.
- */
+/** A server from before the reach route answers 404: the facts then wait for a restart. */
 function useReach(data) {
     const [reach, setReach] = useState(lastReach);
     const [problem, setProblem] = useState(null);
@@ -223,10 +213,7 @@ function useReach(data) {
     return { reach, problem };
 }
 
-/**
- * The scan of an entry's offered files: none when it was not read, failed, was read for other pinned files (the same
- * commit can pin other files), or the version installed here is another one.
- */
+/** A scan counts only for the same commit and pinned files, and the version installed here. */
 function foundFor(reach, entry, installed) {
     const found = entry?.source ? reach?.[entry.name] : undefined;
 
@@ -243,7 +230,6 @@ function foundFor(reach, entry, installed) {
     return found;
 }
 
-/** The modules as the server has them, for how each installed extension stands: loaded, failed, on, off. */
 function useModules(on, round) {
     const [modules, setModules] = useState(null);
 
@@ -267,10 +253,6 @@ function useModules(on, round) {
     return modules;
 }
 
-/**
- * What an extension reaches, in plain sentences: found in its pinned code by the gallery's scan (network, keys,
- * programs, files), and what its entry declares (hooks it sees with, and changes to Pi's instructions or tools).
- */
 function reachRows(declares, found) {
     const scanned = found?.scanned;
     const rows = [];
@@ -314,10 +296,8 @@ function reachRows(declares, found) {
     return rows;
 }
 
-/** The scan's words for what the code builds while it runs, too long for a row. */
 const RUN_TIME = /at run time/;
 
-/** At most three facts for a row: what it reaches first, then what it adds. */
 function rowFacts(entry, found) {
     if (isTheme(entry) || !entry.declares) {
         return [];
@@ -350,7 +330,6 @@ function rowFacts(entry, found) {
         .slice(0, 3);
 }
 
-/** What an update adds to what a module reaches or brings, in words: nothing when it adds nothing. */
 function newReach(before, after) {
     const added = (key) =>
         declared(after, key).filter((each) => !declared(before, key).includes(each));
@@ -369,7 +348,6 @@ function newReach(before, after) {
     ].filter(Boolean);
 }
 
-/** How an installed extension stands, live: revoked, failed to load, failed in this tab, edited, on, or off. */
 function liveStatus(item, module, tab) {
     if (item.revoked !== null && item.revoked !== undefined) {
         return { kind: "bad", text: "Revoked" };
@@ -394,13 +372,11 @@ function liveStatus(item, module, tab) {
     return { kind: "off", text: tab === "discover" ? "Installed" : "Off" };
 }
 
-/** A status: a small square mark and a word, never the color alone. */
 const Status = ({ status }) =>
     html`<span class=${`ext-state ${status.kind}`}>
         <span class="ext-mark" aria-hidden="true"></span>${status.text}
     </span>`;
 
-/** Why a status is not On, under the row: the load error, or what failed in this tab. */
 function statusWhy(item, module) {
     if (module?.error) {
         return { kind: "bad", text: `Did not load: ${module.error}` };
@@ -422,7 +398,6 @@ function statusWhy(item, module) {
     return null;
 }
 
-/** A gallery entry in a list: its mark, name, and maker; a line about it; what it reaches; one action or its status. */
 function EntryRow({ entry, found, module, tab, selected, onOpen, onChanged }) {
     const [busy, setBusy] = useState(false);
     const going = useRef(false);
@@ -510,7 +485,6 @@ function EntryRow({ entry, found, module, tab, selected, onOpen, onChanged }) {
 const HEX = /^#[0-9a-f]{3,8}$/i;
 const THEME_DOTS = ["red", "yellow", "green", "cyan", "blue", "magenta"];
 
-/** A palette (`colors.toml`'s keys) as the custom properties a theme's picture reads. */
 function paletteStyle(colors) {
     if (!colors) {
         return "";
@@ -532,7 +506,6 @@ function paletteStyle(colors) {
         .join(";");
 }
 
-/** A theme's palettes: installed, from the server's theme list; offered, from the gallery's read of its files. */
 function paletteOf(entry, found) {
     const listed = store.state.themeList?.find((each) => each.id === entry.name);
 
@@ -543,7 +516,6 @@ function paletteOf(entry, found) {
     return found?.palette?.colors ? found.palette : null;
 }
 
-/** Dark, light, or both, in words. */
 const modeWords = (palette) =>
     !palette
         ? "theme"
@@ -553,7 +525,6 @@ const modeWords = (palette) =>
             ? "light"
             : "dark";
 
-/** A tiny desktop in a theme's colors, as Appearance draws its themes. */
 const ThemeDesk = ({ colors, big = false }) =>
     html`<span
         class=${`ext-desk ${big ? "big" : ""} ${colors ? "" : "unknown"}`}
@@ -567,7 +538,6 @@ const ThemeDesk = ({ colors, big = false }) =>
         </span>
     </span>`;
 
-/** A theme in a list: its picture, name, halves, and maker, and its colors in a row. */
 function ThemeCard({ entry, palette, selected, state = null, onOpen }) {
     return html`<button
         class=${`ext-theme ${selected ? "selected" : ""}`}
@@ -586,7 +556,6 @@ function ThemeCard({ entry, palette, selected, state = null, onOpen }) {
     </button>`;
 }
 
-/** A section of a list: its title and count, then its rows or cards. */
 const Section = ({ title, count, children }) =>
     html`<section class="ext-section">
         <h3 class="ext-section-title">${title} <span>${count}</span></h3>
@@ -685,7 +654,6 @@ const TABS = [
     ["updates", "Updates"],
 ];
 
-/** Kinds, then what an extension does: one of each narrows the list. */
 const KINDS = [
     ["all", "All", null],
     ["extensions", "Extensions", null],
@@ -697,7 +665,6 @@ const WANTS = [
     ["changes", "Changes Pi", "chat"],
 ];
 
-/** Whether an extension does what a filter asks. */
 function wanted(entry, want) {
     const d = entry.declares;
 
@@ -1213,10 +1180,6 @@ function EntryFacts({ entry, installed, needs }) {
     </dl>`;
 }
 
-/**
- * What an extension can reach, in plain sentences, each marked with where it comes from: its code (the gallery's scan of
- * the pinned files), its entry's declarations, or always (it runs in the server).
- */
 function ReachSection({ declares, found, problem, edited = false }) {
     const rows = reachRows(declares, found);
     const missing = found?.scanned
@@ -1262,7 +1225,6 @@ function ReachSection({ declares, found, problem, edited = false }) {
     </section>`;
 }
 
-/** What it adds: tools and commands as code, and what it puts in the app. */
 function AddsSection({ declares: d }) {
     const readOnly = d.readOnlyTools ?? [];
     const tools = [...new Set([...(d.tools ?? []), ...readOnly])];
@@ -1311,17 +1273,12 @@ function AddsSection({ declares: d }) {
     </section>`;
 }
 
-/**
- * The one question before an extension runs: what it reaches, and the choice. Over the sheet; Escape and Cancel close it
- * and keep the sheet open, and Tab stays inside it.
- */
 function TurnOnDialog({ title, declares, found, installed, busy, onCancel, onOff, onOn }) {
     const box = useRef(null);
     const rows = reachRows(declares, found);
     // While it installs or turns on, the question stays: closing it would hide code about to run.
     const cancel = () => !busy && onCancel();
 
-    // Focus goes to Cancel, and back to the button that asked once the question closes.
     useEffect(() => {
         const opener = document.activeElement;
 
@@ -1413,7 +1370,6 @@ function TurnOnDialog({ title, declares, found, installed, busy, onCancel, onOff
     </div>`;
 }
 
-/** The head of an entry: its mark, name, and who made it, which version, and how many files. */
 function EntryHead({ name, title, entry, installed, theme, size }) {
     const meta = [
         entry?.author?.name ?? (installed?.unlisted ? "not in the index" : null),
@@ -1432,7 +1388,6 @@ function EntryHead({ name, title, entry, installed, theme, size }) {
     </header>`;
 }
 
-/** One entry: what it is, what it can reach, what it adds, and what the owner can do with it here. */
 export function GalleryEntrySheet({
     name,
     listing,
@@ -1445,7 +1400,6 @@ export function GalleryEntrySheet({
     const [busy, setBusy] = useState(false);
     // Set at once, not at the next render: a second tap in the same moment must not run it twice.
     const going = useRef(false);
-    // The one question before it runs, over the sheet.
     const [asking, setAsking] = useState(false);
     const entry = data?.entries.find((each) => each.name === name) ?? null;
     const installed =
@@ -1496,7 +1450,6 @@ export function GalleryEntrySheet({
 
     const title = installed?.title ?? entry.title;
     const declares = installed?.declares ?? entry.declares;
-    // The index's files are these when it offers the version here, or nothing is installed.
     const files =
         entry && (!installed || entry.source.commit === installed.commit) ? entry.files : null;
     const offeredRevoked = !installed && entry ? revocation(entry, entry.source.commit) : undefined;
@@ -1672,7 +1625,6 @@ export function GalleryEntrySheet({
     <//>`;
 }
 
-/** What a theme changes, from the files it ships: its colors, a layout of its own, its fonts, and its images. */
 function themeChanges(files, palette) {
     const names = (files ?? []).map((file) => file.name);
     const fonts = [
@@ -1705,7 +1657,6 @@ function themeChanges(files, palette) {
     ].filter(Boolean);
 }
 
-/** A palette's colors in a row, then the three that matter most with their values. */
 const Swatches = ({ colors }) =>
     html`<div class="ext-swatches">
         ${["background", "foreground", "accent", ...THEME_DOTS]
@@ -1726,10 +1677,6 @@ const Swatches = ({ colors }) =>
         </span>
     </div>`;
 
-/**
- * A theme's entry: its picture in its own colors, what it changes, and installing, using, updating, and removing it.
- * Installing puts it in the list in Appearance; it changes nothing until someone chooses it.
- */
 function ThemeEntry({ name, entry, installed, palette, problem, busy, run, embedded }) {
     const title = installed?.title ?? entry.title;
     const files =

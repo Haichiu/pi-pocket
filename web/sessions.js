@@ -80,10 +80,8 @@ function LoadingSessions() {
     </div>`;
 }
 
-/** `text` cut to `length` characters at most, with an ellipsis: a title or a command in a notice. */
 const truncate = (text, length) => (text.length > length ? `${text.slice(0, length - 1)}…` : text);
 
-/** "Tap" or "Click", for a notice's "… to undo". */
 const undoWord = () => (matchMedia("(pointer: coarse)").matches ? "Tap" : "Click");
 
 /**
@@ -290,13 +288,9 @@ function Highlight({ text, needle }) {
 /** Failed subagents nobody has dealt with (seen or dismissed), of a session's counts or the rail's totals. */
 const failing = (counts) => (counts.failed ?? 0) - (counts.dealt ?? 0);
 
-// ─── Priority: sessions by what they ask of you ────────────────────────────────────────────────────────────────────────
-
-/** A failed run this browser has not seen yet, or marked unread: its cross is solid, and it needs you. */
 const failedRun = (session, state = store.state) =>
     session.failed === true && (isUnread(session.id) || finishedUnseen(session, state));
 
-/** What a session asks of you: a call to answer, a failed run to see, or failed subagents nobody dealt with. */
 function needOf(session, state = store.state) {
     if (session.waiting) {
         return "ask";
@@ -309,7 +303,6 @@ function needOf(session, state = store.state) {
     return failing(session.subagents ?? {}) > 0 ? "agents" : null;
 }
 
-/** How many sessions need you, as the Priority tab and the rail say. Archived sessions are left out. */
 function needsYouCount(sessions = store.state.sessions, state = store.state) {
     return sessions.reduce(
         (sum, session) => sum + (!session.archived && needOf(session, state) ? 1 : 0),
@@ -317,7 +310,6 @@ function needsYouCount(sessions = store.state.sessions, state = store.state) {
     );
 }
 
-/** Where a session goes in Priority: `needs`, `ready` (to read), `working`, or `quiet`. The first that holds wins. */
 function slotOf(session, { state, collabs, answered }) {
     const need = needOf(session, state);
     const ask = session.approval;
@@ -347,22 +339,15 @@ function slotOf(session, { state, collabs, answered }) {
         : "quiet";
 }
 
-/** The order of Needs you: calls waiting longest first, then failed runs, then failed subagents, newest first. */
 const NEED_RANK = { ask: 0, failed: 1, agents: 2 };
 
-/**
- * Priority's groups: Needs you, Ready to read, Working, and Quiet, each only while it holds a session. `held` is the
- * open session, the group it was in before it was opened, and whether it waited on a call then (`asked`): reading it
- * there does not move it until another opens.
- */
 function priorityGroups(shown, ctx, held) {
     const slots = { needs: [], ready: [], working: [], quiet: [] };
 
     for (const session of shown) {
         let slot = slotOf(session, ctx);
 
-        // Reading the open session moves it nowhere until another opens. A new need still comes first, and a call
-        // answered goes where it goes now.
+        // Reading the open session moves it nowhere until another opens; a new need still comes first.
         if (
             session.id === held.id &&
             held.slot !== null &&
@@ -426,17 +411,15 @@ const FOLDED_AT_FIRST = new Set(["priority:quiet"]);
 /** How long the focus waits for the next call's Review to draw after an answer, before the list takes it. */
 const FOCUS_WAIT_MS = 1000;
 
-/** The most rows Needs you shows before "Show N more": a flood of calls would push everything else away. */
+/** A flood of calls would push everything else away. */
 const NEEDS_SHOWN = 6;
 
-/** The rows of a group that show: Needs you cuts off after a few, but for the row whose call is open. */
 function visibleRows(group, asking, all) {
     return group.slot !== "needs" || all || group.rows.length <= NEEDS_SHOWN
         ? group.rows
         : group.rows.filter((row, index) => index < NEEDS_SHOWN || row.session.id === asking);
 }
 
-/** A failed run seen, and its failed subagents dealt with: what leaves Needs you. Undone only for the run. */
 async function dismissFailures(list) {
     const runs = list.filter((session) => failedRun(session));
     const ids = runs.map((session) => session.id);
@@ -484,7 +467,6 @@ async function dismissFailures(list) {
     });
 }
 
-/** Mark sessions read: a finished run seen, a mark cleared, new chat read. Says so in a notice that undoes it. */
 function markRead(list, { say = true } = {}) {
     const ids = list.map((session) => session.id);
     const seen = seenSnapshot(ids);
@@ -542,10 +524,6 @@ const PRESS_MS = 450;
 const PRESS_SLOP = 8;
 const PRESS_SHOWS_MS = 100;
 
-/**
- * The list whose row a finger last held (or a right-click opened): Select in that row's sheet selects there, and Deselect
- * all lets go there. A ref to `{ select(id), clear(), count() }`.
- */
 let pressedIn = null;
 
 /**
@@ -556,12 +534,10 @@ export function selectFromList(id) {
     pressedIn?.current?.select(id);
 }
 
-/** How many sessions are selected in the list where the row's actions opened: none when there is no such list. */
 export function selectedInList() {
     return pressedIn?.current?.count() ?? 0;
 }
 
-/** Let go of the selection in the list where the row's actions opened. */
 export function deselectInList() {
     pressedIn?.current?.clear();
 }
@@ -712,8 +688,6 @@ function SessionRow({
     const fork = !session.waiting && (live > 0 || failed > 0);
     const person = collabs ? (session.people ?? []).find((each) => each.id !== meId) : undefined;
     const mark = stateMark(session, live > 0, marked, unseen);
-    // In Priority's Needs you, what the session asks of you (`need`, from `needOf`): its row has a button at its right,
-    // and says why in its tooltip.
     const ask = need === "ask" ? session.approval : undefined;
     const names = (session.failedAgents ?? []).map((agent) => agent.name);
     const why =
@@ -734,11 +708,8 @@ function SessionRow({
         slot === "working" && session.limited !== undefined
             ? formatWhen(fromServer(session.limited))
             : undefined;
-    // The Folders tab names the folder above the row already: its model comes first. And why the row needs you.
     const tip = [title, ...(why ? [why] : []), ...(folders ? where.reverse() : where)].join(" · ");
     // Archive, pin, and mark-unread show on hover; an archived session only comes back, and only for people who steer.
-    // And the first extension action with an icon (`pocket.sessionAction`). None where nothing hovers (`hovers`). In
-    // Priority a row that needs you has its button instead, and one to read marks itself read in pin's place.
     const acts = !hovers
         ? 0
         : slot === "needs"
@@ -1031,10 +1002,8 @@ function SessionRow({
 }
 
 /**
- * The call a row in Needs you waits on, open in the row: the tool and the whole command, why the guard asks, and how
- * long ago, with Deny and Allow. The rules are a peek tile's (`PeekApproval`): a command that does not show whole is
- * not allowed from here (Open shows it where it waits), a question from an extension (a form) is declined or opened,
- * and a call that the "others" rule keeps from this person is denied or opened.
+ * A command that does not show whole is not allowed from here, and a question from an extension (a form)
+ * is declined or opened.
  */
 function NeedAsk({ session, ask, steers, ownCall, answering, onAnswer }) {
     const whole = wholeOnTile(ask);
@@ -1141,7 +1110,6 @@ function groupsOf(shown, { tab, needle, home, pinned, today }) {
     const groups = [];
     const pins = new Set(pinned);
     const byId = new Map(shown.map((session) => [session.id, session]));
-    // In the order they were pinned (or moved to: Move to top, Move to bottom), as the numbers count them.
     const first = pinned.map((id) => byId.get(id)).filter(Boolean);
 
     if (first.length > 0) {
@@ -1179,7 +1147,6 @@ const TABS = [
     ["archived", "Archived"],
 ];
 
-/** The tab a browser starts on, from the choice it kept (`prefs().group`): Recent when it kept none. */
 const tabOf = (group) =>
     group === "folder" ? "folders" : group === "priority" ? "priority" : "recent";
 
@@ -1195,17 +1162,13 @@ function AllSessions({ compact = false }) {
     const [query, setQueryState] = useState(() => (compact ? "" : listKept.query));
     const [tab, setTabState] = useState(() => tabOf(prefs().group));
     const [closed, setClosed] = useState(readClosed);
-    // Priority: the row whose call is open in it, calls answered from here that the list has not heard of yet, the row
-    // that just moved after an answer, the row to give the focus, and whether all of Needs you shows.
     const [asking, setAsking] = useState(null);
     const [answered, setAnswered] = useState(() => new Set());
     const [moved, setMoved] = useState(null);
     const [focusReview, setFocusReview] = useState(null);
     const [allNeeds, setAllNeeds] = useState(false);
-    // The open session and the group it was in before it opened: it stays there while it is open, though opening it reads it.
     const opened = useRef({ id: null, slot: null, asked: false });
     const slotsShown = useRef(new Map());
-    // The order of the calls in Needs you, for the one that opens next.
     const askOrder = useRef([]);
     // Linked sessions folded away (`store.js`), but never above the open session, which always shows.
     const { foldedLinked, conversationId: openId } = store.state;
@@ -1326,11 +1289,9 @@ function AllSessions({ compact = false }) {
                 (kept === null || kept(session)),
         );
 
-        // Priority: by what a session asks of you, so pins and links do not shape it; a search lists the matches.
         if (tab === "priority" && needle === "") {
             const openId = store.state.conversationId;
 
-            // Opened just now: the group it was in as last drawn.
             if (opened.current.id !== openId) {
                 opened.current = {
                     id: openId,
@@ -1339,7 +1300,6 @@ function AllSessions({ compact = false }) {
                 };
             }
 
-            // A call that waits there, then or since: once it is answered, the row goes where it goes now.
             if (shown.some((session) => session.id === openId && session.waiting)) {
                 opened.current.asked = true;
             }
@@ -1383,7 +1343,6 @@ function AllSessions({ compact = false }) {
         today,
         extensionsRev,
         folded,
-        // What Priority's groups read: marks, looks, chat reads, the open session, and calls answered from here.
         unread,
         peekSeen,
         chatReads,
@@ -1589,11 +1548,8 @@ function AllSessions({ compact = false }) {
         addEventListener("selectstart", hold, true);
     };
 
-    /**
-     * A right-click on a row opens its actions in a small menu at the pointer (`SessionSheet`'s `at`). Ctrl+click, a
-     * Mac's right-click, still selects (`select`); Shift+right-click keeps the browser's own menu. A finger's long press
-     * already did its own (`press` swallows the menu it raises).
-     */
+    // Ctrl+click (a Mac's right-click) still selects; Shift+right-click keeps the browser's own menu.
+    // A long press already did its own.
     const menu = (event, id) => {
         if (event.shiftKey || event.defaultPrevented) {
             return;
@@ -1607,7 +1563,6 @@ function AllSessions({ compact = false }) {
         }
 
         pressedIn = startSelect;
-        // Over the drawer, which stays: Select goes on there.
         store.set({ sheet: { type: "session", id, at: { x: event.clientX, y: event.clientY } } });
     };
 
@@ -1797,11 +1752,8 @@ function AllSessions({ compact = false }) {
 
     const toggleFold = (id) => toggleFoldedLinked(id);
 
-    // Priority. A row's Review opens its call (one at a time).
     const review = (id) => setAsking((now) => (now === id ? null : id));
 
-    // Allow or deny a call from its row. The next call opens by itself with the focus on its Review (the same
-    // session's, when more wait there); the answered row glows in the group it goes to. An answer cannot be undone.
     const answer = async (id, askId, allow) => {
         const ask = store.state.sessions.find((each) => each.id === id)?.approval;
 
@@ -1844,7 +1796,6 @@ function AllSessions({ compact = false }) {
         setFocusReview(next ?? "list");
     };
 
-    // The focus follows an answer: onto the next Review, or the list when none is left.
     useEffect(() => {
         if (focusReview === null) {
             return;
@@ -1863,8 +1814,8 @@ function AllSessions({ compact = false }) {
             return;
         }
 
-        // Not drawn yet (the list has not heard of the answer): each draw looks again, and after a while the list takes
-        // the focus (its first row, or the list itself when no row shows), so it never stays on a button that went away.
+        // Not drawn yet (the list has not heard of the answer): each draw looks again, and later the list takes the focus,
+        // so it never stays on a button that went away.
         const timer = setTimeout(() => {
             (box?.querySelector("button.session") ?? box)?.focus();
             setFocusReview(null);
@@ -1873,7 +1824,6 @@ function AllSessions({ compact = false }) {
         return () => clearTimeout(timer);
     }, [focusReview, groups]);
 
-    // Answers the list has heard of are forgotten, and so is a call open in a row that no longer asks.
     useEffect(() => {
         const pending = new Set(sessions.map((session) => session.approval?.id).filter(Boolean));
 
@@ -1924,8 +1874,7 @@ function AllSessions({ compact = false }) {
         setClosed(next);
     };
 
-    // The marker moves when another tab is chosen or the bar is resized. Priority's tab says how many sessions need you,
-    // and its width changes with that count, so the marker is measured again when the count changes.
+    // Priority's tab changes width with its count, so the marker is measured again when the count changes.
     const needCount = useMemo(
         () => needsYouCount(sessions),
         [sessions, unread, peekSeen, store.state.server],
@@ -2167,14 +2116,11 @@ function AllSessions({ compact = false }) {
             }
             ${groups.map((group) => {
                 const folded = isClosed(group.key);
-                // Needs you does not fold, and its head is no button: what waits there must show. A search's flat list
-                // keeps its head a button, as before, that folds nothing.
+                // Needs you does not fold: what waits there must show.
                 const still = group.slot === "needs";
                 const foldable = group.key !== "flat" && !still;
                 const toggle = still ? undefined : () => foldable && toggleGroup(group.key);
                 const rows = visibleRows(group, asking, allNeeds);
-                // Priority's header buttons: dismiss what failed, mark what finished read.
-                // Only the failures this person can deal with: a viewer cannot dismiss a failed subagent.
                 const failedRows =
                     group.slot === "needs"
                         ? group.rows.filter((row) => {
@@ -2438,7 +2384,6 @@ function Rail({ foldable = false, folded = false }) {
     );
     const live = agents.working + agents.waiting;
     const failed = failing(agents);
-    // The Sessions button counts the sessions that need you, as Priority's tab does.
     const { unread, peekSeen, server } = store.state;
     const needs = useMemo(() => needsYouCount(sessions), [sessions, unread, peekSeen, server]);
     const sessionsLabel =
