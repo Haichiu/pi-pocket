@@ -93,6 +93,9 @@ function cssProblem(text: string): string | undefined {
     return undefined;
 }
 
+/** The longest resolved text of a token. A chain that doubles at each step stops here, not at memory's end. */
+const MAX_EXPANDED = 10_000;
+
 /** Text with `{reference}`s expanded two ways. Undefined when a reference fails (it reported itself). */
 function expand(text: string, ctx: Ctx): { css: string; literal: string } | undefined {
     let failed = false;
@@ -112,6 +115,12 @@ function expand(text: string, ctx: Ctx): { css: string; literal: string } | unde
         } else {
             css += `var(${target.cssVar})`;
             literal += target.literal;
+
+            if (literal.length > MAX_EXPANDED) {
+                return ctx.error(
+                    `{${clip(match[1]!)}} expands past ${MAX_EXPANDED.toLocaleString("en-US")} characters.`,
+                );
+            }
         }
     }
 
