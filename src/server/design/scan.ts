@@ -17,6 +17,7 @@ import { colorsIn } from "./scan-parse.ts";
 import { type Facts, newFacts } from "./scan-facts.ts";
 import { ingestFile } from "./scan-facts-files.ts";
 import { type Draft, type Inferred, infer } from "./scan-infer.ts";
+import { ROLES } from "./scan-colors.ts";
 
 export { LIMITS };
 
@@ -337,18 +338,6 @@ function compact(node: unknown, depth = 0): string {
     return `{\n${entries.map(([key, child]) => `${pad}  ${JSON.stringify(key)}: ${compact(child, depth + 1)}`).join(",\n")}\n${pad}}`;
 }
 
-const ROLE_NAMES = [
-    "background",
-    "surface",
-    "text",
-    "muted",
-    "border",
-    "accent",
-    "danger",
-    "warning",
-    "success",
-] as const;
-
 const clip = (text: string, max: number) =>
     text.length > max ? `${text.slice(0, max - 1)}…` : text;
 
@@ -383,7 +372,7 @@ function reviewLines(scan: TokenScan): string[] {
 
     if (inferred.imported === 0) {
         const low = Object.values(inferred.roles).filter((info) => info.confidence === "low");
-        const missing = ROLE_NAMES.filter((role) => inferred.roles[role] === undefined);
+        const missing = ROLES.filter((role) => inferred.roles[role] === undefined);
 
         if (low.length > 0 || missing.length > 0) {
             items.push(
@@ -467,19 +456,7 @@ export function scanReport(scan: TokenScan, path?: string): string {
             );
         }
 
-        const missing = (
-            [
-                "background",
-                "surface",
-                "text",
-                "muted",
-                "border",
-                "accent",
-                "danger",
-                "warning",
-                "success",
-            ] as const
-        ).filter((role) => inferred.roles[role] === undefined);
+        const missing = ROLES.filter((role) => inferred.roles[role] === undefined);
 
         if (missing.length > 0) {
             lines.push(
@@ -571,19 +548,7 @@ function nextCall(scan: TokenScan, empty: boolean, path?: string): string {
         ...(path === undefined ? {} : { path }),
     });
     const unsure = Object.values(scan.inferred.roles).filter((info) => info.confidence !== "high");
-    const missing = (
-        [
-            "background",
-            "surface",
-            "text",
-            "muted",
-            "border",
-            "accent",
-            "danger",
-            "warning",
-            "success",
-        ] as const
-    ).filter((role) => scan.inferred.roles[role] === undefined);
+    const missing = ROLES.filter((role) => scan.inferred.roles[role] === undefined);
 
     return [
         `Next call: design_system ${call}`,

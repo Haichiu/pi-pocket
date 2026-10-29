@@ -55,6 +55,85 @@ const hueOk = (role: RoleName, color: ColorEntry): boolean => {
     }
 };
 
+const STATUS = ["danger", "warning", "success"] as const;
+const NEUTRAL_ROLES = new Set<RoleName>(["background", "surface", "text", "muted", "border"]);
+const ACCENT_WORDS = w(
+    "accent primary brand link highlight cta action interactive main theme key default base 500 600 text dark light hover active focus pressed",
+);
+// The hue each status color sits nearest to (Oklch degrees): a red close to 27° is an error, not an orange.
+const CENTERS = { danger: 27, warning: 70, success: 148 } as const;
+const hueGap = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
+
+// How well a variable's name and color fit a role; the caller keeps the best score of 60 or more.
+function namedScore(
+    role: RoleName,
+    variable: VarColor,
+    color: ColorEntry,
+    bg: ColorEntry | undefined,
+): number {
+    const segs = words(variable.name);
+    let score = nameScore(role, segs);
+
+    if (score === 0) {
+        return 0;
+    }
+
+    if (STATUS.includes(role as (typeof STATUS)[number])) {
+        // Of a palette's steps, the middle one is the color (`warn-500`).
+        if (segs.some((seg) => /^\d{3}$/.test(seg))) {
+            score += segs.includes("500") ? 8 : segs.includes("600") ? 5 : 0;
+        }
+
+        score -= hueOk(role, color) ? 0 : 45;
+    }
+
+    if (role === "accent") {
+        // A gray `primary` (shadcn's hover surface) is no brand; how vivid it is only breaks a tie.
+        score += color.c >= 0.03 ? 20 + Math.min(10, color.c * 40) : -10;
+        score +=
+            segs.includes("accent") &&
+            !segs.includes("primary") &&
+            !segs.includes("brand") &&
+            color.c >= 0.03
+                ? 10
+                : 0;
+        score -= segs.some((seg) => /^\d$/.test(seg)) ? 15 : 0;
+        // A long name that only holds a role word (`tooltipExternalLinkColor`) is not the brand.
+        score -= Math.min(
+            24,
+            segs.filter((seg) => !/^\d+$/.test(seg) && !ACCENT_WORDS.includes(seg)).length * 8,
+        );
+    }
+
+    // How the variable is really used beats what it is called: a "text" color that paints the page is the page.
+    const kinds = variable.kinds;
+
+    if (kinds !== undefined) {
+        if ((role === "text" || role === "muted") && kinds.bg >= 2 && kinds.bg > kinds.text * 2) {
+            score -= 45;
+        } else if (
+            (role === "background" || role === "surface") &&
+            kinds.text >= 2 &&
+            kinds.text > kinds.bg * 2
+        ) {
+            score -= 40;
+        } else if (role === "border" && kinds.bg >= 3 && kinds.bg > kinds.border * 3) {
+            score -= 30;
+        }
+    }
+
+    score -= role === "background" && color.c > 0.1 ? 50 : 0;
+
+    if ((role === "text" || role === "muted") && bg !== undefined) {
+        const ratio = contrastRatio(color.rgba, bg.rgba);
+
+        // A quiet text a little under 3:1 (a gray on a gray page) is still quiet text; far under is not text.
+        score += ratio >= 4.5 ? 8 : ratio >= 3 ? 0 : ratio >= 2.5 ? -18 : -45;
+    }
+
+    return score + Math.min(8, Math.log2(1 + variable.uses));
+}
+
 // `colors` is every color of the project; `named` is the subset that variables hold.
 export function chooseRoles(
     colors: Map<string, ColorEntry>,
@@ -62,59 +141,43 @@ export function chooseRoles(
 ): Partial<Record<RoleName, RoleChoice>> {
     const chosen: Partial<Record<RoleName, RoleChoice>> = {};
     const entries = [...colors.values()];
-    const byUse = (list: ColorEntry[], pick: (entry: ColorEntry) => number) =>
+    const best = (list: ColorEntry[], pick: (entry: ColorEntry) => number) =>
         [...list].sort(
             (a, b) => pick(b) - pick(a) || b.uses - a.uses || a.hex.localeCompare(b.hex),
-        );
+        )[0];
 
     const set = (
         role: RoleName,
-        color: string,
-        basis: "name" | "use",
+        hex: string,
+        basis: RoleChoice["basis"],
         source: string,
         score: number,
     ) => {
-        chosen[role] = { role, hex: color, basis, source, score };
+        chosen[role] = { role, hex, basis, source, score };
     };
 
-    const entry = (hex: string) => colors.get(hex);
+    const family = (name: string) => /^(.*?)[-_]?\d{1,3}$/.exec(name)?.[1];
+    // A family of numbered steps (`ink-0` … `ink-9`) is a ramp, not the roles that a step's word names.
+    const steps = new Map<string, number>();
+
+    for (const variable of named) {
+        const name = family(variable.name);
+
+        if (name !== undefined && name !== "") {
+            steps.set(name, (steps.get(name) ?? 0) + 1);
+        }
+    }
 
     // Names first, the page background first: the others are judged against it.
-    const pickNamed = (
-        role: RoleName,
-        bg: ColorEntry | undefined,
-    ): { variable: VarColor; score: number } | undefined => {
-        let best: { variable: VarColor; score: number } | undefined;
+    const pickNamed = (role: RoleName, bg: ColorEntry | undefined) => {
         const scored: { variable: VarColor; score: number }[] = [];
 
-        // A family of numbered steps (`ink-0` … `ink-9`) is a ramp, not the roles that a step's word names.
-        const steps = new Map<string, number>();
-
         for (const variable of named) {
-            const family = /^(.*?)[-_]?(\d{1,3})$/.exec(variable.name)?.[1];
-
-            if (family !== undefined && family !== "") {
-                steps.set(family, (steps.get(family) ?? 0) + 1);
-            }
-        }
-
-        for (const variable of named) {
-            const color = entry(variable.hex);
-            const segs = words(variable.name);
-
-            if (
-                (role === "background" ||
-                    role === "surface" ||
-                    role === "text" ||
-                    role === "muted" ||
-                    role === "border") &&
-                (steps.get(/^(.*?)[-_]?\d{1,3}$/.exec(variable.name)?.[1] ?? "") ?? 0) >= 6
-            ) {
-                continue;
-            }
+            const color = colors.get(variable.hex);
 
             if (
                 color === undefined ||
+                (NEUTRAL_ROLES.has(role) && (steps.get(family(variable.name) ?? "") ?? 0) >= 6) ||
                 Object.values(chosen).some(
                     (each) =>
                         each.hex === variable.hex &&
@@ -125,206 +188,101 @@ export function chooseRoles(
                 continue;
             }
 
-            let score = nameScore(role, segs);
+            const score = namedScore(role, variable, color, bg);
 
-            if (score === 0) {
-                continue;
-            }
-
-            // Of a palette's steps, the middle one is the color (`warn-500`).
-            if (
-                (role === "danger" || role === "warning" || role === "success") &&
-                segs.some((seg) => /^\d{3}$/.test(seg))
-            ) {
-                score += segs.includes("500") ? 8 : segs.includes("600") ? 5 : 0;
-            }
-
-            // Sanity from the color itself.
-            if (
-                (role === "danger" || role === "warning" || role === "success") &&
-                !hueOk(role, color)
-            ) {
-                score -= 45;
-            }
-
-            if (role === "accent") {
-                // A color is the brand when it has a hue; a gray one (shadcn's hover surface) is not. How vivid it is only
-                // breaks a tie: a muted brand `primary` still beats a vivid `accent-1`.
-                score += color.c >= 0.03 ? 20 + Math.min(10, color.c * 40) : -10;
-
-                // The role's own word beats a synonym, among colors that have a hue.
-                if (
-                    segs.includes("accent") &&
-                    !segs.includes("primary") &&
-                    !segs.includes("brand") &&
-                    color.c >= 0.03
-                ) {
-                    score += 10;
-                }
-
-                // `accent-1`, `accent-2`: one of a set, not the role.
-                if (segs.some((seg) => /^\d$/.test(seg))) {
-                    score -= 15;
-                }
-
-                // A long name that only holds a role word (`tooltipExternalLinkColor`) is not the brand.
-                const strangers = segs.filter(
-                    (seg) =>
-                        !/^\d+$/.test(seg) &&
-                        !w(
-                            "accent primary brand link highlight cta action interactive main theme key default base 500 600 text dark light hover active focus pressed",
-                        ).includes(seg),
-                );
-
-                score -= Math.min(24, strangers.length * 8);
-            }
-
-            // How the variable is really used beats what it is called: a "text" color that paints the page is the page.
-            const kinds = variable.kinds;
-
-            if (kinds !== undefined) {
-                const fill = kinds.bg;
-                const ink = kinds.text;
-
-                if ((role === "text" || role === "muted") && fill >= 2 && fill > ink * 2) {
-                    score -= 45;
-                } else if (
-                    (role === "background" || role === "surface") &&
-                    ink >= 2 &&
-                    ink > fill * 2
-                ) {
-                    score -= 40;
-                } else if (role === "border" && fill >= 3 && fill > kinds.border * 3) {
-                    score -= 30;
-                }
-            }
-
-            if (role === "background" && color.c > 0.1) {
-                score -= 50;
-            }
-
-            if ((role === "text" || role === "muted") && bg !== undefined) {
-                const ratio = contrastRatio(color.rgba, bg.rgba);
-
-                // A quiet text a little under 3:1 (a gray on a gray page) is still quiet text; far under is not text.
-                score += ratio >= 4.5 ? 8 : ratio >= 3 ? 0 : ratio >= 2.5 ? -18 : -45;
-            }
-
-            // The most referenced variable wins a tie.
-            score += Math.min(8, Math.log2(1 + variable.uses));
-
-            scored.push({ variable, score });
-
-            if (best === undefined || score > best.score) {
-                best = { variable, score };
+            if (score !== 0) {
+                scored.push({ variable, score });
             }
         }
 
-        // A surface that is the page's own color is no surface (`--surface-1` is the page, `--surface-2` the card): when
-        // another surface has a different color, that one is the role.
-        if (
-            role === "surface" &&
-            best !== undefined &&
-            bg !== undefined &&
-            best.variable.hex === bg.hex
-        ) {
-            const other = scored
-                .filter((each) => each.variable.hex !== bg.hex && each.score >= 60)
-                .sort((a, b) => b.score - a.score)[0];
+        let top = scored.reduce<(typeof scored)[number] | undefined>(
+            (most, each) => (most === undefined || each.score > most.score ? each : most),
+            undefined,
+        );
 
-            if (other !== undefined) {
-                best = other;
-            }
+        // A surface that is the page's own color is no surface (`--surface-1` is the page, `--surface-2` the card).
+        if (role === "surface" && top !== undefined && top.variable.hex === bg?.hex) {
+            top =
+                scored
+                    .filter((each) => each.variable.hex !== bg.hex && each.score >= 60)
+                    .sort((a, b) => b.score - a.score)[0] ?? top;
         }
 
-        return best !== undefined && best.score >= 60 ? best : undefined;
+        if (top !== undefined && top.score >= 60) {
+            set(role, top.variable.hex, "name", top.variable.name, top.score);
+        }
     };
 
-    const bgChoice = pickNamed("background", undefined);
+    pickNamed("background", undefined);
 
-    if (bgChoice !== undefined) {
-        set("background", bgChoice.variable.hex, "name", bgChoice.variable.name, bgChoice.score);
-    }
-
-    // The page the text sits on: the named background, else the neutral color most used on the page's root. The text
-    // and the quiet text are judged against it (a near-black `--ink` on a near-black page is not the text).
+    // The page the text sits on: the named background, else the neutral color most used on the page's root.
     const bg =
         chosen.background === undefined
-            ? [...colors.values()]
+            ? entries
                   .filter(
                       (color) =>
                           color.c < 0.06 && color.rgba.a > 0.9 && (color.fact?.root ?? 0) > 0,
                   )
                   .sort((a, b) => (b.fact?.root ?? 0) - (a.fact?.root ?? 0))[0]
-            : entry(chosen.background.hex);
+            : colors.get(chosen.background.hex);
 
-    // A name that fits two roles (`--muted`) goes to the role where the color makes sense.
     for (const role of ROLES.filter((each) => each !== "background")) {
-        const found = pickNamed(role, bg);
-
-        if (found !== undefined) {
-            set(role, found.variable.hex, "name", found.variable.name, found.score);
-        }
+        pickNamed(role, bg);
     }
 
     // `--muted` alone: text if it reads on the page, a surface if not.
-    if (chosen.muted === undefined || chosen.surface === undefined) {
-        const lone = named.find(
-            (variable) =>
-                variable.name.toLowerCase() === "muted" ||
-                variable.name.toLowerCase() === "color-muted",
-        );
-        const color = lone === undefined ? undefined : entry(lone.hex);
+    const lone = named.find((variable) => /^(?:color-)?muted$/i.test(variable.name));
+    const loneColor = lone === undefined ? undefined : colors.get(lone.hex);
 
-        if (lone !== undefined && color !== undefined && bg !== undefined) {
-            const text = contrastRatio(color.rgba, bg.rgba) >= 3 && distance(color, bg) > 0.2;
+    if (lone !== undefined && loneColor !== undefined && bg !== undefined) {
+        const text = contrastRatio(loneColor.rgba, bg.rgba) >= 3 && distance(loneColor, bg) > 0.2;
 
-            if (text && chosen.muted === undefined) {
-                set("muted", lone.hex, "name", lone.name, 62);
-            } else if (
-                !text &&
-                chosen.surface === undefined &&
-                lone.hex !== chosen.background?.hex
-            ) {
-                set("surface", lone.hex, "name", lone.name, 62);
-            }
+        if (text && chosen.muted === undefined) {
+            set("muted", lone.hex, "name", lone.name, 62);
+        } else if (!text && chosen.surface === undefined && lone.hex !== chosen.background?.hex) {
+            set("surface", lone.hex, "name", lone.name, 62);
         }
     }
 
+    const fact = (
+        color: ColorEntry,
+        kind: "bg" | "text" | "border" | "root" | "surface" | "body" | "fill",
+    ) => color.fact?.[kind] ?? 0;
     const neutral = entries.filter((color) => color.c < 0.06 && color.rgba.a > 0.9);
-    const pageSource = (hex: string) => `used on the page ${hex}`;
+    const used = (hex: string) => Object.values(chosen).some((each) => each.hex === hex);
 
     if (chosen.background === undefined) {
         const top =
-            byUse(
-                neutral.filter((color) => (color.fact?.root ?? 0) > 0),
-                (color) => color.fact?.root ?? 0,
-            )[0] ??
-            byUse(
-                neutral.filter((color) => (color.fact?.bg ?? 0) > 0),
-                (color) => color.fact?.bg ?? 0,
-            )[0];
+            best(
+                neutral.filter((color) => fact(color, "root") > 0),
+                (color) => fact(color, "root"),
+            ) ??
+            best(
+                neutral.filter((color) => fact(color, "bg") > 0),
+                (color) => fact(color, "bg"),
+            );
 
         if (top !== undefined) {
-            set("background", top.hex, "use", pageSource(top.hex), 40);
+            set("background", top.hex, "use", `used on the page ${top.hex}`, 40);
         }
     }
 
-    const page = chosen.background === undefined ? undefined : entry(chosen.background.hex);
-    const used = (hex: string) => Object.values(chosen).some((each) => each.hex === hex);
+    const page = chosen.background === undefined ? undefined : colors.get(chosen.background.hex);
+    const gray = (color: ColorEntry, chroma: number) =>
+        !used(color.hex) && color.rgba.a > 0.9 && color.c < chroma;
 
     if (chosen.surface === undefined && page !== undefined) {
-        const top = byUse(
+        // A background on a card or a panel counts three times.
+        const top = best(
             neutral.filter(
                 (color) =>
                     !used(color.hex) &&
-                    (color.fact?.bg ?? 0) > 0 &&
+                    fact(color, "bg") > 0 &&
                     distance(color, page) > 0.012 &&
                     distance(color, page) < 0.3,
             ),
-            // A background on a card or a panel counts three times.
-            (color) => (color.fact?.surface ?? 0) * 3 + (color.fact?.bg ?? 0),
-        )[0];
+            (color) => fact(color, "surface") * 3 + fact(color, "bg"),
+        );
 
         if (top !== undefined) {
             set("surface", top.hex, "use", "most used background of cards and panels", 35);
@@ -332,49 +290,42 @@ export function chooseRoles(
     }
 
     if (chosen.text === undefined) {
-        const candidates = entries.filter(
-            (color) =>
-                !used(color.hex) &&
-                color.rgba.a > 0.9 &&
-                color.c < 0.1 &&
-                (color.fact?.text ?? 0) > 0 &&
-                (page === undefined || contrastRatio(color.rgba, page.rgba) >= 4.5),
+        const top = best(
+            entries.filter(
+                (color) =>
+                    gray(color, 0.1) &&
+                    fact(color, "text") > 0 &&
+                    (page === undefined || contrastRatio(color.rgba, page.rgba) >= 4.5),
+            ),
+            (color) => fact(color, "body") * 6 + fact(color, "text"),
         );
-        const top = byUse(
-            candidates,
-            (color) => (color.fact?.body ?? 0) * 6 + (color.fact?.text ?? 0),
-        )[0];
 
         if (top !== undefined) {
             set("text", top.hex, "use", "most used text color", 40);
         }
     }
 
-    const ink = chosen.text === undefined ? undefined : entry(chosen.text.hex);
+    const ink = chosen.text === undefined ? undefined : colors.get(chosen.text.hex);
 
     if (chosen.muted === undefined && ink !== undefined && page !== undefined) {
-        const top = byUse(
+        const inkRatio = contrastRatio(ink.rgba, page.rgba);
+        // A quiet text is a gray, and clearly softer than the body text.
+        const top = best(
             entries.filter((color) => {
                 const ratio = contrastRatio(color.rgba, page.rgba);
 
                 return (
-                    !used(color.hex) &&
-                    color.rgba.a > 0.9 &&
-                    color.c < 0.1 &&
-                    (color.fact?.text ?? 0) > 0 &&
+                    gray(color, 0.1) &&
+                    fact(color, "text") > 0 &&
                     ratio >= 3 &&
-                    ratio < contrastRatio(ink.rgba, page.rgba) - 0.5
+                    ratio < inkRatio - 0.5
                 );
             }),
-            // A quiet text is a gray: a tinted color (a light link color) is a weaker candidate than a gray.
-            // A quiet text is also clearly softer than the body text.
             (color) =>
-                (color.fact?.text ?? 0) *
+                fact(color, "text") *
                 (color.c < 0.05 ? 1 : 0.3) *
-                (contrastRatio(color.rgba, page.rgba) <= contrastRatio(ink.rgba, page.rgba) * 0.7
-                    ? 1
-                    : 0.5),
-        )[0];
+                (contrastRatio(color.rgba, page.rgba) <= inkRatio * 0.7 ? 1 : 0.5),
+        );
 
         if (top !== undefined) {
             set("muted", top.hex, "use", "second most used text color", 35);
@@ -383,16 +334,16 @@ export function chooseRoles(
 
     if (chosen.border === undefined) {
         const top =
-            byUse(
-                neutral.filter((color) => !used(color.hex) && (color.fact?.border ?? 0) > 0),
-                (color) => color.fact?.border ?? 0,
-            )[0] ??
-            byUse(
+            best(
+                neutral.filter((color) => !used(color.hex) && fact(color, "border") > 0),
+                (color) => fact(color, "border"),
+            ) ??
+            best(
                 entries.filter(
-                    (color) => !used(color.hex) && color.c < 0.08 && (color.fact?.border ?? 0) > 0,
+                    (color) => !used(color.hex) && color.c < 0.08 && fact(color, "border") > 0,
                 ),
-                (color) => color.fact?.border ?? 0,
-            )[0];
+                (color) => fact(color, "border"),
+            );
 
         if (top !== undefined) {
             set("border", top.hex, "use", "most used border color", 35);
@@ -400,97 +351,75 @@ export function chooseRoles(
     }
 
     const chroma = entries.filter((color) => color.c >= 0.07 && color.rgba.a > 0.9);
+    // A color that a variable names for a status or a notice (`--invalid`, `--note`) is not the brand.
+    const notice = (color: ColorEntry) =>
+        color.names.some(
+            (each) =>
+                STATUS.some((role) => nameScore(role, words(each.name)) >= 48) ||
+                words(each.name).some((word) => ["info", "note", "notice"].includes(word)),
+        );
 
     if (chosen.accent === undefined) {
-        const top = byUse(
-            chroma.filter(
-                (color) =>
-                    !used(color.hex) &&
-                    // A color that a variable names for a status or a notice (`--invalid`, `--note`) is not the brand.
-                    !color.names.some(
-                        (each) =>
-                            (["danger", "warning", "success"] as const).some(
-                                (role) => nameScore(role, words(each.name)) >= 48,
-                            ) ||
-                            words(each.name).some((word) =>
-                                ["info", "note", "notice"].includes(word),
-                            ),
-                    ),
-            ),
+        // A color a variable names is a token of the design; a literal in a gradient is a decoration.
+        const top = best(
+            chroma.filter((color) => !used(color.hex) && !notice(color)),
             (color) =>
-                (color.fact?.bg ?? 0) * 1.4 +
-                (color.fact?.text ?? 0) +
-                (color.fact?.border ?? 0) +
-                (color.fact?.fill ?? 0) +
-                // A color a variable names is a token of the design; a literal in a gradient is a decoration.
+                fact(color, "bg") * 1.4 +
+                fact(color, "text") +
+                fact(color, "border") +
+                fact(color, "fill") +
                 (color.names.length > 0 ? 2 : 0) +
                 color.c * 5,
-        )[0];
+        );
 
         if (top !== undefined) {
             set("accent", top.hex, "use", "most used chromatic color", 35);
         }
     }
 
-    // The hue each status color sits nearest to (Oklch degrees): a red close to 27° is an error, not an orange.
-    const centers = { danger: 27, warning: 70, success: 148 } as const;
-    const accentColor = chosen.accent === undefined ? undefined : entry(chosen.accent.hex);
-    // A color named for the accent's variable and a suffix (`--glow-deep`, `--brandHover`) is a step of the accent.
-    const variantOfAccent = (color: ColorEntry) =>
-        (accentColor?.names ?? []).some((stem) =>
+    const accent = chosen.accent === undefined ? undefined : colors.get(chosen.accent.hex);
+    // A color named for the accent's variable and a suffix (`--glow-deep`, `--brandHover`) is a step of the accent;
+    // so is a color near it, or one of its hue with no name of its own.
+    const accentShade = (color: ColorEntry) =>
+        accent !== undefined &&
+        ((accent.names ?? []).some((stem) =>
             color.names.some(
                 (each) =>
                     each.name !== stem.name &&
                     each.name.startsWith(stem.name) &&
                     /^[-_A-Z0-9]/.test(each.name.slice(stem.name.length)),
             ),
+        ) ||
+            distance(color, accent) <= 0.06 ||
+            (accent.c >= 0.07 && color.names.length === 0 && hueGap(color.h, accent.h) < 8));
+
+    for (const role of STATUS.filter((each) => chosen[each] === undefined)) {
+        // Used, or named by a variable (`--stop` is defined, and no rule needs to use it).
+        const top = best(
+            chroma.filter(
+                (color) =>
+                    !used(color.hex) &&
+                    hueOk(role, color) &&
+                    color.c >= 0.1 &&
+                    (color.uses >= 1 || color.names.length > 0) &&
+                    !accentShade(color),
+            ),
+            (color) =>
+                Math.log2(1 + color.uses) * 2 +
+                (1 - Math.min(1, hueGap(color.h, CENTERS[role]) / 40)) * 3 +
+                (color.names.length > 0 ? 3 : 0),
         );
 
-    for (const role of ["danger", "warning", "success"] as const) {
-        if (chosen[role] === undefined) {
-            const closeness = (color: ColorEntry) => {
-                const gap = Math.abs(((color.h - centers[role] + 540) % 360) - 180);
-
-                return 1 - Math.min(1, gap / 40);
-            };
-
-            const top = byUse(
-                chroma.filter(
-                    (color) =>
-                        !used(color.hex) &&
-                        hueOk(role, color) &&
-                        color.c >= 0.1 &&
-                        // Used, or named by a variable (`--stop` is defined, and no rule needs to use it).
-                        (color.uses >= 1 || color.names.length > 0) &&
-                        !variantOfAccent(color) &&
-                        // A shade of the accent (near it, or of the same hue) is not a status color; a color that has a
-                        // name of its own (`--go` beside `--glow`) is its own.
-                        (accentColor === undefined ||
-                            (distance(color, accentColor) > 0.06 &&
-                                !(
-                                    accentColor.c >= 0.07 &&
-                                    color.names.length === 0 &&
-                                    Math.abs(((color.h - accentColor.h + 540) % 360) - 180) < 8
-                                ))),
-                ),
-                // A color a variable names is the design's; a literal used once may be a decoration.
-                (color) =>
-                    Math.log2(1 + color.uses) * 2 +
-                    closeness(color) * 3 +
-                    (color.names.length > 0 ? 3 : 0),
-            )[0];
-
-            if (top !== undefined) {
-                set(
-                    role,
-                    top.hex,
-                    "use",
-                    top.uses === 0
-                        ? `named ${top.names[0]!.name}, with the hue of ${role}`
-                        : `used ${top.uses}× with the hue of ${role}`,
-                    30,
-                );
-            }
+        if (top !== undefined) {
+            set(
+                role,
+                top.hex,
+                "use",
+                top.uses === 0
+                    ? `named ${top.names[0]!.name}, with the hue of ${role}`
+                    : `used ${top.uses}× with the hue of ${role}`,
+                30,
+            );
         }
     }
 
