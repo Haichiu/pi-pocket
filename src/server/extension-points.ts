@@ -14,6 +14,7 @@ import { normalizeUrl } from "./browser/urls.ts";
 import type {
     Approvals,
     AskAnswer,
+    AskChoice,
     AskField,
     AskRequest,
     BrowserPageHandle,
@@ -38,6 +39,26 @@ function line(value: unknown, what: string, max: number): string {
     }
 
     return value.trim();
+}
+
+/** A field's answers to pick (`AskField.choices`): 2 to 4, each a label and maybe a line, with different labels. */
+function choicesOf(given: unknown): AskChoice[] {
+    if (!Array.isArray(given) || given.length < 2 || given.length > 4) {
+        throw new Error("host.ask: a field's choices are a list of 2 to 4");
+    }
+
+    const choices = given.map((choice: AskChoice) => ({
+        label: line(choice?.label, "a choice's label", 60),
+        ...(choice?.description === undefined
+            ? {}
+            : { description: line(choice.description, "a choice's description", 160) }),
+    }));
+
+    if (new Set(choices.map((choice) => choice.label)).size !== choices.length) {
+        throw new Error("host.ask: two choices of a field have the same label");
+    }
+
+    return choices;
 }
 
 export async function ask(
@@ -77,16 +98,28 @@ export async function ask(
             );
         }
 
+        const choices = field.choices === undefined ? undefined : choicesOf(field.choices);
+
         return {
             name: field.name,
-            label: line(field.label, "a field's label", 80),
-            ...(field.secret === true ? { secret: true } : {}),
+            label: line(field.label, "a field's label", choices === undefined ? 80 : 300),
+            ...(field.header === undefined ? {} : { header: line(field.header, "a header", 12) }),
             ...(field.placeholder === undefined
                 ? {}
                 : { placeholder: line(field.placeholder, "a placeholder", 80) }),
-            ...(typeof field.autocomplete === "string" && AUTOCOMPLETE.test(field.autocomplete)
-                ? { autocomplete: field.autocomplete }
-                : {}),
+            ...(choices === undefined
+                ? {
+                      ...(field.secret === true ? { secret: true } : {}),
+                      ...(typeof field.autocomplete === "string" &&
+                      AUTOCOMPLETE.test(field.autocomplete)
+                          ? { autocomplete: field.autocomplete }
+                          : {}),
+                  }
+                : {
+                      choices,
+                      ...(field.multiple === true ? { multiple: true } : {}),
+                      ...(field.other === true ? { other: true } : {}),
+                  }),
         };
     });
 
@@ -108,7 +141,13 @@ export async function ask(
             ...(callId === undefined ? {} : { callId }),
             tool: "ask",
             subject: title,
-            reason: text ?? "",
+            // Where there are no words, the questions: what a tile, a row in Needs you, and a notification show.
+            reason:
+                text ??
+                fields
+                    .filter((field) => field.choices !== undefined)
+                    .map((field) => field.label)
+                    .join(" · "),
             createdAt: Date.now(),
             form: { title, ...(text ? { text } : {}), fields, submit },
         },
@@ -128,7 +167,8 @@ export async function ask(
 
 /**
  * What a person typed on an ask's card, checked against its fields: each one there, as text of up to
- * `MAX_ASK_VALUE` characters, and nothing else. An error says what is wrong, never a value.
+ * `MAX_ASK_VALUE` characters, and nothing else. A field with choices takes one of their labels, or with `multiple`
+ * one or more, one per line; with `other`, any text too. An error says what is wrong, never a value.
  */
 export function checkValues(fields: readonly AskField[], values: unknown): Record<string, string> {
     if (typeof values !== "object" || values === null || Array.isArray(values)) {
@@ -150,6 +190,18 @@ export function checkValues(fields: readonly AskField[], values: unknown): Recor
 
         if (value.length > MAX_ASK_VALUE) {
             throw new Error(`${field.label} is too long.`);
+        }
+
+        if (field.choices !== undefined) {
+            const labels = field.choices.map((choice) => choice.label);
+            const picked = field.multiple === true ? value.split("\n") : [value];
+            const chosen =
+                picked.every((label) => labels.includes(label)) &&
+                new Set(picked).size === picked.length;
+
+            if (!chosen && (field.other !== true || value.trim() === "")) {
+                throw new Error(`Choose an answer to ${field.label}`);
+            }
         }
 
         out[field.name] = value;
