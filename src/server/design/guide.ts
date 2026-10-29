@@ -79,7 +79,7 @@ Craft, so that a design looks made and not generated. When the product has its o
 
 Check before you reply:
 - Run design_preview at mobile and desktop (the default). It returns screenshots, console errors, failed requests, and a list of problems (contrast, tap target, overflow, alt text, heading order, fonts, focus, and any value that is not a token). Fix every error, then run it again until none is left. Then reply with a line or two on what you made and what to try, not a list of every element.
-- The preview loads only the design's own bundle, so an external font, image, or script fails there as it will for the person. It shows the page as it loads. To see more, pass it: colorScheme "dark", tweaks { "--accent": "#d6513b" }, actions [{ type: "hover" | "click" | "focus", selector }] before the screenshot, page "about.html" for a second page, slide N for a deck, fullPage true. It cannot show pinch, scroll feel, or the keyboard. A render stops after 90 seconds.
+- The preview loads only the design's own bundle, so an external font, image, or script fails there as it will for the person. It shows the page as it loads. To see more, pass it: colorScheme "dark", mode "dark", tweaks { "--accent": "#d6513b" }, actions [{ type: "hover" | "click" | "focus", selector }] before the screenshot, page "about.html" for a second page, slide N for a deck, fullPage true. It cannot show pinch, scroll feel, or the keyboard. A render stops after 90 seconds.
 
 Work with feedback and hand off:
 - Comments, text edits, and kept tweaks from the canvas reach you as a message, each with its target as JSON (pid, selector, text, html). Make the next version with the artifact tool's edits, and change only what the message names.
@@ -127,7 +127,7 @@ const USE = `The project has a design system, so a design is on-system or it is 
 - Change the system only when the person asks: design_system set (changes, remove; mode "dark" for a mode), component (slug, content; drop), guidelines (content). Then run validate and fix every error it lists. The tokens.css that designs link is rewritten by every change.
 - Use roles (--color-bg-surface), not primitives.
 - Reuse components: read a component's markup with design_system read and file "components/<slug>.html", copy its markup and classes, and show each state the design needs.
-- Modes: data-theme="<mode>" on the root selects one. Check each mode with design_preview colorScheme.
+- Modes: data-theme="<mode>" on the root selects one. Check each mode with design_preview mode "<mode>".
 - Bind tweak knobs to tokens (--color-accent-fill, --radius-card) so that the person tunes the system's own values.
 - design_system read with file "guidelines.md" gives the rules to follow; read it before a large design.
 - If the summary reports errors, run design_system validate and tell the person before you build on the system.
