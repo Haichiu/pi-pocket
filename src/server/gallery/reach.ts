@@ -65,8 +65,16 @@ function keywordBeforeRegex(code: string): boolean {
  */
 export function stripComments(code: string): string {
     let out = "";
+    let tail = "";
     let at = 0;
     let last = "";
+
+    const append = (text: string) => {
+        const next = text.replace(/\s+/g, " ");
+
+        out += text;
+        tail = (tail + (tail.endsWith(" ") ? next.trimStart() : next)).slice(-64);
+    };
 
     while (at < code.length) {
         const char = code[at]!;
@@ -84,7 +92,7 @@ export function stripComments(code: string): string {
             const end = code.indexOf("*/", at + 2);
             const stop = end === -1 ? code.length : end + 2;
 
-            out += code.slice(at, stop).replace(/[^\n]/g, " ");
+            append(code.slice(at, stop).replace(/[^\n]/g, " "));
             at = stop;
             continue;
         }
@@ -102,13 +110,13 @@ export function stripComments(code: string): string {
                 stop++;
             }
 
-            out += code.slice(at, stop + 1);
+            append(code.slice(at, stop + 1));
             at = stop + 1;
             last = char;
             continue;
         }
 
-        if (char === "/" && (last === "" || BEFORE_REGEX.test(last) || keywordBeforeRegex(out))) {
+        if (char === "/" && (last === "" || BEFORE_REGEX.test(last) || keywordBeforeRegex(tail))) {
             let stop = at + 1;
             let inClass = false;
 
@@ -130,24 +138,24 @@ export function stripComments(code: string): string {
                 // A contextual identifier can precede division, not a regex. If its supposed closing slash
                 // starts a line comment, keep the rest of this line literally. This can over-report a comment,
                 // but must not turn a commented /* into a block comment that hides subsequent code.
-                if (code[stop + 1] === "/" && keywordBeforeRegex(out)) {
+                if (code[stop + 1] === "/" && keywordBeforeRegex(tail)) {
                     const end = code.indexOf("\n", stop + 2);
 
                     stop = end === -1 ? code.length : end;
-                    out += code.slice(at, stop);
+                    append(code.slice(at, stop));
                     at = stop;
                     last = "/";
                     continue;
                 }
 
-                out += code.slice(at, stop + 1);
+                append(code.slice(at, stop + 1));
                 at = stop + 1;
                 last = "/";
                 continue;
             }
         }
 
-        out += char;
+        append(char);
         at++;
 
         if (!/\s/.test(char)) {

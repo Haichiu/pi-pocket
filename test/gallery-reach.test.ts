@@ -201,7 +201,9 @@ test("the scan reports code that can load or run unnamed programs", () => {
     const start = performance.now();
 
     ['require("'.repeat(25_000), '"' + "/".repeat(100_000)].forEach(scanCode);
-    assert.ok(performance.now() - start < 500);
+    scanCode('"/'.repeat(256_000));
+    scanCode("/x".repeat(128_000));
+    assert.ok(performance.now() - start < 1_000);
 });
 
 test("the scan names the files the code writes and the places it reads from", () => {
