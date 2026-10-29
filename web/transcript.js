@@ -514,7 +514,6 @@ function UserEntry({ entry, view, users }) {
     </div>`;
 }
 
-/** A message that opens with a quoted passage of Pi's reply: the passage in a quote block, then the words. */
 function QuotedText({ text }) {
     const quote = splitQuote(text);
 
@@ -919,8 +918,7 @@ function ToolStep({
             setFull({ call: fullCall ?? call, result: fullResult });
         });
 
-    // An image a read returned is a file already on screen elsewhere (often one the person just sent): it shows only
-    // when the call is opened. What other calls return as images (a screenshot) shows under the line.
+    // An image a read returned is already on screen elsewhere: it shows only when the call is opened.
     const imagesInside = call.name === "read";
     let body = null;
 
@@ -1101,7 +1099,6 @@ function ToolStep({
             ? details.lesson
             : null;
     const imagesUnder = result?.images > 0 && !imagesInside;
-    // What the person answered to Pi's questions (`ask.ts`).
     const answers =
         call.name === "ask" && !result?.isError && Array.isArray(details?.answers)
             ? details.answers
@@ -1584,10 +1581,6 @@ function stepLive(step, results, slots, approvals, busy) {
     return status === "running" || status === "approval";
 }
 
-/**
- * One field of an ask's card with answers to pick (`AskField.choices`): its question, a button for each answer (pressed
- * when chosen; with `multiple`, each toggles), and with `other` a line to type an answer of one's own instead.
- */
 function AskChoices({ field, chosen, busy, onChange }) {
     const { picked, other } = chosen;
 
@@ -1636,7 +1629,6 @@ function AskChoices({ field, chosen, busy, onChange }) {
     </fieldset>`;
 }
 
-/** A choice field's value: the labels picked, in the card's order and one per line, or what was typed instead. */
 function choiceValue(field, { picked, other }) {
     if (other.trim() !== "") {
         return other;
@@ -1648,11 +1640,7 @@ function choiceValue(field, { picked, other }) {
         .join("\n");
 }
 
-/**
- * A question for the person Pi works for, from an extension (`host.ask`) or Pi's `ask` tool: its fields, sent only by
- * that person, and declined by anyone who can steer. What is typed goes to the asker; only the `ask` tool passes it on
- * to Pi.
- */
+/** Sent only by that person, and declined by anyone who can steer. Only the `ask` tool passes what is typed on to Pi. */
 function AskCard({ approval }) {
     const { me, users } = store.state;
     const form = approval.form;
@@ -1760,7 +1748,6 @@ function AskCard({ approval }) {
     </form>`;
 }
 
-/** What the person answered to Pi's `ask`, under its call, for everyone in the session: each question and its answer. */
 function AskAnswers({ answers }) {
     return html`<dl class="ask-answers">
         ${answers.map(

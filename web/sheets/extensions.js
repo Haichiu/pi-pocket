@@ -438,7 +438,6 @@ export function ExtensionsContent({
     const [confirmOn, setConfirmOn] = useState(null);
     // The rows opened to show their settings and details, by file.
     const [open, setOpen] = useState(new Set());
-    // Built in starts folded in the hub, unless the sheet was opened for it (the status line's guard, safe mode).
     const [builtInOpen, setBuiltInOpen] = useState(show === "built-in");
     const guardCancel = useRef(null);
     const guardSwitch = useRef(null);
@@ -543,8 +542,7 @@ export function ExtensionsContent({
         (module) =>
             (galleryInstalled === undefined ||
                 !installedByFile.has(module.file) ||
-                // Keep failed gallery modules here too: their loader/browser errors are management data. The hub's
-                // own rows show those errors, so it leaves them out.
+                // Failed gallery modules stay here: the hub's own rows show their errors.
                 (!hub &&
                     (module.error ||
                         browserModuleState(module.file.replace(/\.ts$/, ""))?.status ===

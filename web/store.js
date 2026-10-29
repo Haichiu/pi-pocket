@@ -144,7 +144,6 @@ export const store = {
         auth: null,
         /** A transcript message the next chat message discusses: `{ entryId, text }`. */
         chatQuote: null,
-        /** A passage of Pi's reply the next message to Pi quotes. */
         replyQuote: null,
         /** Text to put into the message box to Pi: `{ text, n }`, picked up by the composer. */
         composerInsert: null,
@@ -445,15 +444,11 @@ export const scoped = () => Array.isArray(store.state.me?.sessions);
 /** The notices that announce chat messages, here or a mention elsewhere, by id: their session's. Reading its chat takes them down. */
 const chatNotices = new Map();
 
-/** How far this browser read a session's chat, as storage has it: another tab's read counts before its event arrives. */
+// Read from storage: another tab's read counts before its event arrives.
 export function chatReadStored(id) {
     return Number(localStorage.getItem(CHAT_READ_PREFIX + id)) || 0;
 }
 
-/**
- * Set how far this browser read a session's chat, from the session list: `at` is the time of the newest message read, or
- * 0 for none (the way back from an undo). The open session's own mark follows when it is the one.
- */
 export function setChatReadAt(id, at) {
     if (at > 0) {
         localStorage.setItem(CHAT_READ_PREFIX + id, String(at));
@@ -1409,7 +1404,6 @@ export const actions = {
     withdraw: (submissionId) => api(`c/${current()}/withdraw`, { submissionId }),
     /** Move one's own queued message to "steer" or "followUp", or send it now with "interrupt". */
     move: (submissionId, mode) => api(`c/${current()}/move`, { submissionId, mode }),
-    /** Take one's own queued message back to change it: `{ text, attachments }`, for the message box. */
     editQueued: (submissionId) => api(`c/${current()}/edit-queued`, { submissionId }),
     configure: (change) => api(`c/${current()}/configure`, change),
     /** The owner's model and thinking level for new sessions, `{ provider, modelId, thinkingLevel }`; null clears it. */
@@ -1420,7 +1414,6 @@ export const actions = {
     /** A new session with this one's history through `entryId`. */
     fork: (entryId, { worktree = false } = {}) =>
         api(`c/${current()}/fork`, { entryId, ...(worktree ? { worktree } : {}) }),
-    /** A new session with the whole of session `id`'s history, through Pi's latest finished reply. */
     forkSession: (id) => api(`c/${id}/fork`, {}),
     /** Send a message to Pi again in a fork that ends just before it: `{ text }` edits it, `{ model }` picks another model. */
     resend: (entryId, change = {}) => api(`c/${current()}/resend`, { entryId, ...change }),
@@ -1713,7 +1706,6 @@ export function insertIntoComposer(text, files = [], { inline = false } = {}) {
     }));
 }
 
-/** Quote a passage of Pi's reply: it waits above the message box, and the next message goes out with it. */
 export function quoteReply(text) {
     store.set({ replyQuote: text });
 }

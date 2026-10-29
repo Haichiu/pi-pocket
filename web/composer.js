@@ -804,10 +804,6 @@ export function Composer() {
         }
     };
 
-    /**
-     * Take one's own queued message back to change it: its words go above what the box holds, on a line of their own,
-     * and its files join the ones attached.
-     */
     const editQueued = async (item) => {
         const back = await attempt(() => actions.editQueued(item.id));
 
