@@ -1,18 +1,10 @@
-/**
- * The check of numbered color ramps (stream T): a group whose children are numbers (`color.blue.100` to `color.blue.900`)
- * promises that the steps go steadily from light to dark (or dark to light). A step that breaks that makes a role that
- * points at it look wrong in one mode, and no one sees why. The check compares Oklch lightness, which follows what the
- * eye sees, so it finds a step that a contrast check does not.
- */
+// The check compares Oklch lightness, which follows what the eye sees, so it finds a step that a contrast check does not.
 import { parseColor, toOklch } from "./color.ts";
 import type { ResolvedToken } from "./system-types.ts";
 
-/** A ramp that is not steady in one mode. */
 export interface RampProblem {
-    /** The group of the ramp: `color.blue`. */
     group: string;
     mode: string;
-    /** The two steps, as token names: the first has the lower number. */
     first: string;
     second: string;
     message: string;
@@ -26,7 +18,6 @@ const FLAT = 0.05;
 
 const percent = (lightness: number) => `${Math.round(lightness * 100)}%`;
 
-/** The ramps of the tokens that are not steady in lightness, one problem for each ramp and mode that breaks. */
 export function rampProblems(tokens: ResolvedToken[], modes: string[]): RampProblem[] {
     const groups = new Map<string, ResolvedToken[]>();
 

@@ -1,14 +1,8 @@
-/**
- * The names in `tailwind.css` (stream T): which variable of Tailwind v4's theme each token has, so that the file makes
- * utilities of the right kind and the utilities read well. The rules are in `tailwindName`; `tailwindNames` settles
- * two tokens that want one name. `names.md` in `dist/` lists the result.
- */
 import type { ResolvedToken } from "./system-types.ts";
 import type { CompileInput } from "./tokens-compile.ts";
 
 export const norm = (segment: string) => segment.toLowerCase().replace(/[-_]/g, "");
 
-/** `path` without its leading words in `drop` (at least one segment stays). */
 function stripLead(path: readonly string[], drop: readonly string[]): string[] {
     let at = 0;
 
@@ -19,9 +13,7 @@ function stripLead(path: readonly string[], drop: readonly string[]): string[] {
     return path.slice(at);
 }
 
-/** Words that name the group of a type scale: `font.leading.tight`, `type.size.lg`, `typography.tracking.wide`. */
 const TYPE_GROUPS = ["font", "fonts", "type", "typography", "text"];
-/** The Tailwind namespace of the second word of such a path. */
 const TYPE_SUB: Record<string, string> = {
     leading: "leading",
     lineheight: "leading",
@@ -51,7 +43,6 @@ const GENERIC_ROLES = [
     "regular",
     "standard",
 ];
-/** The first words of a color path that name the utility, not the role: `bg-surface`, `text-primary`, `border-default`. */
 const UTILITY_WORDS = [
     "bg",
     "background",
@@ -65,16 +56,8 @@ const UTILITY_WORDS = [
     "stroke",
 ];
 
-/**
- * The Tailwind v4 variable for a token, if a namespace fits: `--color-*`, `--font-*` (families), `--text-*`,
- * `--font-weight-*`, `--tracking-*`, `--leading-*`, `--breakpoint-*`, `--container-*`, `--spacing-*`, `--radius-*`,
- * `--shadow-*`, `--inset-shadow-*`, `--drop-shadow-*`, `--blur-*`, `--perspective-*`, `--aspect-*`, `--ease-*`. A
- * color role drops the word that the utility repeats (`color.bg.surface` is `--color-surface`, so `bg-surface`) unless
- * what is left is a word that says nothing alone (`default`, `primary`, `base`): then the role takes the word of its
- * group (`color.border.default` is `--color-border`, `color.text.primary` is `--color-text`, `color.bg.base` is
- * `--color-bg`). A role of another group loses a trailing `default` (`color.accent.default` is `--color-accent`).
- * When two roles want one name the first keeps it and the other keeps its full name (`--color-text-secondary`).
- */
+// A color role drops the word that the utility repeats (`color.bg.surface` is `--color-surface`, so `bg-surface`). A role of another group loses a trailing `default` (`color.accent.default` is `--color-accent`).
+// When two roles want one name the first keeps it and the other keeps its full name (`--color-text-secondary`).
 export function tailwindName(token: ResolvedToken): string | undefined {
     if (token.tailwind !== undefined) {
         return token.tailwind;
@@ -84,7 +67,6 @@ export function tailwindName(token: ResolvedToken): string | undefined {
     const first = norm(path[0]!);
     const sub = TYPE_GROUPS.includes(first) ? TYPE_SUB[norm(path[1] ?? "")] : undefined;
     const join = (prefix: string, rest: readonly string[]) => `--${prefix}-${rest.join("-")}`;
-    // The path without the words of the group and its sub-group (`font.leading.tight` is `tight`).
     const tail = (drop: readonly string[]) =>
         stripLead(path, [...TYPE_GROUPS, ...Object.keys(TYPE_SUB), ...drop]);
 
@@ -235,24 +217,15 @@ export const TAILWIND_NAMESPACES = [
     "animate",
 ];
 
-/** The namespace that Tailwind reads a variable in (the longest that fits: `font-weight` before `font`). */
 export const namespaceOf = (name: string) =>
     [...TAILWIND_NAMESPACES]
         .sort((a, b) => b.length - a.length)
         .find((namespace) => name.startsWith(`--${namespace}-`));
 
-/** Whether a variable would be read by Tailwind as a member of one of its theme namespaces. */
 const inNamespace = (name: string) => namespaceOf(name) !== undefined;
 
-/** The scales that a dimension token can belong to, by the name of its group. */
 export type Scale = "text" | "space" | "radius" | "breakpoint" | "container" | "tracking" | "blur";
 
-/**
- * Which scale a dimension token is part of, read from its path: `text.*`, `font.size.*` (font sizes), `space.*`,
- * `spacing.*`, `gap.*` (spacing), `radius.*`, `radii.*`, `rounded.*` (corners), `breakpoint.*`, `screen.*`
- * (breakpoints), `container.*`, `tracking.*`, `blur.*`. Other dimensions (`size.*`, `dim.*`, `border.width.*`) belong to
- * no scale. The Tailwind file and the checks share this one rule.
- */
 export function scaleOf(token: ResolvedToken): Scale | undefined {
     if (token.type !== "dimension") {
         return undefined;
@@ -265,10 +238,6 @@ export function scaleOf(token: ResolvedToken): Scale | undefined {
     return prefix === undefined ? undefined : (({ spacing: "space" }[prefix] ?? prefix) as Scale);
 }
 
-/**
- * The one variable each token has in `tailwind.css`: its Tailwind v4 namespace name (`--spacing-4`, `--text-sm`,
- * `--color-bg-surface`) when one fits and no earlier token has it, else its own (`--button-padding-x`).
- */
 export function tailwindNames(system: CompileInput): Map<string, string> {
     const names = new Map<string, string>();
     const claimed = new Set<string>();
@@ -286,7 +255,6 @@ export function tailwindNames(system: CompileInput): Map<string, string> {
         }
     }
 
-    // A token whose own variable already is its Tailwind name keeps it.
     for (const { token, name } of wanted) {
         if (name !== undefined && name === token.cssVar && !claimed.has(name)) {
             names.set(token.name, name);
@@ -294,7 +262,6 @@ export function tailwindNames(system: CompileInput): Map<string, string> {
         }
     }
 
-    // The first token in file order has a namespace name; a later one with the same name keeps its own.
     for (const { token, name } of wanted) {
         if (name === undefined || names.has(token.name)) {
             continue;

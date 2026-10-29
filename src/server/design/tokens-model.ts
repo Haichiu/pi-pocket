@@ -1,12 +1,3 @@
-/**
- * The token model of a design system (stream T): turns the parsed files of `.pi/design/` into a `DesignSystem`. It
- * reads W3C Design Tokens (DTCG) in both value forms, inherits types from groups, resolves references in every mode,
- * checks contrast pairs, parses the component specimens, and compiles `dist/`. No file access: `tokens-io.ts` reads
- * and writes, `tokens.ts` joins them.
- *
- * Every problem says where it is (file and token) and how to fix it. An error means the system cannot be used as it
- * is and stops a write; a warning does not.
- */
 import { contrastRatio, parseColor, toHex } from "./color.ts";
 import { parseComponent } from "./components.ts";
 import type {
@@ -45,9 +36,6 @@ import {
 
 export { inferType };
 
-// --- Problems -----------------------------------------------------------------------------------------------------
-
-/** Collects problems without repeats and keeps at most `LIMITS.problems`. */
 class Report {
     list: SystemProblem[] = [];
     private keys = new Set<string>();
@@ -113,7 +101,6 @@ class Report {
         }
     }
 
-    /** The problems, errors first, with a note when some were left out. */
     done(): SystemProblem[] {
         const sorted = [
             ...this.list.filter((problem) => problem.level === "error"),
@@ -134,7 +121,6 @@ class Report {
 /** The longest chain of references that is followed; a longer one is a problem, not a stack overflow. */
 const MAX_REFERENCE_CHAIN = 200;
 
-/** The edit distance of two strings, for "did you mean". */
 function distance(a: string, b: string): number {
     if (Math.abs(a.length - b.length) > 4) {
         return 99;
@@ -159,7 +145,6 @@ function distance(a: string, b: string): number {
     return row[b.length]!;
 }
 
-/** The token name closest to `name`, when one is close enough to be a typo. */
 function nearest(
     name: string,
     names: Iterable<string>,
@@ -192,23 +177,17 @@ function nearest(
     return best;
 }
 
-// --- Reading the DTCG tree ----------------------------------------------------------------------------------------
-
-/** A token as written in a file. */
 interface RawToken {
     name: string;
     path: string[];
     file: string;
     value: unknown;
-    /** The `$type` of the token or of a group above it. */
     type?: string;
     description?: string;
     deprecated?: boolean | string;
-    /** The `com.pi-pocket` extension, with `tier` inherited from the groups. */
     ext: Obj;
 }
 
-/** Walks a token file and lists its tokens. Problems of shape are reported here. */
 function collect(root: unknown, file: string, report: Report): RawToken[] {
     const found: RawToken[] = [];
 
@@ -356,8 +335,6 @@ function collect(root: unknown, file: string, report: Report): RawToken[] {
     return found;
 }
 
-// --- Tiers --------------------------------------------------------------------------------------------------------
-
 const TIER_GROUPS: Record<string, TokenTier> = {
     primitive: "primitive",
     primitives: "primitive",
@@ -409,8 +386,6 @@ const ROLE_WORDS = new Set([
     "default",
 ]);
 
-// --- Building a system --------------------------------------------------------------------------------------------
-
 interface Def {
     name: string;
     path: string[];
@@ -420,7 +395,6 @@ interface Def {
     type?: TokenType;
 }
 
-/** Whether a mode is dark, by its declared scheme, its name, or (else) its page background. */
 function schemeOf(mode: string, declared: unknown): "light" | "dark" | undefined {
     if (declared === "light" || declared === "dark") {
         return declared;
@@ -433,10 +407,6 @@ function schemeOf(mode: string, declared: unknown): "light" | "dark" | undefined
     return /(^|-)light($|-)/.test(mode) ? "light" : undefined;
 }
 
-/**
- * Builds the system: reads the token files, resolves every token in every mode, checks the contrast pairs and the
- * component specimens, and compiles `dist/`.
- */
 export function buildSystem(raw: RawSystem): DesignSystem {
     const report = new Report();
     // Typo suggestions are optional: the edit-distance work of one load is bounded (a few tenths of a second at most).
@@ -469,7 +439,6 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         }
     }
 
-    // The defaults.
     const defs = new Map<string, Def>();
     const byVar = new Map<string, string>();
 
@@ -525,7 +494,6 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         });
     }
 
-    // The modes.
     const modeNames: string[] = [];
     const modeMeta = new Map<string, unknown>();
 
@@ -573,7 +541,6 @@ export function buildSystem(raw: RawSystem): DesignSystem {
     modeNames.sort((a, b) => (a === "dark" ? -1 : b === "dark" ? 1 : a.localeCompare(b)));
     const modes = [defaultMode, ...modeNames];
 
-    // Types: declared, taken from a reference, or read from the value.
     const types = new Map<string, TokenType | null>();
 
     const typeOf = (def: Def, visiting: string[] = []): TokenType | undefined => {
@@ -646,7 +613,6 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         }
     }
 
-    // Values, mode by mode.
     const results = new Map<string, Map<string, Out | null>>();
 
     for (const mode of modes) {
@@ -742,7 +708,6 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         }
     }
 
-    // The scheme of each mode.
     const schemes: Record<string, "light" | "dark"> = {};
 
     for (const mode of modes) {
@@ -798,7 +763,6 @@ export function buildSystem(raw: RawSystem): DesignSystem {
 
     const componentSlugs = new Set(components.map((component) => component.slug));
 
-    // The resolved tokens.
     const tokens: ResolvedToken[] = [];
 
     for (const def of defs.values()) {
@@ -854,7 +818,6 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         } else if (wholeRef(def.base.value) !== undefined) {
             tier = "semantic";
         } else if (/^\d+$/.test(def.path.at(-1)!)) {
-            // A step of a scale (`color.blue.500`, `space.4`) is a raw value.
             tier = "primitive";
         } else if (def.path.some((each) => ROLE_WORDS.has(each.toLowerCase()))) {
             tier = "semantic";
@@ -938,7 +901,6 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         );
     }
 
-    // A numbered ramp that is not steady in lightness: the two steps are named.
     for (const problem of rampProblems(tokens, modes)) {
         report.warn(problem.message, "tokens.json", problem.second, problem.fix);
     }
@@ -965,7 +927,6 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         }
     }
 
-    // Contrast pairs, in every mode.
     const byName = new Map(tokens.map((token) => [token.name, token]));
 
     for (const token of tokens) {
@@ -1081,7 +1042,6 @@ export function buildSystem(raw: RawSystem): DesignSystem {
         }
     }
 
-    // A deprecated token that another token still points at.
     for (const token of tokens) {
         if (token.deprecated === undefined) {
             continue;
@@ -1108,7 +1068,6 @@ export function buildSystem(raw: RawSystem): DesignSystem {
     }
 
     const guidelines = raw.guidelines;
-    // The tokens each other mode's file sets itself (the rest are inherited from the default mode).
     const overrides: Record<string, string[]> = {};
 
     for (const mode of modes.slice(1)) {
