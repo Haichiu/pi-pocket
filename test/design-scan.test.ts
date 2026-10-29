@@ -64,7 +64,7 @@ test("entities, links, ids, and selectors are not colors", () => {
 
 test("issue numbers in comments and ids in a selector list are not colors", () => {
     const dir = project({
-        "a.tsx": `// fixes issue #123 and PR #186\n/* see #abc */\nconst a = { color: "#0a0a0a" };\n{/* note #def */}`,
+        "a.tsx": `// fixes issue #123 and PR #186\n/* see #abc */\nconst a = <p className="text-[#0a0a0a]" />;\n{/* note #def */}`,
         "b.css": `#add, #bad {\n  color: red;\n}\n#fab,\n#cab .x { color: #fefefe }\n<!-- #bed -->`,
         "c.html": `<a href="https://x.test/#a">x</a><div style="color:#111"></div><style>.y{color:#222}</style>`,
     });
@@ -89,17 +89,6 @@ test("a glob in a config is not a comment, and an address keeps its colors", () 
             .sort(),
         ["#123456", "#654321"],
     );
-});
-
-test("JSX styles give fonts and radii", () => {
-    const dir = project({
-        "a.jsx": `const s = { fontFamily: "Inter, sans-serif", borderRadius: 8, color: "#fff" };
-const t = { fontFamily: 'Inter, sans-serif', borderRadius: "8px" };`,
-    });
-    const scan = scanTokens(dir);
-
-    assert.deepEqual(scan.fonts, [{ value: "Inter, sans-serif", count: 2 }]);
-    assert.deepEqual(scan.radii, [{ value: "8px", count: 2 }]);
 });
 
 test("hostile comments and colors scan in linear time", () => {

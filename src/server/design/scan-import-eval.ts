@@ -1,5 +1,6 @@
 import { convert, isObject, type Obj } from "./scan-import-convert.ts";
-import { mixColors, parseColor, type Rgba, toHex } from "./color.ts";
+import { parseColor, toHex } from "./color.ts";
+import { evalMath } from "./scan-variables.ts";
 
 /** Members of a type style that the scan leaves out, so that a reference of theirs that fails is not a reason to drop the style. */
 const OPTIONAL_MEMBERS = new Set([
@@ -81,217 +82,12 @@ export function flatten(tree: Obj, into: Map<string, Entry>, budget: { left: num
     visit(tree, [], undefined, 0);
 }
 
-interface Quantity {
-    n: number;
-    unit: string;
-}
-
-const FUNCTIONS: Record<string, (args: number[]) => number> = {
-    round: ([x, digits]) =>
-        Number(x!.toFixed(digits === undefined ? 0 : Math.min(8, Math.max(0, digits)))),
-    floor: ([x]) => Math.floor(x!),
-    ceil: ([x]) => Math.ceil(x!),
-    abs: ([x]) => Math.abs(x!),
-    sqrt: ([x]) => Math.sqrt(x!),
-    min: (args) => Math.min(...args),
-    max: (args) => Math.max(...args),
-    pow: ([x, y]) => x! ** y!,
-};
-
-const NUMBER = /^(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/i;
-const UNIT = /^(?:px|rem|em|%|pt|vw|vh|ms|s|deg)(?![a-z])/i;
-
-function calculate(text: string): string | undefined {
-    let source = text.trim();
-
-    if (/^calc\(.*\)$/i.test(source)) {
-        source = source.slice(5, -1);
-    }
-
-    if (source.length > 200 || !/^[\d\s.+\-*/()%a-z,]+$/i.test(source) || !/[\d)]/.test(source)) {
-        return undefined;
-    }
-
-    let at = 0;
-    let operations = 0;
-
-    const fail = () => {
-        throw new Error("not arithmetic");
-    };
-
-    const skip = () => {
-        while (source[at] === " " || source[at] === "\t") {
-            at += 1;
-        }
-    };
-
-    const combine = (a: Quantity, b: Quantity, operator: string): Quantity => {
-        operations += 1;
-
-        if (operator === "+" || operator === "-") {
-            const unit = a.unit === "" ? b.unit : a.unit;
-
-            return { n: operator === "+" ? a.n + b.n : a.n - b.n, unit };
-        }
-
-        if (operator === "*") {
-            return { n: a.n * b.n, unit: a.unit === "" ? b.unit : a.unit };
-        }
-
-        if (b.n === 0) {
-            return fail();
-        }
-
-        return { n: a.n / b.n, unit: a.unit === b.unit ? "" : a.unit === "" ? b.unit : a.unit };
-    };
-
-    const factor = (): Quantity => {
-        skip();
-
-        if (source[at] === "-") {
-            at += 1;
-
-            const inner = factor();
-
-            return { n: -inner.n, unit: inner.unit };
-        }
-
-        if (source[at] === "+") {
-            at += 1;
-
-            return factor();
-        }
-
-        if (source[at] === "(") {
-            at += 1;
-
-            const inner = expression();
-
-            skip();
-
-            if (source[at] !== ")") {
-                return fail();
-            }
-
-            at += 1;
-
-            return inner;
-        }
-
-        const number = NUMBER.exec(source.slice(at));
-
-        if (number !== null) {
-            at += number[0].length;
-
-            const unit = UNIT.exec(source.slice(at));
-
-            if (unit !== null) {
-                at += unit[0].length;
-            }
-
-            return { n: Number(number[0]), unit: (unit?.[0] ?? "").toLowerCase() };
-        }
-
-        const name = /^[a-z]+/i.exec(source.slice(at))?.[0]?.toLowerCase();
-
-        if (name === undefined || FUNCTIONS[name] === undefined) {
-            return fail();
-        }
-
-        at += name.length;
-        skip();
-
-        if (source[at] !== "(") {
-            return fail();
-        }
-
-        at += 1;
-        operations += 1;
-
-        const args: Quantity[] = [];
-
-        for (;;) {
-            args.push(expression());
-            skip();
-
-            if (source[at] === ",") {
-                at += 1;
-
-                continue;
-            }
-
-            break;
-        }
-
-        if (source[at] !== ")") {
-            return fail();
-        }
-
-        at += 1;
-
-        return {
-            n: FUNCTIONS[name]!(args.map((each) => each.n)),
-            unit: args.find((each) => each.unit !== "")?.unit ?? "",
-        };
-    };
-
-    const term = (): Quantity => {
-        let left = factor();
-
-        for (;;) {
-            skip();
-
-            const operator = source[at];
-
-            if (operator !== "*" && operator !== "/") {
-                return left;
-            }
-
-            at += 1;
-            left = combine(left, factor(), operator);
-        }
-    };
-
-    function expression(): Quantity {
-        let left = term();
-
-        for (;;) {
-            skip();
-
-            const operator = source[at];
-
-            if (operator !== "+" && operator !== "-") {
-                return left;
-            }
-
-            at += 1;
-            left = combine(left, term(), operator);
-        }
-    }
-
-    try {
-        const result = expression();
-
-        skip();
-
-        if (at !== source.length || operations === 0 || !Number.isFinite(result.n)) {
-            return undefined;
-        }
-
-        return `${Number(result.n.toFixed(4))}${result.unit}`;
-    } catch {
-        return undefined;
-    }
-}
-
-const towards = (color: Rgba, other: Rgba, ratio: number): Rgba =>
-    mixColors(
-        "srgb",
-        { color, percent: 100 - ratio * 100 },
-        { color: other, percent: ratio * 100 },
-    );
-
 const REFERENCE = /\{([^{}]+)\}|(?<![\w$])\$([A-Za-z_][\w-]*(?:\.[\w-]+)+)/g;
+
+const modifies = (node: Obj) =>
+    isObject(node.$extensions) &&
+    isObject(node.$extensions["studio.tokens"]) &&
+    isObject(node.$extensions["studio.tokens"].modify);
 
 export class Mode {
     entries: Map<string, Entry>;
@@ -321,11 +117,8 @@ export class Mode {
         }
 
         const raw = entry.node.$value ?? entry.node.value;
-        let value = this.evaluate(raw, [...stack, key]);
-
-        if (value !== undefined) {
-            value = this.modify(value, entry);
-        }
+        // A Tokens Studio color modifier (`lighten`, `mix`) is not run: the token is left out rather than drafted wrong.
+        const value = modifies(entry.node) ? undefined : this.evaluate(raw, [...stack, key]);
 
         this.done.set(key, value);
 
@@ -424,46 +217,15 @@ export class Mode {
             return undefined;
         }
 
-        return calculate(replaced) ?? replaced;
-    }
+        const math = /^calc\((.*)\)$/is.exec(replaced)?.[1] ?? replaced;
+        const result = /[*/+]|\s-\s/.test(math) ? evalMath(math, () => undefined) : undefined;
 
-    modify(value: unknown, entry: Entry): unknown {
-        const extension = isObject(entry.node.$extensions)
-            ? (entry.node.$extensions["studio.tokens"] as unknown)
-            : undefined;
-        const modifier = isObject(extension) ? extension.modify : undefined;
-
-        if (!isObject(modifier) || typeof value !== "string") {
-            return value;
+        // Tokens Studio's math functions (`round({a} * 1.6)`) are not run: the token is left out.
+        if (result === undefined && /^(?:round|floor|ceil|abs|sqrt|min|max|pow)\(/i.test(math)) {
+            return undefined;
         }
 
-        const color = parseColor(value);
-        const amount = Number(this.evaluate(modifier.value, []));
-
-        if (color === undefined || !Number.isFinite(amount)) {
-            return value;
-        }
-
-        const ratio = Math.min(1, Math.max(0, amount));
-
-        switch (modifier.type) {
-            case "alpha":
-                return toHex({ ...color, a: ratio });
-            case "lighten":
-                return toHex(towards(color, { r: 1, g: 1, b: 1, a: color.a }, ratio));
-            case "darken":
-                return toHex(towards(color, { r: 0, g: 0, b: 0, a: color.a }, ratio));
-
-            case "mix": {
-                const other = this.evaluate(modifier.color, []);
-                const target = typeof other === "string" ? parseColor(other) : undefined;
-
-                return target === undefined ? value : toHex(towards(color, target, ratio));
-            }
-
-            default:
-                return value;
-        }
+        return result ?? replaced;
     }
 }
 
@@ -478,11 +240,7 @@ export function tokensOf(mode: Mode): { tree: Obj; flat: Map<string, Obj> } {
             text === undefined
                 ? null
                 : /^\{([^{}]+)\}$|^\$([A-Za-z_][\w-]*(?:\.[\w-]+)+)$/.exec(text);
-        // A token that modifies its color is not only a reference.
-        const modifies =
-            isObject(entry.node.$extensions) && "studio.tokens" in entry.node.$extensions;
-        const target =
-            alias === null || modifies ? undefined : mode.keyOf(alias[1] ?? alias[2] ?? "");
+        const target = alias === null ? undefined : mode.keyOf(alias[1] ?? alias[2] ?? "");
         let value: unknown;
 
         if (target !== undefined && mode.entries.has(target) && mode.valueOf(key) !== undefined) {

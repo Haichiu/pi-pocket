@@ -24,7 +24,7 @@ export type Category =
     | "gradient";
 
 export interface VarFact {
-    /** Without `--`, `$`, or `@`; for a JavaScript theme, the path joined by `-`. */
+    /** Without `--`, `$`, or `@`; for a Tailwind config, the theme path joined by `-`. */
     name: string;
     value: string;
     scope: Scope;
@@ -95,18 +95,11 @@ export interface Facts {
     files: string[];
     partial: boolean;
     tailwind: boolean;
-    wordpress?: boolean;
-    /** The project's Sass functions that scale a number (`@function space($n) { @return $n * 4px; }`), by name. */
-    sassFunctions: Map<string, { param: string; expression: string }>;
-    /** The Sass mixins that hold the dark mode (`@include dark { … }`), from every file. */
-    darkMixins: Set<string>;
     file?: string;
     /** The mode that the file being read is named for (`dark.less`), when it is one. */
     fileMode?: Scope;
     /** What the walk and the read left out, and why (a vendored folder, a minified file, a file cut at its limit). */
     skipped: Skipped[];
-    /** The Sass files whose loops and functions were run: the text they make, by path. */
-    sassExpanded: Map<string, string>;
     /** Declarations that compute a size from custom properties (`calc(var(--gap) * 2)`): the scan resolves them later. */
     deferred: {
         prop: string;
@@ -174,8 +167,6 @@ export function newFacts(): Facts {
         varLayout: new Map(),
         classUse: new Map(),
         rootClasses: new Set(),
-        darkMixins: new Set(),
-        sassFunctions: new Map(),
         classCount: new Map(),
         classRules: new Map(),
         fonts: new Map(),
@@ -196,7 +187,6 @@ export function newFacts(): Facts {
         scoped: new Map(),
         channels: new Map(),
         skipped: [],
-        sassExpanded: new Map(),
         imported: {
             default: {},
             dark: {},
@@ -204,8 +194,6 @@ export function newFacts(): Facts {
             count: 0,
             files: [],
             certain: false,
-            configs: [],
-            materialCss: [],
             pending: [],
             notes: [],
             done: false,
@@ -256,4 +244,23 @@ export function addVar(facts: Facts, fact: Omit<VarFact, "order" | "rank">): voi
         fact.scope === "default" && facts.fileMode !== undefined ? facts.fileMode : fact.scope;
 
     facts.vars.push({ ...fact, scope, order: facts.vars.length, rank: facts.rank });
+}
+
+export function modeOf(name: string): Scope | undefined {
+    const words = name
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .toLowerCase()
+        .split(/[^a-z0-9]+/);
+    const last = words.at(-1) ?? "";
+
+    if (
+        words.some((word) => word === "dark" || word === "night" || word === "dim") ||
+        /^[a-z]{2,}(?:dark|night)$/.test(last)
+    ) {
+        return "dark";
+    }
+
+    return words.some((word) => word === "light" || word === "day") || /^[a-z]{2,}light$/.test(last)
+        ? "light"
+        : undefined;
 }

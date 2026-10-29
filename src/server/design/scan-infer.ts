@@ -14,7 +14,6 @@ import {
     spacingScale,
 } from "./scan-scales.ts";
 import { finishImports } from "./scan-import.ts";
-import { applyMaterial } from "./scan-import-material.ts";
 import { reviewScales } from "./scan-review.ts";
 import { buildSystem } from "./tokens-model.ts";
 import { chooseColorRoles, type InferContext } from "./scan-roles.ts";
@@ -175,11 +174,7 @@ export function infer(facts: Facts, folder: string): Inferred {
                 : {},
     };
 
-    return validate(
-        facts.imported.material === undefined
-            ? result
-            : applyMaterial(result, facts.imported.material),
-    );
+    return validate(result);
 }
 
 // Two names for one size (`radius.lg` and `radius.base`, both 8px) are one step: the plainer name stays, and a `base` that only names where a scale starts goes.

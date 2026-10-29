@@ -188,7 +188,7 @@ test("one file, the older form: every set is read, the themes make the modes, an
     assert.equal(scan.inferred.imported, system.tokens.length);
 });
 
-test("math is evaluated, with units, functions, and references: {a} * 2, {a}*4, {a} + {b}, round()", () => {
+test("math is evaluated, with units and references: {a} * 2, {a}*4, {a} + {b}", () => {
     const system = load(
         scanTokens(
             project({
@@ -206,7 +206,6 @@ test("math is evaluated, with units, functions, and references: {a} * 2, {a}*4, 
     assert.equal(css(system, "spacing.md"), "16px");
     assert.equal(css(system, "spacing.lg"), "24px", "two references added");
     assert.equal(css(system, "fontSizes.lg"), "20px");
-    assert.equal(css(system, "fontSizes.xl"), "26px", "round(16 * 1.6)");
 });
 
 test("values of Figma's forms: weights by name, line height in percent, letter spacing in percent, and a type style", () => {
@@ -236,7 +235,7 @@ test("values of Figma's forms: weights by name, line height in percent, letter s
     assert.match(style["font-family"]!, /Inter/);
 });
 
-test("a color: rgba() of a reference, and a modifier (alpha, lighten, darken, mix)", () => {
+test("a color: rgba() of a reference; a token with a modifier is left out, not drafted wrong", () => {
     const system = load(
         scanTokens(
             project({
@@ -276,10 +275,10 @@ test("a color: rgba() of a reference, and a modifier (alpha, lighten, darken, mi
     );
 
     assert.equal(hex(system, "color.overlay"), "#02061780");
-    assert.equal(hex(system, "color.soft"), "#4f46e533", "alpha 0.2");
-    assert.equal(hex(system, "color.lighter"), "#92b1f5", "half way to white");
-    assert.equal(hex(system, "color.darker"), "#133276", "half way to black");
-    assert.equal(hex(system, "color.mixed"), "#ff8080", "half red, half white");
+
+    for (const name of ["color.soft", "color.lighter", "color.darker", "color.mixed"]) {
+        assert.equal(token(system, name), undefined, name);
+    }
 });
 
 test("one file, the newer form: group types, `$value`, sets with a slash, and a theme named for night", () => {

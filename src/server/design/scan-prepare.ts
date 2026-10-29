@@ -1,5 +1,5 @@
-import { px } from "./scan-parse.ts";
-import { luminance, parseColor, type Rgba, toHex } from "./color.ts";
+import { commaParts, px } from "./scan-parse.ts";
+import { luminance, mixColors, parseColor, type Rgba, toHex } from "./color.ts";
 import { nameScore, words } from "./scan-colors.ts";
 import { type Category, type Facts, type Kinds } from "./scan-facts.ts";
 import { colorFact, ingest } from "./scan-facts-use.ts";
@@ -7,7 +7,6 @@ import { TAILWIND_3_COLORS, TAILWIND_4_COLORS } from "./scan-tailwind.ts";
 import { kebab } from "./scan-util.ts";
 import { channelColor, evalMath, follow, type Variable, variables } from "./scan-variables.ts";
 import { categorize } from "./scan-categorize.ts";
-import { evalColor, SASS_COLOR } from "./scan-sass-colors.ts";
 
 export interface Classified {
     variable: Variable;
@@ -54,7 +53,7 @@ export function prepare(facts: Facts, alt: "dark" | "light"): Prepared {
                 return found;
             }
 
-            const text = sassColors(found.text, index);
+            const text = found.text;
             const clamp = /^clamp\(\s*([^,()]+),/i.exec(text.trim());
 
             return clamp === null || px(clamp[1]!) === undefined
@@ -275,27 +274,6 @@ export function useDefaultColors(facts: Facts): void {
     }
 }
 
-function sassColors(text: string, index: Map<string, Variable>): string {
-    if (!/[a-z]\(/i.test(text)) {
-        return text;
-    }
-
-    return text.replace(
-        /(?<![\w-])([a-z][a-z-]*)\(((?:[^()]|\([^()]*\))*)\)/gi,
-        (all, fn: string, args: string) => {
-            if (!SASS_COLOR.has(fn.toLowerCase()) || parseColor(all) !== undefined) {
-                return all;
-            }
-
-            const color = evalColor(all, "", "light", index);
-
-            return color === undefined || args === ""
-                ? all
-                : `rgba(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)}, ${Math.round(color.a * 100) / 100})`;
-        },
-    );
-}
-
 export function weighClassRules(facts: Facts): void {
     for (const [key, rule] of facts.classRules) {
         const [name] = key.split("|") as [string];
@@ -333,26 +311,11 @@ export function resolveDeferred(facts: Facts, prep: Prepared): void {
             return evalMath(inner, lookup) ?? all;
         });
 
-        resolved = resolved.replace(
-            /map[.-]get\(\s*\$([\w-]+)\s*,\s*['"]?([\w-]+)['"]?\s*\)/g,
-            (all, map: string, key: string) => lookup(`${map}-${key}`, "scss") ?? all,
-        );
-        resolved = resolved.replace(
-            /(?<![\w.-])([a-z][\w-]*)\(\s*(-?\d*\.?\d+)\s*\)/gi,
-            (all, name: string, argument: string) => {
-                const fn = facts.sassFunctions.get(name);
+        resolved = resolved.replace(/rgba?\(\s*[$@][\w-]+\s*,\s*\d*\.?\d+%?\s*\)/gi, (all) => {
+            const color = evalColor(all, "", "light", prep.index);
 
-                return fn === undefined
-                    ? all
-                    : (evalMath(
-                          fn.expression.replace(new RegExp(`\\$${fn.param}\\b`, "g"), argument),
-                          lookup,
-                      ) ?? all);
-            },
-        );
-
-        resolved = sassColors(resolved, prep.index);
-
+            return color === undefined ? all : toHex(color);
+        });
         resolved = resolved.replace(
             /(?:[$@][\w-]+|\d*\.?\d+[a-z%]*)(?:\s*[*/]\s*(?:[$@][\w-]+|\d*\.?\d+[a-z%]*)|\s+[+-]\s+(?:[$@][\w-]+|\d*\.?\d+[a-z%]*))+/g,
             (run) => evalMath(run, lookup) ?? run,
@@ -376,4 +339,87 @@ export function resolveDeferred(facts: Facts, prep: Prepared): void {
             });
         }
     }
+}
+
+/** A color that a variable or `color-mix()` makes: what the browser computes, for the forms a draft needs. */
+function evalColor(
+    text: string,
+    name: string,
+    mode: "light" | "dark",
+    index: Map<string, Variable>,
+    depth = 0,
+): Rgba | undefined {
+    const trimmed = text.trim();
+    const direct = parseColor(channelColor(trimmed, name) ?? trimmed);
+
+    if (direct !== undefined || depth > 6) {
+        return direct;
+    }
+
+    const valueOf = (key: string) => {
+        const target = index.get(key);
+
+        return (mode === "dark" ? (target?.dark ?? target?.light) : (target?.light ?? target?.dark))
+            ?.value;
+    };
+
+    // `rgba($black, 0.87)`: Sass and Less write a variable's color with an alpha so.
+    const faded = /^rgba?\(\s*([$@][\w-]+)\s*,\s*(\d*\.?\d+)(%?)\s*\)$/i.exec(trimmed);
+
+    if (faded !== null) {
+        const color = evalColor(faded[1]!, name, mode, index, depth + 1);
+        const alpha = Number(faded[2]) / (faded[3] === "%" ? 100 : 1);
+
+        return color === undefined ? undefined : { ...color, a: Math.min(1, alpha) * color.a };
+    }
+
+    const sassVar = /^[$@]([\w-]+)$/.exec(trimmed);
+
+    if (sassVar !== null) {
+        const value = valueOf(`scss:${sassVar[1]}`) ?? valueOf(`less:${sassVar[1]}`);
+
+        return value === undefined
+            ? undefined
+            : evalColor(value, sassVar[1]!, mode, index, depth + 1);
+    }
+
+    const reference = /^var\(\s*--([\w-]+)\s*(?:,\s*([\s\S]+))?\)$/.exec(trimmed);
+
+    if (reference !== null) {
+        const next = valueOf(`css:${reference[1]}`) ?? reference[2];
+
+        return next === undefined
+            ? undefined
+            : evalColor(next, reference[1]!, mode, index, depth + 1);
+    }
+
+    const mix =
+        /^color-mix\(\s*in\s+([a-z0-9-]+)(?:\s+(?:shorter|longer|increasing|decreasing)\s+hue)?\s*,([\s\S]*)\)$/i.exec(
+            trimmed,
+        );
+    const args = mix === null ? [] : commaParts(mix[2]!);
+
+    if (args.length !== 2) {
+        return undefined;
+    }
+
+    const operands = args.map((arg) => {
+        const match = /^(?:(\d*\.?\d+)%\s+([\s\S]+)|([\s\S]+?)\s+(\d*\.?\d+)%)$/.exec(arg.trim());
+        const color = evalColor(
+            match === null ? arg : (match[2] ?? match[3]!),
+            name,
+            mode,
+            index,
+            depth + 1,
+        );
+        const percent = match === null ? undefined : Number(match[1] ?? match[4]);
+
+        return color === undefined
+            ? undefined
+            : { color, ...(percent === undefined ? {} : { percent }) };
+    });
+
+    return operands[0] === undefined || operands[1] === undefined
+        ? undefined
+        : mixColors(mix![1]!.toLowerCase(), operands[0], operands[1]);
 }

@@ -1,7 +1,6 @@
 import { colorsIn, commaParts, type Decl, isDarkSelector, parts, px } from "./scan-parse.ts";
 import { nameScore, words } from "./scan-colors.ts";
 import { addVar, bump, type ColorFact, emptyKinds, type Facts, type Kinds } from "./scan-facts.ts";
-import { sassMapVars } from "./scan-facts-sass.ts";
 import { noteChannels } from "./scan-channels.ts";
 
 const COLOR_PROPERTY: [RegExp, "bg" | "text" | "border" | "fill" | "shadow"][] = [
@@ -316,19 +315,11 @@ export function ingest(facts: Facts, decl: Decl): void {
         }
     }
 
-    // A size computed from custom properties (or from Sass variables: `$unit * 2`, `rgba($black, .2)`) is resolved once
-    // the scan knows the variables.
+    // A size computed from custom properties or from Sass and Less variables (`$unit * 2`) is resolved once the scan
+    // knows the variables.
     if (
         ((SCALE_PROPS.test(decl.prop) && /calc\(/.test(decl.value) && /var\(/.test(decl.value)) ||
-            (SASS_PROPS.test(decl.prop) &&
-                (/(?<![\w$@-])[$@][A-Za-z_]/.test(decl.value) ||
-                    /(?<![\w-])(?:tint-color|shade-color|shift-color|darken|lighten|desaturate|fade-in|fade-out|transparentize|opacify|adjust-hue|mix)\(/.test(
-                        decl.value,
-                    ) ||
-                    /(?<![\w.-])(?:map[.-]get|(?!(?:calc|var|rgba?|hsla?|oklch|oklab|lab|lch|hwb|color|color-mix|clamp|min|max|minmax|repeat|url|attr|env|translate\w*|rotate\w*|scale\w*|linear-gradient|radial-gradient|conic-gradient|cubic-bezier|steps|counter|format|local|image-set|fit-content|blur|drop-shadow|brightness|contrast|saturate|sepia|invert|grayscale|opacity|hue-rotate)\()[a-z][\w-]*\(\s*-?[\d.$'"])/i.test(
-                        decl.value,
-                    )) &&
-                !/\$\{/.test(decl.value))) &&
+            (SASS_PROPS.test(decl.prop) && /(?<![\w$@-])[$@][A-Za-z_]/.test(decl.value))) &&
         facts.deferred.length < 1500
     ) {
         facts.deferred.push({
@@ -581,41 +572,6 @@ export function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
                 file,
                 ...(decl.line === undefined ? {} : { line: decl.line }),
             });
-
-            continue;
-        }
-
-        const merged = /^map-merge\(\s*[$\w.-]+\s*,\s*(\(.*\))\s*\)$/s.exec(decl.value);
-        const mapText = merged === null ? decl.value : merged[1]!;
-
-        if (decl.prop.startsWith("$") && /^\(.*\)$/s.test(mapText)) {
-            sassMapVars(facts, file, decl.prop.slice(1), mapText, decl.scope, decl.line);
-
-            continue;
-        }
-
-        const choice =
-            /^if\(\s*\$[\w-]+\s*==\s*['"]?(dark|night|light|day)['"]?\s*,([\s\S]*)\)$/i.exec(
-                decl.value,
-            );
-        const branches = choice === null ? [] : commaParts(choice[2]!);
-
-        if (decl.prop.startsWith("$") && choice !== null && branches.length === 2) {
-            const dark = /^(?:dark|night)$/i.test(choice[1]!);
-
-            for (const [value, scope] of [
-                [branches[0]!, dark ? "dark" : "light"],
-                [branches[1]!, dark ? "light" : "dark"],
-            ] as const) {
-                addVar(facts, {
-                    name: decl.prop.slice(1),
-                    value: value.trim(),
-                    scope,
-                    kind: "scss",
-                    file,
-                    ...(decl.line === undefined ? {} : { line: decl.line }),
-                });
-            }
 
             continue;
         }

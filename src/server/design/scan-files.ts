@@ -1,12 +1,5 @@
 // The walk never follows a symlink, so a project cannot lead it out of the folder.
 import {
-    SD_CONFIG_NAME,
-    type SdConfig,
-    sdConfigOfJson,
-    sdConfigsIn,
-} from "./scan-import-sd-config.ts";
-import { isObject } from "./scan-import-convert.ts";
-import {
     closeSync,
     constants,
     fstatSync,
@@ -67,9 +60,9 @@ export interface Skipped {
 const DOT_STYLE_FOLDERS = new Set([".storybook", ".vitepress", ".vuepress", ".docusaurus"]);
 
 const STYLE =
-    /\.(?:css|scss|sass|less|styl|stylus|pcss|postcss|html?|vue|svelte|astro|mdx|tsx|jsx|ts|js|mjs|cjs|mts|cts)$/i;
+    /\.(?:css|scss|less|pcss|postcss|html?|vue|svelte|astro|mdx|tsx|jsx|ts|js|mjs|cjs|mts|cts)$/i;
 const TOKEN_JSON =
-    /(?:^|\/)(?:design-?tokens?|tokens?|properties|brands?|themes?|style-?dictionary|dictionary)\/(?:[^/]+\/)*[^/]+\.json$|(?:^|\/)(?:config|[\w.-]*config|[\w.-]*[.-]config[.-][\w-]+|config[.-][\w-]+|\.styledictionaryrc)\.json$|(?:^|\/)(?:[^/]*tokens?[^/]*|[^/]*theme[^/]*|[^/]*(?:figma|studio|design-?system|material|m3)[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
+    /(?:^|\/)(?:design-?tokens?|tokens?|properties|brands?|themes?|style-?dictionary|dictionary)\/(?:[^/]+\/)*[^/]+\.json$|(?:^|\/)(?:[^/]*tokens?[^/]*|[^/]*theme[^/]*|[^/]*(?:figma|studio|design-?system)[^/]*)\.json$|(?:^|\/)styles\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
 
 export const LIMITS = {
     files: 400,
@@ -88,7 +81,7 @@ export function priority(rel: string): number {
     const extension = extname(name);
     let score = 0;
 
-    if (/^\.(?:css|scss|sass|less|styl|stylus|pcss|postcss)$/.test(extension)) {
+    if (/^\.(?:css|scss|less|pcss|postcss)$/.test(extension)) {
         score += 40;
     } else if (extension === ".json") {
         score += 45;
@@ -146,8 +139,7 @@ function wanted(rel: string, name: string): boolean {
         return TOKEN_JSON.test(rel) && name.endsWith(".json");
     }
 
-    // A script may hold a theme or CSS-in-JS styles. The walk keeps them all (a bounded number, behind the best files);
-    // the scan reads the ones that are not named for a theme only when they look like styles.
+    // A script is read for the class names in its markup, and a Tailwind config for its theme.
     if (/\.(?:[cm]?[jt]s)$/i.test(name) && !/\.d\.[cm]?ts$/.test(name)) {
         return true;
     }
@@ -296,61 +288,10 @@ export function collectFiles(root: string): {
         studioSets(root, dir, 0, found);
     }
 
-    for (const rel of [...found].filter((each) =>
-        SD_CONFIG_NAME.test((each.split("/").at(-1) ?? "").replace(/\.(?:json|[cm]?[jt]s)$/i, "")),
-    )) {
-        let text = "";
-
-        try {
-            text = readHead(join(root, ...rel.split("/")), 60_000);
-        } catch {
-            continue;
-        }
-
-        const dir = rel.slice(0, Math.max(0, rel.lastIndexOf("/")));
-        let configs: SdConfig[] = [];
-
-        if (rel.endsWith(".json")) {
-            try {
-                const root: unknown = JSON.parse(text);
-
-                if (isObject(root) && Array.isArray(root.source) && isObject(root.platforms)) {
-                    configs = [sdConfigOfJson(dir, rel, root)];
-                }
-            } catch {
-                // Not JSON, or cut short: not a config that can be read.
-            }
-        } else {
-            configs = sdConfigsIn(dir, rel, text);
-        }
-
-        for (const config of configs.slice(0, 8)) {
-            for (const glob of [...config.include, ...config.source].slice(0, 12)) {
-                const fixed = glob
-                    .replace(/^\.\//, "")
-                    .split("/")
-                    .filter((_, at, all) => at < all.length - 1)
-                    .filter((_, at, all) =>
-                        all.slice(0, at + 1).every((each) => !/[*?{$]/.test(each)),
-                    );
-
-                for (const base of new Set([config.dir, ""])) {
-                    const folder = [base, ...fixed].filter(Boolean).join("/");
-
-                    if (folder !== "" || fixed.length === 0) {
-                        studioSets(root, folder, 0, found);
-                    }
-                }
-            }
-        }
-    }
-
     // A minified file (`app.min.css`) is the build of a source, not the design: it is left out when the project has style
     // files of its own, and read (last) when it has nothing else.
     const isMin = (rel: string) => /\.min\.[a-z]+$/i.test(rel);
-    const own = found.filter(
-        (rel) => !isMin(rel) && /\.(?:css|scss|sass|less|styl|stylus|pcss)$/i.test(rel),
-    );
+    const own = found.filter((rel) => !isMin(rel) && /\.(?:css|scss|less|pcss)$/i.test(rel));
     const kept = own.length > 0 ? found.filter((rel) => !isMin(rel)) : found;
 
     for (const rel of found.filter((each) => !kept.includes(each))) {

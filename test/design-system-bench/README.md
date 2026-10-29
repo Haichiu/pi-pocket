@@ -48,7 +48,7 @@ reports a trap loses precision.
 | ------------- | -------------------------------------------------------------------------------------------------------- |
 | `plain-css`   | `:root` tokens and a `.dark` class; one color that is a literal in a rule                                |
 | `tailwind-v4` | `@theme` with oklch, hex and hsl; shadcn-style roles through `@theme inline`; spacing as one `--spacing` |
-| `scss-ts`     | SCSS variables (one computed) and a TypeScript theme with light and dark and an object spread            |
+| `scss-ts`     | SCSS variables (one computed), and custom properties set from them with a `[data-theme="dark"]` theme    |
 | `messy`       | One page, inline styles, two stylesheets, many near-duplicate colors, mixed units, a small dark query    |
 
 **What the bench reads from a draft.** A draft is DTCG: `tokens.json` and one file for each mode (a mode whose name has `dark` or `night` is the dark theme, and the default is light; a mode named `light` or `day` is the light theme, and the default is dark, as in a dark-first project; with no names and two modes, the second is dark; `expected.json` always describes the light and the dark theme, not the files). The bench's own reader

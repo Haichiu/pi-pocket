@@ -2,7 +2,6 @@ import { commaParts, px } from "./scan-parse.ts";
 import { parseColor } from "./color.ts";
 import { type Category, type Facts, namespaceOf } from "./scan-facts.ts";
 import { channelColor, type Variable } from "./scan-variables.ts";
-import { SASS_COLOR } from "./scan-sass-colors.ts";
 
 export const LENGTH = /^-?(?:\d+\.?\d*|\.\d+)(?:px|rem|em|%|vw|vh|ch|pt)?$/;
 
@@ -68,11 +67,7 @@ export function categorize(
         channelColor(text, name) !== undefined ||
         parseColor(text) !== undefined ||
         /^color-mix\(/i.test(text) ||
-        // Sass and Less color functions over a variable: `rgba($black, .87)`, `darken($brand, 10%)`.
-        (variable.kind !== "css" &&
-            variable.kind !== "theme" &&
-            /^([a-z][a-z-]*)\(\s*[$@\w#]/i.test(text) &&
-            SASS_COLOR.has(/^([a-z][a-z-]*)/i.exec(text)![1]!.toLowerCase()))
+        /^rgba?\(\s*[$@][\w-]+\s*,/i.test(text)
     ) {
         return "color";
     }

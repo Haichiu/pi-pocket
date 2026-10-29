@@ -75,7 +75,6 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
                       hex,
                       uses: uses(entry.variable),
                       ...(kinds === undefined ? {} : { kinds }),
-                      ...(facts.wordpress ? { platform: "wordpress" as const } : {}),
                   },
               ];
     });
@@ -90,7 +89,6 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
                           name: entry.variable.name,
                           hex,
                           uses: uses(entry.variable),
-                          ...(facts.wordpress ? { platform: "wordpress" as const } : {}),
                       },
                   ];
         }),

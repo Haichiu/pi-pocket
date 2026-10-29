@@ -1,3 +1,6 @@
+import { type Literal, readLiteral } from "./scan-parse.ts";
+import { addVar, type Category, type Facts, GENERIC } from "./scan-facts.ts";
+
 // Taken from the packages `tailwindcss` 3.4 (`colors.js`) and 4 (`theme.css`), MIT license. Version 3 (hex) and version 4 (Oklch) differ for some colors, so both are kept.
 
 const V4 =
@@ -24,3 +27,99 @@ export const TAILWIND_4_COLORS: ReadonlyMap<string, string> = table(V4, (value) 
 });
 
 export const TAILWIND_3_COLORS: ReadonlyMap<string, string> = table(V3, (value) => `#${value}`);
+
+const THEME_KEYS: Record<string, Category> = {
+    colors: "color",
+    fontFamily: "font",
+    fontSize: "text",
+    fontWeight: "weight",
+    lineHeight: "leading",
+    letterSpacing: "tracking",
+    spacing: "space",
+    borderRadius: "radius",
+    boxShadow: "shadow",
+    screens: "breakpoint",
+    transitionDuration: "duration",
+    transitionTimingFunction: "ease",
+};
+
+const isRecord = (value: Literal | undefined): value is { [key: string]: Literal } =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+
+function leaves(
+    node: Literal,
+    path: string[],
+    out: { path: string[]; value: string }[],
+    category: Category,
+): void {
+    if (out.length >= 600 || path.length > 6) {
+        return;
+    }
+
+    if (typeof node === "string" || typeof node === "number") {
+        out.push({ path, value: String(node) });
+    } else if (Array.isArray(node)) {
+        // `fontFamily: { sans: ["Inter", "sans-serif"] }`, `fontSize: { sm: ["14px", { lineHeight: … }] }`.
+        const strings = node.filter((item): item is string => typeof item === "string");
+
+        if (strings.length > 0) {
+            out.push({
+                path,
+                value:
+                    category === "font"
+                        ? strings
+                              .map((name) =>
+                                  /^[\w-]+$/.test(name) || GENERIC.has(name) ? name : `"${name}"`,
+                              )
+                              .join(", ")
+                        : strings[0]!,
+            });
+        }
+    } else if (isRecord(node)) {
+        for (const [key, child] of Object.entries(node)) {
+            leaves(child, key === "DEFAULT" ? path : [...path, key], out, category);
+        }
+    }
+}
+
+/** The `theme` and `theme.extend` objects of a Tailwind 3 config, read as literals: no import is followed and no code is run. */
+export function tailwindConfig(facts: Facts, file: string, text: string): void {
+    const head = /(?<![\w$.])theme\s*:\s*(?=\{)/.exec(text);
+    const theme = head === null ? undefined : readLiteral(text, head.index + head[0].length);
+
+    if (!isRecord(theme)) {
+        return;
+    }
+
+    const extend = isRecord(theme.extend) ? theme.extend : {};
+
+    for (const [key, part] of [...Object.entries(theme), ...Object.entries(extend)]) {
+        const category = THEME_KEYS[key];
+
+        if (category !== undefined) {
+            const found: { path: string[]; value: string }[] = [];
+
+            leaves(part, [], found, category);
+
+            for (const leaf of found) {
+                if (leaf.path.length === 0 && category !== "font") {
+                    continue;
+                }
+
+                const at = text.indexOf(leaf.value, head!.index);
+
+                addVar(facts, {
+                    name: leaf.path.join("-") || key,
+                    value: leaf.value.slice(0, 400),
+                    scope: "default",
+                    kind: "js",
+                    file,
+                    hint: category,
+                    ...(at === -1
+                        ? {}
+                        : { line: 1 + (text.slice(0, at).match(/\n/g)?.length ?? 0) }),
+                });
+            }
+        }
+    }
+}

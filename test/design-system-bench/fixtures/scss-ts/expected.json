@@ -1,6 +1,6 @@
 {
     "name": "scss-ts",
-    "description": "Harbor: SCSS variables (palette, roles, scales, one value computed as $space-1 * 3) and a TypeScript theme object with light and dark colors (an object spread, numbers in arrays). Traps: two commented-out pinks, #{$prefix} interpolation, a breakpoints map, the Toast component.",
+    "description": "Harbor: SCSS variables (palette, roles, scales, one value computed as $space-1 * 3), and custom properties set from them with a dark theme under [data-theme=\"dark\"]. Traps: two commented-out pinks, #{$prefix} interpolation, a breakpoints map.",
     "colors": [
         "#ffffff",
         "#f8f9fa",

@@ -108,14 +108,13 @@ function isDarkWords(name: string): boolean {
         .some((word) => word === "dark" || word === "night");
 }
 
-function isDarkInclude(prelude: string, darkMixins: ReadonlySet<string>): boolean {
+function isDarkInclude(prelude: string): boolean {
     const include = /^@include\s+([\w.-]+)\s*(?:\(([^)]*)\))?/i.exec(prelude);
 
     if (include !== null) {
         const name = include[1]!.replace(/^.*\./, "");
 
         return (
-            darkMixins.has(name) ||
             isDarkWords(name) ||
             /(?:^|[\s,(:])['"]?(?:dark|night)['"]?(?:$|[\s,)])/i.test(include[2] ?? "")
         );
@@ -124,108 +123,14 @@ function isDarkInclude(prelude: string, darkMixins: ReadonlySet<string>): boolea
     return /^@(?:else\s+)?if\b[^{]*(?:==|=)\s*['"]?(?:dark|night)['"]?\s*$/i.test(prelude);
 }
 
-export function darkMixinsIn(text: string): Set<string> {
-    const darkMixins = new Set<string>();
-
-    for (const match of text.matchAll(/@mixin\s+([\w-]+)\s*(?:\([^)]*\))?\s*\{/g)) {
-        // The mixin's own text: up to the next mixin, and at most 600 characters.
-        const body = text
-            .slice(match.index + match[0].length, match.index + match[0].length + 600)
-            .split("@mixin")[0]!;
-        const wrapper = body.split("@content")[0]!;
-
-        if (
-            isDarkWords(match[1]!) ||
-            (body.includes("@content") &&
-                (/prefers-color-scheme\s*:\s*dark/i.test(wrapper) || isDarkSelector(wrapper)))
-        ) {
-            darkMixins.add(match[1]!);
-        }
-    }
-
-    return darkMixins;
-}
-
 const MAX_DECLS = 30_000;
 const MAX_DEPTH = 24;
-
-// One output line for each input line, so that a line number stays the file's.
-export function indentedToBraces(source: string): string {
-    const lines = source.split("\n").slice(0, 20_000);
-    const indentOf = (line: string) => /^[ \t]*/.exec(line)![0].replace(/\t/g, "    ").length;
-    const blank = (line: string) => line.trim() === "" || /^\s*\/\//.test(line);
-    const stack: number[] = [];
-    const out: string[] = [];
-
-    for (const [at, line] of lines.entries()) {
-        if (blank(line)) {
-            out.push("");
-
-            continue;
-        }
-
-        const indent = indentOf(line);
-        let closing = "";
-
-        while (stack.length > 0 && stack.at(-1)! >= indent) {
-            stack.pop();
-            closing += "} ";
-        }
-
-        const next = lines.slice(at + 1).find((each) => !blank(each));
-        const opens = next !== undefined && indentOf(next) > indent;
-        let text = line.trim().replace(/;\s*$/, "");
-
-        if (opens) {
-            text = text
-                .replace(/^=\s*/, "@mixin ")
-                .replace(/^\+\s*/, "@include ")
-                .replace(/(^|\S)\s+\/\/.*$/, "$1");
-            out.push(`${closing}${text} {`);
-            stack.push(indent);
-
-            continue;
-        }
-
-        text = text
-            .replace(/(^|\S)\s+\/\/.*$/, "$1")
-            .replace(/^=\s*/, "@mixin ")
-            .replace(/^\+\s*/, "@include ");
-
-        // `x = 1` (Stylus) is a variable; `:prop value` (indented Sass) and `prop value` (Stylus) are declarations.
-        const variable = /^(\$?[\w-]+)\s*[?:]?=\s*(.+)$/.exec(text);
-        const colonFirst = /^:([\w-]+)\s+(.+)$/.exec(text);
-        const spaced = /^([a-z][a-z-]*)\s+([^:{}][^{}]*)$/.exec(text);
-
-        if (variable !== null) {
-            text = `${variable[1]!.startsWith("$") ? variable[1] : `$${variable[1]}`}: ${variable[2]}`;
-        } else if (colonFirst !== null) {
-            text = `${colonFirst[1]}: ${colonFirst[2]}`;
-        } else if (
-            spaced !== null &&
-            !text.startsWith("@") &&
-            !/^(?:if|else|for|return|unless)\b/.test(text)
-        ) {
-            text = `${spaced[1]}: ${spaced[2]}`;
-        }
-
-        out.push(`${closing}${text};`);
-    }
-
-    out[out.length - 1] = `${out.at(-1) ?? ""}${" }".repeat(stack.length)}`;
-
-    return out.join("\n");
-}
 
 // A comment keeps its line breaks, so that a line counted after it is the file's line; one line of it is a space.
 export const stripComments = (text: string) =>
     text.replace(COMMENTS, (comment) => comment.replace(/[^\n]+/g, "").replace(/^$/, " "));
 
-export function parseStyles(
-    source: string,
-    firstLine: number | undefined = 1,
-    known?: ReadonlySet<string>,
-): Decl[] {
+export function parseStyles(source: string, firstLine: number | undefined = 1): Decl[] {
     const text = stripComments(source);
     const breaks: number[] = [];
 
@@ -256,7 +161,6 @@ export function parseStyles(
     const darkQueries = [
         ...text.matchAll(/@custom-media\s+(--[\w-]+)\s+[^;{}]*prefers-color-scheme\s*:\s*dark/gi),
     ].map((match) => match[1]!);
-    const darkMixins = new Set([...darkMixinsIn(text), ...(known ?? [])]);
     const decls: Decl[] = [];
     const stack: { prelude: string; selector: string }[] = [];
     let buffer = "";
@@ -296,7 +200,7 @@ export function parseStyles(
                 /^@media\b[^{]*prefers-color-scheme\s*:\s*dark/i.test(part) ||
                 (/^@media\b/i.test(part) &&
                     darkQueries.some((name) => new RegExp(`\\(\\s*${name}\\s*\\)`).test(part))) ||
-                isDarkInclude(part, darkMixins),
+                isDarkInclude(part),
         );
         const light = at.some((part) =>
             /^@media\b[^{]*prefers-color-scheme\s*:\s*light/i.test(part),
@@ -442,159 +346,12 @@ export function pageStyles(source: string): { blocks: string[]; inline: Decl[] }
     return { blocks, inline };
 }
 
-export function templateStyles(source: string): string[] {
-    const found: string[] = [];
-    const head =
-        /(?<![\w$.])(?:css|styled(?:\.[a-z][\w]*|\([^)\n]{1,60}\))(?:\.attrs\([^)\n]{0,200}\))?|createGlobalStyle|injectGlobal|keyframes|styles\s*:\s*\[?)\s*`/g;
-
-    for (const match of source.matchAll(head)) {
-        if (found.length >= 400) {
-            break;
-        }
-
-        const start = match.index + match[0].length;
-        let end = start;
-
-        while (end < source.length && source[end] !== "`") {
-            end += source[end] === "\\" ? 2 : 1;
-        }
-
-        // `${…}` holds code: a value we cannot know.
-        const block = source
-            .slice(start, Math.min(end, start + 20_000))
-            .replace(/\$\{[^}]*\}/g, "var(--js)");
-
-        if (block.trim() !== "") {
-            found.push(block);
-        }
-    }
-
-    return found;
-}
-
-const STYLE_KEYS =
-    /\b(color|background|backgroundColor|borderColor|border|borderTop|borderBottom|borderLeft|borderRight|outlineColor|outline|fill|stroke|fontFamily|fontSize|fontWeight|lineHeight|letterSpacing|padding|paddingTop|paddingBottom|paddingLeft|paddingRight|paddingHorizontal|paddingVertical|margin|marginTop|marginBottom|marginLeft|marginRight|marginHorizontal|marginVertical|gap|rowGap|columnGap|borderRadius|boxShadow|textShadow|transition|animation)\s*:\s*(?:(["'`])((?:\\.|(?!\2)[^\\\n]){1,200})\2|(-?\d+(?:\.\d+)?)(?![\w.]))/g;
-
-const kebab = (key: string) => key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
-// A bare number is pixels for these; for the rest it is unitless or not a length.
-const PIXEL_KEYS = new Set([
-    "fontSize",
-    "padding",
-    "paddingTop",
-    "paddingBottom",
-    "paddingLeft",
-    "paddingRight",
-    "paddingHorizontal",
-    "paddingVertical",
-    "margin",
-    "marginTop",
-    "marginBottom",
-    "marginLeft",
-    "marginRight",
-    "marginHorizontal",
-    "marginVertical",
-    "gap",
-    "rowGap",
-    "columnGap",
-    "borderRadius",
-    "letterSpacing",
-]);
-
-function enclosingKey(source: string, index: number): string | undefined {
-    let depth = 0;
-
-    for (let at = index - 1; at >= Math.max(0, index - 2000); at--) {
-        const char = source[at];
-
-        if (char === "}") {
-            depth += 1;
-        } else if (char === "{") {
-            if (depth === 0) {
-                return /([A-Za-z_$][\w$]*)\s*(?::|=)\s*(?:\w+\.create\(\s*)?$/.exec(
-                    source.slice(Math.max(0, at - 80), at),
-                )?.[1];
-            }
-
-            depth -= 1;
-        }
-    }
-
-    return undefined;
-}
-
-export function objectStyles(source: string): Decl[] {
-    const decls: Decl[] = [];
-    // Material UI's `sx` takes numbers as steps of the theme (`p: 2` is two spacings), not as pixels.
-    const themed = /\bsx\s*=\s*\{/.test(source);
-
-    for (const match of source.matchAll(STYLE_KEYS)) {
-        if (decls.length >= 5000) {
-            break;
-        }
-
-        const key = match[1]!;
-
-        if (match[3] === undefined && themed && PIXEL_KEYS.has(key)) {
-            continue;
-        }
-
-        const value = match[3] ?? (PIXEL_KEYS.has(key) ? `${match[4]!}px` : match[4]!);
-        const owner = enclosingKey(source, match.index);
-
-        decls.push({
-            prop: kebab(key)
-                .replace(/-horizontal$/, "-inline")
-                .replace(/-vertical$/, "-block"),
-            value: value.trim().slice(0, MAX_VALUE),
-            selector: owner === undefined ? "" : `.${owner}`,
-            at: [],
-            scope: "default",
-            theme: false,
-            inline: true,
-        });
-    }
-
-    for (const match of source.matchAll(/\bshadowRadius\s*:\s*(\d+(?:\.\d+)?)/g)) {
-        if (decls.length >= 5000) {
-            break;
-        }
-
-        const around = source.slice(Math.max(0, match.index - 300), match.index + 300);
-        const height = /\bheight\s*:\s*(-?\d+(?:\.\d+)?)/.exec(around)?.[1] ?? "0";
-        const width = /\bwidth\s*:\s*(-?\d+(?:\.\d+)?)/.exec(around)?.[1] ?? "0";
-        const opacity = /\bshadowOpacity\s*:\s*(\d*\.?\d+)/.exec(around)?.[1] ?? "0.25";
-        const color = /\bshadowColor\s*:\s*(["'])(#[0-9a-fA-F]{3,8}|[a-z]+)\1/.exec(around)?.[2];
-        const rgb = color === undefined ? undefined : colorsIn(color, true)[0];
-
-        if (rgb !== undefined) {
-            const hex = rgb.hex.slice(1, 7);
-            const channel = (at: number) => parseInt(hex.slice(at, at + 2), 16);
-
-            decls.push({
-                prop: "box-shadow",
-                value: `${width}px ${height}px ${match[1]}px rgba(${channel(0)}, ${channel(2)}, ${channel(4)}, ${opacity})`,
-                selector: "",
-                at: [],
-                scope: "default",
-                theme: false,
-                inline: true,
-            });
-        }
-    }
-
-    return decls;
-}
-
 export const UNKNOWN = Symbol("unknown");
 
 export type Literal =
     string | number | boolean | null | typeof UNKNOWN | Literal[] | { [key: string]: Literal };
 
-export function readLiteral(
-    text: string,
-    start: number,
-    env: ReadonlyMap<string, Literal> = new Map(),
-): Literal | undefined {
+export function readLiteral(text: string, start: number): Literal | undefined {
     let at = start;
     let nodes = 0;
 
@@ -732,44 +489,6 @@ export function readLiteral(
                 }
 
                 if (text.startsWith("...", at)) {
-                    const named =
-                        /^\.\.\.\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*){0,3})\s*(?=[,}\n])/.exec(
-                            text.slice(at, at + 120),
-                        );
-                    let spread: Literal | undefined;
-
-                    if (named !== null) {
-                        const parts = named[1]!.split(".");
-
-                        spread = env.get(parts[0]!);
-
-                        for (const part of parts.slice(1)) {
-                            spread =
-                                typeof spread === "object" &&
-                                spread !== null &&
-                                !Array.isArray(spread)
-                                    ? spread[part]
-                                    : undefined;
-                        }
-                    }
-
-                    if (
-                        named !== null &&
-                        typeof spread === "object" &&
-                        spread !== null &&
-                        !Array.isArray(spread)
-                    ) {
-                        for (const [name, child] of Object.entries(spread)) {
-                            if (name !== "__proto__" && name !== "constructor") {
-                                out[name] = child;
-                            }
-                        }
-
-                        at += named[0].length;
-
-                        continue;
-                    }
-
                     skipValue();
 
                     continue;
@@ -808,8 +527,6 @@ export function readLiteral(
                     if (key !== "__proto__" && key !== "constructor" && key !== "prototype") {
                         out[key] = child;
                     }
-                } else if ((text[at] === "," || text[at] === "}") && env.has(key)) {
-                    out[key] = env.get(key)!;
                 } else {
                     skipValue();
                 }
@@ -888,21 +605,6 @@ export function readLiteral(
             at += word[0].length;
 
             return word[1] === "null" ? null : word[1] === "true";
-        }
-
-        const name = /^[A-Za-z_$][\w$]*/.exec(text.slice(at, at + 80));
-
-        if (name !== null && env.has(name[0])) {
-            const here = at;
-
-            at += name[0].length;
-            skip();
-
-            if (text[at] === "," || text[at] === "}" || text[at] === "]") {
-                return env.get(name[0])!;
-            }
-
-            at = here;
         }
 
         return skipValue();
