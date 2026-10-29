@@ -186,10 +186,17 @@ test("the scan names the programs the code starts", () => {
 
 test("the scan reports code that can load or run unnamed programs", () => {
     const calls = "eval|new Function|Function|getBuiltinModule|process.binding|process.dlopen";
+    const dynamic = ["programs it names at run time"];
+    const network = ["a.dev", "addresses it builds at run time"];
 
     for (const call of `${calls}|import|require|require("./a.node")`.split("|")) {
-        assert.deepEqual(scanCode(`${call}(name)`).programs, ["programs it names at run time"]);
+        assert.deepEqual(scanCode(`${call}(name)`).programs, dynamic);
     }
+
+    assert.deepEqual(scanCode('d3.select(".node"); "process.versions.node"').programs, []);
+    assert.deepEqual(scanCode('require("a.node"); createRequire(url)("b.node")').programs, dynamic);
+    assert.deepEqual(scanCode("import(`./l/${x}.js`); require(`${x}`)").programs, dynamic);
+    assert.deepEqual(scanCode('fetch(`${base}/x`); "https://a.dev"').network, network);
 });
 
 test("the scan names the files the code writes and the places it reads from", () => {

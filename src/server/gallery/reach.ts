@@ -30,7 +30,7 @@ export type Reach =
     | { kind: "extension" | "theme"; commit: string; error: string };
 
 /** Raise it when the scan changes, so results kept from an older scan are made again. */
-export const SCAN_VERSION = 5;
+export const SCAN_VERSION = 6;
 
 /** The files the scan reads: code that runs. Other files are not downloaded. */
 export const SCAN_FILE = /\.(?:[cm]?[jt]s)$/i;
@@ -171,7 +171,7 @@ const REPO_PAGE =
 const CALLS_OUT =
     /(?<![\w$])(?:fetch|fetchPublic)\s*\(|\bnew\s+WebSocket\s*\(|\bhttps?\.request\s*\(/;
 const CALLS_OUT_DYNAMIC =
-    /(?<![\w$])(?:fetch|fetchPublic)\s*\((?!\s*["'`])|\bnew\s+WebSocket\s*\((?!\s*["'`])|\b(?:net|tls|dgram)\b\s*\.\s*(?:connect|createConnection|Socket)\b|\bnode:(?:net|tls|dgram|http2)\b/;
+    /(?<![\w$])(?:fetch|fetchPublic)\s*\((?!\s*(?:["']|`(?!(?:\\.|[^`\\])*\$\{)))|\bnew\s+WebSocket\s*\((?!\s*(?:["']|`(?!(?:\\.|[^`\\])*\$\{)))|\b(?:net|tls|dgram)\b\s*\.\s*(?:connect|createConnection|Socket)\b|\bnode:(?:net|tls|dgram|http2)\b/;
 
 function networkOf(code: string): string[] {
     const hosts = new Set<string>();
@@ -253,7 +253,10 @@ const PROGRAM_CALL =
 const CHILD_PROCESS = /\bchild_process\b/;
 /** Code that can start a program or load native code without naming it: as unknown as a program built at run time. */
 const UNNAMED_CODE =
-    /\beval\s*\(|\bnew\s+Function\b|\bFunction\s*\(|\bgetBuiltinModule\b|\bprocess\s*\.\s*(?:binding|dlopen)\b|\bimport\s*\((?!\s*["'`])|\brequire\s*\((?!\s*["'`])|\.node["'`]/;
+    /\beval\s*\(|\bnew\s+Function\b|\bFunction\s*\(|\bgetBuiltinModule\b|\bprocess\s*\.\s*(?:binding|dlopen)\b|\bimport\s*\((?!\s*(?:["']|`(?!(?:\\.|[^`\\])*\$\{)))|\brequire\s*\((?!\s*(?:["']|`(?!(?:\\.|[^`\\])*\$\{)))/;
+/** A native filename needs a loader call or a path separator, not just text such as `.node` or `versions.node`. */
+const NATIVE_FILE =
+    /(?:\b(?:require|dlopen)\s*\(|\bcreateRequire\s*\([^)]*\)\s*\()[^)]*?["'`][^"'`\n]*\.node["'`]|["'`][^"'`\n]*[/\\][^"'`\n]*\.node["'`]/;
 
 function programsOf(code: string): string[] {
     const programs = new Set<string>();
@@ -274,7 +277,11 @@ function programsOf(code: string): string[] {
 
     const listed = [...programs].sort();
 
-    if ((programs.size === 0 && CHILD_PROCESS.test(code)) || UNNAMED_CODE.test(code)) {
+    if (
+        (programs.size === 0 && CHILD_PROCESS.test(code)) ||
+        UNNAMED_CODE.test(code) ||
+        NATIVE_FILE.test(code)
+    ) {
         listed.push(DYNAMIC_PROGRAM);
     }
 
