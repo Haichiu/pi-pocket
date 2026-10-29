@@ -1,5 +1,3 @@
-// Style Dictionary sources and other token folders in the scan: files in several folders, in the classic form
-// (`value`, references with `.value`) and the DTCG form (`$value`), merged in source order, with brands and themes as modes.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -143,7 +141,6 @@ test("the classic format in several folders, with a config: files merge, referen
             ),
         ),
     );
-    // Two files that both start with `color` are one group.
     assert.ok(token(system, "color.base.gray.50") && token(system, "color.bg.page"));
     assert.equal(
         token(system, "color.bg.page")!.modes.light!.alias,
@@ -157,7 +154,6 @@ test("the classic format in several folders, with a config: files merge, referen
     );
     assert.equal(token(system, "color.text.primary")!.description, "Body text");
     assert.equal(hex(system, "color.overlay"), "#11182780", "rgba of a reference");
-    // Types from the category and the value.
     assert.equal(css(system, "size.space.1"), "4px");
     assert.equal(css(system, "size.space.6"), "24px", "a bare number in size is px");
     assert.equal(css(system, "size.radius.sm"), "4px");
@@ -380,7 +376,6 @@ test("globs: **, *, ?, braces; a template, a long pattern, and many ** are refus
     assert.equal(globToRegExp(`${"a/".repeat(120)}*.json`), undefined);
     assert.equal(globToRegExp("**/**/**/**/x.json"), undefined);
 
-    // A long path against a pattern with `**` stays fast.
     const started = Date.now();
 
     globToRegExp("tokens/**/a/**/b/**/*.json")!.test(`tokens/${"x/".repeat(2000)}c.json`);
@@ -426,12 +421,9 @@ test("the report names the Style Dictionary reading, and a repository with only 
     assert.equal(empty.inferred.imported, 0);
 });
 
-// --- Configs for modes ----------------------------------------------------------------------------------------------------
-
 const PLATFORMS = `platforms: { css: { transformGroup: "css", buildPath: "build/", files: [{ destination: "v.css", format: "css/variables" }] } }`;
 const JSON_PLATFORMS = { css: { transformGroup: "css", buildPath: "build/", files: [] } };
 
-/** The colors of a design: a palette, the roles in light, and the roles that dark changes. */
 const palette = {
     color: {
         base: {
@@ -479,7 +471,6 @@ const dark = {
     },
 };
 
-/** The roles of a scan, light and dark, as hex. */
 function roles(scan: TokenScan) {
     const system = load(scan);
 

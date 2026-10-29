@@ -1,5 +1,3 @@
-// Tokens Studio files (the Figma plugin's JSON) in the scan: token sets, `$themes`, references across sets, math, and
-// color modifiers, in the older (`value`, `type`) and newer (`$value`, `$type`) forms, in one file and in a folder.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,13 +54,11 @@ const css = (system: DesignSystem, name: string, mode = "light") =>
 const hex = (system: DesignSystem, name: string, mode = "light") =>
     token(system, name)?.modes[mode]?.hex;
 
-/** A token in the older form. */
 const old = (value: unknown, type: string, extra: Record<string, unknown> = {}) => ({
     value,
     type,
     ...extra,
 });
-/** A token in the newer form. */
 const next = (value: unknown, type?: string, extra: Record<string, unknown> = {}) => ({
     $value: value,
     ...(type === undefined ? {} : { $type: type }),
@@ -176,10 +172,8 @@ test("one file, the older form: every set is read, the themes make the modes, an
     );
     assert.equal(hex(system, "color.accent.default", "dark"), "#818cf8");
     assert.equal(hex(system, "color.text.primary", "dark"), "#f8fafc");
-    // The set's name is not part of a path; a set that no mode turns on is not read.
     assert.equal(token(system, "global.color.gray.50"), undefined);
     assert.equal(token(system, "dark.color.bg.page"), undefined);
-    // The default set's tokens are all there once, and the dark set's token that the default lacks is left out.
     assert.equal(token(system, "color.glow"), undefined);
     assert.ok(
         scan.inferred.notes.some((note) =>

@@ -1,6 +1,3 @@
-// WordPress `theme.json` (versions 2 and 3) in the scan: the palette and gradients, the font sizes (fluid or not) and
-// families (also with only `fontFace`), spacing sizes and `spacingScale`, shadow presets, `settings.custom`, and style
-// variations (`styles/*.json`: a dark one is the dark mode, any other look is left out).
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -306,7 +303,6 @@ test("style variations: a dark one (by its title, its file name, or its base col
         ["primary", "#0e7490"],
     ]);
 
-    // By title.
     let system = load(
         scanTokens(
             project(
@@ -325,7 +321,6 @@ test("style variations: a dark one (by its title, its file name, or its base col
     assert.equal(hex(system, "color.bg.page", "dark"), "#14130f");
     assert.equal(hex(system, "color.accent.default", "dark"), "#e8825a");
 
-    // By file name.
     system = load(
         scanTokens(
             project(
@@ -338,7 +333,6 @@ test("style variations: a dark one (by its title, its file name, or its base col
 
     assert.equal(hex(system, "color.bg.page", "dark"), "#14130f");
 
-    // By the base color alone: a title and a name that say nothing.
     system = load(
         scanTokens(
             project(
@@ -359,7 +353,6 @@ test("style variations: a dark one (by its title, its file name, or its base col
         "a dark base color makes it the dark mode",
     );
 
-    // Another look is not the theme's default: the default stays what theme.json says.
     system = load(
         scanTokens(
             project(
@@ -387,7 +380,6 @@ test("style variations: a dark one (by its title, its file name, or its base col
     );
     assert.equal(hex(system, "color.accent.default"), "#b5451b");
 
-    // A dark-first theme with a light variation.
     system = load(
         scanTokens(
             project({
@@ -516,7 +508,6 @@ test("the page and the text by WordPress's own names: base and contrast", () => 
     assert.equal(roles.text?.dark, "#ffffff");
     assert.equal(roles.background?.basis, "name");
 
-    // The same words in a project that is not WordPress are not read as roles.
     const plain = scanTokens(
         project({ "a.css": ":root { --base: #ffffff; --contrast: #111111; --accent-1: #d8613c }" }),
     );

@@ -1,6 +1,4 @@
-// The Sass of a palette in the scan: loops (`@each`, `@for`, `@while`), maps built in code, functions, and color functions,
-// run as Sass runs them (the expected colors are Dart Sass's own output), across files, with the text left as it was where
-// it cannot be run.
+// The expected colors are Dart Sass's own output, not what the evaluator makes.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -53,10 +51,8 @@ const token = (system: DesignSystem, name: string) =>
 const hex = (system: DesignSystem, name: string, mode = "light") =>
     token(system, name)?.modes[mode]?.hex;
 
-/** What a stylesheet makes: its text with the runs of white space made one. */
 const run = (source: string, shared = new Project()) =>
     evaluateSass(source, shared)?.text.replace(/\s+/g, " ").trim();
-/** The custom properties and variables of a result, by name. */
 const props = (text: string | undefined) =>
     Object.fromEntries(
         [...(text ?? "").matchAll(/([$-][\w-]+):\s*([^;}]+)/g)].map((match) => [
@@ -330,8 +326,6 @@ test("lines stay where they were: a statement is written on its own line, and a 
     );
     assert.ok(lines.length <= 9);
 });
-
-// --- Projects -------------------------------------------------------------------------------------------------------------
 
 test("a palette made with @each, map.merge, and a shade function: its steps are a palette, and the roles point at them", () => {
     const system = load(

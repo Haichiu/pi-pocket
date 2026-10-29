@@ -1,4 +1,3 @@
-// The design_system scan: drafts tokens from style files, stays inside the folder, and the write check for the tokens block.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -74,7 +73,6 @@ test("issue numbers in comments and ids in a selector list are not colors", () =
         scanTokens(dir)
             .colors.map((c) => c.value)
             .sort(),
-        // `color: red` is a color name used as a value: it counts.
         ["#0a0a0a", "#111111", "#222222", "#fefefe", "#ff0000"],
     );
 });
@@ -189,7 +187,6 @@ test("checkTokensBlock: none is false, broken or non-object throws", () => {
     assert.equal(checkTokensBlock("# just words"), false);
     assert.throws(() => checkTokensBlock("```json\n{oops}\n```"), /not valid JSON/);
     assert.throws(() => checkTokensBlock("```json\n[1]\n```"), /JSON object/);
-    // An empty block is not an object either.
     assert.throws(() => checkTokensBlock("```json\n```"), /not valid JSON/);
     // Backticks inside a JSON string do not end the block; the fence must start a line.
     assert.equal(checkTokensBlock('```json\n{"a": "use ``` here"}\n```'), true);
