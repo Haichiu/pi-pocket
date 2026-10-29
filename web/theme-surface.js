@@ -168,6 +168,7 @@ export const PARTS = [
     "session-ask-reason",
     "session-ask-open",
     "session-deny",
+    "session-decline",
     "session-allow",
     "rail-needs",
     "session-branches",

@@ -80,6 +80,12 @@ function LoadingSessions() {
     </div>`;
 }
 
+/** `text` cut to `length` characters at most, with an ellipsis: a title or a command in a notice. */
+const truncate = (text, length) => (text.length > length ? `${text.slice(0, length - 1)}…` : text);
+
+/** "Tap" or "Click", for a notice's "… to undo". */
+const undoWord = () => (matchMedia("(pointer: coarse)").matches ? "Tap" : "Click");
+
 /**
  * Archive sessions, or bring them back, then say so in a notice that undoes it. Archiving the open session leaves it
  * for the home screen; undoing that opens it again.
@@ -121,15 +127,14 @@ export async function setArchived(ids, archived, { undo = true } = {}) {
         return;
     }
 
-    const title = titles.get(done[0]) ?? "";
     const what =
         done.length === 1
-            ? `“${title.length > 48 ? `${title.slice(0, 47)}…` : title}”`
+            ? `“${truncate(titles.get(done[0]) ?? "", 48)}”`
             : `${done.length} sessions`;
 
     notify(
         "info",
-        `${archived ? "Archived" : "Unarchived"} ${what}. ${matchMedia("(pointer: coarse)").matches ? "Tap" : "Click"} to undo.`,
+        `${archived ? "Archived" : "Unarchived"} ${what}. ${undoWord()} to undo.`,
         async () => {
             await setArchived(done, !archived, { undo: false });
 
@@ -305,7 +310,7 @@ function needOf(session, state = store.state) {
 }
 
 /** How many sessions need you, as the Priority tab and the rail say. Archived sessions are left out. */
-export function needsYouCount(sessions = store.state.sessions, state = store.state) {
+function needsYouCount(sessions = store.state.sessions, state = store.state) {
     return sessions.reduce(
         (sum, session) => sum + (!session.archived && needOf(session, state) ? 1 : 0),
         0,
@@ -479,10 +484,6 @@ async function dismissFailures(list) {
     });
 }
 
-const truncate = (text, length) => (text.length > length ? `${text.slice(0, length - 1)}…` : text);
-
-const undoWord = () => (matchMedia("(pointer: coarse)").matches ? "Tap" : "Click");
-
 /** Mark sessions read: a finished run seen, a mark cleared, new chat read. Says so in a notice that undoes it. */
 function markRead(list, { say = true } = {}) {
     const ids = list.map((session) => session.id);
@@ -500,10 +501,8 @@ function markRead(list, { say = true } = {}) {
         setUnread(id, false);
     }
 
-    for (const session of list) {
-        if (session.chatAt !== undefined && sessionUnread(session)) {
-            setChatReadAt(session.id, session.chatAt);
-        }
+    for (const [id, , read] of chats) {
+        setChatReadAt(id, read);
     }
 
     if (!say) {
@@ -660,6 +659,7 @@ function SessionRow({
     steers,
     hovers,
     slot,
+    need,
     expanded,
     answering,
     glow,
@@ -712,17 +712,8 @@ function SessionRow({
     const fork = !session.waiting && (live > 0 || failed > 0);
     const person = collabs ? (session.people ?? []).find((each) => each.id !== meId) : undefined;
     const mark = stateMark(session, live > 0, marked, unseen);
-    // In Priority (`slot`), what the session asks of you: its row has a button at its right, and says why in its tooltip.
-    const need =
-        slot !== "needs"
-            ? null
-            : session.waiting
-              ? "ask"
-              : session.failed && (marked || unseen)
-                ? "failed"
-                : failed > 0
-                  ? "agents"
-                  : null;
+    // In Priority's Needs you, what the session asks of you (`need`, from `needOf`): its row has a button at its right,
+    // and says why in its tooltip.
     const ask = need === "ask" ? session.approval : undefined;
     const names = (session.failedAgents ?? []).map((agent) => agent.name);
     const why =
@@ -827,7 +818,12 @@ function SessionRow({
                         <${Icon} name="terminal" size=${10} />${session.background}
                     </span>`
                 }
-                ${slot !== "needs" && !fork && person && html`<${Avatar} person=${person} size=${18} />`}
+                ${
+                    slot !== "needs" &&
+                    !fork &&
+                    person &&
+                    html`<${Avatar} person=${person} size=${18} />`
+                }
                 ${
                     slot !== "needs" &&
                     session.busy &&
@@ -861,7 +857,11 @@ function SessionRow({
                         <${Icon} name="clock" size=${10} />${limit}
                     </span>`
                 }
-                ${slot !== "needs" && !limit && html`<span class="session-time">${timeAgo(session.updatedAt)}</span>`}
+                ${
+                    slot !== "needs" &&
+                    !limit &&
+                    html`<span class="session-time">${timeAgo(session.updatedAt)}</span>`
+                }
                 ${
                     number !== undefined &&
                     number < 9 &&
@@ -1033,24 +1033,28 @@ function SessionRow({
 /**
  * The call a row in Needs you waits on, open in the row: the tool and the whole command, why the guard asks, and how
  * long ago, with Deny and Allow. The rules are a peek tile's (`PeekApproval`): a command that does not show whole is
- * not allowed from here (Open shows it where it waits), a question from an extension (a form) is only opened, and what
- * Pi did for someone else is not allowed by a person who may not (the "others" rule).
+ * not allowed from here (Open shows it where it waits), a question from an extension (a form) is declined or opened,
+ * and a call that the "others" rule keeps from this person is denied or opened.
  */
 function NeedAsk({ session, ask, steers, ownCall, answering, onAnswer }) {
     const whole = wholeOnTile(ask);
     const ago = timeAgo(fromServer(ask.at));
     const more = ask.count > 1 ? ` · +${ask.count - 1}` : "";
+    const tooLong =
+        ask.form || whole ? "" : `${ask.reason ? " · " : ""}too long to allow from here`;
 
     return html`<div class="need-ask" data-part="session-ask">
-        <div class=${`need-command ${whole ? "" : "long"}`} data-part="session-ask-command" title=${ask.subject}>
+        <div
+            class=${`need-command ${whole ? "" : "long"}`}
+            data-part="session-ask-command"
+            title=${ask.subject}
+        >
             <code>
                 <span class="need-tool"><${Icon} name="shield" size=${11} />${ask.tool}</span>
                 ${ask.subject}
             </code>
         </div>
-        <div class="need-why" data-part="session-ask-reason">
-            ${ask.reason}${ask.form || whole ? "" : `${ask.reason ? " · " : ""}too long to allow from here`}
-        </div>
+        <div class="need-why" data-part="session-ask-reason">${ask.reason}${tooLong}</div>
         <div class="need-foot">
             <span
                 class="need-when"
@@ -1082,9 +1086,8 @@ function NeedAsk({ session, ask, steers, ownCall, answering, onAnswer }) {
                 </button>`
             }
             ${
-                steers && !ask.form && whole
-                    ? !ownCall &&
-                      html`<button
+                steers && !ask.form && whole && !ownCall
+                    ? html`<button
                           class="need-button primary"
                           data-part="session-allow"
                           disabled=${answering}
@@ -1995,6 +1998,7 @@ function AllSessions({ compact = false }) {
             minute=${minute}
             extensionsRev=${extensionsRev}
             slot=${group.slot}
+            need=${group.slot === "needs" ? needOf(session) : null}
             expanded=${asking === session.id && group.slot === "needs"}
             answering=${session.approval !== undefined && answered.has(session.approval.id)}
             glow=${moved === session.id && group.slot !== "needs"}
@@ -2124,7 +2128,11 @@ function AllSessions({ compact = false }) {
                     ${
                         key === "priority" &&
                         needCount > 0 &&
-                        html`<span class="tab-count" data-part="session-tab-count" aria-hidden="true">
+                        html`<span
+                            class="tab-count"
+                            data-part="session-tab-count"
+                            aria-hidden="true"
+                        >
                             ${needCount}
                         </span>`
                     }
@@ -2159,6 +2167,11 @@ function AllSessions({ compact = false }) {
             }
             ${groups.map((group) => {
                 const folded = isClosed(group.key);
+                // Needs you does not fold, and its head is no button: what waits there must show. A search's flat list
+                // keeps its head a button, as before, that folds nothing.
+                const still = group.slot === "needs";
+                const foldable = group.key !== "flat" && !still;
+                const toggle = still ? undefined : () => foldable && toggleGroup(group.key);
                 const rows = visibleRows(group, asking, allNeeds);
                 // Priority's header buttons: dismiss what failed, mark what finished read.
                 const failedRows =
@@ -2184,11 +2197,11 @@ function AllSessions({ compact = false }) {
 
                 const head =
                     group.key !== "flat" || needle
-                        ? html`<${group.slot === "needs" ? "div" : "button"}
+                        ? html`<${still ? "div" : "button"}
                               class=${`group-head ${group.slot === "needs" ? "attn" : ""}`}
                               data-part="session-group-head"
-                              onClick=${group.slot === "needs" ? undefined : () => group.key !== "flat" && toggleGroup(group.key)}
-                              aria-expanded=${group.slot === "needs" ? undefined : !folded}
+                              onClick=${toggle}
+                              aria-expanded=${still ? undefined : !folded}
                           >
                               <span class="group-name" data-part="session-group-name">
                                   ${
@@ -2209,7 +2222,7 @@ function AllSessions({ compact = false }) {
                               <span class="group-count" data-part="session-group-count">
                                   ${group.total}
                               </span>
-                              ${group.key !== "flat" && group.slot !== "needs" && html`<${Icon} name="down" size=${11} />`}
+                              ${foldable && html`<${Icon} name="down" size=${11} />`}
                           <//>`
                         : null;
 
@@ -2416,6 +2429,10 @@ function Rail({ foldable = false, folded = false }) {
     // The Sessions button counts the sessions that need you, as Priority's tab does.
     const { unread, peekSeen, server } = store.state;
     const needs = useMemo(() => needsYouCount(sessions), [sessions, unread, peekSeen, server]);
+    const sessionsLabel =
+        needs > 0 ? `Sessions, ${needs} ${needs === 1 ? "needs" : "need"} you` : "Sessions";
+    const needsBadge =
+        needs > 0 && html`<span class="rail-count attn" data-part="rail-needs">${needs}</span>`;
     const keys = APPLE ? "⌘B" : "Ctrl+B";
     const fold = () => setPrefs({ sidebar: folded ? "open" : "rail" });
     const role = me?.role === "owner" ? "owner" : me?.role === "viewer" ? "view only" : "guest";
@@ -2444,12 +2461,12 @@ function Rail({ foldable = false, folded = false }) {
                     data-part="rail-button"
                     data-state=${railState(!folded)}
                     title=${`Sessions (${keys} ${folded ? "unfolds" : "folds"} the list)`}
-                    aria-label=${needs > 0 ? `Sessions, ${needs} ${needs === 1 ? "needs" : "need"} you` : "Sessions"}
+                    aria-label=${sessionsLabel}
                     aria-expanded=${!folded}
                     onClick=${fold}
                 >
                     <${Icon} name="chat" size=${19} />
-                    ${needs > 0 && html`<span class="rail-count attn" data-part="rail-needs">${needs}</span>`}
+                    ${needsBadge}
                 </button>`
                 : html`<span
                     class="rail-button on"
@@ -2459,7 +2476,7 @@ function Rail({ foldable = false, folded = false }) {
                     aria-current="page"
                 >
                     <${Icon} name="chat" size=${19} />
-                    ${needs > 0 && html`<span class="rail-count attn" data-part="rail-needs">${needs}</span>`}
+                    ${needsBadge}
                 </span>`
         }
         ${!folded && html`<span class="rail-fill"></span>`}
