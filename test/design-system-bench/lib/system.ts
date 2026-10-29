@@ -14,7 +14,7 @@ export const cssVar = (name: string) => `--${name.replace(/\./g, "-")}`;
 
 const needsQuotes = (family: string) => /[\s]/.test(family) && !/^["']/.test(family);
 
-export function cssValue(type: string, value: unknown): string {
+function cssValue(type: string, value: unknown): string {
     if (typeof value === "string") {
         return value;
     }

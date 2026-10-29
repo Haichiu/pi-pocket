@@ -286,7 +286,7 @@ const STAGE_SCRIPT = `(function () {
     document.documentElement.setAttribute("data-docs-ready", "");
 })();`;
 
-export function referenceDoc(system: DesignSystem): {
+function referenceDoc(system: DesignSystem): {
     html: string;
     assets: { name: string; content: string }[];
 } {

@@ -34,7 +34,7 @@ export interface Modules {
     present: Record<"tokens" | "lint" | "docsite" | "scan", boolean>;
 }
 
-export const SCAN_LIMIT_MS = 60_000;
+const SCAN_LIMIT_MS = 60_000;
 
 export const SCAN_NAMES = [
     "scanDesignSystem",
@@ -145,7 +145,7 @@ export interface Draft {
     modes: Record<string, unknown>;
 }
 
-export function looksDtcg(value: unknown, depth = 0): boolean {
+function looksDtcg(value: unknown, depth = 0): boolean {
     if (typeof value !== "object" || value === null || Array.isArray(value) || depth > 8) {
         return false;
     }

@@ -11,7 +11,8 @@ import {
 import { ROOT, withTimeout, type Modules } from "./modules.ts";
 import { goldenCss, readFlat, systemFromFlat } from "./system.ts";
 
-export const LINT_DIR = join(BENCH, "lint");
+const LINT_DIR = join(BENCH, "lint");
+
 export const LINT_SYSTEM = join(LINT_DIR, "system");
 
 export interface LintCase {
@@ -210,7 +211,7 @@ async function runCase(
     return entry;
 }
 
-export const variablesUsed = (html: string) => [
+const variablesUsed = (html: string) => [
     ...new Set([...html.matchAll(/var\((--[a-z0-9-]+)/gi)].map((match) => match[1]!)),
 ];
 
@@ -367,6 +368,3 @@ export async function lintPhase(
 }
 
 const round = (value: number) => Math.round(value * 1000) / 1000;
-
-export const lintSystemPresent = () =>
-    existsSync(join(LINT_SYSTEM, ".pi", "design", "tokens.json"));

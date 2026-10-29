@@ -21,11 +21,12 @@ import { BENCH, loadFixtures, scanPhase, type ScanPhase } from "./lib/phase-scan
 import { COLOR_TOLERANCE, SCAN_CATEGORIES, SIZE_TOLERANCE } from "./lib/score.ts";
 import { readFlat, systemFromFlat } from "./lib/system.ts";
 
-export const PHASES = ["scan", "format", "lint", "contrast", "docs"] as const;
-export const ALL_PHASES = [...PHASES, "shots"] as const;
+const PHASES = ["scan", "format", "lint", "contrast", "docs"] as const;
+const ALL_PHASES = [...PHASES, "shots"] as const;
+
 export type Phase = (typeof ALL_PHASES)[number];
 
-export const FLAGSHIP_CANDIDATES = [
+const FLAGSHIP_CANDIDATES = [
     "test/fixtures/design-system/flagship",
     "docs/examples/design-system/pocket",
 ];
@@ -67,7 +68,7 @@ export interface BenchReport {
     };
 }
 
-export function findFlagship(parent: string, explicit?: string): string | undefined {
+function findFlagship(parent: string, explicit?: string): string | undefined {
     for (const candidate of explicit === undefined
         ? FLAGSHIP_CANDIDATES.map((path) => join(ROOT, path))
         : [resolve(explicit)]) {
@@ -101,7 +102,7 @@ function flagshipCss(project: string | undefined, system: DesignSystem): string 
     }
 }
 
-export function formatSources(): SystemSource[] {
+function formatSources(): SystemSource[] {
     return [
         { name: "classic", kind: "fixture", project: join(BENCH, "format", "classic") },
         { name: "modern", kind: "fixture", project: join(BENCH, "format", "modern") },
@@ -511,5 +512,3 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
         process.exitCode = 2;
     }
 }
-
-export { readFlat, systemFromFlat };

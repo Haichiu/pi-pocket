@@ -64,7 +64,7 @@ function snapshot(
 
 const plain = (value: unknown) => JSON.stringify(value);
 
-export function changeFromDisk(design: string): SystemChange {
+function changeFromDisk(design: string): SystemChange {
     const change: SystemChange = { modes: {}, components: {} };
 
     for (const file of readdirSync(design).sort()) {
@@ -104,7 +104,7 @@ function copyDesign(project: string, parent: string, name: string): string {
     return root;
 }
 
-export function saveDraft(
+function saveDraft(
     modules: Modules,
     draft: Draft,
     parent: string,
@@ -133,7 +133,7 @@ export function saveDraft(
     return { project: root };
 }
 
-export async function checkSystem(
+async function checkSystem(
     modules: Modules,
     browser: BenchBrowser | undefined,
     source: SystemSource,

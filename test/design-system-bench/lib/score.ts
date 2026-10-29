@@ -1,7 +1,6 @@
 import { colorOf, sameColor, type Rgba } from "./color.ts";
 import {
     families,
-    flatten,
     pixels,
     shadowLayers,
     type FlatSystem,
@@ -10,7 +9,8 @@ import {
 } from "./dtcg.ts";
 
 export const COLOR_TOLERANCE = 2;
-export const ALPHA_TOLERANCE = 0.02;
+const ALPHA_TOLERANCE = 0.02;
+
 /** Two pixel sizes are the same when they differ by at most this (type sizes may be 0.5 px apart in `rem` rounding). */
 export const SIZE_TOLERANCE = 0.26;
 
@@ -184,7 +184,7 @@ export function scoreShadows(expected: string[], actual: ShadowLayer[][]): PRF {
     );
 }
 
-export function scoreFonts(expected: string[], actual: string[]): PRF {
+function scoreFonts(expected: string[], actual: string[]): PRF {
     const lower = (list: string[]) => list.map((name) => name.toLowerCase());
 
     return prf(
@@ -317,7 +317,7 @@ function distance(path: string[], role: Role): [number, number, number] {
 }
 
 // A dark-first project may keep its dark values in `tokens.json`: the mode names say which is which.
-export function themeModes(system: FlatSystem): { light: string; dark: string | undefined } {
+function themeModes(system: FlatSystem): { light: string; dark: string | undefined } {
     const others = system.modes.slice(1);
     const dark = others.find((mode) => /dark|night/i.test(mode));
 
@@ -562,9 +562,7 @@ function dedupeShadows(list: ShadowLayer[][]): ShadowLayer[][] {
     return unique;
 }
 
-export const IMPLIED_STEPS = [
-    0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 20, 24,
-];
+const IMPLIED_STEPS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 20, 24];
 
 export interface ScanScore {
     colors: PRF;
@@ -649,15 +647,6 @@ export function scoreScan(expected: Expected, found: Extracted): ScanScore {
         darkDetected: found.darkPresent,
         darkExpected: expected.dark.present,
     };
-}
-
-export function scoreDraft(
-    expected: Expected,
-    draft: { tokens: unknown; modes?: Record<string, unknown> },
-): ScanScore & { problems: string[] } {
-    const system = flatten(draft.tokens, draft.modes ?? {});
-
-    return { ...scoreScan(expected, extract(system)), problems: system.problems };
 }
 
 export const SCAN_CATEGORIES = {

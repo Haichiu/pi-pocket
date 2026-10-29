@@ -346,7 +346,7 @@ export function toHex(color: Rgba): string {
     return color.a < 0.995 ? base + byte(color.a * 255) : base;
 }
 
-export function toLab(color: Rgba): [number, number, number] {
+function toLab(color: Rgba): [number, number, number] {
     const [r, g, b] = [decode(color.r / 255), decode(color.g / 255), decode(color.b / 255)];
     const x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047;
     const y = 0.2126729 * r + 0.7151522 * g + 0.072175 * b;

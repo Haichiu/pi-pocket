@@ -140,10 +140,10 @@ const VIEWPORTS = [
 ] as const;
 
 /** The tallest tile. Judges read images up to 2,000 × 2,000 px. */
-export const TILE_HEIGHT = 2000;
+const TILE_HEIGHT = 2000;
 const MAX_TILES = 80;
 
-export async function tileRects(
+async function tileRects(
     page: BenchPage,
     viewport: { width: number; height: number },
 ): Promise<{ name: string; y: number; height: number }[]> {
@@ -188,7 +188,7 @@ export async function tileRects(
 }
 
 /** A frame needs this many different colors in its screenshot to count as painted: one flat color is blank. */
-export const PAINTED_COLORS = 3;
+const PAINTED_COLORS = 3;
 const STAGE = ".comp-stage";
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
