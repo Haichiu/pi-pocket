@@ -30,7 +30,7 @@ export type Reach =
     | { kind: "extension" | "theme"; commit: string; error: string };
 
 /** Raise it when the scan changes, so results kept from an older scan are made again. */
-export const SCAN_VERSION = 1;
+export const SCAN_VERSION = 3;
 
 /** The files the scan reads: code that runs. Other files are not downloaded. */
 export const SCAN_FILE = /\.(?:[cm]?[jt]s)$/i;
@@ -39,13 +39,16 @@ export const PALETTE_FILES = ["colors.toml", "colors-light.toml"];
 
 const DYNAMIC_ADDRESS = "addresses it builds at run time";
 const DYNAMIC_PROGRAM = "programs it names at run time";
-const DATA_FOLDER = "its data folder";
+const WRITTEN_FILES = "files it writes";
 const HOME_FOLDER = "your home folder";
 
 // ─── Comments ──────────────────────────────────────────────────────────────────────
 
 /** What can come before a `/` that starts a regular expression and not a division. */
 const BEFORE_REGEX = /[(,=:[!&|?{};+\-*%<>~^]/;
+/** Words after which a `/` starts a regular expression, though they end in a letter. */
+const KEYWORD_BEFORE_REGEX =
+    /(?:^|[^\w$.])(?:return|typeof|void|delete|throw|case|in|of|new|else|do|yield|await)$/;
 
 /**
  * The code without its comments. Strings and regular expressions are kept as they are, so a `//` in an address is not
@@ -96,7 +99,12 @@ export function stripComments(code: string): string {
             continue;
         }
 
-        if (char === "/" && (last === "" || BEFORE_REGEX.test(last))) {
+        if (
+            char === "/" &&
+            (last === "" ||
+                BEFORE_REGEX.test(last) ||
+                KEYWORD_BEFORE_REGEX.test(out.trimEnd().slice(-12)))
+        ) {
             let stop = at + 1;
             let inClass = false;
 
@@ -256,7 +264,7 @@ function filesOf(code: string): string[] {
     const paths = new Set<string>();
 
     if (WRITES.test(code)) {
-        files.push(DATA_FOLDER);
+        files.push(WRITTEN_FILES);
     }
 
     for (const match of code.matchAll(AGENT_PATH)) {

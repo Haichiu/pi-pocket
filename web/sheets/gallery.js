@@ -285,7 +285,7 @@ function reachRows(declares, found) {
                     `Uses ${sentence(items.map((item) => item.replace(/^(.+) key from Pi$/, "your $1 key, from Pi")))}`,
             ],
             ["programs", "terminal", (items) => `Runs ${sentence(items)}`],
-            ["files", "folder", (items) => `Uses files in ${sentence(items)}`],
+            ["files", "folder", (items) => `Uses ${sentence(items)}`],
         ]) {
             if (scanned[key]?.length > 0) {
                 rows.push({ key, glyph, text: words(scanned[key]), from: "In its code" });
@@ -1386,7 +1386,10 @@ function TurnOnDialog({ title, declares, found, installed, busy, onCancel, onOff
                                   <span class="ext-reach-text">${row.text}</span>
                               </li>`,
                           )}
-                      </ul>`
+                      </ul>
+                      <p class="ext-quiet">
+                          The scan reads text, so the code can still reach more.
+                      </p>`
                     : found
                       ? html`<p class="ext-quiet">
                             The scan of its code found no address, key, program, or file, and it declares no hooks.

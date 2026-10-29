@@ -184,11 +184,11 @@ test("the scan names the programs the code starts", () => {
 
 test("the scan names the files the code writes and the places it reads from", () => {
     assert.deepEqual(scanCode('await writeFile(join(dir, "a.json"), text);').files, [
-        "its data folder",
+        "files it writes",
     ]);
-    assert.deepEqual(scanCode("fs.rmSync(dir, { recursive: true });").files, ["its data folder"]);
+    assert.deepEqual(scanCode("fs.rmSync(dir, { recursive: true });").files, ["files it writes"]);
     assert.deepEqual(scanCode("await fsp.appendFile(p, line); await mkdir(d);").files, [
-        "its data folder",
+        "files it writes",
     ]);
     assert.deepEqual(
         scanCode(`
@@ -196,7 +196,7 @@ test("the scan names the files the code writes and the places it reads from", ()
             const b = "~/.pi/agent/skills/";
             await writeFile(x, y);
         `).files,
-        ["its data folder", "~/.pi/agent/settings.json", "~/.pi/agent/skills"],
+        ["files it writes", "~/.pi/agent/settings.json", "~/.pi/agent/skills"],
     );
     assert.deepEqual(scanCode('const home = homedir(); join(home, ".bashrc");').files, [
         "your home folder",
@@ -223,6 +223,19 @@ test("the scan ignores comments, but not an address in a string that holds two s
     });
 });
 
+test("a regular expression after a keyword does not hide the code after it", () => {
+    for (const keyword of "return typeof void delete throw case in of new else do yield await".split(
+        " ",
+    )) {
+        const scanned = scanCode(
+            `${keyword} /^https?:\\/\\//.test(u); spawn("sh"); fetch("https://evil.example.net/x");`,
+        );
+
+        assert.deepEqual(scanned.network, ["evil.example.net"], keyword);
+        assert.deepEqual(scanned.programs, ["sh"], keyword);
+    }
+});
+
 test("the scan of several files is one scan of their code", () => {
     const scanned = scanFiles([
         { name: "a.ts", text: 'const u = "https://one.dev";' },
@@ -230,7 +243,7 @@ test("the scan of several files is one scan of their code", () => {
     ]);
 
     assert.deepEqual(scanned.network, ["one.dev", "two.dev"]);
-    assert.deepEqual(scanned.files, ["its data folder"]);
+    assert.deepEqual(scanned.files, ["files it writes"]);
 });
 
 // ─── Themes ──────────────────────────────────────────────────────────────────────
