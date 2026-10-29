@@ -148,7 +148,7 @@ export function statementsOf(source: string, firstLine: number, depth = 0): Stmt
         if (char === "{" && parens === 0) {
             let level = 1;
             let index = at + 1;
-            let inner = 0;
+            let inner = at;
 
             // Find the matching brace, skipping strings and comments.
             for (; index < source.length && level > 0; index++) {

@@ -2,6 +2,7 @@
 // run as Sass runs them (the expected colors are Dart Sass's own output), across files, with the text left as it was where
 // it cannot be run.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -559,4 +560,16 @@ test("a project of many stylesheets is run for a fixed time, and what is not run
 
     assert.ok(Date.now() - started < 9000, `${Date.now() - started} ms`);
     assert.ok(made.size >= 1, "the files that were run are written");
+});
+
+test("a Sass file that ends with `{` ends (it filled the heap before: run in a child)", () => {
+    const module = new URL("../src/server/design/scan-sass-stmt.ts", import.meta.url).href;
+    const code = `import { statementsOf } from "${module}"; statementsOf("@for $i from 1 through 3 {", 1);`;
+    const child = spawnSync(process.execPath, ["--max-old-space-size=64", "--input-type=module"], {
+        input: `${code} console.log("ended");`,
+        encoding: "utf8",
+        timeout: 20_000,
+    });
+
+    assert.equal(child.stdout.trim(), "ended");
 });
