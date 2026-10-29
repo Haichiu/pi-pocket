@@ -7,9 +7,8 @@
  * when its lock file differs), notes the update in `.pocket-update/pending.json` (`update-state.ts`), puts the packages
  * in place, moves the checkout forward to the release's commit (never over a change of its own), and restarts. When
  * the new version starts, `recover` notes that it did; when it does not, the launcher goes back to the version before.
- * With the owner's beta channel on, it also offers pre-releases (`v0.27.0-beta.1`): GitHub's newest release of any
- * kind, the beta tags, or the newer of npm's `latest` and `beta`. Global npm installs use the registry's latest version
- * with GitHub's notes. They stage a complete package beside the live one, then swap the package folders. Local installs and npx caches require their own npm command instead.
+ * Global npm installs use the registry's latest version with GitHub's notes. They stage a complete package beside the
+ * live one, then swap the package folders. Local installs and npx caches require their own npm command instead.
  * The `updates` extension module shows it to the owner, and checks and installs on a timer.
  */
 import { execFile } from "node:child_process";
@@ -48,7 +47,6 @@ export type Release = {
     notes?: string;
     url?: string;
     publishedAt?: string;
-    /** A pre-release, `v0.27.0-beta.1`: only the beta channel offers it. */
     beta?: boolean;
     /** The notes have a `[!WARNING]` alert: a step that cannot be undone, or one that needs care. */
     warning: boolean;
@@ -74,7 +72,6 @@ export type UpdateStatus = {
     branch?: string | null;
     /** Where releases come from. */
     repository: string;
-    /** The beta channel is on: pre-releases are offered too. */
     beta: boolean;
     latest?: Release;
     checkedAt?: number;
@@ -118,19 +115,14 @@ export interface UpdatesOptions {
     log: (line: string) => void;
     /** The git address releases come from; `package.json`'s repository when not given. */
     repository?: string;
-    /** The beta channel starts on (the owner's setting); `setBeta` changes it. */
     beta?: boolean;
     /** Tests give the newest release here, rather than asking GitHub. `beta` says whether the channel is on. */
     releases?: (signal?: AbortSignal, beta?: boolean) => Promise<Release | undefined>;
     now?: () => number;
 }
 
-/**
- * A release's tag: only these are taken, so the tag is safe in a refspec and its version is a version. `vX.Y.Z`, and
- * `vX.Y.Z-beta.N` for the beta channel (a stable release is the first, its group 2 is empty).
- */
+/** A release's tag: only these are taken, so the tag is safe in a refspec and its version is a version. */
 const TAG = /^v?(\d{1,4}\.\d{1,4}\.\d{1,4}(-beta\.\d{1,4})?)$/;
-/** A stable version, as npm's `latest` names it. */
 const STABLE = /^\d{1,4}\.\d{1,4}\.\d{1,4}$/;
 /** Where the release's commit is kept in the checkout: a ref of the updater's own, never a branch or tag of yours. */
 const TARGET_REF = "refs/pocket-update/target";
@@ -175,10 +167,6 @@ export function githubRepository(url: string): { owner: string; name: string } |
     return match === null ? undefined : { owner: match[1]!, name: match[2]! };
 }
 
-/**
- * `version` is newer than `than`, with pre-releases in order: `0.27.0` is newer than `0.27.0-beta.2`, which is newer
- * than `0.27.0-beta.1`, which is newer than `0.26.0`. Either not a version: false.
- */
 export function newer(version: string, than: string): boolean {
     return (compareReleases(version, than) ?? 0) > 0;
 }
@@ -219,7 +207,6 @@ function releaseOf(tag: string, fields: Partial<Release>): Release | undefined {
     };
 }
 
-/** GitHub's answer to `path` of the repository's API, or undefined for a 404. */
 async function githubGet(
     repository: { owner: string; name: string },
     path: string,
@@ -249,7 +236,6 @@ async function githubGet(
     return response.json();
 }
 
-/** A release from GitHub's release object, or undefined when its tag is not a version. */
 function githubReleaseOf(
     repository: { owner: string; name: string },
     body: Record<string, unknown>,
@@ -269,7 +255,6 @@ function githubReleaseOf(
     return release === undefined ? undefined : { ...release, warning: notesWarn(notes) };
 }
 
-/** The newest release on GitHub that is not a pre-release, or undefined when the repository has none. */
 async function githubRelease(
     repository: { owner: string; name: string },
     signal?: AbortSignal,
@@ -296,10 +281,7 @@ async function githubRelease(
     return release;
 }
 
-/**
- * The newest of GitHub's releases (a list, as `GET /releases` gives it) with a version for a tag: a pre-release counts,
- * a draft does not. The highest version wins, not the latest one made, so a fix for an older line made later is not it.
- */
+/** The highest version wins, not the latest one made: a fix for an older line may come later. */
 export function newestOfReleases(
     repository: { owner: string; name: string },
     list: unknown,
@@ -321,7 +303,6 @@ export function newestOfReleases(
     return best;
 }
 
-/** The newest release on GitHub, a pre-release included (the beta channel), or undefined when there is none. */
 async function githubNewestRelease(
     repository: { owner: string; name: string },
     signal?: AbortSignal,
@@ -332,10 +313,6 @@ async function githubNewestRelease(
     );
 }
 
-/**
- * The version npm's `dist-tags` name as the newest: `latest` (a stable version), and with the beta channel on, `beta`
- * too when it is newer. A tag with no published package metadata is not taken. Throws when none can be.
- */
 export function pickNpmVersion(
     body: {
         "dist-tags"?: Record<string, unknown>;
@@ -372,10 +349,6 @@ export function pickNpmVersion(
     return found.reduce((best, each) => (newer(each, best) ? each : best));
 }
 
-/**
- * npm's published newest version (its `latest` tag; with the beta channel on, the newer of `latest` and `beta`), with
- * the notes for that exact version from GitHub.
- */
 export async function npmRelease(
     repository: { owner: string; name: string } | undefined,
     signal?: AbortSignal,
@@ -427,10 +400,6 @@ export async function npmRelease(
     };
 }
 
-/**
- * The newest version tag in the output of `git ls-remote --tags`, without notes. A beta tag (`v0.27.0-beta.1`) counts
- * only with the beta channel on.
- */
 export function newestTag(output: string, beta = false): Release | undefined {
     let best: Release | undefined;
 
@@ -450,7 +419,6 @@ export function newestTag(output: string, beta = false): Release | undefined {
     return best;
 }
 
-/** The newest version tag of a repository anywhere git reaches, without notes. */
 async function tagRelease(
     repository: string,
     cwd: string,
@@ -552,7 +520,6 @@ export class Updates {
     readonly repository: string;
     readonly #listeners = new Set<(status: UpdateStatus) => void>();
     #latest: Release | undefined;
-    /** The beta channel is on: pre-releases are offered too. */
     #beta: boolean;
     /** The last check asked npm, not GitHub. */
     #fromNpm = false;
@@ -578,15 +545,11 @@ export class Updates {
         this.#beta = options.beta === true;
     }
 
-    /** The beta channel is on. */
     get beta(): boolean {
         return this.#beta;
     }
 
-    /**
-     * Turn the beta channel on or off. Off drops a pre-release that was found: the next check finds the newest stable
-     * release. A running pre-release is never offered an older version, whatever the channel.
-     */
+    /** A running pre-release is never offered an older version, whatever the channel. */
     setBeta(on: boolean): void {
         if (on === this.#beta) {
             return;
@@ -824,7 +787,6 @@ export class Updates {
         let packages = false;
 
         if (available && latest !== undefined) {
-            // The npm dist-tag that carries this release.
             const dist = latest.beta === true ? "beta" : "latest";
 
             if (!this.#options.supervised) {
@@ -1007,7 +969,7 @@ export class Updates {
     async #check(signal?: AbortSignal): Promise<void> {
         try {
             const found = await this.#findRelease(signal);
-            // The owner turned the channel off while the look went on: a pre-release it found is not offered.
+            // The channel may be turned off while the look goes on: a pre-release it found is not offered.
             const release = found?.beta === true && !this.#beta ? undefined : found;
 
             this.#latest = release;
@@ -1058,8 +1020,7 @@ export class Updates {
                     ? await githubNewestRelease(github, signal)
                     : await githubRelease(github, signal);
 
-                // A release with a beta tag that GitHub does not mark as a pre-release is not stable: only the beta
-                // channel takes it.
+                // GitHub may not mark a beta tag as a pre-release: only the beta channel takes it.
                 if (found !== undefined && (beta || found.beta !== true)) {
                     return found;
                 }
