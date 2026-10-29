@@ -846,6 +846,10 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 return { id, version: again.version, fixed: 0, again: true };
             }
 
+            if (system.problems.some((problem) => problem.level === "error")) {
+                throw web.error(409, "Fix the errors in the design system first.");
+            }
+
             let result;
             let from;
 

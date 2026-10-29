@@ -1113,7 +1113,14 @@ export async function checkDesign(
             tweaks: options.tweaks,
         });
         await page.act(options.actions ?? []);
-        const view = { viewport, colorScheme, mode: picked?.mode };
+        const theme = await page.evaluateIsolated(
+            "document.documentElement.getAttribute('data-theme')",
+        );
+        const mode =
+            options.mode === undefined && typeof theme === "string" && system?.modes.includes(theme)
+                ? theme
+                : picked?.mode;
+        const view = { viewport, colorScheme, mode };
 
         if (!(await page.isDeck())) {
             return acceptFindings(await checkPage(page, system, view), options.accepted);
