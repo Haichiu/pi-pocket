@@ -1,4 +1,3 @@
-// The CI entry point `src/server/design/check-cli.ts`: arguments, exit codes, the bundle next to the page, and a system.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -129,7 +128,6 @@ test(
         writeSystemFixture(project);
         writeFileSync(join(pages, "page.html"), bad);
         writeFileSync(join(pages, "x.gif"), Buffer.from("R0lGODlhAQABAAAAACw=", "base64"));
-        // A link, a dot folder, and `node_modules` are not part of the bundle.
         symlinkSync("/etc/hostname", join(pages, "link.txt"));
         mkdirSync(join(pages, ".git"), { recursive: true });
         writeFileSync(join(pages, ".git", "x.txt"), "x");
@@ -163,7 +161,6 @@ test(
                 (item) => item.rule === "off-system-color" && item.value === "#7ba3f8",
             ),
         );
-        // The `.pi/design` folder itself is accepted, and a mode that the system lacks is an error of the arguments.
         const same = await exec([page, "--system", join(project, ".pi", "design")]);
 
         assert.equal(same.code, 1);

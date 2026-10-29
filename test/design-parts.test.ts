@@ -20,10 +20,8 @@ test("on a phone the zoom that nobody chose is the width of the room, and the pa
     // A phone's page (390 × 844) at the width of a 390 px room, less the margin: readable; the whole page would be 0.3.
     assert.equal(devices.scaleOf("width", { w: 390, h: 844 }, room), 0.91);
     assert.equal(devices.scaleOf("fit", { w: 390, h: 844 }, room), 0.31);
-    // Never past 100%, and a room of no size is 100%.
     assert.equal(devices.scaleOf("width", { w: 200, h: 200 }, { w: 800, h: 600 }), 1);
     assert.equal(devices.scaleOf("width", { w: 390, h: 844 }, { w: 0, h: 0 }), 1);
-    // `auto` follows the panel: width on a narrow one, the whole page elsewhere; a choice is kept.
     assert.equal(devices.zoomOf("auto", true), "width");
     assert.equal(devices.zoomOf("auto", false), "fit");
     assert.equal(devices.zoomOf("fit", true), "fit");

@@ -1,5 +1,3 @@
-// The check of numbered color ramps: a group whose children are numbers goes steadily from light to dark, or the
-// validator warns and names the two steps.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildSystem } from "../src/server/design/tokens-model.ts";
