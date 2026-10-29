@@ -224,6 +224,27 @@ export function follow(
     index: Map<string, Variable>,
     start: Variable,
     scope: "light" | "dark",
+    active: Set<Variable> = new Set(),
+): { text: string; via?: Variable } | undefined {
+    // A variable that arithmetic points back at (`$a: $a * 2`) is not followed into itself.
+    if (active.has(start)) {
+        return undefined;
+    }
+
+    active.add(start);
+
+    try {
+        return followOnce(index, start, scope, active);
+    } finally {
+        active.delete(start);
+    }
+}
+
+function followOnce(
+    index: Map<string, Variable>,
+    start: Variable,
+    scope: "light" | "dark",
+    active: Set<Variable>,
 ): { text: string; via?: Variable } | undefined {
     // A library writes the variables of a theme object under a prefix (`--mantine-color-ink-9` for the theme's `ink` step 9):
     // a name that is not declared is looked for without its first words.
@@ -301,7 +322,7 @@ export function follow(
         const value = (name: string, kind: "scss" | "less" | "css") => {
             const target = index.get(`${kind}:${name}`);
 
-            return target === undefined ? undefined : follow(index, target, scope)?.text;
+            return target === undefined ? undefined : follow(index, target, scope, active)?.text;
         };
 
         text = text.replace(/#\{\s*([^{}]+?)\s*\}/g, (all, expression: string) => {
@@ -325,7 +346,7 @@ export function follow(
         const math = evalMath(calc === null ? text : calc[1]!, (name, kind) => {
             const target = index.get(`${kind}:${name}`);
 
-            return target === undefined ? undefined : follow(index, target, scope)?.text;
+            return target === undefined ? undefined : follow(index, target, scope, active)?.text;
         });
 
         if (math !== undefined) {

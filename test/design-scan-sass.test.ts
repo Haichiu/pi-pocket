@@ -573,3 +573,9 @@ test("a Sass file that ends with `{` ends (it filled the heap before: run in a c
 
     assert.equal(child.stdout.trim(), "ended");
 });
+
+test("a Sass variable that points at itself (`$a: $a * 2`) does not stop the scan", () => {
+    const dir = project({ "a.scss": "$a: 4px;\n$a: $a * 2;\n.x { color: red; width: $a; }" });
+
+    assert.doesNotThrow(() => scanTokens(dir));
+});
