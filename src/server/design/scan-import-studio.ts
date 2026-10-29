@@ -1,15 +1,3 @@
-/**
- * Tokens Studio files (stream T): the Figma plugin's JSON. Token sets are the top-level keys (`global`, `light`, `dark`,
- * `brand/acme`), `$themes` says which sets each theme turns on (`enabled`, `source`, or `disabled`), and `$metadata` has
- * `tokenSetOrder`. A value is `value` and `type` in older files and `$value` and `$type` in newer ones; a reference is
- * `{color.primary}` (or `$color.primary` in the oldest), and a value may do math (`{spacing.base} * 2`, `round({x} / 4)`)
- * or modify a color (`$extensions["studio.tokens"].modify`).
- *
- * A mode is the sets that its theme turns on, in the order of `tokenSetOrder`, a later set over an earlier one. A theme
- * that turns on a dark set, or is named for dark, is the dark mode. Without themes, the sets named for dark are the dark
- * mode and the others are the default. References are followed across sets, math is evaluated, and what the engine
- * cannot hold (`text`, `asset`, `composition`) is left out.
- */
 import { isObject, type Obj } from "./scan-import-convert.ts";
 import {
     DARK,
@@ -24,18 +12,14 @@ import {
     words,
 } from "./scan-import-eval.ts";
 
-/** What one Tokens Studio source holds: the sets by name, their order, and the `$themes` array as read. */
 export interface StudioSource {
     sets: Map<string, Obj>;
     order: string[];
     themes: unknown[];
 }
 
-/** Whether top-level keys are token sets: one of them is named for light or dark (`light`, `Mode/Dark`, `theme-dark`). */
 export const looksLikeSets = (keys: string[]) =>
     keys.some((key) => hasWord(key, DARK) || hasWord(key, LIGHT));
-
-// --- Modes --------------------------------------------------------------------------------------------------------------
 
 interface Theme {
     name: string;
@@ -44,7 +28,6 @@ interface Theme {
     source: string[];
 }
 
-/** The themes of a `$themes` array that name sets. */
 function themesOf(themes: unknown[]): Theme[] {
     const out: Theme[] = [];
 
@@ -69,7 +52,6 @@ function themesOf(themes: unknown[]): Theme[] {
     return out;
 }
 
-/** The sets of the default mode and of the dark mode: from the themes when there are some, else from the set names. */
 function pickModes(
     themes: Theme[],
     names: string[],
@@ -126,7 +108,6 @@ function pickModes(
             dark = setsOf([...others, darkTheme]);
         }
 
-        // The other themes of the mode group (`high-contrast`, `sepia`) are modes of their own.
         const spare =
             lightTheme === undefined
                 ? []
@@ -160,11 +141,9 @@ function pickModes(
     }
 
     if (light === undefined && dark === undefined) {
-        // No theme gave a mode: the sets named for dark are the dark mode, and the rest are the default.
         light = darkSets.length > 0 ? [...baseSets, ...lightSets] : names;
         dark = darkSets.length > 0 ? [...baseSets, ...darkSets] : undefined;
     } else if (light === undefined) {
-        // Only dark themes: the dark theme is the default mode.
         light = dark;
         dark = undefined;
     } else if (dark === undefined && darkSets.length > 0) {
@@ -177,7 +156,6 @@ function pickModes(
     return { light: light ?? [], dark, extra };
 }
 
-/** The tokens of a Tokens Studio source: the default mode, the dark mode's changes, and what happened. */
 export function studioTokens(input: StudioSource): {
     default: Obj;
     dark: Obj;

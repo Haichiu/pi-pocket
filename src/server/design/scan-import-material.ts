@@ -1,16 +1,4 @@
-/**
- * Material 3 exports (stream T): what the Material Theme Builder writes. CSS files per scheme (`light.css`, `dark.css`,
- * `light-mc.css`, `light-hc.css`...), or one file with a class for each (`.light`, `.dark-medium-contrast`), with
- * `--md-sys-color-*` custom properties and perhaps `--md-ref-palette-*`; and a JSON export,
- * `{ "schemes": { "light": { "primary": "#6750a4", "onPrimary": … }, "dark": … }, "palettes": { "primary": { "0": … } } }`.
- *
- * The roles of Material 3 take the names of this system: `surface` and `surface-container*` are surfaces, `on-surface` is
- * the text and `on-surface-variant` the quiet text, `outline` and `outline-variant` are the borders, `primary` is the accent
- * and `error` the danger. Material 3 has no warning or success color, and none is made up. Its secondary and tertiary colors
- * are `accent-2` and `accent-3` (`secondary` and `tertiary` name quiet text here). A scheme with medium or high contrast is a
- * mode of its own (`light-medium-contrast`), and a palette is a set of steps named by its hue, with the roles that point at
- * them. Shape, motion, and typeface properties become radius, duration, easing, and font tokens.
- */
+// Material has no warning or success color, and none is made up; its secondary and tertiary colors are `accent-2` and `accent-3` (`secondary` and `tertiary` name quiet text here).
 import { parseColor, toOklch, type Rgba } from "./color.ts";
 import { isObject, type Obj } from "./scan-import-convert.ts";
 import { entryOf } from "./scan-color-base.ts";
@@ -19,27 +7,20 @@ import { family, paletteName } from "./scan-color-palette.ts";
 import type { RoleName } from "./scan-color-base.ts";
 import type { Inferred } from "./scan-scales.ts";
 
-/** A text file that may hold Material 3 properties, or a parsed JSON export. */
 export interface MaterialInput {
     css: { file: string; text: string }[];
     json: { file: string; root: Obj }[];
 }
 
-/** What the Material 3 files give: the default mode's colors, the other modes' changes, and what happened. */
 export interface MaterialResult {
-    /** The color tokens (palettes and roles), the radii, the motion, and the fonts, as a DTCG tree. */
     default: Obj;
-    /** The changed roles of the dark mode, and of any other mode (`light-high-contrast`), by name. */
     modes: Record<string, Obj>;
-    /** The name of the default mode (`light`, or `dark` for a project that has only a dark scheme). */
     defaultMode: string;
-    /** The role colors of the default mode by our role (`bg.page`), for the report. */
     roles: Record<string, { token: string; source: string; value: string; dark?: string }>;
     count: number;
     notes: string[];
 }
 
-/** The path of each Material 3 color role, and what it is called in the report. */
 const ROLES: Record<string, string[]> = {
     primary: ["accent", "default"],
     "on-primary": ["text", "on-accent"],
@@ -92,7 +73,6 @@ const ROLES: Record<string, string[]> = {
     "on-tertiary-fixed-variant": ["text", "on-accent-3-fixed-variant"],
 };
 
-/** The roles of this system that the report names, from the roles of Material 3. */
 const REPORTED: Record<string, string> = {
     background: "bg.page",
     surface: "bg.surface",
@@ -105,8 +85,6 @@ const REPORTED: Record<string, string> = {
 
 const kebab = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
 
-// --- Which scheme a value is for ------------------------------------------------------------------------------------------
-
 interface Scheme {
     base: "light" | "dark" | undefined;
     contrast: "" | "medium" | "high";
@@ -117,7 +95,6 @@ const wordsOf = (text: string) =>
         .split(/[^a-z0-9]+/)
         .filter(Boolean);
 
-/** The scheme that some text names (a selector, a file name, a variable's suffix): light or dark, and its contrast. */
 function schemeIn(text: string): Scheme {
     const words = wordsOf(text);
     const has = (...list: string[]) => list.some((word) => words.includes(word));
@@ -128,7 +105,6 @@ function schemeIn(text: string): Scheme {
     };
 }
 
-/** The scheme of the first text that names one; a contrast from any. */
 function pickScheme(...texts: string[]): Scheme {
     let base: Scheme["base"];
     let contrast: Scheme["contrast"] = "";
@@ -149,21 +125,14 @@ function pickScheme(...texts: string[]): Scheme {
 const modeName = (scheme: Scheme) =>
     `${scheme.base ?? "light"}${scheme.contrast === "" ? "" : `-${scheme.contrast}-contrast`}`;
 
-// --- The text -------------------------------------------------------------------------------------------------------------
-
 interface Declared {
     mode: string;
     name: string;
     value: string;
 }
 
-/** The suffix a variable may carry for its scheme: `--md-sys-color-primary-light`, `-dark-high-contrast`, `-light-mc`. */
 const SUFFIX = /-(?:light|dark)(?:-(?:medium|high)-contrast|-mc|-hc)?$/;
 
-/**
- * The `--md-*` declarations of a stylesheet, each with the scheme of its block: the block's selector (`.dark`,
- * `[data-theme=dark]`), a `prefers-color-scheme` media query around it, the file's name, or the variable's own suffix.
- */
 function declarationsIn(file: string, source: string): Declared[] {
     const text = source.replace(/\/\*[\s\S]*?\*\//g, "");
     const out: Declared[] = [];
@@ -230,8 +199,6 @@ function declarationsIn(file: string, source: string): Declared[] {
     return out;
 }
 
-// --- The build ------------------------------------------------------------------------------------------------------------
-
 const hexOf = (color: Rgba) => {
     const byte = (value: number) =>
         Math.round(value * 255)
@@ -241,9 +208,7 @@ const hexOf = (color: Rgba) => {
     return `#${byte(color.r)}${byte(color.g)}${byte(color.b)}${color.a < 1 ? byte(color.a) : ""}`;
 };
 
-/** The tokens of Material 3 exports, or undefined when the files hold fewer than eight color roles. */
 export function materialTokens(input: MaterialInput): MaterialResult | undefined {
-    // Color roles by mode, palettes by family and tone, and the other properties.
     const roles = new Map<string, Map<string, string>>();
     const palettes = new Map<string, Map<string, string>>();
     const radii = new Map<string, string>();
@@ -372,14 +337,12 @@ export function materialTokens(input: MaterialInput): MaterialResult | undefined
     // The palettes: a family is named by the hue of its middle tone, and a second family of one hue gets a number.
     const taken = new Set<string>();
     const names = new Map<string, string>();
-    /** The palette step that holds a color, by its hex: the first family that has it. */
     const stepOf = new Map<string, string[]>();
 
     for (const [name, tones] of palettes) {
         const sample = tones.get("40") ?? tones.get("50") ?? [...tones.values()][0];
         const color = sample === undefined ? undefined : parseColor(sample);
         const lch = color === undefined ? undefined : toOklch(color);
-        // The neutral palettes keep their Material names; the others are named by their hue.
         const hue = /^neutral(?:-variant)?$/.test(name)
             ? name
             : lch === undefined
@@ -409,11 +372,7 @@ export function materialTokens(input: MaterialInput): MaterialResult | undefined
 
     const used = new Set<string>([...stepOf.values()].flat());
 
-    /**
-     * A role's value: a reference to the palette step that holds the color. Without palettes, a color is a primitive of its
-     * own in the default mode (named by hue and lightness, as the scan names its palette) and is written as it is in another
-     * mode; with palettes, a color that no step has is written as it is.
-     */
+    // A reference to the palette step that holds the color; without palettes a color is a primitive of its own in the default mode, and is written as it is in another mode.
     const valueOf = (name: string, value: string, makes: boolean) => {
         const parsed = parseColor(value);
 
@@ -512,7 +471,6 @@ export function materialTokens(input: MaterialInput): MaterialResult | undefined
         result.count += changed;
     }
 
-    // What the report names: the role of this system, its color in the default mode and in the dark mode.
     for (const [m3, ours] of Object.entries(REPORTED)) {
         const value = base.get(m3);
         const dark = roles.get("dark")?.get(m3);
@@ -530,7 +488,6 @@ export function materialTokens(input: MaterialInput): MaterialResult | undefined
         }
     }
 
-    // Shape, motion, and typefaces.
     for (const [name, value] of radii) {
         if (/^\d*\.?\d+(?:px|rem)$/.test(value.trim())) {
             put(tree, ["radius", name], { $value: value.trim(), $type: "dimension" });
@@ -571,7 +528,6 @@ export function materialTokens(input: MaterialInput): MaterialResult | undefined
     return result;
 }
 
-/** The roles of this system by the name that the report uses (`bg.page` is `background`). */
 const REPORT_ROLE: Record<string, RoleName> = {
     "bg.page": "background",
     "bg.surface": "surface",
@@ -582,11 +538,7 @@ const REPORT_ROLE: Record<string, RoleName> = {
     "danger.default": "danger",
 };
 
-/**
- * Puts the Material 3 colors in the scan's result: the project's own scan stays for everything else (spacing, type, radii
- * the project sets itself), and the color group and the color modes are Material 3's. A dark-first project (only a dark
- * scheme) has dark as its default mode.
- */
+// The project's own scan stays for everything else (spacing, type, radii); the color group and the color modes are Material 3's.
 export function applyMaterial(result: Inferred, material: MaterialResult): Inferred {
     const tokens = result.draft.tokens as Obj;
     const dark = material.defaultMode.startsWith("dark");
@@ -652,7 +604,6 @@ export function applyMaterial(result: Inferred, material: MaterialResult): Infer
             others[0] ??
             other,
     };
-    // The palette: each group of the color tree that has numbered steps, with its size.
     result.palette = Object.fromEntries(
         Object.entries((material.default.color as Obj | undefined) ?? {})
             .filter(
@@ -666,7 +617,6 @@ export function applyMaterial(result: Inferred, material: MaterialResult): Infer
     return result;
 }
 
-/** The hex of every color that Material 3 gives: its palette steps and its roles that are not a reference. */
 function hexesOf(tree: unknown, into = new Set<string>()): Set<string> {
     if (!isObject(tree)) {
         return into;
@@ -687,11 +637,7 @@ function hexesOf(tree: unknown, into = new Set<string>()): Set<string> {
     return into;
 }
 
-/**
- * The scan's colors and Material 3's: the groups that Material 3 defines (`bg`, `text`, `accent`, the palettes) are its
- * own, and a color of the project that Material 3 also has is not listed twice. What the project uses besides (a literal
- * in its own styles, a status color) stays.
- */
+// The groups that Material 3 defines (`bg`, `text`, `accent`, the palettes) are its own; what the project uses besides stays.
 function mergeColors(scan: unknown, material: Obj, all: MaterialResult): Obj {
     const known = hexesOf(material);
 

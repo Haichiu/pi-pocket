@@ -1,12 +1,3 @@
-/**
- * Style Dictionary sources and other token folders (stream T): token JSON files in several folders, in the classic format
- * (`{ "color": { "base": { "red": { "value": "#f00" } } } }`, with `type`, `comment`, `attributes`, and references
- * `{color.base.red.value}` or `{color.base.red}`) or in the DTCG format (`$value`, `$type`). The files are merged in source
- * order, a later file over an earlier one, as Style Dictionary does: the order of the config's `source` globs when there is
- * a config, else the path. A folder named for a brand or a theme (`brands/acme/`, `themes/dark/`, `dark.json`) holds a
- * mode: the same paths with other values. Untyped classic tokens get their type from their category (`color`, `size`,
- * `font`, `time`...) and their value.
- */
 import { parseColor } from "./color.ts";
 import { type SdConfig, sdConfigsIn } from "./scan-import-sd-config.ts";
 import { isObject, type Obj } from "./scan-import-convert.ts";
@@ -23,22 +14,17 @@ import {
     tokensOf,
 } from "./scan-import-eval.ts";
 
-/** One token file that was read. */
 export interface SdFile {
     file: string;
     root: Obj;
 }
 
-// --- The config -----------------------------------------------------------------------------------------------------------
-
-/** A glob's matcher: `**`, `*`, `?`, and `{a,b}`. A glob with a template (`${brand}`) is not one. */
 export function globToRegExp(glob: string): { test: (path: string) => boolean } | undefined {
     // A template is not a glob, and many `**` make a pattern that is slow on a long path.
     if (/\$\{|\{\{|<%/.test(glob) || glob.length > 200 || (glob.match(/\*\*/g)?.length ?? 0) > 3) {
         return undefined;
     }
 
-    // Braces become one glob for each choice (a bounded number), so that each glob is a plain sequence.
     let globs = [glob];
 
     while (globs.some((each) => each.includes("{"))) {
@@ -69,8 +55,7 @@ export function globToRegExp(glob: string): { test: (path: string) => boolean } 
         globs = out;
     }
 
-    // Each glob is a list of steps, matched by keeping the set of steps reached (no backtracking): the time grows with
-    // the path's length times the glob's. "deep" is `**/` (any folders, or none), "deep-body" the folders it takes.
+    // Matched by keeping the set of steps reached (no backtracking): the time grows with the path's length times the glob's.
     const programs = globs.map((each) => {
         const steps: string[] = [];
 
@@ -90,7 +75,6 @@ export function globToRegExp(glob: string): { test: (path: string) => boolean } 
         let now = new Uint8Array(steps.length + 1);
         let next = new Uint8Array(steps.length + 1);
 
-        // The steps reached without a character: past a `*`, past `**/`, or into its folders.
         const close = (set: Uint8Array) => {
             for (let at = 0; at < steps.length; at++) {
                 if (set[at] === 1 && steps[at] === "star") {
@@ -140,16 +124,11 @@ export function globToRegExp(glob: string): { test: (path: string) => boolean } 
     return { test: (path) => programs.some((steps) => run(steps, path)) };
 }
 
-/** The first Style Dictionary config in a config's text, or undefined (`sdConfigsIn` has all of them). */
 export const sdConfigIn = (dir: string, text: string): SdConfig | undefined =>
     sdConfigsIn(dir, "", text)[0];
 
-// --- The files ------------------------------------------------------------------------------------------------------------
-
-/** The folders whose children are modes: `brands/acme/`, `themes/dark/`. */
 const MODE_FOLDER = /^(?:brands?|themes?|modes?|skins?|variants?|schemes?)$/i;
 
-/** The mode a file belongs to, from its path: the folder under `brands/`, or a file named for the mode (`dark.json`). */
 function modeOfFile(file: string): string | undefined {
     const parts = file.replace(/\.[^./]+$/, "").split("/");
     const at = parts.findIndex((part, index) => index < parts.length - 1 && MODE_FOLDER.test(part));
@@ -158,11 +137,9 @@ function modeOfFile(file: string): string | undefined {
         return segment(parts[at + 1]!).toLowerCase() || undefined;
     }
 
-    // `tokens-dark.json`, `colors.dark.json`, `dark.json`: a mode word in the file's name.
     return hasWord(parts.at(-1)!, DARK) ? "dark" : undefined;
 }
 
-/** The type of an untyped classic token, from its category and its value; undefined when the engine has no type for it. */
 function inferType(path: string[], value: unknown, node: Obj): string | undefined {
     const attributes = isObject(node.attributes) ? node.attributes : {};
     const category = String(attributes.category ?? path[0] ?? "").toLowerCase();
@@ -252,7 +229,6 @@ function inferType(path: string[], value: unknown, node: Obj): string | undefine
     return undefined;
 }
 
-/** The entries of one file, flat, with the type of an untyped token worked out. */
 function entriesOf(root: Obj, budget: { left: number }): Map<string, Entry> {
     const entries = new Map<string, Entry>();
 
@@ -272,7 +248,6 @@ function entriesOf(root: Obj, budget: { left: number }): Map<string, Entry> {
     return entries;
 }
 
-/** The files in the order Style Dictionary reads them: `include`, then `source`, each glob's files in path order. */
 export function orderByConfig(files: SdFile[], config: SdConfig): SdFile[] | undefined {
     const ordered: SdFile[] = [];
     const seen = new Set<string>();
@@ -286,7 +261,6 @@ export function orderByConfig(files: SdFile[], config: SdConfig): SdFile[] | und
             continue;
         }
 
-        // Globs are written from the folder where Style Dictionary runs: the config's, or the project's.
         for (const base of config.dir === "" ? [""] : [config.dir, ""]) {
             const matched = files
                 .filter((item) => {
@@ -308,7 +282,6 @@ export function orderByConfig(files: SdFile[], config: SdConfig): SdFile[] | und
     return ordered.length > 0 ? ordered : undefined;
 }
 
-/** The config that builds the default mode: one that names no mode, else the light one, else the first. */
 function baseOf(configs: SdConfig[]): SdConfig | undefined {
     return (
         configs.find((config) => config.mode === undefined) ??
@@ -317,10 +290,6 @@ function baseOf(configs: SdConfig[]): SdConfig | undefined {
     );
 }
 
-/**
- * The files that a mode config reads: the base config's files under it, then its own (`include` and `source`), each in
- * the config's order. A file of another mode's folder is left out.
- */
 function filesOfMode(files: SdFile[], config: SdConfig, base: SdFile[]): SdFile[] {
     const own = orderByConfig(files, config) ?? [];
     const have = new Set(own.map((item) => item.file));
@@ -338,7 +307,6 @@ function filesOfMode(files: SdFile[], config: SdConfig, base: SdFile[]): SdFile[
     return [...base.filter((item) => !have.has(item.file)), ...own].filter(fits);
 }
 
-/** The tokens of a token folder: the default mode, the dark mode, other modes, how many there are, and what happened. */
 export function styleDictionaryTokens(
     files: SdFile[],
     configs: SdConfig[] = [],
@@ -372,14 +340,12 @@ export function styleDictionaryTokens(
         return new Mode(entries);
     };
 
-    // The default mode: every file that is for no mode, and the first mode that is light or the default, or the first.
     const names = [...modes.keys()];
     const lightName = names.find(
         (name) =>
             !hasWord(name, DARK) &&
             (hasWord(name, LIGHT) || /^(?:default|base|main|standard)$/.test(name)),
     );
-    // A project whose only files are for a dark mode has that mode as its default.
     const firstName =
         lightName ??
         names.find((name) => !hasWord(name, DARK)) ??
@@ -422,7 +388,6 @@ export function styleDictionaryTokens(
         addMode(name, [...base, ...modes.get(name)!]);
     }
 
-    // A config for a mode (`config.dark.json`): the base config's files, with its own `source` over them.
     const done = new Set([firstName, ...names]);
     const fromConfigs = configs
         .filter(

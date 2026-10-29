@@ -1,4 +1,3 @@
-/** Theme objects in JavaScript and TypeScript (stream T): Tailwind config, Chakra, Mantine, Stitches, vanilla-extract, and the like, read by their keys. */
 import { antdComponentSpans, antdTheme } from "./scan-facts-antd.ts";
 import { type Literal, readLiteral, type Scope, UNKNOWN } from "./scan-parse.ts";
 import { addVar, bump, type Category, type Facts } from "./scan-facts.ts";
@@ -11,10 +10,6 @@ import {
     themeList,
 } from "./scan-facts-lists.ts";
 
-/**
- * A typography block of a theme (Material UI, Theme UI): the base `fontFamily` and `fontSize`, and each variant
- * (`h1: { fontSize: "2.5rem", fontFamily: … }`) as a size.
- */
 function typographyVars(
     facts: Facts,
     file: string,
@@ -38,7 +33,6 @@ function typographyVars(
     const variants = { ...(block as Record<string, Literal>) };
     const sizes = variants.sizes;
 
-    // Mantine: `headings: { sizes: { h1: { fontSize: "2.25rem" } } }`.
     if (typeof sizes === "object" && sizes !== null && !Array.isArray(sizes)) {
         delete variants.sizes;
         Object.assign(variants, sizes);
@@ -61,14 +55,12 @@ function typographyVars(
     }
 }
 
-/** The line of the first `needle` at or after `from`, when the text has one. */
 function lineFrom(text: string, needle: string, from: number): number | undefined {
     const at = needle === "" ? -1 : text.indexOf(needle, from);
 
     return at === -1 ? undefined : 1 + (text.slice(0, at).match(/\n/g)?.length ?? 0);
 }
 
-/** The index after the brace that closes the one at `open`, skipping strings; undefined when it does not close in reach. */
 function braceEnd(text: string, open: number): number | undefined {
     let depth = 0;
     let quote = "";
@@ -100,7 +92,6 @@ function braceEnd(text: string, open: number): number | undefined {
     return undefined;
 }
 
-/** Reads theme objects from a JavaScript or TypeScript file: `colors: { … }`, `const palette = { … }`. */
 export function themeVars(facts: Facts, file: string, text: string): void {
     const keys = Object.keys(THEME_KEYS).join("|");
     const heads = new RegExp(
@@ -126,9 +117,7 @@ export function themeVars(facts: Facts, file: string, text: string): void {
         }
     }
 
-    // The objects a key sits in: a declaration (`const darkTheme = {…}`), or a key (`dark: {…}`, `light: {…}`). A name
-    // with a mode word in it ("dark", "night", "light", "day") holds that mode's values; the nearest such object around
-    // the key decides.
+    // A name with a mode word in it (dark, night, light, day) holds that mode's values; the nearest such object around the key decides.
     const owners = [
         ...text.matchAll(
             /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)|(?<![\w$.])([A-Za-z_$][\w$]*)\s*:\s*(?=\{)/g,
@@ -141,7 +130,6 @@ export function themeVars(facts: Facts, file: string, text: string): void {
             const from = owner.index + owner[0].length;
             const open = owner[2] === undefined ? text.indexOf("{", from) : from;
 
-            // A declaration owns the first object after its `=` (or the call that wraps it), unless a statement ends first.
             if (
                 open === -1 ||
                 (owner[2] === undefined &&
@@ -160,7 +148,6 @@ export function themeVars(facts: Facts, file: string, text: string): void {
             .at(-1)?.mode ?? "default";
     let seen = 0;
 
-    // A base unit written as a number: `spacing: 8`, `shape: { borderRadius: 4 }` (Material UI, Chakra).
     const components = antdComponentSpans(text);
 
     for (const match of text.matchAll(
@@ -210,7 +197,6 @@ export function themeVars(facts: Facts, file: string, text: string): void {
 
         const key = match[1] ?? match[2] ?? match[3]!;
         const category = THEME_KEYS[key]!;
-        // A scalar (`fontFamily: "Inter, sans-serif"`, `fontSize: "15px"`) or an object or list.
         const scalar =
             match[3] === undefined
                 ? undefined
@@ -274,7 +260,6 @@ export function themeVars(facts: Facts, file: string, text: string): void {
 
             leaves(part, [], found, category);
 
-            // Tokens that name other tokens of the group: Stitches `"$gray1"`, `"$colors$gray1"`, `"{colors.gray.1}"`.
             const byName = new Map(found.map((leaf) => [leaf.path.join("-"), leaf.value]));
 
             const resolve = (value: string): string | undefined => {
@@ -299,7 +284,6 @@ export function themeVars(facts: Facts, file: string, text: string): void {
             };
 
             for (const leaf of found) {
-                // A scalar under the theme key itself (`fontSize: "15px"`) is the base value, when it is a length.
                 if (
                     leaf.path.length === 0 &&
                     category !== "font" &&
@@ -347,7 +331,6 @@ export function themeVars(facts: Facts, file: string, text: string): void {
             }
         };
 
-        // `colors: { light: { … }, dark: { … } }`: a block for each mode holds that mode's values.
         const blocks =
             typeof literal === "object" && literal !== null && !Array.isArray(literal)
                 ? Object.entries(literal).filter(

@@ -1,42 +1,28 @@
-/**
- * Imports tokens that a project already keeps in a token file (stream T): W3C DTCG (`$value`), Style Dictionary
- * (`value`), and Tokens Studio (`value` and `type`, with `sizing`, `fontFamilies`, `boxShadow`...; see
- * `scan-import-studio.ts` for token sets, themes, and math). The scan uses them as they are: a project that has tokens
- * does not need them guessed from its CSS. Files are kept as they are read and sorted into modes by `finishImports`,
- * once every file is in.
- */
 import { isObject, type Obj } from "./scan-import-convert.ts";
 import { materialTokens, type MaterialInput, type MaterialResult } from "./scan-import-material.ts";
 import { orderByConfig, styleDictionaryTokens } from "./scan-import-sd.ts";
 import { type SdConfig, sdConfigOfJson, sdConfigsIn } from "./scan-import-sd-config.ts";
 import { looksLikeSets, studioTokens, type StudioSource } from "./scan-import-studio.ts";
 
-/** A token file that was read: its path, what it parsed to, and whether its name says it holds tokens. */
 interface Pending {
     file: string;
     root: unknown;
     named: boolean;
 }
 
-/** Tokens found in token files: the default mode, the dark mode, and how many there are. */
 export interface Imported {
     default: Obj;
     dark: Obj;
-    /** Other modes that a Tokens Studio file has (`high-contrast`), by name: the tokens that each changes. */
     extra: Record<string, Obj>;
     count: number;
     files: string[];
     /** A token source that is sure to be one was read (a Tokens Studio file, a Style Dictionary config): however few tokens it holds. */
     certain: boolean;
-    /** Style Dictionary configs: the globs of their token files. */
     configs: SdConfig[];
-    /** Stylesheets that hold Material 3 properties, kept until every file is read. */
     materialCss: MaterialInput["css"];
-    /** The Material 3 colors, when the files held them: they replace the scan's colors. */
     material?: MaterialResult;
     /** Token files read and not yet sorted into modes (`finishImports` does that, once, when every file has been read). */
     pending: Pending[];
-    /** What the Tokens Studio files said that the scan did not take (a theme that was not read). */
     notes: string[];
     done: boolean;
 }
@@ -46,11 +32,9 @@ export const TOKEN_FILE =
     /(?:^|\/)(?:[^/]*tokens?[^/]*|[^/]*theme[^/]*)\.json$|(?:^|\/)(?:design-?tokens?|tokens?|properties|brands?|themes?|style-?dictionary|dictionary)\/(?:[^/]+\/)*[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
 
 const MAX_FILES = 300;
-/** `$themes.json` and `$metadata.json`, the two files that Tokens Studio writes beside its sets. */
 const STUDIO_MARK = /(?:^|\/)\$(?:themes|metadata)\.json$/;
 const dirOf = (file: string) => file.slice(0, Math.max(0, file.lastIndexOf("/")));
 
-/** Whether a JSON root is one Tokens Studio file: it has `$themes` or `$metadata`, or sets named for light and dark. */
 function isStudioFile(root: unknown): root is Obj {
     if (!isObject(root)) {
         return false;
@@ -65,7 +49,6 @@ function isStudioFile(root: unknown): root is Obj {
     return keys.length >= 2 && looksLikeSets(keys) && keys.every((key) => isObject(root[key]));
 }
 
-/** Reads a token file. It is kept until every file has been read: `finishImports` sorts the files into modes. */
 export function importTokens(into: Imported, file: string, source: string): void {
     if (into.pending.length >= MAX_FILES || source.length > 2_000_000) {
         return;
@@ -84,7 +67,6 @@ export function importTokens(into: Imported, file: string, source: string): void
     }
 }
 
-/** A group of the default tree that a later source adds to (a path that is there stays as it is). */
 function addTo(target: Obj, source: Obj): void {
     for (const [key, value] of Object.entries(source)) {
         const have = target[key];
@@ -102,7 +84,6 @@ function addTo(target: Obj, source: Obj): void {
     }
 }
 
-/** Adds what a Tokens Studio source holds to the imported tokens. */
 function addStudio(into: Imported, source: StudioSource, files: string[]): void {
     const found = studioTokens(source);
 
@@ -124,11 +105,6 @@ function addStudio(into: Imported, source: StudioSource, files: string[]): void 
     into.notes.push(...found.notes);
 }
 
-/**
- * Sorts the token files that were read into modes, once every file is in. A Tokens Studio file (token sets as top-level
- * keys, with `$themes` or `$metadata`), or a folder of them (`$themes.json`, `$metadata.json`, and a file for each
- * set), is read set by set, and the modes come from its themes. Any other token file is one set, as it was written.
- */
 export function finishImports(into: Imported): void {
     if (into.done) {
         return;
@@ -159,7 +135,6 @@ export function finishImports(into: Imported): void {
         taken.add(item);
     }
 
-    // A folder of Tokens Studio files: each other file under it is a set, named by its path without `.json`.
     for (const [dir, mark] of marks) {
         const sets = new Map<string, Obj>();
         const files: string[] = [];
@@ -225,13 +200,11 @@ export function finishImports(into: Imported): void {
         }
     }
 
-    // Token folders: Style Dictionary sources, and token files of any one project, merged in source order.
     const rest = pending.filter((item) => !taken.has(item) && isObject(item.root));
     const configs = [...into.configs, ...configsIn(rest)];
     const asFiles = (list: Pending[]) =>
         list.map((item) => ({ file: item.file, root: item.root as Obj }));
     const wanted = rest.filter((item) => !isConfigFile(item.root) && !isMaterialJson(item.root));
-    // The configs whose globs match files: each one's files are read, a mode config's over the base config's.
     const matched = configs
         .filter((each) => orderByConfig(asFiles(wanted), each) !== undefined)
         .slice(0, 8);
@@ -258,7 +231,6 @@ export function finishImports(into: Imported): void {
                 addTo(into.extra[mode]!, tree);
             }
 
-            // The tokens that a mode's own file sets count too: a token file for dark is part of what was read.
             into.count +=
                 found.count +
                 leavesIn(found.dark) +
@@ -275,7 +247,6 @@ export function finishImports(into: Imported): void {
         }
     }
 
-    // Material 3: stylesheets with --md-sys-color-* properties, and the Theme Builder's JSON.
     into.material = materialTokens({
         css: into.materialCss,
         json: pending
@@ -286,14 +257,12 @@ export function finishImports(into: Imported): void {
     into.pending = [];
 }
 
-/** Keeps a stylesheet that holds Material 3 properties; it is read once every file is in. */
 export function importMaterial(into: Imported, file: string, text: string): void {
     if (into.materialCss.length < 24 && /--md-(?:sys-color|ref-palette)-/.test(text)) {
         into.materialCss.push({ file, text: text.slice(0, 200_000) });
     }
 }
 
-/** How many tokens a tree has. */
 function leavesIn(tree: Obj): number {
     return Object.entries(tree).reduce(
         (sum, [key, child]) =>
@@ -303,12 +272,10 @@ function leavesIn(tree: Obj): number {
     );
 }
 
-/** Whether a JSON root is a Style Dictionary config (it has `source` and `platforms`), not a token file. */
 function isConfigFile(root: unknown): boolean {
     return isObject(root) && Array.isArray(root.source) && isObject(root.platforms);
 }
 
-/** The Style Dictionary configs among JSON files: `config.json` with `source` and `platforms`. */
 function configsIn(items: Pending[]): SdConfig[] {
     return items.flatMap((item) =>
         isConfigFile(item.root)
@@ -317,7 +284,6 @@ function configsIn(items: Pending[]): SdConfig[] {
     );
 }
 
-/** The Material Theme Builder's JSON: `{ "schemes": { "light": { "primary": … }, "dark": … } }`. */
 function isMaterialJson(root: unknown): boolean {
     return (
         isObject(root) &&
@@ -326,7 +292,6 @@ function isMaterialJson(root: unknown): boolean {
     );
 }
 
-/** Reads the text of a Style Dictionary config written in JavaScript (`sd.config.js`, `config.mjs`): it can hold several. */
 export function importConfig(into: Imported, file: string, text: string): void {
     for (const config of sdConfigsIn(dirOf(file), file, text)) {
         if (into.configs.length < 8) {

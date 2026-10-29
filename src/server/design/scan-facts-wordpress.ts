@@ -1,11 +1,9 @@
-/** WordPress `theme.json` (stream T): the palette, the font sizes, the spacing, and the styles of a block theme. */
 import { luminance, parseColor } from "./color.ts";
 import { parseStyles, type Scope } from "./scan-parse.ts";
 import { addVar, type Category, type Facts } from "./scan-facts.ts";
 import { modeOf } from "./scan-facts-lists.ts";
 import { ingestStyles } from "./scan-facts-use.ts";
 
-/** `--wp--preset--color--primary` is `--color-primary`; `--wp--custom--radius--pill` is `--custom-radius-pill`; `var:preset|color|primary` too. */
 export function wordpressNames(text: string): string {
     return text
         .replace(/--wp--preset--([\w-]+?)--([\w-]+)/g, "--$1-$2")
@@ -25,7 +23,6 @@ const WP_CSS: Record<string, string> = {
     text: "color",
 };
 
-/** A WordPress `styles` object as CSS rules, so that the scan reads how the theme uses its presets. */
 function wordpressCss(styles: unknown): string {
     const isObj = (value: unknown): value is Record<string, unknown> =>
         typeof value === "object" && value !== null && !Array.isArray(value);
@@ -137,7 +134,6 @@ function wordpressCss(styles: unknown): string {
     return out.join("\n");
 }
 
-/** What the first word of a `settings.custom` path says the value is. Any other value is read by its name and its syntax. */
 const CUSTOM_HINTS: Record<string, Category> = {
     color: "color",
     colors: "color",
@@ -162,11 +158,7 @@ const CUSTOM_HINTS: Record<string, Category> = {
     easing: "ease",
 };
 
-/**
- * The sizes of `settings.spacing.spacingScale`, as WordPress makes them: from `mediumStep`, each step below is the one
- * above divided by `increment` (or less `increment` for `+`), each step above is multiplied (or added to). The middle
- * is slug 50 and the others are 10 apart, so that a scale of seven steps has the slugs 20 to 80.
- */
+// The middle step is slug 50 and the others are 10 apart: seven steps have the slugs 20 to 80.
 function spacingScale(scale: unknown): { slug: string; size: string }[] {
     if (typeof scale !== "object" || scale === null) {
         return [];
@@ -213,7 +205,6 @@ function spacingScale(scale: unknown): { slug: string; size: string }[] {
     return sizes.filter((each) => /^\d+$/.test(each.slug) && Number(each.slug) > 0);
 }
 
-/** Whether a palette is a dark one: the color that WordPress calls the base (the page) is dark. */
 function paletteIsDark(palette: Record<string, unknown>[]): boolean {
     const base = palette.find((item) =>
         /^(?:base|background|bg|canvas|page|body|white|surface)$/i.test(String(item.slug ?? "")),
@@ -223,11 +214,6 @@ function paletteIsDark(palette: Record<string, unknown>[]): boolean {
     return color !== undefined && luminance(color) < 0.18;
 }
 
-/**
- * A WordPress block theme's `theme.json` (and its style variations in `styles/`): the palette, font sizes, font
- * families, spacing sizes, shadows, and `settings.custom` become variables; `styles` becomes the rules that use them.
- * A variation named for dark (`styles/dark.json`) holds the dark values. Returns whether the file was one.
- */
 export function wordpressTheme(facts: Facts, file: string, source: string): boolean {
     if (
         !/\bsettings\b/.test(source) ||
@@ -347,7 +333,6 @@ export function wordpressTheme(facts: Facts, file: string, source: string): bool
         }
     }
 
-    // `settings.custom`: nested groups, named by their path (`--custom-radius-pill`); the first word may say what it is.
     const custom = (node: unknown, path: string[]) => {
         if (path.length > 4) {
             return;

@@ -1,28 +1,17 @@
-/**
- * Style Dictionary configs (stream T): the globs of a config's `source` and `include`, and the mode that a config builds.
- * A project can have one config for each mode: `config.json` (the base) and `config.dark.json`, `config.<mode>.json`,
- * `dark/config.json`; one file that exports a list of configs; or a function that returns a config for each theme
- * (`source: [\`tokens/base/**\`, \`tokens/${theme}/**\`]` run for `["light", "dark"]`). A mode config's `source` adds the
- * mode's folder or file over the base.
- */
 import { DARK, hasWord, LIGHT, segment } from "./scan-import-eval.ts";
 import { closeOf, openAround, topLevelAt, topLevelValue } from "./scan-braces.ts";
 
-/** What a Style Dictionary config says about its token files: the `source` and `include` globs, in order. */
 export interface SdConfig {
     /** The folder of the config: its globs are relative to it, or to the project's root. */
     dir: string;
     include: string[];
     source: string[];
-    /** The mode that the config builds (`dark`, `acme`), when it says; the base config has none. */
     mode?: string;
 }
 
-/** The name of a config file, without its extension, as a regular expression: `config`, `sd.config`, `config.dark`, `dark.config`. */
 export const SD_CONFIG_NAME =
     /^(?:[\w.-]*[.-])?(?:config|build)(?:[.-][\w-]+)?$|^\.styledictionaryrc$|^(?:style-?dictionary|sd)(?:[.-][\w-]+)?$/i;
 
-/** Words in a config's name that name a platform or a purpose, not a mode: `config.web.json`, `build.android.js`. */
 const NOT_MODES = new Set([
     "base",
     "default",
@@ -73,7 +62,6 @@ const NOT_MODES = new Set([
     "v4",
 ]);
 
-/** The mode that a word names: `dark` or `light` for the words of them, else the word itself (a brand, a theme). */
 export function modeName(word: string): string | undefined {
     const name = segment(word).toLowerCase();
 
@@ -84,7 +72,6 @@ export function modeName(word: string): string | undefined {
     return hasWord(name, DARK) ? "dark" : hasWord(name, LIGHT) ? "light" : name;
 }
 
-/** The mode that a config file's name or folder says: `config.dark.json`, `dark.config.js`, `themes/dark/config.json`. */
 export function modeOfConfigFile(file: string): string | undefined {
     const parts = file.split("/");
     const base = parts.at(-1)!.replace(/\.(?:json|[cm]?[jt]s)$/i, "");
@@ -108,7 +95,6 @@ export function modeOfConfigFile(file: string): string | undefined {
         return named;
     }
 
-    // A config in a folder of its own: `dark/config.json`, `themes/acme/config.json`.
     const folder = parts.at(-2);
     const grand = parts.at(-3);
 
@@ -128,7 +114,6 @@ export function modeOfConfigFile(file: string): string | undefined {
     return undefined;
 }
 
-/** The mode that the globs of a config say: a glob in a mode's folder (`tokens/dark/**`) or a dark file. */
 function modeOfGlobs(globs: string[]): string | undefined {
     for (const glob of globs) {
         const parts = glob.replace(/^\.\//, "").split("/");
@@ -151,7 +136,6 @@ function modeOfGlobs(globs: string[]): string | undefined {
     return undefined;
 }
 
-/** A config; the `mode` is left out when there is none. */
 const made = (
     dir: string,
     include: string[],
@@ -164,11 +148,9 @@ const made = (
     ...(mode === undefined ? {} : { mode }),
 });
 
-/** The strings of a list in a config: `["tokens/**\/*.json", 'brands/a/*.json', \`tokens/${theme}/*.json\`]`. */
 const stringsIn = (text: string) =>
     [...text.matchAll(/["'`]([^"'`\n]{1,200})["'`]/g)].map((match) => match[1]!).slice(0, 40);
 
-/** The values of a list in a script: the list itself (`["light", "dark"]`), or the name of one the script declares. */
 function listValues(text: string, list: string): string[] {
     const literal = list.startsWith("[")
         ? list
@@ -179,11 +161,6 @@ function listValues(text: string, list: string): string[] {
     return stringsIn(literal).filter((value) => /^[\w.-]{1,40}$/.test(value));
 }
 
-/**
- * The values that a name in a template takes (`theme` in `tokens/${theme}/**`): the list it loops over (`for (const theme
- * of ["light", "dark"])`, `["light", "dark"].forEach((theme) => …)`), the arguments of the function that takes it
- * (`const getConfig = (theme) => ({ … })`, called as `getConfig("dark")`), or a list that is named for it (`themes`).
- */
 function valuesOf(text: string, rawName: string, at: number): string[] {
     const name = rawName.replace(/[$]/g, "\\$&");
     // A name starts where a name can start (`(?<![\w$])`): from every letter of a long one, the search ran to its end.
@@ -206,7 +183,6 @@ function valuesOf(text: string, rawName: string, at: number): string[] {
         add(listValues(text, match[1]!));
     }
 
-    // The function that takes the name: its calls, and the lists that are mapped over it.
     const before = text.slice(Math.max(0, at - 1200), at);
     const fn = [
         ...before.matchAll(
@@ -244,10 +220,8 @@ function valuesOf(text: string, rawName: string, at: number): string[] {
     return [...found].slice(0, 8);
 }
 
-/** A template name that stands for a mode, a theme, or a brand (not a platform or a format). */
 const MODE_NAME = /theme|mode|brand|scheme|variant|skin|palette|appearance|tenant|flavor|color/i;
 
-/** The config that an object literal in a script holds, with its templates filled in: one config for each value. */
 function configsOfObject(
     dir: string,
     file: string,
@@ -274,7 +248,6 @@ function configsOfObject(
         return [];
     }
 
-    // A mode that the object says (`theme: "dark"`) or the file's name says.
     const own = ["theme", "mode", "brand", "scheme", "variant", "colorScheme"]
         .map((key) =>
             /^\s*["'`]([\w.-]{1,40})["'`]/.exec(topLevelValue(text, open, end, key) ?? ""),
@@ -294,7 +267,6 @@ function configsOfObject(
         return [made(dir, include, source, mode ?? modeOfGlobs(globs))];
     }
 
-    // The template name that stands for a mode, with the values it takes.
     const name = names.find((each) => MODE_NAME.test(each)) ?? names[0]!;
     const values = valuesOf(text, name, open).filter(
         (value) => MODE_NAME.test(name) || hasWord(value, DARK) || hasWord(value, LIGHT),
@@ -317,10 +289,6 @@ function configsOfObject(
     );
 }
 
-/**
- * The Style Dictionary configs in the text of a script: each object that has `source` and `platforms`. A list of them
- * (`module.exports = [light, dark]`) gives several, and a template (`tokens/${theme}/**`) gives one for each value.
- */
 export function sdConfigsIn(dir: string, file: string, text: string): SdConfig[] {
     if (!/\bplatforms\b/.test(text)) {
         return [];
@@ -354,7 +322,6 @@ export function sdConfigsIn(dir: string, file: string, text: string): SdConfig[]
     return out.slice(0, 8);
 }
 
-/** The config that a parsed JSON file is: `source` and `include` lists, and the mode its name says. */
 export function sdConfigOfJson(dir: string, file: string, root: Record<string, unknown>): SdConfig {
     const list = (value: unknown) =>
         Array.isArray(value)
