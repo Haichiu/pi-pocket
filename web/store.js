@@ -491,11 +491,7 @@ export function markChatRead() {
         return;
     }
 
-    localStorage.setItem(CHAT_READ_PREFIX + conversationId, String(last));
-    store.set((state) => ({
-        chatRead: last,
-        chatReads: { ...state.chatReads, [conversationId]: last },
-    }));
+    setChatReadAt(conversationId, last);
 }
 
 function applyChat(data) {

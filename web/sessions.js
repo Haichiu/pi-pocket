@@ -1924,8 +1924,8 @@ function AllSessions({ compact = false }) {
         setClosed(next);
     };
 
-    // The tabs are as wide as each other: only another tab, or the bar resized, moves the marker.
-    // How many sessions need you: Priority's tab says. The tab grows with its count, so its marker is measured again.
+    // The marker moves when another tab is chosen or the bar is resized. Priority's tab says how many sessions need you,
+    // and its width changes with that count, so the marker is measured again when the count changes.
     const needCount = useMemo(
         () => needsYouCount(sessions),
         [sessions, unread, peekSeen, store.state.server],
