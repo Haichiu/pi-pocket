@@ -2673,11 +2673,14 @@ export class PocketApp {
                 .catch((error: unknown) => this.#log(`decision not recorded: ${describe(error)}`));
         }
 
-        await this.collab.activity(
-            conversationId,
-            user,
-            `${allow ? "allowed" : "denied"} the ${request.tool} call: ${snippet(request.subject, 120)}`,
-        );
+        // A question (a form) is answered or declined, by what it asks: Pi's questions (`ask`) by the questions.
+        const form = request.form;
+        const what =
+            form === undefined
+                ? `${allow ? "allowed" : "denied"} the ${request.tool} call: ${request.subject}`
+                : `${allow ? "answered" : "declined"}: ${form.fields.some((field) => field.choices) ? request.reason : request.subject}`;
+
+        await this.collab.activity(conversationId, user, snippet(what, 160));
 
         return true;
     }

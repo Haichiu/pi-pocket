@@ -97,7 +97,8 @@ export default function createAsk(host: PocketHost) {
                         id: `${api.taskId}:${api.callId}`,
                         taskId: api.taskId,
                         callId: api.callId,
-                        title: questions.length === 1 ? questions[0]!.header : "Pi asks",
+                        // Each question has its header as a chip: the title names who asks.
+                        title: "Pi asks",
                         fields,
                     },
                     context,
