@@ -595,7 +595,7 @@ test("an I/O error partway through the write leaves the earlier files written, a
     // tokens.json is already written. The tool description says so; without that sentence this assertion fails.
     assert.match(
         tool.description,
-        /a disk error partway through a write can leave the files before it written/,
+        /a disk error partway through saving can leave the files before it saved/,
     );
 
     const dir = await saved();
