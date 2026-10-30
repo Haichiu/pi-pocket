@@ -241,6 +241,11 @@
     padding: 0 9px;
 }
 
+.dsn[data-size="narrow"] .dsn-tabs:not(.dsy-tabs) .dsn-tab:not(.on) {
+    gap: 4px;
+    padding: 0 7px;
+}
+
 .dsn-count {
     display: inline-flex;
     align-items: center;
