@@ -86,6 +86,9 @@ const RULES: readonly CheckRule[] = [
     "input-zoom",
 ];
 
+type Errors = Pick<ExtensionWeb, "error">;
+type Rect = { x: number; y: number; width: number; height: number };
+
 const clip = (value: unknown, max: number): string =>
     typeof value === "string" ? value.replace(/[\p{Cc}\p{Bidi_Control}]/gu, " ").slice(0, max) : "";
 
@@ -94,64 +97,113 @@ const coordinate = (value: unknown): number =>
         ? Math.round(Math.max(-1e7, Math.min(1e7, value)) * 10) / 10
         : 0;
 
-function cleanValue(web: Pick<ExtensionWeb, "error">, value: unknown, depth = 0): unknown {
-    const bad = () => web.error(400, "A token value is text, a number, a list, or a small object.");
+const rectOf = (rect: Rect | undefined): { rect?: Rect } =>
+    typeof rect === "object" && rect !== null
+        ? {
+              rect: {
+                  x: coordinate(rect.x),
+                  y: coordinate(rect.y),
+                  width: coordinate(rect.width),
+                  height: coordinate(rect.height),
+              },
+          }
+        : {};
 
+function cleanValue(web: Errors, value: unknown, depth = 0): unknown {
     if (typeof value === "string") {
         return clip(value, 500);
     }
 
-    if (typeof value === "number") {
-        if (!Number.isFinite(value)) {
-            throw bad();
-        }
-
+    if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
         return value;
     }
 
-    if (typeof value === "boolean") {
-        return value;
+    const entries =
+        typeof value === "object" && value !== null && depth < 5
+            ? Object.entries(value)
+            : undefined;
+
+    if (
+        entries === undefined ||
+        (Array.isArray(value) ? value : entries).length > 32 ||
+        (!Array.isArray(value) && entries.some(([key]) => !/^[A-Za-z][\w-]{0,39}$/.test(key)))
+    ) {
+        throw web.error(400, "A token value is text, a number, a list, or a small object.");
     }
 
-    if (depth >= 5) {
-        throw bad();
-    }
-
-    if (Array.isArray(value)) {
-        if (value.length > 32) {
-            throw bad();
-        }
-
-        return value.map((each) => cleanValue(web, each, depth + 1));
-    }
-
-    if (typeof value === "object" && value !== null) {
-        const entries = Object.entries(value);
-
-        if (entries.length > 32) {
-            throw bad();
-        }
-
-        const clean: Record<string, unknown> = {};
-
-        for (const [key, each] of entries) {
-            if (!/^[A-Za-z][\w-]{0,39}$/.test(key)) {
-                throw bad();
-            }
-
-            clean[key] = cleanValue(web, each, depth + 1);
-        }
-
-        return clean;
-    }
-
-    throw bad();
+    return Array.isArray(value)
+        ? value.map((each) => cleanValue(web, each, depth + 1))
+        : Object.fromEntries(entries.map(([key, each]) => [key, cleanValue(web, each, depth + 1)]));
 }
 
-export function cleanChange(
-    web: Pick<ExtensionWeb, "error">,
-    body: Readonly<Record<string, unknown>>,
-) {
+function listOf(web: Errors, list: unknown, message: string): unknown[] {
+    if (!Array.isArray(list) || list.length > LIMITS.set) {
+        throw web.error(400, message);
+    }
+
+    return list;
+}
+
+function tokenRef(web: Errors, each: unknown, message: string) {
+    const entry = each as Record<string, unknown> | null;
+
+    if (
+        typeof entry !== "object" ||
+        entry === null ||
+        typeof entry.mode !== "string" ||
+        !MODE_NAME.test(entry.mode) ||
+        typeof entry.token !== "string" ||
+        !tokenName(entry.token)
+    ) {
+        throw web.error(400, message);
+    }
+
+    return { mode: entry.mode, token: entry.token };
+}
+
+function cleanSetEntry(web: Errors, each: unknown) {
+    const ref = tokenRef(web, each, "Each change names a mode and a token.");
+    const value = cleanValue(web, (each as { value?: unknown }).value);
+
+    if (JSON.stringify(value).length > LIMITS.value) {
+        throw web.error(400, "That value is too large.");
+    }
+
+    return { ...ref, value };
+}
+
+function cleanModes(web: Errors, value: unknown): SystemChange["modes"] {
+    const modes = value as Record<string, unknown> | null;
+
+    if (typeof modes !== "object" || modes === null || Array.isArray(modes)) {
+        throw web.error(400, "Modes are a set of names.");
+    }
+
+    if (Object.keys(modes).length > LIMITS.modes) {
+        throw web.error(400, `A system has up to ${LIMITS.modes} modes.`);
+    }
+
+    const clean: Record<string, unknown> = {};
+
+    for (const [name, each] of Object.entries(modes)) {
+        if (!MODE_NAME.test(name)) {
+            throw web.error(400, "A mode is named in lowercase letters, digits, and hyphens.");
+        }
+
+        if (
+            each !== null &&
+            (typeof each !== "object" || Array.isArray(each) || Object.keys(each).length > 0)
+        ) {
+            throw web.error(400, "A mode is added empty, or removed with null.");
+        }
+
+        clean[name] = each;
+    }
+
+    return clean;
+}
+
+export function cleanChange(web: Errors, body: Readonly<Record<string, unknown>>) {
     const change: SystemChange = {};
 
     for (const key of Object.keys(body)) {
@@ -161,88 +213,21 @@ export function cleanChange(
     }
 
     if (body.set !== undefined) {
-        if (!Array.isArray(body.set) || body.set.length > LIMITS.set) {
-            throw web.error(400, `A save changes up to ${LIMITS.set} tokens.`);
-        }
+        const list = listOf(web, body.set, `A save changes up to ${LIMITS.set} tokens.`);
 
-        change.set = body.set.map((each: unknown) => {
-            const edit = each as Record<string, unknown> | null;
-
-            if (
-                typeof edit !== "object" ||
-                edit === null ||
-                typeof edit.mode !== "string" ||
-                !MODE_NAME.test(edit.mode) ||
-                typeof edit.token !== "string" ||
-                !tokenName(edit.token)
-            ) {
-                throw web.error(400, "Each change names a mode and a token.");
-            }
-
-            const value = cleanValue(web, edit.value);
-
-            if (JSON.stringify(value).length > LIMITS.value) {
-                throw web.error(400, "That value is too large.");
-            }
-
-            return { mode: edit.mode, token: edit.token, value };
-        });
+        change.set = list.map((each) => cleanSetEntry(web, each));
     }
 
     if (body.remove !== undefined) {
-        if (!Array.isArray(body.remove) || body.remove.length > LIMITS.set) {
-            throw web.error(400, `A save gives up to ${LIMITS.set} values back.`);
-        }
+        const list = listOf(web, body.remove, `A save gives up to ${LIMITS.set} values back.`);
 
-        change.remove = body.remove.map((each: unknown) => {
-            const entry = each as Record<string, unknown> | null;
-
-            if (
-                typeof entry !== "object" ||
-                entry === null ||
-                typeof entry.mode !== "string" ||
-                !MODE_NAME.test(entry.mode) ||
-                typeof entry.token !== "string" ||
-                !tokenName(entry.token)
-            ) {
-                throw web.error(400, "Each removal names a mode and a token.");
-            }
-
-            return { mode: entry.mode, token: entry.token };
-        });
+        change.remove = list.map((each) =>
+            tokenRef(web, each, "Each removal names a mode and a token."),
+        );
     }
 
     if (body.modes !== undefined) {
-        const modes = body.modes as Record<string, unknown> | null;
-
-        if (typeof modes !== "object" || modes === null || Array.isArray(modes)) {
-            throw web.error(400, "Modes are a set of names.");
-        }
-
-        if (Object.keys(modes).length > LIMITS.modes) {
-            throw web.error(400, `A system has up to ${LIMITS.modes} modes.`);
-        }
-
-        change.modes = {};
-
-        for (const [name, each] of Object.entries(modes)) {
-            if (!MODE_NAME.test(name)) {
-                throw web.error(400, "A mode is named in lowercase letters, digits, and hyphens.");
-            }
-
-            if (
-                each !== null &&
-                !(
-                    typeof each === "object" &&
-                    !Array.isArray(each) &&
-                    Object.keys(each).length === 0
-                )
-            ) {
-                throw web.error(400, "A mode is added empty, or removed with null.");
-            }
-
-            change.modes[name] = each;
-        }
+        change.modes = cleanModes(web, body.modes);
     }
 
     if (body.guidelines !== undefined) {
@@ -260,12 +245,7 @@ export function cleanChange(
         throw web.error(400, "The revision is text.");
     }
 
-    if (
-        change.set === undefined &&
-        change.remove === undefined &&
-        change.modes === undefined &&
-        change.guidelines === undefined
-    ) {
+    if (Object.keys(change).length === 0) {
         throw web.error(400, "There is nothing to save.");
     }
 
@@ -316,16 +296,11 @@ function viewOf(system: DesignSystem) {
     };
 }
 
-type CheckedReport = CheckReport & {
-    accepted: CheckFinding[];
-    order: string[];
-};
-
 // The report holds text from the page: every field is cut to a fixed shape.
 export function cleanReport(
     report: CheckReport,
     accepted: ReadonlySet<string> = new Set(),
-): CheckedReport {
+): CheckReport & { accepted: CheckFinding[]; order: string[] } {
     const open: CheckFinding[] = [];
     const set: CheckFinding[] = [];
     const order: string[] = [];
@@ -401,9 +376,7 @@ function cleanFinding(each: CheckFinding): CheckFinding | undefined {
         return undefined;
     }
 
-    const rect = each.rect;
     const fix = each.fix;
-
     const fixable = (each as { fixable?: unknown }).fixable === true || isFixable(each);
 
     return {
@@ -415,16 +388,7 @@ function cleanFinding(each: CheckFinding): CheckFinding | undefined {
                       ...(typeof item?.pid === "string" && item.pid !== ""
                           ? { pid: clip(item.pid, 200) }
                           : {}),
-                      ...(typeof item?.rect === "object" && item.rect !== null
-                          ? {
-                                rect: {
-                                    x: coordinate(item.rect.x),
-                                    y: coordinate(item.rect.y),
-                                    width: coordinate(item.rect.width),
-                                    height: coordinate(item.rect.height),
-                                },
-                            }
-                          : {}),
+                      ...rectOf(item?.rect),
                   })),
               }
             : {}),
@@ -451,16 +415,7 @@ function cleanFinding(each: CheckFinding): CheckFinding | undefined {
         ...(typeof each.suggestion === "string" ? { suggestion: clip(each.suggestion, 300) } : {}),
         message: clip(each.message, 400),
         ...(fixable ? { fixable: true } : {}),
-        ...(typeof rect === "object" && rect !== null
-            ? {
-                  rect: {
-                      x: coordinate(rect.x),
-                      y: coordinate(rect.y),
-                      width: coordinate(rect.width),
-                      height: coordinate(rect.height),
-                  },
-              }
-            : {}),
+        ...rectOf(each.rect),
     };
 }
 
