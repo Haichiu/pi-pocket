@@ -1,249 +1,111 @@
+import { snippet } from "./docsite-components.ts";
 import { escapeHtml as esc, plural } from "./docsite-markdown.ts";
-import type { ResolvedToken } from "./system-types.ts";
 import {
-    clip,
-    modeLabel,
-    pxOf,
-    sectionOf,
     type Ctx,
-    valueIn,
-    findToken,
-    varOf,
     BASE_GROUNDS,
+    clip,
+    findToken,
+    idOf,
+    modeLabel,
     tableRows,
 } from "./docsite-core.ts";
+import type { SystemProblem } from "./system-types.ts";
 
-export function referenceSection(ctx: Ctx, max: number): { html: string; count: number } {
+export function referenceSection(ctx: Ctx, max: number): string {
     const all = ctx.system.tokens;
     const tokens = all.slice(0, max);
     const cut =
         tokens.length < all.length
             ? `<p class="sub">This table shows the first ${tokens.length} of ${all.length} tokens, to keep the page small. The sections above show the rest.</p>`
             : "";
+    const option = (value: string, label: string) =>
+        `<option value="${esc(value)}">${esc(label)}</option>`;
     const types = [...new Set(tokens.map((token) => token.type))].sort();
     const tiers = ["primitive", "semantic", "component"].filter((tier) =>
         tokens.some((token) => token.tier === tier),
     );
-    const option = (value: string, label: string) =>
-        `<option value="${esc(value)}">${esc(label)}</option>`;
-    const toolbar = `<div class="toolbar" role="search"><input id="tq" type="search" placeholder="Search names and values" aria-label="Search the table of tokens" autocomplete="off" spellcheck="false"><select id="tt" aria-label="Filter by type">${option("", "All types")}${types.map((type) => option(type, `${type} (${tokens.filter((token) => token.type === type).length})`)).join("")}</select><select id="tr" aria-label="Filter by tier">${option("", "All tiers")}${tiers.map((tier) => option(tier, tier)).join("")}</select><span class="rows-count" id="tc" aria-live="polite"></span></div>`;
+    const toolbar = `<div class="toolbar" role="search"><input id="tq" type="search" placeholder="Search names and values" aria-label="Search the table of tokens" autocomplete="off" spellcheck="false"><select id="tt" aria-label="Filter by type">${option("", "All types")}${types.map((type) => option(type, `${type} (${tokens.filter((token) => token.type === type).length})`)).join("")}</select><select id="tr" aria-label="Filter by tier">${option("", "All tiers")}${tiers.map((tier) => option(tier, tier)).join("")}</select><span class="desc" id="tc" aria-live="polite">${plural(tokens.length, "token")}</span></div>`;
 
-    return {
-        html: `<p class="intro">Every token with its CSS variable and its value in each mode. Click a name to copy it.</p>${cut}${toolbar}<div class="table-wrap ref"><table><thead><tr><th>Token</th><th>Type</th>${ctx.modes.map((mode) => `<th>${esc(modeLabel(mode))}</th>`).join("")}</tr></thead><tbody>${tableRows(ctx, tokens, true)}</tbody></table></div>`,
-        count: all.length,
-    };
+    return `<p class="intro">Every token with its CSS variable and its value in each mode. Click a name to copy it.</p>${cut}${toolbar}<div class="table-wrap stack" id="token-table"><table><thead><tr><th>Token</th><th>Type</th>${ctx.modes.map((mode) => `<th>${esc(modeLabel(mode))}</th>`).join("")}</tr></thead><tbody>${tableRows(ctx, tokens)}</tbody></table></div>`;
+}
+
+function findings(summary: string, list: SystemProblem[], item: (entry: SystemProblem) => string) {
+    return list.length === 0
+        ? ""
+        : `<details class="notes"><summary>${summary}</summary><ul>${list
+              .slice(0, 50)
+              .map((entry) => `<li>${item(entry)}</li>`)
+              .join("")}</ul></details>`;
 }
 
 export function problemsHtml(ctx: Ctx): string {
-    const problems = ctx.system.problems;
-
-    if (problems.length === 0) {
-        return "";
-    }
-
+    const { problems, notes = [] } = ctx.system;
     const errors = problems.filter((problem) => problem.level === "error").length;
+    const where = (entry: SystemProblem) =>
+        `${entry.file === undefined ? "" : ` in <code>${esc(entry.file)}</code>`}${entry.token === undefined ? "" : ` at <code>${esc(entry.token)}</code>`}`;
 
-    return `<details class="notes"><summary>${errors > 0 ? `${errors} error${errors === 1 ? "" : "s"} and ` : ""}${problems.length - errors} warning${problems.length - errors === 1 ? "" : "s"} from the validator</summary><ul>${problems
-        .slice(0, 50)
-        .map(
-            (problem) =>
-                `<li><strong>${problem.level === "error" ? "Error" : "Warning"}</strong>${problem.file === undefined ? "" : ` in <code>${esc(problem.file)}</code>`}${problem.token === undefined ? "" : ` at <code>${esc(problem.token)}</code>`}: ${esc(clip(problem.message, 300))}</li>`,
+    return (
+        findings(
+            `${errors > 0 ? `${plural(errors, "error")} and ` : ""}${plural(problems.length - errors, "warning")} from the validator`,
+            problems,
+            (entry) =>
+                `<strong>${entry.level === "error" ? "Error" : "Warning"}</strong>${where(entry)}: ${esc(clip(entry.message, 300))}`,
+        ) +
+        findings(
+            `${plural(notes.length, "note")} from the validator`,
+            notes,
+            (entry) =>
+                `${where(entry).trim()}${where(entry) === "" ? "" : ": "}${esc(clip(entry.message, 300))}`,
         )
-        .join("")}</ul></details>`;
-}
-
-export function notesHtml(ctx: Ctx): string {
-    const notes = ctx.system.notes ?? [];
-
-    if (notes.length === 0) {
-        return "";
-    }
-
-    return `<details class="notes"><summary>${plural(notes.length, "note")} from the validator</summary><ul>${notes
-        .slice(0, 50)
-        .map(
-            (note) =>
-                `<li>${note.file === undefined ? "" : `<code>${esc(note.file)}</code> `}${note.token === undefined ? "" : `<code>${esc(note.token)}</code>: `}${esc(clip(note.message, 300))}</li>`,
-        )
-        .join("")}</ul></details>`;
+    );
 }
 
 /** The most of a generated file that the page prints: the files are large, and the page is one file too. */
 const FILE_PREVIEW = 3_000;
 
-function studioSnippet(ctx: Ctx, sample: ResolvedToken | undefined): string {
-    let file: Record<string, unknown> | undefined;
-
-    try {
-        file = JSON.parse(ctx.system.compiled.studio ?? "") as Record<string, unknown>;
-    } catch {
-        file = undefined;
-    }
-
-    const first = ctx.modes[0]!;
-    const set = file?.[first] as Record<string, unknown> | undefined;
-    const themes = file?.$themes as { selectedTokenSets?: Record<string, string> }[] | undefined;
-
-    if (file === undefined || set === undefined || sample === undefined) {
-        return JSON.stringify(
-            { [first]: {}, $themes: [], $metadata: { tokenSetOrder: ctx.modes } },
-            null,
-            2,
-        );
-    }
-
-    let node: unknown = set;
-    const leaf: Record<string, unknown> = {};
-    let into = leaf;
-
-    for (const [index, key] of sample.path.entries()) {
-        node = (node as Record<string, unknown> | undefined)?.[key];
-        into[key] = index === sample.path.length - 1 ? node : {};
-        into = into[key] as Record<string, unknown>;
-    }
-
-    const theme = themes?.[0];
-    const sets = Object.fromEntries(Object.entries(theme?.selectedTokenSets ?? {}).slice(0, 2));
-
-    return JSON.stringify(
-        {
-            [first]: leaf,
-            $themes: [{ ...(theme ?? {}), selectedTokenSets: sets }],
-            $metadata: file.$metadata,
-        },
-        null,
-        2,
-    );
-}
-
-export function snippet(id: string, text: string, lang = ""): string {
-    return `<div class="snip-wrap"><button class="copy" type="button" data-copy-from="${esc(id)}" data-copy="">Copy</button><pre class="snip" id="${esc(id)}"${lang === "" ? "" : ` data-lang="${esc(lang)}"`}><code>${esc(text)}</code></pre></div>`;
-}
-
-export function codeSection(ctx: Ctx): { html: string; count: number } {
+export function codeSection(ctx: Ctx): string {
     const { compiled } = ctx.system;
-    const first = ctx.modes[0]!;
     const sample =
         findToken(ctx, BASE_GROUNDS) ??
         ctx.system.tokens.find((token) => token.type === "color" && token.tier === "semantic") ??
         ctx.system.tokens[0];
-    // A middle step of the spacing scale reads better than step zero.
-    const steps = ctx.system.tokens.filter(
-        (token) =>
-            sectionOf(token) === "spacing" &&
-            token.tier !== "component" &&
-            (pxOf(valueIn(token, first)?.value) ?? 0) > 0,
-    );
-    const spacing =
-        steps.find((token) => pxOf(valueIn(token, first)?.value) === 16) ??
-        steps[Math.floor(steps.length / 2)];
-    const dark = ctx.modes.find((mode) => ctx.theme.get(mode) === "dark" && mode !== first);
-    const cssVar = sample?.cssVar ?? "--color-bg-surface";
-    const css = `<link rel="stylesheet" href="tokens.css">\n\n.card {\n    background: var(${cssVar});\n    padding: var(${spacing?.cssVar ?? "--space-4"});\n}${dark === undefined ? "" : `\n\n<!-- ${modeLabel(dark)} mode -->\n<html data-theme="${dark}">`}`;
-    // The utilities come from the names that the compiled theme gives the sample tokens (`tailwindNames`); none is written here.
-    const sampleVar = sample === undefined ? undefined : ctx.twVar.get(sample.name);
-    const spacingVar = spacing === undefined ? undefined : ctx.twVar.get(spacing.name);
-    const classes = [
-        sampleVar?.startsWith("--color-") ? `bg-${sampleVar.slice("--color-".length)}` : undefined,
-        spacingVar?.startsWith("--spacing-")
-            ? `p-${spacingVar.slice("--spacing-".length)}`
-            : undefined,
-    ].filter((name) => name !== undefined);
-    const tailwind = `@import "tailwindcss";\n@import "./tailwind.css";${classes.length === 0 ? "" : `\n\n<div class="${classes.join(" ")}">…</div>`}`;
-    const modeFiles = Object.entries(compiled.modes ?? {});
-    const jsonName =
-        modeFiles[0] === undefined
-            ? "tokens.resolved.json"
-            : `tokens.${modeFiles[0][0]}.resolved.json`;
-    const json = JSON.stringify(
-        {
-            source: [jsonName],
-            platforms: {
-                css: {
-                    transformGroup: "css",
-                    buildPath: "build/",
-                    files: [{ destination: "variables.css", format: "css/variables" }],
-                },
-            },
-        },
-        null,
-        2,
-    );
-    const studio = studioSnippet(ctx, sample);
-    const readme = (compiled as { readme?: string }).readme ?? "";
+    const dark = ctx.modes.find((mode) => ctx.theme.get(mode) === "dark" && mode !== ctx.modes[0]);
     const files = [
-        {
-            id: "code-readme",
-            title: "README.md",
-            note: "What each file is, and how to use it with CSS, Tailwind v4, Style Dictionary, and Tokens Studio.",
-            text: readme,
-        },
-        {
-            id: "code-css",
-            title: "tokens.css",
-            note: "Variables for every mode. Link it from every page.",
-            text: compiled.css,
-        },
-        {
-            id: "code-tailwind",
-            title: "tailwind.css",
-            note: "A Tailwind v4 @theme block, one variable for each token.",
-            text: compiled.tailwind,
-        },
-        {
-            id: "code-names",
-            title: "names.md",
-            note: "Every token with its variable in tokens.css and in tailwind.css, and its Tailwind utilities.",
-            text: compiled.names ?? "",
-        },
-        ...modeFiles.map(([mode, text], index) => ({
-            id: `code-mode-${index}`,
-            title: `tokens.${mode}.resolved.json`,
-            note: `The ${modeLabel(mode).toLowerCase()} mode as a DTCG file (with $value and $type).`,
-            text,
-        })),
-        {
-            id: "code-mode-studio",
-            title: "tokens.studio.json",
-            note: "For Tokens Studio: a token set for each mode, and a $themes array.",
-            text: compiled.studio ?? "",
-        },
-        {
-            id: "code-json",
-            title: "tokens.resolved.json",
-            note: "A compact summary for scripts. Prefer the DTCG files above.",
-            text: compiled.json,
-        },
-    ].filter((file) => file.text.trim() !== "");
-    const use = (title: string, note: string, id: string, text: string, lang: string) =>
-        `<div class="use"><h4>${esc(title)}</h4><p class="sub">${note}</p>${snippet(id, text, lang)}</div>`;
-
-    // Each color is left out when the system has no such code token (the CSS has a fallback).
-    const syntax = (
         [
-            ["bg", ["color.code.bg"]],
-            ["text", ["color.code.text"]],
-            ["c", ["color.code.comment", "color.text.muted"]],
-            ["s", ["color.code.string"]],
-            ["n", ["color.code.number"]],
-            ["k", ["color.code.keyword"]],
-            ["f", ["color.code.function"]],
-            ["p", ["color.code.type", "color.code.property"]],
-            ["t", ["color.code.tag"]],
-        ] as [string, string[]][]
-    )
-        .map(([key, names]) => [key, findToken(ctx, names)] as const)
-        .filter(([, token]) => token !== undefined && token.type === "color")
-        .map(([key, token]) => `--sx-${key}:${varOf(token!)}`)
-        .join(";");
+            "README.md",
+            "What each file is, and how to use it.",
+            (compiled as { readme?: string }).readme ?? "",
+        ],
+        ["tokens.css", "Variables for every mode. Link it from every page.", compiled.css],
+        [
+            "tailwind.css",
+            "A Tailwind v4 @theme block, one variable for each token.",
+            compiled.tailwind,
+        ],
+        [
+            "names.md",
+            "Every token with its variable in tokens.css and in tailwind.css, and its Tailwind utilities.",
+            compiled.names ?? "",
+        ],
+        ...Object.entries(compiled.modes ?? {}).map(([mode, text]) => [
+            `tokens.${mode}.resolved.json`,
+            `The ${modeLabel(mode).toLowerCase()} mode as a DTCG file, for Style Dictionary and other tools.`,
+            text,
+        ]),
+        [
+            "tokens.studio.json",
+            "For Tokens Studio: a token set for each mode, and a $themes array.",
+            compiled.studio ?? "",
+        ],
+        ["tokens.resolved.json", "A compact summary for scripts.", compiled.json],
+        ["components.css", "The CSS of every component.", compiled.components],
+    ].filter(([, , text]) => text!.trim() !== "");
 
-    return {
-        html: `<div class="sx"${syntax === "" ? "" : ` style="${esc(syntax)}"`}><p class="intro">The files that the system generates in <code>.pi/design/dist/</code> (<code>components.css</code> holds the CSS of every component, which each component above shows). Read tokens as variables, classes, or JSON. Never copy a value by hand.</p><div class="uses">${use("CSS", "Link tokens.css, then read a token with var(). Set data-theme for a mode.", "code-use-css", css, "web")}${use("Tailwind v4", `Import Tailwind, then tailwind.css. Each token is a variable, so the utilities follow it.${compiled.names === undefined || compiled.names.trim() === "" ? "" : ' <a href="#code-names">names.md</a> lists every name and utility.'}`, "code-use-tailwind", tailwind, "web")}${use("JSON (DTCG)", `Style Dictionary reads the file for each mode as it is. For DTCG 2025.10 objects and not strings (<code>"#7aa2f7"</code>, <code>"16px"</code>), set <code>"format": "2025.10"</code> in the <code>com.pi-pocket</code> extension of tokens.json.`, "code-use-json", json, "json")}${use("Tokens Studio", "In Tokens Studio open Tools, Load from file or URL, and pick tokens.studio.json. Each mode is a token set, and each theme turns its set on.", "code-use-studio", studio, "json")}</div><h3>The files</h3>${files
-            .map(
-                (file) =>
-                    `<details class="code"><summary>${esc(file.title)}<span class="desc" style="margin-left:10px;font-weight:400">${esc(file.note)}</span></summary><div class="code-body">${file.text.length > FILE_PREVIEW ? `<p class="sub">The first ${FILE_PREVIEW / 1000} KB of ${Math.round(file.text.length / 1024)} KB. The whole file is in <code>.pi/design/dist/</code>, and in the zip that the System view exports.</p>` : ""}${snippet(file.id, clip(file.text, FILE_PREVIEW), file.title.endsWith(".css") ? "css" : file.title.endsWith(".json") ? "json" : "")}</div></details>`,
-            )
-            .join("")}</div>`,
-        count: files.length,
-    };
+    return `<div class="prose"><p>The system writes these files to <code>.pi/design/dist/</code>. Never copy a value by hand:</p><ul><li>CSS: link <code>tokens.css</code> and read a token with <code>var(${esc(sample?.cssVar ?? "--color-bg-surface")})</code>.${dark === undefined ? "" : ` Set <code>data-theme="${esc(ctx.slug.get(dark)!)}"</code> on <code>&lt;html&gt;</code> for the ${esc(modeLabel(dark).toLowerCase())} mode.`}</li><li>Tailwind v4: import <code>tailwind.css</code> after Tailwind. Each utility reads a token's variable, so it follows the mode.</li><li>Style Dictionary reads a <code>tokens.&lt;mode&gt;.resolved.json</code> file as it is. Tokens Studio loads <code>tokens.studio.json</code>.</li></ul></div>${files
+        .map(([title, note, text]) => {
+            const id = `code-${idOf(title!)}`;
+
+            return `<details class="fold"><summary>${esc(title!)} <span class="desc">${esc(note!)}</span></summary>${text!.length > FILE_PREVIEW ? `<p class="sub">The first ${FILE_PREVIEW / 1000} KB of ${Math.round(text!.length / 1024)} KB. The whole file is in <code>.pi/design/dist/</code>, and in the zip that the System view exports.</p>` : ""}${snippet(id, clip(text!, FILE_PREVIEW), title!)}</details>`;
+        })
+        .join("")}`;
 }
