@@ -539,8 +539,8 @@ body { margin: 0; padding: 24px; background: ${hexOf("color.bg.canvas")}; font: 
         )?.content ?? "";
     const next = await bodyOf(2);
 
-    assert.match(next, /color: var\(--color-text-primary\)/);
-    assert.match(next, /style="margin:0;color:var\(--color-text-primary\)"/);
+    // The role token is another color in dark, so the fix puts in the palette step that is this color in every mode.
+    assert.match(next, /style="margin:0;color:var\(--color-gray-900\)"/);
     assert.ok(
         next.includes(".note { color: #7ba3f8; }"),
         "a value that is only close to a token is not guessed at",

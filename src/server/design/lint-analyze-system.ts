@@ -9,6 +9,7 @@ import {
 import {
     colorRoleOf,
     difference,
+    exactColorToken,
     FAR_COLOR,
     nearestColor,
     SAME_COLOR,
@@ -133,14 +134,26 @@ export function colorFindings(raw: RawPage, tokens: TokenSet | undefined): Weigh
                 ? ` It is a ${given} token, and the system has no ${wanted} token this close.`
                 : "";
 
-        // A fix replaces the literal in place, so the token must fit the use: a text token is not a background's.
+        // A fix replaces the literal in place, so the token must fit the use (a text token is not a background's) and have
+        // this value in every mode: the page must look the same in each.
+        const steady =
+            onSystem && group.literal === true && near?.exact
+                ? exactColorToken(
+                      {
+                          ...tokens,
+                          colors: tokens.colors.filter((token) => token.steady !== false),
+                      },
+                      rgba,
+                      main?.[0],
+                      2,
+                  )
+                : undefined;
+        const steadyRole = steady === undefined ? undefined : colorRoleOf(steady.name);
         const exact =
-            onSystem &&
-            group.literal === true &&
-            near?.exact &&
-            near.token.tier !== "component" &&
-            (given === undefined || given === wanted)
-                ? near.token
+            steady !== undefined &&
+            steady.tier !== "component" &&
+            (steadyRole === undefined || steadyRole === wanted)
+                ? steady
                 : undefined;
 
         out.push(
@@ -204,6 +217,7 @@ export function fontFindings(raw: RawPage, tokens: TokenSet | undefined): Weight
             onSystem && group.literal === true
                 ? tokens.fonts.find(
                       (font) =>
+                          font.steady !== false &&
                           font.families.length === names.length &&
                           font.families.every((name, index) => name === names[index]),
                   )
@@ -278,7 +292,7 @@ export function sizeFindings(raw: RawPage, tokens: TokenSet | undefined): Weight
         const step = equal ?? nearest;
         const exact =
             group.literal === true
-                ? scale.find((token) => Math.abs(token.px - px) <= 0.01)
+                ? scale.find((token) => token.steady !== false && Math.abs(token.px - px) <= 0.01)
                 : undefined;
         const properties = (Array.isArray(group.props) ? group.props : []).flatMap(
             (prop) => LENGTH_PROPERTIES[String(prop)] ?? [],

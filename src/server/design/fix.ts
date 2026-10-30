@@ -2,7 +2,13 @@
 // Only `<style>` elements and `style` attributes are edited, only a whole value token (a color, a `px` length, a `font-family` list) in a declaration the finding names,
 // and never a `var()`, a custom property, `@font-face`, or `@keyframes`.
 import { colorObjectCss, parseColor } from "./color.ts";
-import type { CheckFinding, CheckFix, DesignSystem } from "./system-types.ts";
+import type {
+    CheckFinding,
+    CheckFix,
+    DesignSystem,
+    ModeValue,
+    ResolvedToken,
+} from "./system-types.ts";
 
 export interface FixResult {
     content: string;
@@ -385,31 +391,73 @@ const sameColor = (
     Math.abs(a.b - b.b) <= 0.5 / 255 &&
     Math.abs(a.a - b.a) <= 0.006;
 
+function colorIn(entry: ModeValue) {
+    const css = entry.css.startsWith("var(")
+        ? typeof entry.value === "string"
+            ? entry.value
+            : (() => {
+                  const made = colorObjectCss(entry.value);
+
+                  return "css" in made ? made.css : undefined;
+              })()
+        : entry.css;
+
+    return css === undefined ? undefined : parseColor(css);
+}
+
+/** True when the token has one value in every mode of the system: a page that uses it looks the same in each. */
+export function sameInEveryMode(token: ResolvedToken, modes: string[]): boolean {
+    const [first, ...rest] = modes.map((mode) => token.modes[mode]);
+
+    if (first === undefined || rest.some((entry) => entry === undefined)) {
+        return false;
+    }
+
+    if (token.type === "color") {
+        const color = colorIn(first);
+
+        return (
+            color !== undefined &&
+            rest.every((entry) => {
+                const other = colorIn(entry!);
+
+                return other !== undefined && sameColor(color, other);
+            })
+        );
+    }
+
+    return rest.every((entry) => JSON.stringify(entry!.value) === JSON.stringify(first.value));
+}
+
+// The page stays the same only if the token is the literal in every mode, not in the checked mode alone.
 function verify(fix: CheckFix, system: DesignSystem): string | undefined {
+    for (const mode of new Set([fix.mode, ...system.modes])) {
+        const problem = verifyIn(fix, system, mode);
+
+        if (problem !== undefined) {
+            return problem;
+        }
+    }
+
+    return undefined;
+}
+
+function verifyIn(fix: CheckFix, system: DesignSystem, mode: string): string | undefined {
     const token = system.tokens.find(
         (each) => each.name === fix.token && each.cssVar === fix.cssVar,
     );
-    const entry = token?.modes[fix.mode];
+    const entry = token?.modes[mode];
 
     if (token === undefined || entry === undefined) {
         return "The token is not in the design system any more.";
     }
 
     if (fix.kind === "color") {
-        const css = entry.css.startsWith("var(")
-            ? typeof entry.value === "string"
-                ? entry.value
-                : (() => {
-                      const made = colorObjectCss(entry.value);
-
-                      return "css" in made ? made.css : undefined;
-                  })()
-            : entry.css;
-        const color = css === undefined ? undefined : parseColor(css);
+        const color = colorIn(entry);
         const literal = parseColor(fix.literal);
 
         if (color === undefined || literal === undefined || !sameColor(color, literal)) {
-            return `The token ${fix.token} is not ${fix.literal} in ${fix.mode} any more.`;
+            return `The token ${fix.token} is not ${fix.literal} in ${mode}.`;
         }
     } else if (fix.kind === "length") {
         const value = entry.value;
@@ -424,7 +472,7 @@ function verify(fix: CheckFix, system: DesignSystem): string | undefined {
 
         // A `rem` or other unit is trusted from the check (the browser resolved it); a `px` one is compared.
         if (px !== undefined && px !== Number.parseFloat(fix.literal)) {
-            return `The token ${fix.token} is not ${fix.literal} in ${fix.mode} any more.`;
+            return `The token ${fix.token} is not ${fix.literal} in ${mode}.`;
         }
     } else {
         const wanted = families(fix.literal);
@@ -435,7 +483,7 @@ function verify(fix: CheckFix, system: DesignSystem): string | undefined {
               : [];
 
         if (wanted.length === 0 || wanted.join(",") !== list.join(",")) {
-            return `The token ${fix.token} is not ${fix.literal} in ${fix.mode} any more.`;
+            return `The token ${fix.token} is not ${fix.literal} in ${mode}.`;
         }
     }
 
