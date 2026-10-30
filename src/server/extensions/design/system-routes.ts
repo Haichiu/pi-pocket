@@ -31,7 +31,6 @@ import {
     type CheckOptions,
     checkDesign,
     fixExactMatches,
-    isFixable,
     loadDesignSystem,
     renderSystemDoc,
     writeDesignSystem,
@@ -377,7 +376,7 @@ function cleanFinding(each: CheckFinding): CheckFinding | undefined {
     }
 
     const fix = each.fix;
-    const fixable = (each as { fixable?: unknown }).fixable === true || isFixable(each);
+    const fixable = (each as { fixable?: unknown }).fixable === true || fix !== undefined;
 
     return {
         ...(typeof each.id === "string" ? { id: clip(each.id, 60) } : {}),
@@ -769,7 +768,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 const report = await checkDesign(bundle, system, asked, host, request.signal);
 
                 from = bundle.version;
-                result = fixExactMatches(bundle, system, report, { mode: options.mode, accepted });
+                result = fixExactMatches(bundle, system, report, accepted);
 
                 if (result.fixed > 0 && Buffer.byteLength(result.content) > MAX_BYTES) {
                     throw web.error(400, "The page is too large.");
