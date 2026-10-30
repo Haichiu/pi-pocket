@@ -427,6 +427,12 @@ function actionItems() {
             icon: "pulse",
             run: () => openSheet({ type: "running" }),
         },
+        session && {
+            label: "Background",
+            detail: "what commands print as they run",
+            icon: "terminal",
+            run: () => openSheet({ type: "background" }),
+        },
         {
             label: store.state.board ? "Close the subagents board" : "Subagents",
             detail: "subagents in every session",

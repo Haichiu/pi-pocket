@@ -66,6 +66,11 @@ const MAX_COMMAND = 4000;
 /** How much a read gives Pi, and how much of the end of the output Pi's message holds. */
 const READ_CHARS = 20_000;
 const TELL_CHARS = 3000;
+/** How much of a task's output one look in Background shows, and at most how much it asks for. */
+const WATCH_CHARS = 20_000;
+const WATCH_CHARS_MAX = 200_000;
+/** How far into what a look in Background passes over it looks for a line's start, so no line shows cut in two. */
+const WATCH_LINE = 4096;
 /** Terminal escape codes (colors, cursor moves): some tools print them even when nobody reads a terminal. */
 const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
 
@@ -525,17 +530,19 @@ export class BackgroundTasks {
 
     /**
      * Bytes `from` to `to` of a task's output, from the segments there are, and how many of them are gone with the
-     * segments a sweep removed (at its start: a sweep removes the oldest).
+     * segments a sweep removed (at its start: a sweep removes the oldest). `began` is where the bytes that are there
+     * start, which is past `from` after a sweep: `to` when nothing is left of them.
      */
     #span(
         conversationId: ConversationId,
         item: BackgroundTask,
         from: number,
         to: number,
-    ): { bytes: Buffer; gone: number } {
+    ): { bytes: Buffer; gone: number; began: number } {
         const parts: Buffer[] = [];
         let at = from;
         let gone = 0;
+        let began = to;
 
         for (const segment of this.#segments(conversationId, item)) {
             const end = segment.start + segment.size;
@@ -547,6 +554,10 @@ export class BackgroundTasks {
             if (segment.start > at) {
                 gone += segment.start - at;
                 at = segment.start;
+            }
+
+            if (parts.length === 0) {
+                began = at;
             }
 
             const part = readBytes(
@@ -564,7 +575,7 @@ export class BackgroundTasks {
             gone += to - at;
         }
 
-        return { bytes: Buffer.concat(parts), gone };
+        return { bytes: Buffer.concat(parts), gone, began };
     }
 
     #exitFile(conversationId: ConversationId, id: string): string {
@@ -1376,21 +1387,7 @@ export class BackgroundTasks {
         }
 
         const end = this.#end(conversationId, item);
-        let to = end;
-
-        if (item.status === "running" || item.status === "starting") {
-            // Enough for the longest value that can be hidden, in its longest UTF-8.
-            const last = this.#span(
-                conversationId,
-                item,
-                Math.max(item.read, end - 4 * 4096),
-                end,
-            ).bytes;
-            const open = openTail(last);
-            const text = last.subarray(0, last.length - open).toString();
-
-            to = end - open - Buffer.byteLength(text.slice(this.#safeRaw(conversationId, text)));
-        }
+        const to = this.#settled(conversationId, item, end);
 
         const range = (await pin?.({ from: item.read, to: Math.max(item.read, to) })) ?? {
             from: item.read,
@@ -1423,6 +1420,89 @@ export class BackgroundTasks {
             item: { ...this.#current(conversationId, item), read: Math.max(item.read, range.to) },
             text,
             skipped,
+        };
+    }
+
+    /**
+     * Where a running task's output can be shown up to: not into half of a character, or half of a value its command
+     * hides, which a look could then show in part.
+     */
+    #settled(conversationId: ConversationId, item: BackgroundTask, end: number): number {
+        if (item.status !== "running" && item.status !== "starting") {
+            return end;
+        }
+
+        // Enough for the longest value that can be hidden, in its longest UTF-8.
+        const last = this.#span(conversationId, item, Math.max(0, end - 4 * 4096), end).bytes;
+        const open = openTail(last);
+        const text = last.subarray(0, last.length - open).toString();
+
+        return end - open - Buffer.byteLength(text.slice(this.#safeRaw(conversationId, text)));
+    }
+
+    /**
+     * What a task printed from `from` on, for a person watching it in Background. It moves nothing: where Pi reads next
+     * stays as it is, so a look never takes output away from Pi. Without `from`, the end of the output, up to `chars`;
+     * with one, what came since, and no more than that. `skipped` counts the bytes not shown: dropped with the oldest
+     * segments by the sweep, or passed over because there was more than one look shows.
+     */
+    async output(
+        conversationId: ConversationId,
+        id: string,
+        options: { from?: number; chars?: number } = {},
+    ): Promise<
+        | { item: BackgroundTask; text: string; from: number; to: number; skipped: number }
+        | undefined
+    > {
+        const item = await this.#stored(conversationId, id);
+
+        if (item === undefined) {
+            return undefined;
+        }
+
+        const asked = Math.floor(options.chars ?? WATCH_CHARS) || WATCH_CHARS;
+        const chars = Math.min(Math.max(asked, 1000), WATCH_CHARS_MAX);
+        // Room for what `chars` characters take in UTF-8, at most.
+        const window = Math.max(chars * 4, 4096);
+        const end = this.#settled(conversationId, item, this.#end(conversationId, item));
+        const since =
+            options.from !== undefined && Number.isFinite(options.from)
+                ? Math.min(Math.max(Math.floor(options.from), 0), end)
+                : Math.max(0, end - window);
+        // A look that fell behind starts where the window begins: what it missed is skipped, and said so.
+        const start = Math.max(since, Math.max(0, end - window));
+        const { bytes, began } = this.#span(conversationId, item, start, end);
+        // From partway in, the first whole line after it, so no line shows cut in two and no hidden value in part.
+        let head = closingHead(bytes);
+
+        if (start > since && head < bytes.length) {
+            const line = bytes.indexOf(0x0a, head);
+
+            if (line >= 0 && line - head < WATCH_LINE) {
+                head = line + 1;
+            }
+        }
+
+        let text = this.#clean(conversationId, bytes.subarray(head).toString());
+        // The first byte it shows: everything before it is passed over, or gone with the segments a sweep removed.
+        let at = Math.min(began + head, end);
+
+        if (text.length > chars) {
+            // The end of what it shows, from a line's start: the look after this one goes on from there whole.
+            const cut = text.length - chars;
+            const line = text.indexOf("\n", cut);
+            const from = line >= 0 && line - cut < WATCH_LINE ? line + 1 : cut;
+
+            at += Buffer.byteLength(text.slice(0, from));
+            text = text.slice(from);
+        }
+
+        return {
+            item: this.#current(conversationId, item),
+            text,
+            from: at,
+            to: end,
+            skipped: at - since,
         };
     }
 

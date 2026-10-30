@@ -8948,6 +8948,139 @@ textarea.notes {
     text-overflow: ellipsis;
 }
 
+/* Background: the session's commands in one row, the open one's command, and what it prints as it runs. */
+.background-tasks {
+    display: flex;
+    min-width: 0;
+    gap: 6px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+}
+
+.background-tasks::-webkit-scrollbar {
+    display: none;
+}
+
+.background-task {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    max-width: 62%;
+    padding: 6px 11px;
+    border: 1px solid var(--hair);
+    border-radius: var(--r-pill);
+    background: var(--card);
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+}
+
+.background-task .mark {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--line);
+}
+
+.background-task .mono {
+    flex: none;
+    color: var(--text);
+}
+
+.background-task .what {
+    min-width: 0;
+    max-width: 11rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.background-task.on {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.background-task.on .mono {
+    color: inherit;
+}
+
+@media (max-width: 699px) {
+    .background-task .what {
+        max-width: 6.5rem;
+    }
+}
+
+.background-view {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.background-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: var(--muted);
+}
+
+.background-head .icon {
+    margin-top: 3px;
+}
+
+.background-head .mono {
+    min-width: 0;
+    max-height: 4.5em;
+    overflow: hidden;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+
+.background-said {
+    margin-top: -4px;
+}
+
+.background-log {
+    min-width: 0;
+    max-height: 46vh;
+    overflow: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--hair);
+    border-radius: var(--r-control);
+    background: var(--code-bg);
+    outline: none;
+}
+
+.background-log:focus-visible {
+    border-color: var(--accent);
+}
+
+.background-log pre {
+    margin: 0;
+    padding: 10px 12px;
+    font: 12px / 1.55 var(--mono);
+    color: var(--body);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.background-log > .muted {
+    margin: 0;
+    padding: 10px 12px;
+}
+
+.background-end {
+    align-self: flex-start;
+}
+
 /* Spend: a person or a session, what Pi spent for it, and its limit. */
 .spend-total {
     display: flex;

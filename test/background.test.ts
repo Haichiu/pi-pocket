@@ -275,6 +275,136 @@ test(
     },
 );
 
+test(
+    "a look in Background moves nothing Pi reads, and goes on from where the last look ended",
+    { skip },
+    async () => {
+        const id = await session();
+        const item = await app.background.start(id, { command: "seq 1 300", notify: false });
+
+        await until(async () => (await one(id)).status !== "running", "the end");
+
+        const first = await app.background.output(id, item.id);
+
+        assert.equal(first?.from, 0);
+        assert.equal(first?.skipped, 0);
+        assert.match(first!.text, /^1\n2\n/);
+        assert.match(first!.text, /299\n300\n$/);
+        // A person watching takes nothing from Pi: what it reads next stays where it was.
+        assert.equal((await one(id)).read, 0);
+        assert.equal((await app.background.read(id, item.id))?.text, first!.text);
+        // Then the look goes on from there, with nothing new.
+        const next = await app.background.output(id, item.id, { from: first!.to });
+
+        assert.equal(next?.text, "");
+        assert.equal(next?.from, first!.to);
+        assert.equal(next?.to, first!.to);
+    },
+);
+
+test(
+    "a look that fell behind shows the end of the log, and says what it passed over",
+    { skip },
+    async () => {
+        const id = await session();
+        const item = await app.background.start(id, { command: "seq 1 4000", notify: false });
+
+        await until(async () => (await one(id)).status !== "running", "the end");
+
+        const whole = await app.background.output(id, item.id);
+        const part = await app.background.output(id, item.id, { chars: 2000 });
+
+        assert.ok(part!.skipped > 0, "it passed bytes over");
+        assert.ok(part!.text.length <= 2000);
+        assert.equal(part!.to, whole!.to, "up to the end");
+        assert.match(part!.text, /4000\n$/);
+        // From a byte the sheet kept, it goes on from there.
+        const on = await app.background.output(id, item.id, { from: part!.from, chars: 2000 });
+
+        assert.equal(on?.skipped, 0);
+        assert.equal(on?.from, part!.from);
+    },
+);
+
+test(
+    "a look at a running task waits for a whole character, then shows the rest",
+    { skip },
+    async () => {
+        const id = await session();
+        const item = await app.background.start(id, {
+            command:
+                "printf 'x \\303'; while [ ! -f go-look ]; do sleep 0.05; done; printf '\\251 y'",
+            notify: false,
+        });
+        let look = await app.background.output(id, item.id);
+
+        await until(async () => {
+            look = await app.background.output(id, item.id);
+
+            return look?.text === "x ";
+        }, "x, without half of é");
+        writeFileSync(join(item.cwd, "go-look"), "");
+        await until(async () => (await one(id)).status !== "running", "the end");
+
+        const rest = await app.background.output(id, item.id, { from: look!.to });
+
+        assert.equal(rest?.text, "é y");
+    },
+);
+
+test(
+    "the routes give a session's background tasks and their output to anyone who may see it",
+    { skip },
+    async () => {
+        const id = await session();
+        const item = await app.background.start(id, {
+            command: "echo hello; sleep 300",
+            notify: false,
+        });
+
+        await until(
+            async () => (await app.background.output(id, item.id))?.text === "hello\n",
+            "output",
+        );
+
+        const { createServer } = await import("node:http");
+        const { createHandler } = await import("../src/server/http.ts");
+        const server = createServer(
+            createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} }),
+        );
+
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+        try {
+            const port = (server.address() as { port: number }).port;
+            const get = (token: string, path: string) =>
+                fetch(`http://127.0.0.1:${port}/api/c/${String(id)}/${path}`, {
+                    headers: { authorization: `Bearer ${token}`, "x-pocket": "1" },
+                });
+            const viewer = app.config.addUser("Watcher", "viewer");
+            const list = await get(viewer.token, "background");
+
+            assert.equal(list.status, 200);
+            const tasks = ((await list.json()) as { tasks: { id: string; command: string }[] })
+                .tasks;
+
+            assert.equal(tasks[0]?.id, item.id);
+            assert.match(tasks[0]?.command ?? "", /echo hello/);
+
+            const output = await get(viewer.token, `background/${item.id}/output`);
+
+            assert.equal(output.status, 200);
+            assert.equal(((await output.json()) as { text: string }).text, "hello\n");
+            // Watching is not reading: Pi still gets all of it.
+            assert.equal((await one(id)).read, 0);
+            assert.equal((await get(viewer.token, "background/999999/output")).status, 404);
+        } finally {
+            server.close();
+            await app.background.stop(id, item.id);
+        }
+    },
+);
+
 test("a stop ends the whole group, a child that ignores SIGTERM too", { skip }, async () => {
     const id = await session();
     const item = await app.background.start(id, {
@@ -981,6 +1111,42 @@ test("a log that fails is told, not hidden behind the command's code", { skip },
         remove();
     }
 });
+
+test(
+    "a look where the oldest segments went starts at what is left, and counts it",
+    { skip },
+    async () => {
+        const id = await session();
+        const sizes = app.background.sizes;
+        const was = sizes.segment;
+
+        sizes.segment = 100;
+
+        try {
+            const item = await app.background.start(id, {
+                command: "seq 1 1000",
+                notify: false,
+            });
+
+            await until(async () => (await one(id)).status !== "running", "the end");
+
+            // The first 300 bytes go with their segments, and the look asks from the very start.
+            const { rmSync } = await import("node:fs");
+
+            for (const name of segments(id, item.id).slice(0, 3)) {
+                rmSync(join(dataDir, "background", String(id), name));
+            }
+
+            const look = await app.background.output(id, item.id, { from: 0 });
+
+            assert.ok((look?.from ?? 0) >= 300, "it starts at what is left");
+            assert.ok((look?.skipped ?? 0) >= 300, "and says how much it did not show");
+            assert.doesNotMatch(look!.text, /^1\n2\n/, "not the start of the output");
+        } finally {
+            sizes.segment = was;
+        }
+    },
+);
 
 test("a part whose segments are all gone is counted whole", { skip }, async () => {
     const id = await session();
