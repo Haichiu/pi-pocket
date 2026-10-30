@@ -2,6 +2,7 @@
 // a theme folder's own, or "Follow desktop": the Omarchy theme this machine runs), tiled windows, motion, text size,
 // density, and the sidebar's shape. Saved per browser. index.html applies the last look before the first paint from
 // `pocket.themeCache`, the theme's stylesheets included, so a reload never flashes another look.
+import { applyIcons } from "./app-icon.js";
 import { THEMES } from "./themes.js";
 import { onSafeModeEnd, safeMode } from "./safe-mode.js";
 import { api, store } from "./store.js";
@@ -635,6 +636,7 @@ export function apply() {
     Object.assign(root.dataset, attrs);
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", vars["--o-bg"]);
     document.querySelector('meta[name="color-scheme"]')?.setAttribute("content", attrs.mode);
+    applyIcons(vars);
     // In safe mode, or before the list, the theme's stylesheets stay as the cache has them, for the next load.
     const css = sheets === null || safeMode() ? (cached.css ?? []) : sheets;
     const fonts = sheets === null || safeMode() ? (cached.fonts ?? []) : (lookOf()?.fonts ?? []);
