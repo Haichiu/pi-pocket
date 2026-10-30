@@ -981,9 +981,8 @@ export default function createSubagents(host: PocketHost) {
 
                           return found;
                       });
-            const waiting = (tools ?? []).filter((tool) =>
-                parent.deferred.some((each) => each.name === tool.name),
-            );
+            // Every tool given that waits for a search, also one this session loaded: the subagent has no search.
+            const waiting = (tools ?? []).filter((tool) => tool.deferred === true);
             // TypeBox infers no type from a union built from a list; the schema itself checks the value.
             const asked = args.thinking as ModelThinkingLevel | undefined;
             const wanted = asked ?? parent.thinkingLevel ?? "off";
