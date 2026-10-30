@@ -8,6 +8,7 @@ import { join } from "node:path";
 import type { ConversationId, Tx } from "@earendil-works/pi-durable";
 import { readBundle } from "../../design/bundle.ts";
 import { writeExport } from "../../design/files.ts";
+import { applyExactFixes } from "../../design/fix.ts";
 import { VIEWPORTS } from "../../design/render.ts";
 import type {
     CheckFinding,
@@ -340,6 +341,34 @@ function viewOf(system: DesignSystem) {
             ]).map(([name, text]) => [name, Buffer.byteLength(text)]),
         ),
         revision: revisionOf(system),
+    };
+}
+
+// A finding is marked as one a tap can fix only if the fix would change it: the same rule as the fix itself.
+function onlyFixable(
+    bundle: { content: string },
+    system: DesignSystem | undefined,
+    report: CheckReport,
+    accepted: ReadonlySet<string>,
+): CheckReport {
+    if (system === undefined) {
+        return report;
+    }
+
+    const open = report.findings.filter(
+        (each) => each.fix !== undefined && !(each.id !== undefined && accepted.has(each.id)),
+    );
+    const skipped = new Set(
+        applyExactFixes(bundle.content, open, system).skipped.map((each) => each.id),
+    );
+
+    return {
+        ...report,
+        findings: report.findings.map((each) => {
+            const { fix: _fix, ...rest } = each;
+
+            return each.fix !== undefined && skipped.has(each.id ?? "") ? rest : each;
+        }),
     };
 }
 
@@ -723,7 +752,10 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 const { bundle, accepted, report } = await runCheck(request, target);
 
                 return {
-                    report: cleanReport(report, accepted),
+                    report: cleanReport(
+                        onlyFixable(bundle, target.system, report, accepted),
+                        accepted,
+                    ),
                     id: target.id,
                     version: bundle.version,
                 };
