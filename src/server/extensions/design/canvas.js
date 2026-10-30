@@ -142,7 +142,7 @@ export function createCanvas(env) {
         const pins = s.mode === "comment" || s.dock === "comments" ? pinsOf(comments, version) : [];
         const targets = checking
             ? pinsOfReport(
-                  s.checks[checkKey(design.id, version, check.scheme, check.size)]?.report,
+                  s.checks[checkKey(design.id, version, check.mode, check.size)]?.report,
                   s.checkFocus,
               )
             : pins.map((comment, index) => ({
