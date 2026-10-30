@@ -223,6 +223,7 @@ test(
     async () => {
         const id = await newSession(app);
 
+        await loadTools(app, id, "background");
         await page.setViewport(VIEWPORTS.desktop);
         await page.navigate(`${base}/s/${id}`);
         await see(
