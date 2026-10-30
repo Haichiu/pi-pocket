@@ -213,6 +213,7 @@
 .dsy-chip-static,
 .dsy-mode-chip,
 .dsy-inherit-tag,
+.dsy-format,
 .dsy-badge.exempt {
     border-radius: 999px;
     background: var(--dsn-fill-2);
@@ -618,8 +619,6 @@
 .dsy-format {
     height: 28px;
     padding: 0 9px;
-    border-radius: 999px;
-    background: var(--dsn-fill-2);
 }
 
 .dsy-amount {
@@ -647,7 +646,8 @@
     background: var(--dsn-fill);
 }
 
-.dsy-step:disabled {
+.dsy-step:disabled,
+.dsy-play:disabled {
     opacity: 0.4;
 }
 
@@ -1158,10 +1158,6 @@
     background: var(--dsn-accent-soft);
 }
 
-.dsy-play:disabled {
-    opacity: 0.4;
-}
-
 .dsy-curve {
     flex: none;
     overflow: visible;
@@ -1616,7 +1612,6 @@
     .dsy-unit,
     .dsy-bezier input {
         height: 44px;
-        font-size: 16px;
     }
 
     .dsy-well {
