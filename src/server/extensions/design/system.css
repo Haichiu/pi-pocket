@@ -636,7 +636,9 @@
     text-align: center;
 }
 
-.dsy-step {
+.dsy-step,
+.dsy-glyph,
+.dsy-play {
     display: inline-grid;
     flex: none;
     place-items: center;
@@ -1096,14 +1098,7 @@
 }
 
 .dsy-glyph {
-    display: inline-grid;
-    flex: none;
-    place-items: center;
-    width: 40px;
-    height: 40px;
     overflow: hidden;
-    border-radius: 9px;
-    background: var(--dsn-fill);
     font-size: 20px;
     line-height: 1;
 }
@@ -1162,11 +1157,6 @@
 }
 
 .dsy-play {
-    display: inline-grid;
-    flex: none;
-    place-items: center;
-    width: 40px;
-    height: 40px;
     border-radius: 50%;
     background: var(--dsn-accent-soft);
 }
@@ -1294,13 +1284,19 @@
     margin-top: 12px;
 }
 
-.dsy-usage ul {
+.dsy-usage ul,
+.dsy-problems ul,
+.dsy-contrasts ul {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 6px;
     margin: 0;
     padding: 0;
     list-style: none;
+}
+
+.dsy-usage ul {
+    gap: 5px;
     font-size: 12.5px;
     line-height: 1.45;
 }
@@ -1460,12 +1456,7 @@
 }
 
 .dsy-problems ul {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
     margin: 8px 0 4px;
-    padding: 0;
-    list-style: none;
 }
 
 .dsy-problems li {
@@ -1759,15 +1750,6 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-}
-
-.dsy-contrasts ul {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
 }
 
 .dsy-contrasts li {
