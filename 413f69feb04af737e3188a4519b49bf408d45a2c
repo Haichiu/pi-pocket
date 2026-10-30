@@ -1,0 +1,6 @@
+WRONG, do not use alone. Fixed by 100f6a23 and af5a64de on haichiu/chromium-orphans.
+- sweep deleted every pid file, even of live servers; a later SIGKILL of that server leaked its browser.
+- it killed only processes with parent pid 1: wrong on Linux (subreaper) and Docker.
+- tests proved the fix only with ego lite; with plain Chrome they passed without the fix.
+- pid folder in shared /tmp without uid or mode; sweep blocked the event loop (execFileSync).
+- no review, no format/lint/full test before commit; made in the live folder.
