@@ -333,6 +333,40 @@ test("broken and hostile pages are read safely", () => {
     assert.match(refused.skipped[0]!.reason, /too large/);
 });
 
+test("a large page with many findings is fixed in time: each declaration is read once", () => {
+    const hex = (index: number) =>
+        `#${(index * 40_503 + 4_097).toString(16).padStart(6, "0").slice(-6)}`;
+    const many = {
+        ...single(),
+        tokens: Array.from({ length: 300 }, (_, index) =>
+            token(`color.c${index}`, "color", hex(index)),
+        ),
+    };
+    const rules: string[] = [];
+    const inline: string[] = [];
+
+    for (let index = 0; index < 10_000; index++) {
+        rules.push(
+            `.r${index} { color: ${hex(index % 300)}; border: 1px solid ${hex(index % 7)} }\n`,
+        );
+        inline.push(`<p data-pid="p${index}" style="color: ${hex(index % 300)}">x</p>\n`);
+    }
+
+    const content = `<style>${rules.join("")}</style>${inline.join("")}`;
+    const findings = Array.from({ length: 300 }, (_, index) =>
+        color(hex(index), `color.c${index}`, ["color"], {
+            id: `f${index}`,
+            selector: `.r${index}`,
+        }),
+    );
+    const start = performance.now();
+    const result = applyExactFixes(content, findings, many);
+
+    assert.equal(result.skipped.length, 0);
+    assert.equal(result.applied, 300);
+    assert.ok(performance.now() - start < 1500, `took ${performance.now() - start} ms`);
+});
+
 test("a fix is idempotent: the second call finds nothing to do", () => {
     const content = `<style>.a{color:#5a5f73;padding:16px}</style>`;
     const findings = [

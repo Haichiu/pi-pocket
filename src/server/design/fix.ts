@@ -502,6 +502,113 @@ function families(text: string): string[] {
         .filter((name) => name !== "");
 }
 
+interface Piece {
+    text: string;
+    start: number;
+    end: number;
+    color: ReturnType<typeof parseColor> | null | false;
+}
+
+// Each declaration is split, and each piece read as a color, once for all the findings.
+const pieces = new WeakMap<Declaration, Piece[]>();
+
+function piecesOf(declaration: Declaration): Piece[] {
+    let found = pieces.get(declaration);
+
+    if (found === undefined) {
+        found = tokens(declaration.masked).map((token) => ({ ...token, color: false as const }));
+        pieces.set(declaration, found);
+    }
+
+    return found;
+}
+
+function colorOf(piece: Piece) {
+    if (piece.color === false) {
+        piece.color = parseColor(piece.text) ?? null;
+    }
+
+    return piece.color ?? undefined;
+}
+
+type Color = NonNullable<ReturnType<typeof parseColor>>;
+
+const byteOf = (channel: number) => Math.round(channel * 255);
+const colorIndexes = new WeakMap<Declaration[], Map<string, [number, number][]>>();
+
+// Every color of the declarations by its rounded bytes. A color that `sameColor` takes is at most half a step away, so it is in this bucket or a next one.
+function colorIndexOf(all: Declaration[]): Map<string, [number, number][]> {
+    let index = colorIndexes.get(all);
+
+    if (index === undefined) {
+        const made = new Map<string, [number, number][]>();
+
+        all.forEach((declaration, at) => {
+            piecesOf(declaration).forEach((piece, place) => {
+                const color = colorOf(piece);
+
+                if (color !== undefined) {
+                    const key = `${byteOf(color.r)},${byteOf(color.g)},${byteOf(color.b)}`;
+                    const list = made.get(key);
+
+                    if (list === undefined) {
+                        made.set(key, [[at, place]]);
+                    } else {
+                        list.push([at, place]);
+                    }
+                }
+            });
+        });
+        index = made;
+        colorIndexes.set(all, index);
+    }
+
+    return index;
+}
+
+// The same places, in the same order, as a scan of every declaration of the properties, piece by piece.
+function colorMatches(all: Declaration[], literal: Color, properties: Set<string>): Match[] {
+    const index = colorIndexOf(all);
+    const keys = new Set<string>();
+    const [r, g, b] = [byteOf(literal.r), byteOf(literal.g), byteOf(literal.b)];
+
+    for (const dr of [-1, 0, 1]) {
+        for (const dg of [-1, 0, 1]) {
+            for (const db of [-1, 0, 1]) {
+                keys.add(`${r + dr},${g + dg},${b + db}`);
+            }
+        }
+    }
+
+    const found: [number, number][] = [];
+
+    for (const key of keys) {
+        for (const item of index.get(key) ?? []) {
+            const declaration = all[item[0]]!;
+
+            if (
+                properties.has(declaration.property) &&
+                sameColor(colorOf(piecesOf(declaration)[item[1]]!)!, literal)
+            ) {
+                found.push(item);
+            }
+        }
+    }
+
+    return found
+        .sort((x, y) => x[0] - y[0] || x[1] - y[1])
+        .map(([at, place]) => {
+            const declaration = all[at]!;
+            const piece = piecesOf(declaration)[place]!;
+
+            return {
+                start: declaration.start + piece.start,
+                end: declaration.start + piece.end,
+                declaration,
+            };
+        });
+}
+
 function placesIn(
     content: string,
     declaration: Declaration,
@@ -518,18 +625,11 @@ function placesIn(
     }
 
     const found: { start: number; end: number }[] = [];
-    const literal = fix.kind === "color" ? parseColor(fix.literal) : undefined;
     const pixels = fix.kind === "length" ? Number.parseFloat(fix.literal) : Number.NaN;
     let first = true;
 
-    for (const token of tokens(declaration.masked)) {
-        if (fix.kind === "color") {
-            const color = literal === undefined ? undefined : parseColor(token.text);
-
-            if (color !== undefined && literal !== undefined && sameColor(color, literal)) {
-                found.push({ start: base + token.start, end: base + token.end });
-            }
-        } else if (/^\d*\.?\d+px$/i.test(token.text)) {
+    for (const token of piecesOf(declaration)) {
+        if (/^\d*\.?\d+px$/i.test(token.text)) {
             // In the `font` shorthand only the first length is the size; the next, after a slash, is the line height.
             if (
                 Number.parseFloat(token.text) === pixels &&
@@ -566,6 +666,17 @@ export function applyExactFixes(
 
     const scanned = regions(content);
     const all = scanned.regions.flatMap((region) => declarations(content, region));
+    const byProperty = new Map<string, number[]>();
+
+    all.forEach((declaration, index) => {
+        const list = byProperty.get(declaration.property);
+
+        if (list === undefined) {
+            byProperty.set(declaration.property, [index]);
+        } else {
+            list.push(index);
+        }
+    });
     const fixable = findings.filter((finding) => finding.fix !== undefined);
 
     for (const finding of findings) {
@@ -588,13 +699,25 @@ export function applyExactFixes(
         const properties = new Set(fix.properties.map((property) => property.toLowerCase()));
         const matches: Match[] = [];
 
-        for (const declaration of all) {
-            if (!properties.has(declaration.property)) {
-                continue;
-            }
+        if (fix.kind === "color") {
+            const literal = parseColor(fix.literal);
 
-            for (const place of placesIn(content, declaration, fix)) {
-                matches.push({ ...place, declaration });
+            for (const match of literal === undefined
+                ? []
+                : colorMatches(all, literal, properties)) {
+                matches.push(match);
+            }
+        } else {
+            const order = [...properties]
+                .flatMap((property) => byProperty.get(property) ?? [])
+                .sort((a, b) => a - b);
+
+            for (const index of order) {
+                const declaration = all[index]!;
+
+                for (const place of placesIn(content, declaration, fix)) {
+                    matches.push({ ...place, declaration });
+                }
             }
         }
 
