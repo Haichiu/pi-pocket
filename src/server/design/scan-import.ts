@@ -47,7 +47,11 @@ const dirOf = (file: string) => file.slice(0, Math.max(0, file.lastIndexOf("/"))
 
 const setOrder = (metadata: unknown): string[] =>
     isObject(metadata) && Array.isArray(metadata.tokenSetOrder)
-        ? metadata.tokenSetOrder.filter((name): name is string => typeof name === "string")
+        ? [
+              ...new Set(
+                  metadata.tokenSetOrder.filter((name): name is string => typeof name === "string"),
+              ),
+          ]
         : [];
 
 function isStudioFile(root: unknown): root is Obj {

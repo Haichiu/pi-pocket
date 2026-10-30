@@ -136,7 +136,13 @@ function collect(root: unknown, file: string, report: Report): RawToken[] {
 
             if (!NAME.test(key) || RESERVED.has(key)) {
                 report.error(
-                    `The name "${clip(key, 30)}" in "${path.join(".") || "the root"}" must use letters, digits, "-" or "_" (1 to 64 characters), not a dot, space, or symbol. Rename it, for example "${clip(key.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "x", 30)}".`,
+                    `The name "${clip(key, 30)}" in "${path.join(".") || "the root"}" must use letters, digits, "-" or "_" (1 to 64 characters), not a dot, space, or symbol. Rename it, for example "${clip(
+                        key
+                            .slice(0, 64)
+                            .replace(/[^A-Za-z0-9_-]+/g, "-")
+                            .replace(/^-+|-+$/g, "") || "x",
+                        30,
+                    )}".`,
                     file,
                 );
 

@@ -973,3 +973,11 @@ test("a reference chain that doubles at each step stops past 10,000 characters",
         system.tokens.every((each) => (each.modes[system.modes[0]!]?.css.length ?? 0) < 20_000),
     );
 });
+
+test("a token key with a very long run of dashes is refused quickly", () => {
+    const started = Date.now();
+    const system = build({ n: { $type: "number", [`a${"-".repeat(100_000)}b`]: { $value: 1 } } });
+
+    assert.ok(Date.now() - started < 1000);
+    assert.ok(errors(system).some((message) => /must use letters, digits/.test(message)));
+});
