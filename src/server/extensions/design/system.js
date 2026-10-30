@@ -1,4 +1,4 @@
-import { contrast, grade, parseColor, swatchCss, toHex, writeColor } from "./color.js";
+import { contrastRatio, grade, parseColor, swatchCss, toHex, writeColor } from "./color.js";
 
 export const SECTIONS = [
     { id: "colors", label: "Colors" },
@@ -341,7 +341,7 @@ export function cssOf(type, value) {
 
             const color = parseColor(value);
 
-            return color === null ? undefined : toHex(color);
+            return color === undefined ? undefined : toHex(color);
         }
 
         case "dimension":
@@ -411,7 +411,7 @@ export function readInput(type, text, like) {
         case "color": {
             const color = parseColor(input);
 
-            return color === null
+            return color === undefined
                 ? { error: "Not a color. Try #3b6cf6, rgb(59 108 246), or oklch(0.6 0.2 260)." }
                 : { value: writeColor(color, like) };
         }
@@ -502,7 +502,7 @@ export function showValue(token, mode) {
         case "color": {
             const color = parseColor(value);
 
-            return color === null ? String(css ?? "") : toHex(color);
+            return color === undefined ? String(css ?? "") : toHex(color);
         }
 
         case "dimension":
@@ -833,7 +833,9 @@ export function createModel(system, edits = new Map()) {
                 ? parseColor(model.value(pair.on, mode).value)
                 : null;
 
-            return ink && ground ? { ...grade(contrast(ink, ground), pair.min), ...pair } : null;
+            return ink && ground
+                ? { ...grade(contrastRatio(ink, ground), pair.min), ...pair }
+                : null;
         },
         contrastsOf: (name, mode) =>
             model
