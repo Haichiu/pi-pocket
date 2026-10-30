@@ -1479,7 +1479,6 @@ button.dsy-chip:disabled {
 .dsy-check-filter {
     display: flex;
     gap: 2px;
-    margin: 0;
 }
 
 .dsy-check-filter button {
