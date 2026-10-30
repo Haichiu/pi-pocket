@@ -335,57 +335,67 @@ export function words(rawName: string): string[] {
         : found;
 }
 
-const STATE = new Set(
-    w("hover active focus pressed disabled selected checked visited ring placeholder"),
+const STATE = w("hover active focus pressed disabled selected checked visited ring");
+const SURFACEISH = w(
+    "surface card panel elevated raised container popover modal dialog sheet input button btn header footer nav navbar sidebar menu tooltip toast overlay code table row layer tile well component",
 );
-
-const SURFACEISH = new Set(
-    w(
-        "surface card panel elevated raised container popover modal dialog sheet input button btn header footer nav navbar sidebar menu tooltip toast overlay code table row layer tile well component",
-    ),
+const OTHER_ROLE = w(
+    "accent danger error warning success info brand destructive critical secondary tertiary link border outline divider bad good ok positive negative note notice caution warn pass fail",
 );
-
-const OTHER_ROLE = new Set(
-    w(
-        "accent danger error warning success info brand destructive critical secondary tertiary link border outline divider bad good ok positive negative note notice caution warn pass fail",
-    ),
-);
-
-const subset = (segs: string[], allowed: string[]) =>
-    segs.length <= 2 && segs.every((seg) => allowed.includes(seg) || /^\d{1,3}$/.test(seg));
-
-const has = (segs: string[], list: readonly string[]) => segs.some((seg) => list.includes(seg));
-
 const VARIANT = w(
     "bg background subtle soft light lighter muted tint container border outline hover active focus pressed disabled faint",
 );
+const INK = w("foreground fg text on contrast inverse inverted content");
+const STATUS_WORDS = {
+    danger: [
+        w(
+            "danger error destructive critical negative invalid alert err bad fail failed failure wrong fatal severe",
+        ),
+        ["red"],
+    ],
+    warning: [w("warning warn caution attention alertness moderate"), w("amber orange yellow")],
+    success: [
+        w("success positive valid ok confirm safe good pass passed done"),
+        w("green emerald"),
+    ],
+} as const;
+const ACCENT_WEIGHTS: Record<string, number> = {
+    primary: 50,
+    brand: 50,
+    accent: 45,
+    highlight: 30,
+    key: 20,
+    link: 25,
+    cta: 25,
+    action: 25,
+    interactive: 25,
+    main: 20,
+    theme: 12,
+};
 
-const INK = ["foreground", "fg", "text", "on", "contrast", "inverse", "inverted", "content"];
+const has = (segs: string[], list: readonly string[]) => segs.some((seg) => list.includes(seg));
+// A plain name (`bg`, `text-primary`, `border-1`): one or two words, all of the role's own.
+const plain = (segs: string[], words: string) =>
+    segs.length <= 2 && segs.every((seg) => w(words).includes(seg) || /^\d{1,3}$/.test(seg));
 
 // 0 (not at all) to about 100.
 export function nameScore(role: RoleName, segs: string[]): number {
     if (
         segs.length === 0 ||
-        segs.some((seg) =>
-            w(
-                "rgb hsl channels channel alpha opacity radius width shadow size font gradient",
-            ).includes(seg),
+        has(
+            segs,
+            w("rgb hsl channels channel alpha opacity radius width shadow size font gradient"),
         )
     ) {
         return 0;
     }
 
-    const state = has(
-        segs,
-        [...STATE].filter((word) => word !== "placeholder"),
-    );
+    const state = has(segs, STATE);
 
     switch (role) {
         case "background": {
             // `body` alone is the body text in many systems (`--body`); `body-bg` is the page.
-            const strong =
-                (segs.includes("body") && has(segs, ["bg", "background"])) ||
-                has(segs, ["bg", "background", "page", "canvas", "window", "root"]);
+            const strong = has(segs, w("bg background page canvas window root"));
             const base = segs.includes("base") && segs.some((seg) => /^\d/.test(seg));
 
             if (state || has(segs, [...SURFACEISH, ...OTHER_ROLE]) || (!strong && !base)) {
@@ -395,11 +405,9 @@ export function nameScore(role: RoleName, segs: string[]): number {
             // `bg-primary` is the page in many systems and the brand in others: the caller checks the color.
             return (
                 (strong ? 70 : 55) +
-                (subset(
+                (plain(
                     segs,
-                    w(
-                        "bg background page canvas body base main app root default window primary 1 0",
-                    ),
+                    "bg background page canvas body base main app root default window primary 1 0",
                 )
                     ? 25
                     : 0)
@@ -433,11 +441,9 @@ export function nameScore(role: RoleName, segs: string[]): number {
 
             return (
                 (named ? 70 : layered ? 62 : 50) +
-                (subset(
+                (plain(
                     segs,
-                    w(
-                        "surface card panel bg background default elevated raised container secondary alt subtle muted popover",
-                    ),
+                    "surface card panel bg background default elevated raised container secondary alt subtle muted popover",
                 )
                     ? 25
                     : 0)
@@ -445,16 +451,15 @@ export function nameScore(role: RoleName, segs: string[]): number {
         }
 
         case "text": {
-            const ink = has(segs, ["text", "fg", "foreground", "ink", "content", "copy"]);
+            const ink = has(segs, w("text fg foreground ink content copy"));
             const onBase = segs.includes("on") && has(segs, ["surface", "background", "bg"]);
             const body =
                 has(segs, ["body", "font"]) && segs.length <= 2 && !has(segs, ["bg", "background"]);
 
             if (
                 state ||
-                // `on-surface-variant` (Material 3) is the quieter text.
+                // `on-surface-variant` (Material 3) is the quieter text; so are `text-2` and `ink-3`.
                 (onBase && segs.includes("variant")) ||
-                // `text-2`, `ink-3`: the second and third text colors are the quieter ones.
                 (ink && segs.some((seg) => /^[2-4]$/.test(seg))) ||
                 has(
                     segs,
@@ -468,7 +473,7 @@ export function nameScore(role: RoleName, segs: string[]): number {
                         "accent primary danger error warning success info brand destructive card popover sidebar",
                     ),
                 ) &&
-                    !subset(segs, ["text", "primary", "fg", "foreground", "default"])) ||
+                    !plain(segs, "text primary fg foreground default")) ||
                 (!ink && !onBase && !body)
             ) {
                 return 0;
@@ -476,22 +481,17 @@ export function nameScore(role: RoleName, segs: string[]): number {
 
             return (
                 (ink ? 70 : onBase ? 62 : 42) +
-                (subset(
-                    segs,
-                    w("text fg foreground primary default base main body ink content 1 0"),
-                )
+                (plain(segs, "text fg foreground primary default base main body ink content 1 0")
                     ? 25
                     : 0)
             );
         }
 
         case "muted": {
-            const ink = has(segs, ["text", "fg", "foreground", "content", "ink"]);
+            const inks = w("text fg foreground content ink");
             // `secondary` and `tertiary` also name a brand's second color, whose pair is `secondary-foreground`: they
             // are quiet text only when the text word comes first (`text-secondary`, `fg-tertiary`).
-            const inkAt = segs.findIndex((seg) =>
-                ["text", "fg", "foreground", "content", "ink"].includes(seg),
-            );
+            const inkAt = segs.findIndex((seg) => inks.includes(seg));
             const weakAt = segs.findIndex((seg) => ["secondary", "tertiary"].includes(seg));
             const quiet =
                 has(
@@ -518,7 +518,7 @@ export function nameScore(role: RoleName, segs: string[]): number {
                 return 0;
             }
 
-            if (quiet && ink) {
+            if (quiet && inkAt >= 0) {
                 return 80;
             }
 
@@ -526,30 +526,26 @@ export function nameScore(role: RoleName, segs: string[]): number {
                 return 50;
             }
 
-            if (ink && segs.some((seg) => /^[2-4]$/.test(seg))) {
+            if (inkAt >= 0 && segs.some((seg) => /^[2-4]$/.test(seg))) {
                 return 70;
             }
 
             // A name that is only the word is the quiet text; `muted` alone is often a tint of the background (shadcn).
-            if (segs.length !== 1) {
-                return 0;
-            }
-
-            return segs[0] === "muted"
-                ? 45
-                : w("subtle faint faded dim quiet weak hint").includes(segs[0]!)
-                  ? 62
-                  : 0;
+            return segs.length !== 1
+                ? 0
+                : segs[0] === "muted"
+                  ? 45
+                  : w("subtle faint faded dim quiet weak hint").includes(segs[0]!)
+                    ? 62
+                    : 0;
         }
 
         case "border": {
-            const named = has(
-                segs,
-                w("border outline divider separator stroke line hairline rule rim edge"),
-            );
-
             if (
-                !named ||
+                !has(
+                    segs,
+                    w("border outline divider separator stroke line hairline rule rim edge"),
+                ) ||
                 state ||
                 has(
                     segs,
@@ -563,104 +559,49 @@ export function nameScore(role: RoleName, segs: string[]): number {
 
             return (
                 70 +
-                (subset(
-                    segs,
-                    w("border default base subtle muted light divider separator line color"),
-                )
+                (plain(segs, "border default base subtle muted light divider separator line color")
                     ? 25
                     : 0)
             );
         }
 
         case "accent": {
-            const weights: Record<string, number> = {
-                primary: 50,
-                brand: 50,
-                accent: 45,
-                highlight: 30,
-                key: 20,
-                link: 25,
-                cta: 25,
-                action: 25,
-                interactive: 25,
-                main: 20,
-                theme: 12,
-            };
-            const best = Math.max(0, ...segs.map((seg) => weights[seg] ?? 0));
+            const best = Math.max(0, ...segs.map((seg) => ACCENT_WEIGHTS[seg] ?? 0));
 
             if (best === 0 || state || has(segs, INK) || has(segs, ["info"])) {
                 return 0;
             }
 
-            const variant = has(segs, VARIANT);
             // A step of a palette (`brand-500`) is the last choice, after a role name (`primary`); of the steps, the middle.
-            const step = segs.some((seg) => /^\d{2,3}$/.test(seg));
-            const middle = step
-                ? segs.includes("500")
-                    ? -9
-                    : segs.includes("600")
-                      ? -12
-                      : -15
-                : 0;
+            const step = !segs.some((seg) => /^\d{2,3}$/.test(seg))
+                ? 0
+                : segs.includes("500")
+                  ? -9
+                  : segs.includes("600")
+                    ? -12
+                    : -15;
 
             return (
                 best +
                 30 +
-                middle -
-                (variant ? 40 : 0) +
-                (subset(segs, w("accent primary brand default main 500 600 base link key"))
-                    ? 10
-                    : 0)
+                step -
+                (has(segs, VARIANT) ? 40 : 0) +
+                (plain(segs, "accent primary brand default main 500 600 base link key") ? 10 : 0)
             );
         }
 
-        case "danger":
-        case "warning":
-
-        case "success": {
-            const table = {
-                danger: [
-                    w(
-                        "danger error destructive critical negative invalid alert err bad fail failed failure wrong fatal severe",
-                    ),
-                    ["red"],
-                ],
-                warning: [
-                    ["warning", "warn", "caution", "attention", "alertness", "moderate"],
-                    ["amber", "orange", "yellow"],
-                ],
-                success: [
-                    [
-                        "success",
-                        "positive",
-                        "valid",
-                        "ok",
-                        "confirm",
-                        "safe",
-                        "good",
-                        "pass",
-                        "passed",
-                        "done",
-                    ],
-                    ["green", "emerald"],
-                ],
-            } as const;
-            const [named, hue] = table[role];
-
-            if (state || has(segs, INK)) {
-                return 0;
-            }
-
+        default: {
+            const [named, hue] = STATUS_WORDS[role];
             const base = has(segs, named) ? 70 : has(segs, hue) ? 48 : 0;
 
-            if (base === 0) {
+            if (state || has(segs, INK) || base === 0) {
                 return 0;
             }
 
             return (
                 base -
                 (has(segs, VARIANT) ? 28 : 0) +
-                (subset(segs, [...named, ...hue, "default", "base", "main"]) ? 25 : 0)
+                (plain(segs, [...named, ...hue, "default", "base", "main"].join(" ")) ? 25 : 0)
             );
         }
     }
