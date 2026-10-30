@@ -267,9 +267,24 @@ export function parseStyles(source: string, firstLine: number | undefined = 1): 
 }
 
 export function pageStyles(source: string): { blocks: string[]; inline: Decl[] } {
-    const blocks = [...source.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)].map(
-        (match) => match[1]!,
-    );
+    const blocks: string[] = [];
+    // A search from each `<style` to its end tag: one regex for the whole block went quadratic on unclosed tags.
+    const open = /<style\b[^>]{0,1000}>/gi;
+    const close = /<\/style\s*>/gi;
+
+    for (let tag = open.exec(source); tag !== null; tag = open.exec(source)) {
+        close.lastIndex = open.lastIndex;
+
+        const end = close.exec(source);
+
+        if (end === null) {
+            break;
+        }
+
+        blocks.push(source.slice(open.lastIndex, end.index));
+        open.lastIndex = close.lastIndex;
+    }
+
     const inline: Decl[] = [];
     let count = 0;
 
