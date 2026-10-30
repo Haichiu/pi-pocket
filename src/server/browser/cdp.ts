@@ -1,6 +1,8 @@
 /** The DevTools protocol over a pipe, and the Chromium process at the other end of it. */
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Readable, Writable } from "node:stream";
 
 export class BrowserError extends Error {}
@@ -172,12 +174,58 @@ const LAUNCH_ARGS = [
     "--force-color-profile=srgb",
 ];
 
-/** One Chromium process. It exits on its own when the pipe closes, so a crashed server leaves none behind. */
+/**
+ * Some Chromium builds (ego lite) do not exit when the pipe closes. So each launch writes a pid file, a normal exit
+ * kills every live child, and the next launch kills the ones a crashed server left behind.
+ */
+const PID_FOLDER = join(tmpdir(), "pi-pocket-chromium-pids");
+const live = new Set<ChildProcess>();
+
+process.once("exit", () => {
+    for (const child of live) {
+        child.kill("SIGKILL");
+    }
+});
+
+function sweepOrphans(): void {
+    let names: string[] = [];
+
+    try {
+        names = readdirSync(PID_FOLDER);
+    } catch {
+        return;
+    }
+
+    for (const name of names) {
+        const pid = Number(name);
+
+        try {
+            // Only an orphan (parent 1) that runs Chromium with a pipe: a reused pid or another server's browser stays.
+            const line = execFileSync("ps", ["-o", "ppid=,command=", "-p", String(pid)], {
+                encoding: "utf8",
+            }).trim();
+
+            if (line.startsWith("1 ") && line.includes("--remote-debugging-pipe")) {
+                process.kill(pid, "SIGKILL");
+            }
+        } catch {
+            // The process is gone already.
+        }
+
+        rmSync(join(PID_FOLDER, name), { force: true });
+    }
+}
+
+/** One Chromium process. */
 export class Chromium {
     readonly connection: Connection;
     readonly #child: ChildProcess;
     readonly exited: Promise<void>;
     userAgent = "";
+
+    get pid(): number | undefined {
+        return this.#child.pid;
+    }
 
     private constructor(child: ChildProcess, connection: Connection) {
         this.#child = child;
@@ -197,6 +245,7 @@ export class Chromium {
         extra: readonly string[],
     ): Promise<Chromium> {
         mkdirSync(profile, { recursive: true, mode: 0o700 });
+        sweepOrphans();
         const child = spawn(
             executable,
             [...LAUNCH_ARGS, `--user-data-dir=${profile}`, ...extra, "about:blank"],
@@ -205,6 +254,16 @@ export class Chromium {
             },
         );
         let stderr = "";
+
+        if (child.pid !== undefined) {
+            live.add(child);
+            mkdirSync(PID_FOLDER, { recursive: true });
+            writeFileSync(join(PID_FOLDER, String(child.pid)), "");
+            child.once("exit", () => {
+                live.delete(child);
+                rmSync(join(PID_FOLDER, String(child.pid)), { force: true });
+            });
+        }
 
         child.stderr?.setEncoding("utf8");
         child.stderr?.on("data", (chunk: string) => {
