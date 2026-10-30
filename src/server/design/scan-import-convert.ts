@@ -6,6 +6,8 @@ export type Obj = Record<string, unknown>;
 export const isObject = (value: unknown): value is Obj =>
     typeof value === "object" && value !== null && !Array.isArray(value);
 
+export const isGroup = (value: unknown): value is Obj => isObject(value) && !("$value" in value);
+
 const TYPES: Record<string, string> = {
     color: "color",
     dimension: "dimension",
@@ -36,17 +38,7 @@ const TYPES: Record<string, string> = {
     strokestyle: "strokeStyle",
 };
 
-const LENGTH_TYPES = new Set([
-    "sizing",
-    "spacing",
-    "borderradius",
-    "borderwidth",
-    "fontsizes",
-    "fontsize",
-    "letterspacing",
-    "paragraphspacing",
-    "dimension",
-]);
+const LENGTH_TYPES = new Set(Object.keys(TYPES).filter((key) => TYPES[key] === "dimension"));
 
 const WEIGHTS: Record<string, number> = {
     thin: 100,
@@ -68,10 +60,6 @@ const WEIGHTS: Record<string, number> = {
 };
 
 function weightOf(value: unknown): unknown {
-    if (typeof value === "number") {
-        return value;
-    }
-
     if (typeof value !== "string") {
         return value;
     }
@@ -80,10 +68,6 @@ function weightOf(value: unknown): unknown {
 
     if (/^\d{3,4}$/.test(text)) {
         return Number(text);
-    }
-
-    if (text.startsWith("{") || text === "") {
-        return value;
     }
 
     const name = text
@@ -100,7 +84,7 @@ const px = (value: unknown): unknown =>
         ? `${Number(value)}px`
         : value;
 
-/** A letter spacing: a bare number is px, a percent is em (Figma's `-2%` is `-0.02em`). */
+// Figma's `-2%` letter spacing is `-0.02em`.
 function trackingOf(value: unknown): unknown {
     if (typeof value === "string") {
         const percent = /^\s*(-?(?:\d+\.?\d*|\.\d+))\s*%\s*$/.exec(value);
@@ -113,7 +97,7 @@ function trackingOf(value: unknown): unknown {
     return px(value);
 }
 
-/** A line height: a percent is a ratio, a bare number is a ratio (as Tokens Studio writes it), a length stays. */
+// A bare line height is a ratio, as Tokens Studio writes it, not px.
 function leadingOf(value: unknown): unknown {
     if (typeof value === "string") {
         const percent = /^\s*(\d+\.?\d*|\.\d+)\s*%\s*$/.exec(value);
@@ -151,34 +135,22 @@ function shadowLayer(layer: unknown): unknown {
 }
 
 function typographyOf(value: Obj): Obj {
-    const out: Obj = {};
     const family = value.fontFamily ?? value.fontFamilies;
     const size = value.fontSize ?? value.fontSizes;
     const weight = value.fontWeight ?? value.fontWeights;
     const leading = value.lineHeight ?? value.lineHeights;
-
-    if (family !== undefined) {
-        out.fontFamily = family;
-    }
-
-    if (size !== undefined) {
-        out.fontSize = px(size);
-    }
-
-    if (weight !== undefined) {
-        out.fontWeight = weightOf(weight);
-    }
-
     // Figma's `AUTO` is no number: the style has no line height of its own.
-    if (leading !== undefined && !/^\s*(?:auto|normal)\s*$/i.test(String(leading))) {
-        out.lineHeight = leadingOf(leading);
-    }
+    const auto = /^\s*(?:auto|normal)\s*$/i.test(String(leading));
 
-    if (value.letterSpacing !== undefined) {
-        out.letterSpacing = trackingOf(value.letterSpacing);
-    }
-
-    return out;
+    return {
+        ...(family === undefined ? {} : { fontFamily: family }),
+        ...(size === undefined ? {} : { fontSize: px(size) }),
+        ...(weight === undefined ? {} : { fontWeight: weightOf(weight) }),
+        ...(leading === undefined || auto ? {} : { lineHeight: leadingOf(leading) }),
+        ...(value.letterSpacing === undefined
+            ? {}
+            : { letterSpacing: trackingOf(value.letterSpacing) }),
+    };
 }
 
 function borderOf(value: Obj): Obj {
@@ -189,26 +161,25 @@ function borderOf(value: Obj): Obj {
     };
 }
 
-export function convert(node: Obj, inherited: string | undefined): Obj | undefined {
-    const value = node.$value ?? node.value;
-
-    if (value === undefined || (typeof value === "object" && value === null)) {
+export function convert(node: Obj, value: unknown, rawType = ""): Obj | undefined {
+    if (value === undefined || value === null) {
         return undefined;
     }
 
-    const rawType = String(node.$type ?? node.type ?? inherited ?? "");
     const key = rawType.toLowerCase();
-    const type =
-        TYPES[key] ??
-        (rawType === "" && typeof value === "string"
-            ? colorsIn(value, true).length === 1 && colorsIn(value, true)[0]!.text === value.trim()
-                ? "color"
-                : undefined
-            : undefined);
-    let out: unknown = value;
+    let type: string | undefined = TYPES[key];
 
-    // A reference takes its type from the token it points at, and a mode file leaves the type to the default mode.
+    if (type === undefined && rawType === "" && typeof value === "string") {
+        const colors = colorsIn(value, true);
+
+        if (colors.length === 1 && colors[0]!.text === value.trim()) {
+            type = "color";
+        }
+    }
+
+    // A reference takes its type from its target, and a mode file leaves it to the default mode.
     const reference = typeof value === "string" && /^\{[^{}]+\}$/.test(value.trim());
+    let out: unknown = value;
 
     if (type === undefined && !reference) {
         return undefined;
@@ -219,9 +190,7 @@ export function convert(node: Obj, inherited: string | undefined): Obj | undefin
             out = trackingOf(value);
         } else if (LENGTH_TYPES.has(key) && /^-?[\d.]+$/.test(value)) {
             out = `${value}px`;
-        } else if (key.startsWith("lineheight") && /^[\d.]+%$/.test(value)) {
-            out = Number.parseFloat(value) / 100;
-        } else if (type === "number" && key === "opacity" && /^[\d.]+%$/.test(value)) {
+        } else if ((key.startsWith("lineheight") || key === "opacity") && /^[\d.]+%$/.test(value)) {
             out = Number.parseFloat(value) / 100;
         } else if (type === "number" && /^-?[\d.]+$/.test(value)) {
             out = Number(value);

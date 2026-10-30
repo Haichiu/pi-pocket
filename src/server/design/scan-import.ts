@@ -1,5 +1,5 @@
 import { parseColor } from "./color.ts";
-import { isObject, type Obj } from "./scan-import-convert.ts";
+import { isGroup, isObject, type Obj } from "./scan-import-convert.ts";
 import {
     changesBetween,
     DARK,
@@ -20,27 +20,35 @@ interface Pending {
     named: boolean;
 }
 
-export interface Imported {
+interface Found {
     default: Obj;
     dark: Obj;
     extra: Record<string, Obj>;
     count: number;
-    files: string[];
-    /** A Tokens Studio source was read: it is one for sure, however few tokens it holds. */
-    certain: boolean;
-    /** Token files read and not yet sorted into modes (`finishImports` does that, once, when every file has been read). */
-    pending: Pending[];
     notes: string[];
+}
+
+export interface Imported extends Found {
+    files: string[];
+    // A Tokens Studio source was read: it is one for sure, however few tokens it holds.
+    certain: boolean;
+    // Sorted into modes only once every file is read, by `finishImports`.
+    pending: Pending[];
     done: boolean;
 }
 
-/** A file that may hold tokens: by its name, so `package.json` and `tsconfig.json` are never read as tokens. */
+// By file name, so that `package.json` and `tsconfig.json` are never read as tokens.
 const TOKEN_FILE =
     /(?:^|\/)(?:[^/]*tokens?[^/]*|[^/]*theme[^/]*)\.json$|(?:^|\/)(?:design-?tokens?|tokens?|properties|brands?|themes?|style-?dictionary|dictionary)\/(?:[^/]+\/)*[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
 
 const MAX_FILES = 300;
 const STUDIO_MARK = /(?:^|\/)\$(?:themes|metadata)\.json$/;
 const dirOf = (file: string) => file.slice(0, Math.max(0, file.lastIndexOf("/")));
+
+const setOrder = (metadata: unknown): string[] =>
+    isObject(metadata) && Array.isArray(metadata.tokenSetOrder)
+        ? metadata.tokenSetOrder.filter((name): name is string => typeof name === "string")
+        : [];
 
 function isStudioFile(root: unknown): root is Obj {
     if (!isObject(root)) {
@@ -53,7 +61,11 @@ function isStudioFile(root: unknown): root is Obj {
 
     const keys = Object.keys(root).filter((key) => !key.startsWith("$"));
 
-    return keys.length >= 2 && looksLikeSets(keys) && keys.every((key) => isObject(root[key]));
+    return (
+        keys.length >= 2 &&
+        keys.some((key) => hasWord(key, DARK) || hasWord(key, LIGHT)) &&
+        keys.every((key) => isObject(root[key]))
+    );
 }
 
 export function importTokens(into: Imported, file: string, source: string): void {
@@ -80,12 +92,7 @@ function addTo(target: Obj, source: Obj): void {
 
         if (!(key in target)) {
             target[key] = value;
-        } else if (
-            isObject(have) &&
-            isObject(value) &&
-            !("$value" in have) &&
-            !("$value" in value)
-        ) {
+        } else if (isGroup(have) && isGroup(value)) {
             addTo(have, value);
         }
     }
@@ -97,22 +104,7 @@ interface StudioSource {
     themes: unknown[];
 }
 
-interface Found {
-    default: Obj;
-    dark: Obj;
-    extra: Record<string, Obj>;
-    count: number;
-    notes: string[];
-}
-
-function addStudio(into: Imported, source: StudioSource, files: string[]): void {
-    const found = studioTokens(source);
-
-    if (found.count === 0) {
-        return;
-    }
-
-    into.certain = true;
+function addFound(into: Imported, found: Found, count: number, files: string[]): void {
     addTo(into.default, found.default);
     addTo(into.dark, found.dark);
 
@@ -121,9 +113,18 @@ function addStudio(into: Imported, source: StudioSource, files: string[]): void 
         addTo(into.extra[mode]!, tree);
     }
 
-    into.count += found.count;
+    into.count += count;
     into.files.push(...files);
     into.notes.push(...found.notes);
+}
+
+function addStudio(into: Imported, source: StudioSource, files: string[]): void {
+    const found = studioTokens(source);
+
+    if (found.count > 0) {
+        into.certain = true;
+        addFound(into, found, found.count, files);
+    }
 }
 
 export function finishImports(into: Imported): void {
@@ -133,7 +134,7 @@ export function finishImports(into: Imported): void {
 
     into.done = true;
 
-    const pending = into.pending;
+    const { pending } = into;
     const taken = new Set<Pending>();
     const marks = new Map<string, { themes?: unknown[]; order?: string[] }>();
 
@@ -142,21 +143,21 @@ export function finishImports(into: Imported): void {
             continue;
         }
 
-        const mark = marks.get(dirOf(item.file)) ?? {};
+        const dir = dirOf(item.file);
+        const mark = marks.get(dir) ?? {};
 
         if (item.file.endsWith("$themes.json") && Array.isArray(item.root)) {
             mark.themes = item.root;
         } else if (item.file.endsWith("$metadata.json") && isObject(item.root)) {
-            mark.order = Array.isArray(item.root.tokenSetOrder)
-                ? item.root.tokenSetOrder.filter((name): name is string => typeof name === "string")
-                : [];
+            mark.order = setOrder(item.root);
         }
 
-        marks.set(dirOf(item.file), mark);
+        marks.set(dir, mark);
         taken.add(item);
     }
 
     for (const [dir, mark] of marks) {
+        const prefix = dir === "" ? "" : `${dir}/`;
         const sets = new Map<string, Obj>();
         const files: string[] = [];
 
@@ -165,17 +166,12 @@ export function finishImports(into: Imported): void {
                 taken.has(item) ||
                 !isObject(item.root) ||
                 !item.file.endsWith(".json") ||
-                !(dir === "" || item.file.startsWith(`${dir}/`))
+                !item.file.startsWith(prefix)
             ) {
                 continue;
             }
 
-            const name = (dir === "" ? item.file : item.file.slice(dir.length + 1)).replace(
-                /\.json$/,
-                "",
-            );
-
-            sets.set(name, item.root);
+            sets.set(item.file.slice(prefix.length).replace(/\.json$/, ""), item.root);
             files.push(item.file);
             taken.add(item);
         }
@@ -186,64 +182,37 @@ export function finishImports(into: Imported): void {
     }
 
     for (const item of pending) {
-        if (taken.has(item) || !isObject(item.root)) {
+        if (taken.has(item) || !isStudioFile(item.root)) {
             continue;
         }
 
-        if (isStudioFile(item.root)) {
-            taken.add(item);
+        taken.add(item);
 
-            const sets = new Map<string, Obj>();
+        const sets = new Map<string, Obj>();
 
-            for (const [name, node] of Object.entries(item.root)) {
-                if (!name.startsWith("$") && isObject(node) && sets.size < 40) {
-                    sets.set(name, node);
-                }
+        for (const [name, node] of Object.entries(item.root)) {
+            if (!name.startsWith("$") && isObject(node) && sets.size < LIMITS.sets) {
+                sets.set(name, node);
             }
-
-            const metadata = item.root.$metadata;
-            const order =
-                isObject(metadata) && Array.isArray(metadata.tokenSetOrder)
-                    ? metadata.tokenSetOrder.filter(
-                          (name): name is string => typeof name === "string",
-                      )
-                    : [];
-
-            addStudio(
-                into,
-                {
-                    sets,
-                    order,
-                    themes: Array.isArray(item.root.$themes) ? item.root.$themes : [],
-                },
-                [item.file],
-            );
         }
+
+        const themes = Array.isArray(item.root.$themes) ? item.root.$themes : [];
+
+        addStudio(into, { sets, order: setOrder(item.root.$metadata), themes }, [item.file]);
     }
 
     const files = pending
         .filter((item) => !taken.has(item) && isObject(item.root) && item.named)
         .map((item) => ({ file: item.file, root: item.root as Obj }));
+    const found = styleDictionaryTokens(files);
 
-    if (files.length > 0) {
-        const found = styleDictionaryTokens(files);
+    if (found.count > 0) {
+        const count =
+            found.count +
+            leavesIn(found.dark) +
+            Object.values(found.extra).reduce((sum, tree) => sum + leavesIn(tree), 0);
 
-        if (found.count > 0) {
-            addTo(into.default, found.default);
-            addTo(into.dark, found.dark);
-
-            for (const [mode, tree] of Object.entries(found.extra)) {
-                into.extra[mode] ??= {};
-                addTo(into.extra[mode]!, tree);
-            }
-
-            into.count +=
-                found.count +
-                leavesIn(found.dark) +
-                Object.values(found.extra).reduce((sum, tree) => sum + leavesIn(tree), 0);
-            into.files.push(...files.map((item) => item.file).sort());
-            into.notes.push(...found.notes);
-        }
+        addFound(into, found, count, files.map((item) => item.file).sort());
     }
 
     into.pending = [];
@@ -257,9 +226,6 @@ function leavesIn(tree: Obj): number {
         0,
     );
 }
-
-const looksLikeSets = (keys: string[]) =>
-    keys.some((key) => hasWord(key, DARK) || hasWord(key, LIGHT));
 
 interface Theme {
     name: string;
@@ -314,8 +280,7 @@ function pickModes(
     const extra: [string, string[]][] = [];
 
     if (themes.length > 0) {
-        // Themes of different groups apply together (a mode group and a brand group): the first of each other group is
-        // part of every mode, and the mode group gives the light theme and the dark one.
+        // Groups apply together: the first theme of each non-mode group (a brand) is in every mode.
         const groups = new Map<string, Theme[]>();
 
         for (const theme of themes) {
@@ -324,46 +289,30 @@ function pickModes(
             groups.set(key, [...(groups.get(key) ?? []), theme]);
         }
 
-        const modeList =
-            [...groups.values()].find((list) => list.some(isDarkTheme)) ?? [...groups.values()][0]!;
-        const others = [...groups.values()]
-            .filter((list) => list !== modeList)
-            .map((list) => list[0]!);
+        const lists = [...groups.values()];
+        const modeList = lists.find((list) => list.some(isDarkTheme)) ?? lists[0]!;
+        const others = lists.filter((list) => list !== modeList).map((list) => list[0]!);
         const lightTheme =
             modeList.find((theme) => !isDarkTheme(theme) && hasWord(theme.name, LIGHT)) ??
             modeList.find((theme) => !isDarkTheme(theme));
+        const lightStem = lightTheme === undefined ? undefined : stem(lightTheme);
         const darkTheme =
-            modeList.find(
-                (theme) =>
-                    isDarkTheme(theme) &&
-                    lightTheme !== undefined &&
-                    stem(theme) === stem(lightTheme),
-            ) ?? modeList.find(isDarkTheme);
+            modeList.find((theme) => isDarkTheme(theme) && stem(theme) === lightStem) ??
+            modeList.find(isDarkTheme);
 
-        if (lightTheme !== undefined) {
-            light = setsOf([...others, lightTheme]);
-        }
-
-        if (darkTheme !== undefined) {
-            dark = setsOf([...others, darkTheme]);
-        }
+        light = lightTheme === undefined ? undefined : setsOf([...others, lightTheme]);
+        dark = darkTheme === undefined ? undefined : setsOf([...others, darkTheme]);
 
         const spare =
             lightTheme === undefined
                 ? []
                 : modeList.filter((theme) => theme !== lightTheme && theme !== darkTheme);
-        const modeOf = (theme: Theme) => words(theme.name).join("-");
         const used: Theme[] = [];
 
         for (const theme of spare.slice(0, 3)) {
-            const mode = modeOf(theme);
+            const mode = words(theme.name).join("-");
 
-            if (
-                /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(mode) &&
-                mode !== "dark" &&
-                mode !== "light" &&
-                !extra.some(([name]) => name === mode)
-            ) {
+            if (!["", "dark", "light"].includes(mode) && !extra.some(([name]) => name === mode)) {
                 extra.push([mode, setsOf([...others, theme])]);
                 used.push(theme);
             }
@@ -396,6 +345,26 @@ function pickModes(
     return { light: light ?? [], dark, extra };
 }
 
+function readMode(budget: { left: number }, roots: Obj[]): Mode {
+    const entries = new Map<string, Entry>();
+
+    for (const root of roots) {
+        flatten(root, entries, budget);
+    }
+
+    return new Mode(entries);
+}
+
+function changesFrom(first: Map<string, Obj>, mode: Mode, notes: string[], label: string): Obj {
+    const { tree, skipped } = changesBetween(first, tokensOf(mode).flat);
+
+    if (skipped > 0) {
+        notes.push(`${skipped} tokens that only ${label} has were left out.`);
+    }
+
+    return tree;
+}
+
 function studioTokens(input: StudioSource): Found {
     const notes: string[] = [];
     const names = [
@@ -410,44 +379,27 @@ function studioTokens(input: StudioSource): Found {
 
     const budget = { left: LIMITS.tokens };
 
-    const read = (list: string[]) => {
-        const entries = new Map<string, Entry>();
-
-        for (const name of list) {
-            const set = new Map<string, Entry>();
-
-            flatten(input.sets.get(name)!, set, budget);
-            set.forEach((entry, key) => entries.set(key, entry));
-        }
-
-        return new Mode(entries);
-    };
+    const read = (list: string[]) =>
+        readMode(
+            budget,
+            list.map((name) => input.sets.get(name)!),
+        );
 
     const first = tokensOf(read(light));
-    const result = {
+    const result: Found = {
         default: first.tree,
-        dark: {} as Obj,
-        extra: {} as Record<string, Obj>,
+        dark: {},
+        extra: {},
         count: first.flat.size,
         notes,
     };
 
-    const changes = (sets: string[], label: string): Obj => {
-        const { tree, skipped } = changesBetween(first.flat, tokensOf(read(sets)).flat);
-
-        if (skipped > 0) {
-            notes.push(`${skipped} tokens that only the ${label} mode has were left out.`);
-        }
-
-        return tree;
-    };
-
     if (dark !== undefined && dark.join("\n") !== light.join("\n")) {
-        result.dark = changes(dark, "dark");
+        result.dark = changesFrom(first.flat, read(dark), notes, "the dark mode");
     }
 
     for (const [mode, sets] of extra) {
-        result.extra[mode] = changes(sets, mode);
+        result.extra[mode] = changesFrom(first.flat, read(sets), notes, `the ${mode} mode`);
     }
 
     return result;
@@ -471,6 +423,23 @@ function modeOfFile(file: string): string | undefined {
     return hasWord(parts.at(-1)!, DARK) ? "dark" : undefined;
 }
 
+// By the words of a token's path, in order: a family is any text, the others are numbers.
+const NAMED_TYPES: [RegExp, string, boolean][] = [
+    [/\bweight\b|font-weight/, "fontWeight", false],
+    [/\b(?:family|families|typeface)\b/, "fontFamily", true],
+    [
+        /\b(?:opacity|alpha|z|zindex|z-index|line-height|lineheight|leading|ratio|scale)\b/,
+        "number",
+        false,
+    ],
+    [/\b(?:time|duration|delay|transition)\b/, "duration", false],
+    [
+        /\b(?:size|sizes|spacing|space|spaces|radius|radii|rounded|dimension|dimensions|width|height|gap|gutter|breakpoint|breakpoints|tracking|letter-spacing|border-width|stroke)\b/,
+        "dimension",
+        false,
+    ],
+];
+
 function inferType(path: string[], value: unknown, node: Obj): string | undefined {
     const attributes = isObject(node.attributes) ? node.attributes : {};
     const category = String(attributes.category ?? path[0] ?? "").toLowerCase();
@@ -478,7 +447,7 @@ function inferType(path: string[], value: unknown, node: Obj): string | undefine
     const where = [category, kind, ...path.map((part) => part.toLowerCase())].join(" ");
     const has = (pattern: RegExp) => pattern.test(where);
     const text = typeof value === "string" ? value.trim() : undefined;
-    // A number, a size, or a time is short: a long text is not tested as one (the tests take the square of its length).
+    // The number tests take time in the square of the length: a long text is not tested.
     const short = text !== undefined && text.length <= 200;
 
     if (typeof value === "object" && value !== null) {
@@ -521,32 +490,10 @@ function inferType(path: string[], value: unknown, node: Obj): string | undefine
 
     const numeric = typeof value === "number" || (short && /^-?\d*\.?\d+$/.test(text!));
 
-    if (has(/\bweight\b|font-weight/) && numeric) {
-        return "fontWeight";
-    }
-
-    if (has(/\b(?:family|families|typeface)\b/) && text !== undefined) {
-        return "fontFamily";
-    }
-
-    if (
-        has(/\b(?:opacity|alpha|z|zindex|z-index|line-height|lineheight|leading|ratio|scale)\b/) &&
-        numeric
-    ) {
-        return "number";
-    }
-
-    if (has(/\b(?:time|duration|delay|transition)\b/) && numeric) {
-        return "duration";
-    }
-
-    if (
-        has(
-            /\b(?:size|sizes|spacing|space|spaces|radius|radii|rounded|dimension|dimensions|width|height|gap|gutter|breakpoint|breakpoints|tracking|letter-spacing|border-width|stroke)\b/,
-        ) &&
-        numeric
-    ) {
-        return "dimension";
+    for (const [pattern, type, needsText] of NAMED_TYPES) {
+        if (has(pattern) && (needsText ? text !== undefined : numeric)) {
+            return type;
+        }
     }
 
     if (
@@ -560,71 +507,47 @@ function inferType(path: string[], value: unknown, node: Obj): string | undefine
     return undefined;
 }
 
-function entriesOf(root: Obj, budget: { left: number }): Map<string, Entry> {
-    const entries = new Map<string, Entry>();
-
-    flatten(root, entries, budget);
-
-    for (const entry of entries.values()) {
-        if (entry.type === undefined) {
-            const raw = entry.node.$value ?? entry.node.value;
-            const type = inferType(entry.path, raw, entry.node);
-
-            if (type !== undefined) {
-                entry.type = type;
-            }
-        }
-    }
-
-    return entries;
-}
-
 function styleDictionaryTokens(files: SdFile[]): Found {
     const notes: string[] = [];
-    const ordered = [...files].sort((a, b) => a.file.localeCompare(b.file));
     const budget = { left: LIMITS.tokens };
-    const base: SdFile[] = [];
-    const modes = new Map<string, SdFile[]>();
+    const base: Obj[] = [];
+    const modes = new Map<string, Obj[]>();
 
-    for (const item of ordered) {
+    for (const item of [...files].sort((a, b) => a.file.localeCompare(b.file))) {
         const mode = modeOfFile(item.file);
 
         if (mode === undefined) {
-            base.push(item);
+            base.push(item.root);
         } else {
-            modes.set(mode, [...(modes.get(mode) ?? []), item]);
+            modes.set(mode, [...(modes.get(mode) ?? []), item.root]);
         }
     }
 
-    const read = (list: SdFile[]) => {
-        const entries = new Map<string, Entry>();
+    const read = (list: Obj[]) => {
+        const mode = readMode(budget, list);
 
-        for (const item of list) {
-            entriesOf(item.root, budget).forEach((entry, key) => entries.set(key, entry));
+        for (const entry of mode.entries.values()) {
+            entry.type ??= inferType(entry.path, entry.node.$value ?? entry.node.value, entry.node);
         }
 
-        return new Mode(entries);
+        return mode;
     };
 
     const names = [...modes.keys()];
-    const lightName = names.find(
-        (name) =>
-            !hasWord(name, DARK) &&
-            (hasWord(name, LIGHT) || /^(?:default|base|main|standard)$/.test(name)),
-    );
     const firstName =
-        lightName ??
+        names.find(
+            (name) =>
+                !hasWord(name, DARK) &&
+                (hasWord(name, LIGHT) || /^(?:default|base|main|standard)$/.test(name)),
+        ) ??
         names.find((name) => !hasWord(name, DARK)) ??
         (base.length === 0 ? names[0] : undefined);
-    const defaultFiles = [
-        ...base,
-        ...(firstName === undefined ? [] : (modes.get(firstName) ?? [])),
-    ];
-    const first = tokensOf(read(defaultFiles));
-    const result = {
+    const defaults = firstName === undefined ? [] : (modes.get(firstName) ?? []);
+    const first = tokensOf(read([...base, ...defaults]));
+    const result: Found = {
         default: first.tree,
-        dark: {} as Obj,
-        extra: {} as Record<string, Obj>,
+        dark: {},
+        extra: {},
         count: first.flat.size,
         notes,
     };
@@ -635,23 +558,14 @@ function styleDictionaryTokens(files: SdFile[]): Found {
         );
     }
 
-    const addMode = (name: string, list: SdFile[]) => {
-        const second = tokensOf(read(list));
-        const { tree, skipped } = changesBetween(first.flat, second.flat);
-
-        if (skipped > 0) {
-            notes.push(`${skipped} tokens that only ${name} has were left out.`);
-        }
+    for (const name of names.filter((each) => each !== firstName).slice(0, 4)) {
+        const tree = changesFrom(first.flat, read([...base, ...modes.get(name)!]), notes, name);
 
         if (hasWord(name, DARK)) {
             result.dark = tree;
         } else {
             result.extra[name] = tree;
         }
-    };
-
-    for (const name of names.filter((each) => each !== firstName).slice(0, 4)) {
-        addMode(name, [...base, ...modes.get(name)!]);
     }
 
     return result;
