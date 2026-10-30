@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { chmodSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+    chmodSync,
+    existsSync,
+    mkdtempSync,
+    readFileSync,
+    readdirSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { Chromium } from "../src/server/browser/cdp.ts";
+import { Chromium, RECORD_FOLDER } from "../src/server/browser/cdp.ts";
 
 /** A browser like ego lite: it answers the protocol, and it keeps running when its pipe closes. */
 const FAKE_BROWSER = `#!/usr/bin/env node
@@ -176,7 +184,53 @@ test("the next launch leaves the browser of a live server alone", options, () =>
                 await third.exited;
             }
         } finally {
+            // Only matters when an assertion failed before the body killed it.
             next.kill();
+        }
+    }),
+);
+
+test("a launch records its server, and the record is whole", options, () =>
+    scenario(async (executable, folder) => {
+        const server = startServer(executable, join(folder, "a"), "hang");
+        const pid = await server.pid;
+        const record = JSON.parse(readFileSync(join(RECORD_FOLDER, String(pid)), "utf8"));
+
+        assert.deepEqual(record, { server: server.child.pid, profile: join(folder, "a") });
+        assert.equal(
+            readdirSync(RECORD_FOLDER).some((name) => name.endsWith(".tmp")),
+            false,
+            "a temporary record stays",
+        );
+    }),
+);
+
+test("a record that is still being written is not swept", options, () =>
+    scenario(async (executable, folder) => {
+        const server = startServer(executable, join(folder, "a"), "hang");
+
+        await server.pid;
+
+        const half = join(RECORD_FOLDER, "999999998");
+
+        // A half-written record has a .tmp name, or a whole name with a cut body: both stay until whole.
+        writeFileSync(join(RECORD_FOLDER, "999999999.tmp"), '{"server":');
+        writeFileSync(half, '{"server":');
+
+        try {
+            const next = await Chromium.launch(executable, join(folder, "b"), []);
+
+            next.kill();
+            await next.exited;
+            assert.equal(
+                readdirSync(RECORD_FOLDER).includes("999999999.tmp"),
+                true,
+                "a .tmp record was removed",
+            );
+            assert.equal(existsSync(half), true, "a record with a cut body was removed");
+        } finally {
+            rmSync(join(RECORD_FOLDER, "999999999.tmp"), { force: true });
+            rmSync(half, { force: true });
         }
     }),
 );
@@ -187,18 +241,11 @@ test("a normal exit leaves no record", options, () =>
         const pid = await server.pid;
 
         await until(() => !alive(pid));
+        // The folder exists: the launch made it. A read error fails the test.
         assert.equal(
-            recordNames().includes(String(pid)),
+            readdirSync(RECORD_FOLDER).includes(String(pid)),
             false,
             "the record of a stopped browser stays",
         );
     }),
 );
-
-function recordNames(): string[] {
-    try {
-        return readdirSync(join(tmpdir(), `pi-pocket-chromium-${process.getuid?.() ?? "user"}`));
-    } catch {
-        return [];
-    }
-}

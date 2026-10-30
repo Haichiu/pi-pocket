@@ -1,6 +1,6 @@
 /** The DevTools protocol over a pipe, and the Chromium process at the other end of it. */
 import { type ChildProcess, execFile, spawn } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -180,7 +180,7 @@ const LAUNCH_ARGS = [
  * every live child, and the next launch kills the browsers of servers that died without a normal exit (SIGKILL, crash).
  * A record names the server that owns the browser: a browser of a live server is never touched.
  */
-const RECORD_FOLDER = join(tmpdir(), `pi-pocket-chromium-${process.getuid?.() ?? "user"}`);
+export const RECORD_FOLDER = join(tmpdir(), `pi-pocket-chromium-${process.getuid?.() ?? "user"}`);
 const run = promisify(execFile);
 /** Each live browser and the record file that names it. */
 const live = new Map<ChildProcess, string>();
@@ -191,17 +191,6 @@ process.once("exit", () => {
         rmSync(record, { force: true });
     }
 });
-
-function running(pid: number): boolean {
-    try {
-        process.kill(pid, 0);
-
-        return true;
-    } catch (error) {
-        // EPERM: the process exists, owned by someone else.
-        return (error as NodeJS.ErrnoException).code === "EPERM";
-    }
-}
 
 async function sweepOrphans(): Promise<void> {
     // No `ps` on Windows: there only the exit hook runs.
@@ -217,7 +206,8 @@ async function sweepOrphans(): Promise<void> {
         return;
     }
 
-    for (const name of names) {
+    // A name that is not a pid is a record still being written: its owner renames it when it is whole.
+    for (const name of names.filter((name) => /^\d+$/.test(name))) {
         const file = join(RECORD_FOLDER, name);
 
         try {
@@ -225,21 +215,29 @@ async function sweepOrphans(): Promise<void> {
                 server: number;
                 profile: string;
             };
+            const { stdout } = await run("ps", ["-o", "ppid=,command=", "-p", name]).catch(() => ({
+                stdout: "",
+            }));
+            const line = stdout.trim();
 
-            if (record.server === process.pid || running(record.server)) {
+            // The owner is alive while the browser is still its child. An orphan has a new parent, so this also
+            // holds when the owner's pid belongs to another process now. A process without this profile is not ours.
+            if (line.startsWith(`${record.server} `)) {
                 continue;
             }
 
-            // The owner is dead. A reused pid is not ours: only a process that still has this profile is killed.
-            const { stdout } = await run("ps", ["-o", "command=", "-p", name]).catch(() => ({
-                stdout: "",
-            }));
-
-            if (stdout.includes(`--user-data-dir=${record.profile}`)) {
+            if (line.includes(`--user-data-dir=${record.profile}`)) {
                 process.kill(Number(name), "SIGKILL");
             }
         } catch (error) {
-            console.error(`Could not sweep browser record ${file}:`, error);
+            // Another server swept this record first.
+            const code = (error as NodeJS.ErrnoException).code;
+
+            if (code !== "ENOENT" && code !== "ESRCH") {
+                console.error(`Could not sweep browser record ${file}:`, error);
+            }
+
+            continue;
         }
 
         rmSync(file, { force: true });
@@ -292,7 +290,9 @@ export class Chromium {
 
             try {
                 mkdirSync(RECORD_FOLDER, { recursive: true, mode: 0o700 });
-                writeFileSync(record, JSON.stringify({ server: process.pid, profile }));
+                // Whole or not there: a sweep by another server must never read a half-written record.
+                writeFileSync(`${record}.tmp`, JSON.stringify({ server: process.pid, profile }));
+                renameSync(`${record}.tmp`, record);
             } catch (error) {
                 // The browser still works: only a crash of this server could leave it behind.
                 console.error(`Could not record browser ${child.pid}:`, error);
