@@ -226,6 +226,21 @@
     font-variant-numeric: tabular-nums;
 }
 
+.dsy-group-chev {
+    flex: none;
+    margin-left: auto;
+    color: var(--muted);
+    transition: transform 160ms var(--ease-out, ease);
+}
+
+.dsy-strip + .dsy-group-chev {
+    margin-left: 4px;
+}
+
+.dsy-group[data-folded="true"] .dsy-group-chev {
+    transform: rotate(-90deg);
+}
+
 .dsy-strip {
     display: inline-flex;
     margin-left: auto;
@@ -1591,6 +1606,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .dsy-group-chev,
     .dsy-row-open {
         transition: none;
     }
