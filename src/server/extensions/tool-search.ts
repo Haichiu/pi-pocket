@@ -7,6 +7,7 @@
  * Edit `DEFERRED` to choose which tools wait: what each is for, and the prompt section that goes with it, if one does.
  */
 import type { Context } from "@earendil-works/chord/context";
+import { Type } from "@earendil-works/pi-ai";
 import { DESIGN_GUIDE } from "../design/guide.ts";
 import {
     createToolSearchExtension,
@@ -42,11 +43,24 @@ const DEFERRED: Record<string, { use: string; section?: string; note?: string }>
     design_preview: {
         use: "load it, then read its guide, before you make or change a design",
         section: "design_mode",
-        note: `Before you make or change a design, read ${DESIGN_GUIDE}. Check each design with design_preview at mobile and desktop sizes before you reply.`,
+        note: `Before you make or change a design, read ${DESIGN_GUIDE}. Check each design with design_preview at mobile and desktop sizes before you reply. design_system read gives a summary of the project's design system.`,
     },
-    design_export: { use: "export a design" },
-    design_system: { use: "read or write the project's design system" },
+    design_export: { use: "export a design", section: "design_mode" },
+    design_system: {
+        use: "read or write the project's design system",
+        section: "design_mode",
+    },
+    ask_someone: { use: "draft a question for someone outside this chat" },
 };
+
+/** Each prompt section that waits, and the tools that show it once any of them is loaded. */
+const sections = new Map<string, string[]>();
+
+for (const [name, { section: key }] of Object.entries(DEFERRED)) {
+    if (key !== undefined) {
+        sections.set(key, [...(sections.get(key) ?? []), name]);
+    }
+}
 
 export default function createToolSearch() {
     const base = createToolSearchExtension();
@@ -94,6 +108,16 @@ export default function createToolSearch() {
     // tool whose text mentions one, and each load is kept for the branch.
     const exact: ToolRegistration = {
         ...search,
+        description:
+            "Load tools that wait (deferred_tools lists them) before you use them. The query is their names (`browser`, or `browser, background`) or words to search for.",
+        parameters: Type.Object({
+            query: Type.String({ description: "Names of waiting tools, or words to search for." }),
+            limit: Type.Optional(
+                Type.Number({
+                    description: `Matches a text search loads (default ${SEARCH_LIMIT}).`,
+                }),
+            ),
+        }),
         async execute(args: { query: string; limit?: number }, api, context) {
             const names = String(args.query)
                 .split(/[\s,]+/)
@@ -153,19 +177,15 @@ export default function createToolSearch() {
             ...Object.keys(DEFERRED).map((name) =>
                 wrapTool({ name } as ToolRegistration, (tool) => ({ ...tool, deferred: true })),
             ),
-            // A section waits with its tool: its text is of no use while the tool is not offered.
-            ...Object.entries(DEFERRED).flatMap(([name, { section: key }]) =>
-                key === undefined
-                    ? []
-                    : [
-                          wrapSection(key, (inner: PromptSection) => ({
-                              ...inner,
-                              render: (input, context) =>
-                                  input.agent.tools.some((tool) => tool.name === name)
-                                      ? inner.render(input, context)
-                                      : undefined,
-                          })),
-                      ],
+            // A section waits with its tools: its text is of no use while none of them is offered.
+            ...[...sections].map(([key, names]) =>
+                wrapSection(key, (inner: PromptSection) => ({
+                    ...inner,
+                    render: (input, context) =>
+                        input.agent.tools.some((tool) => names.includes(tool.name))
+                            ? inner.render(input, context)
+                            : undefined,
+                })),
             ),
         ],
     });

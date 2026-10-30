@@ -38,6 +38,12 @@ const route: FauxResponseStep = (request) => {
         });
     }
 
+    if (role !== "toolResult" && text.includes("need the design system")) {
+        return fauxAssistantMessage([fauxToolCall("tool_search", { query: "design_system" })], {
+            stopReason: "toolUse",
+        });
+    }
+
     if (role === "user" && text.includes("start a browsing subagent")) {
         return fauxAssistantMessage(
             [
@@ -134,6 +140,19 @@ test("on a model with tool changes in the messages, a query of tool names loads 
     assert.match(sections.deferred_tools ?? "no section", /design_preview/);
     assert.doesNotMatch(sections.deferred_tools ?? "no section", /- browser:/);
     assert.equal(sections.design_mode, undefined);
+});
+
+test("any design tool shows the design guide's section once it is loaded", async () => {
+    const id = await nativeSession();
+
+    await say(app, id, "need the design system");
+    await say(app, id, "and now?");
+
+    const { offered } = await agent(id);
+
+    assert.ok(offered.includes("design_system"));
+    assert.ok(!offered.includes("design_preview"));
+    assert.match(sections.design_mode ?? "no section", /Design canvas/);
 });
 
 test("on any other model, a search leaves the tool list alone and the tool is called from codemode", async () => {
