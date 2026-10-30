@@ -50,6 +50,9 @@ const UNITS = new Set([
     "in",
 ]);
 
+const LOADS_OR_HIDES =
+    /\/\*|\*\/|url\(|image-set\(|(?<![\w-])(?:image|src)\(|cross-fade\(|expression\(|@import|javascript:/i;
+
 /** Why text is not safe as a CSS value, or undefined: it ends a rule, opens markup, hides a comment, or loads a URL. */
 function cssProblem(text: string): string | undefined {
     if (text.length > LIMITS.valueChars) {
@@ -60,8 +63,8 @@ function cssProblem(text: string): string | undefined {
         return "has a character that is not allowed in a token value (; { } < > \\ or a control character)";
     }
 
-    if (/\/\*|\*\/|url\(|expression\(|@import|javascript:/i.test(text)) {
-        return "has a comment, url(), or @import";
+    if (LOADS_OR_HIDES.test(text)) {
+        return "has a comment, url(), image-set(), or @import";
     }
 
     let depth = 0;
