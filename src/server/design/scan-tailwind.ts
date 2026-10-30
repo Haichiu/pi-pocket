@@ -59,20 +59,15 @@ function leaves(
     if (typeof node === "string" || typeof node === "number") {
         out.push({ path, value: String(node) });
     } else if (Array.isArray(node)) {
-        // `fontFamily: { sans: ["Inter", "sans-serif"] }`, `fontSize: { sm: ["14px", { lineHeight: … }] }`.
+        // `fontFamily: { sans: ["Inter", "sans-serif"] }`, `fontSize: { sm: ["14px", { … }] }`.
         const strings = node.filter((item): item is string => typeof item === "string");
+        const quoted = (name: string) =>
+            /^[\w-]+$/.test(name) || GENERIC.has(name) ? name : `"${name}"`;
 
         if (strings.length > 0) {
             out.push({
                 path,
-                value:
-                    category === "font"
-                        ? strings
-                              .map((name) =>
-                                  /^[\w-]+$/.test(name) || GENERIC.has(name) ? name : `"${name}"`,
-                              )
-                              .join(", ")
-                        : strings[0]!,
+                value: category === "font" ? strings.map(quoted).join(", ") : strings[0]!,
             });
         }
     } else if (isRecord(node)) {
@@ -82,7 +77,7 @@ function leaves(
     }
 }
 
-/** The `theme` and `theme.extend` objects of a Tailwind 3 config, read as literals: no import is followed and no code is run. */
+// Read as literals: no import is followed and no code is run.
 export function tailwindConfig(facts: Facts, file: string, text: string): void {
     const head = /(?<![\w$.])theme\s*:\s*(?=\{)/.exec(text);
     const theme = head === null ? undefined : readLiteral(text, head.index + head[0].length);
@@ -95,31 +90,30 @@ export function tailwindConfig(facts: Facts, file: string, text: string): void {
 
     for (const [key, part] of [...Object.entries(theme), ...Object.entries(extend)]) {
         const category = THEME_KEYS[key];
+        const found: { path: string[]; value: string }[] = [];
 
-        if (category !== undefined) {
-            const found: { path: string[]; value: string }[] = [];
+        if (category === undefined) {
+            continue;
+        }
 
-            leaves(part, [], found, category);
+        leaves(part, [], found, category);
 
-            for (const leaf of found) {
-                if (leaf.path.length === 0 && category !== "font") {
-                    continue;
-                }
-
-                const at = text.indexOf(leaf.value, head!.index);
-
-                addVar(facts, {
-                    name: leaf.path.join("-") || key,
-                    value: leaf.value.slice(0, 400),
-                    scope: "default",
-                    kind: "js",
-                    file,
-                    hint: category,
-                    ...(at === -1
-                        ? {}
-                        : { line: 1 + (text.slice(0, at).match(/\n/g)?.length ?? 0) }),
-                });
+        for (const leaf of found) {
+            if (leaf.path.length === 0 && category !== "font") {
+                continue;
             }
+
+            const at = text.indexOf(leaf.value, head!.index);
+
+            addVar(facts, {
+                name: leaf.path.join("-") || key,
+                value: leaf.value.slice(0, 400),
+                scope: "default",
+                kind: "js",
+                file,
+                hint: category,
+                ...(at === -1 ? {} : { line: 1 + (text.slice(0, at).match(/\n/g)?.length ?? 0) }),
+            });
         }
     }
 }
