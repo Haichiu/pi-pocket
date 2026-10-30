@@ -41,26 +41,26 @@ export function infer(facts: Facts, folder: string): Inferred {
         review: [],
         sources: [],
     };
-    const meta = { $extensions: { "com.pi-pocket": { name: folder } } };
+    const { imported } = facts;
 
-    // A project that already keeps tokens in a token file: use them.
-    finishImports(facts.imported);
+    finishImports(imported);
 
-    if (facts.imported.count >= 8 || (facts.imported.certain && facts.imported.count > 0)) {
-        result.imported = facts.imported.count;
+    if (imported.count >= 8 || (imported.certain && imported.count > 0)) {
+        result.imported = imported.count;
+        result.hasDark = Object.keys(imported.dark).length > 0;
+
+        const meta = { $extensions: { "com.pi-pocket": { name: folder } } };
+
         result.draft = {
-            tokens: { ...meta, ...(facts.imported.default as Obj) },
+            tokens: { ...meta, ...(imported.default as Obj) },
             modes: {
-                ...(Object.keys(facts.imported.dark).length > 0
-                    ? { dark: facts.imported.dark as Obj }
-                    : {}),
-                ...(facts.imported.extra as Record<string, Obj>),
+                ...(result.hasDark ? { dark: imported.dark as Obj } : {}),
+                ...(imported.extra as Record<string, Obj>),
             },
         };
-        result.hasDark = Object.keys(facts.imported.dark).length > 0;
         result.notes.push(
-            `Used the ${facts.imported.count} tokens from ${facts.imported.files.join(", ")} as they are; styles were not guessed.`,
-            ...facts.imported.notes,
+            `Used the ${imported.count} tokens from ${imported.files.join(", ")} as they are; styles were not guessed.`,
+            ...imported.notes,
         );
 
         return validate(result);
@@ -68,7 +68,7 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     let prep = prepare(facts, "dark");
 
-    // A project whose default scope is dark and that names a light scope is dark first: light is its other mode.
+    // A project whose default scope is dark and that names a light scope is dark first.
     if (facts.vars.some((fact) => fact.scope === "light") && pageIsDark(prep, facts)) {
         prep = prepare(facts, "light");
     }
@@ -93,13 +93,11 @@ export function infer(facts: Facts, folder: string): Inferred {
 
     const explicit = new Set<Category>();
 
-    // A bare `--radius` has no name of its own: it takes the fallback after the variables that are named (`--radius-md`).
-    const named = [
-        ...classified.filter((entry) => nameOf(entry.variable, entry.category) !== ""),
-        ...classified.filter((entry) => nameOf(entry.variable, entry.category) === ""),
-    ];
+    // A bare `--radius` takes the fallback name only after the named variables (`--radius-md`).
+    const bare = (entry: (typeof classified)[number]) =>
+        nameOf(entry.variable, entry.category) === "";
 
-    for (const entry of named) {
+    for (const entry of [...classified.filter((each) => !bare(each)), ...classified.filter(bare)]) {
         if (entry.category === "color" || entry.light === undefined) {
             continue;
         }
@@ -107,7 +105,7 @@ export function infer(facts: Facts, folder: string): Inferred {
         const node = nodeFor(entry.category, entry.light);
         let path = pathOf(entry.variable, entry.category);
 
-        if (nameOf(entry.variable, entry.category) === "" && book.has(path)) {
+        if (bare(entry) && book.has(path)) {
             path = [path[0]!, "base"];
 
             // A second variable with no name of its own (`--gap` beside `$space`) keeps its own name.
@@ -151,27 +149,21 @@ export function infer(facts: Facts, folder: string): Inferred {
     pair(tokens, ["color", "text", "muted"], "{color.bg.page}");
     pair(tokens, ["color", "text", "on-accent"], "{color.accent.default}");
     hoistTypes(tokens);
+
     // A dark-first project names its default mode: the light mode is the file that changes it.
     const extension = alt === "light" ? { name: folder, mode: "dark" } : { name: folder };
     const other = dropTypes(rewrite(darkTree, renamed) as Obj);
+    const scheme = { $extensions: { "com.pi-pocket": { colorScheme: alt } } };
 
     result.draft = {
         tokens: rewrite({ $extensions: { "com.pi-pocket": extension }, ...tokens }, renamed) as Obj,
-        modes:
-            Object.keys(darkTree).length > 0
-                ? {
-                      [alt]: {
-                          $extensions: { "com.pi-pocket": { colorScheme: alt } },
-                          ...other,
-                      },
-                  }
-                : {},
+        modes: Object.keys(darkTree).length > 0 ? { [alt]: { ...scheme, ...other } } : {},
     };
 
     return validate(result);
 }
 
-// Two names for one size (`radius.lg` and `radius.base`, both 8px) are one step: the plainer name stays, and a `base` that only names where a scale starts goes.
+// Two names for one size are one step: the first stays, unless it is a `base`.
 function dedupeScales(book: Book): void {
     for (const group of ["text", "space", "radius", "breakpoint"]) {
         const seen = new Map<number, string>();
@@ -200,26 +192,24 @@ function dedupeScales(book: Book): void {
     }
 }
 
-function pair(tree: Obj, path: string[], on: string): void {
+function lookup(tree: Obj, path: string[]): unknown {
     let node: unknown = tree;
 
     for (const key of path) {
         node = typeof node === "object" && node !== null ? (node as Obj)[key] : undefined;
     }
 
-    if (typeof node !== "object" || node === null || !("$value" in node)) {
-        return;
-    }
+    return node;
+}
 
-    const target = on.slice(1, -1).split(".");
-    let found: unknown = tree;
+const isToken = (node: unknown): node is Obj =>
+    typeof node === "object" && node !== null && "$value" in node;
 
-    for (const key of target) {
-        found = typeof found === "object" && found !== null ? (found as Obj)[key] : undefined;
-    }
+function pair(tree: Obj, path: string[], on: string): void {
+    const node = lookup(tree, path);
 
-    if (typeof found === "object" && found !== null && "$value" in found) {
-        (node as Obj).$extensions = { "com.pi-pocket": { contrast: { on, min: 4.5 } } };
+    if (isToken(node) && isToken(lookup(tree, on.slice(1, -1).split(".")))) {
+        node.$extensions = { "com.pi-pocket": { contrast: { on, min: 4.5 } } };
     }
 }
 
@@ -282,22 +272,21 @@ function remove(tree: Obj, path: string[]): void {
     }
 }
 
-const THIN = { values: 3, uses: 4 } as const;
-
 const total = (map: Map<unknown, number | { count: number }>): number =>
     [...map.values()].reduce<number>(
         (sum, value) => sum + (typeof value === "number" ? value : value.count),
         0,
     );
 
+const counted = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
 export function reviewScales(facts: Facts, explicit: Set<Category>, result: Inferred): string[] {
     const lines: string[] = [];
-    const thin = (distinct: number, uses: number) => distinct < THIN.values || uses < THIN.uses;
 
     const guess = (category: Category, label: string, distinct: number, uses: number) => {
-        if (!explicit.has(category) && distinct > 0 && thin(distinct, uses)) {
+        if (!explicit.has(category) && distinct > 0 && (distinct < 3 || uses < 4)) {
             lines.push(
-                `${label} (guessed from use: ${distinct} value${distinct === 1 ? "" : "s"}, ${uses} use${uses === 1 ? "" : "s"})`,
+                `${label} (guessed from use: ${counted(distinct, "value")}, ${counted(uses, "use")})`,
             );
         }
     };
@@ -308,13 +297,12 @@ export function reviewScales(facts: Facts, explicit: Set<Category>, result: Infe
     guess("shadow", "shadows", result.shadows, total(facts.shadows));
     guess("font", "fonts", Object.keys(result.fonts).length, total(facts.fonts));
 
-    // Spacing values that fit no step of the scale are left out of it: a person decides what to do with them.
-    if (result.spacing.off.length > 0) {
+    const off = result.spacing.off;
+
+    // spacingScale keeps at most 6 off-grid values.
+    if (off.length > 0) {
         lines.push(
-            `spacing (${result.spacing.off.length} value${result.spacing.off.length === 1 ? "" : "s"} fit no step of the ${result.spacing.base ?? 4}px grid: ${result.spacing.off
-                .slice(0, 6)
-                .map((size) => `${size}px`)
-                .join(", ")}${result.spacing.off.length > 6 ? ", …" : ""})`,
+            `spacing (${counted(off.length, "value")} fit no step of the ${result.spacing.base ?? 4}px grid: ${off.map((size) => `${size}px`).join(", ")})`,
         );
     }
 
