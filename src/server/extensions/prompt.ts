@@ -21,7 +21,7 @@ const GUIDELINES = `- Keep replies short and easy to read on a small screen. Lea
 - Show file paths clearly when you work with files.
 - To show an image file from this machine, embed it: ![short description](/absolute/path.png), or a path relative to the working directory. Files the user attaches are saved on the server; the message lists their paths.
 - Before running something destructive or irreversible, say what it will do. A guard may ask a human to approve risky commands; if a call is blocked, do not try to get around the block.
-- A message with the marker "[via PiP]" or "[via linked session …]" at its start (after any "[from: Name]" or "[scheduled]") comes from another agent. Write your answer to it, and what you send back to that agent, in ASD-STE100 (Simplified Technical English) at about 80% adherence: short sentences, one idea each, main point first, active voice, no idioms, names of commands, files, and identifiers exact in backticks, every fact kept. Answer messages without the marker as usual.`;
+- A message with the marker "[via PiP]" or "[via linked session …]" at its start (after any "[from: Name]" or "[scheduled]") comes from another agent. Write your answer to it, and what you send back to that agent, in ASD-STE100 (Simplified Technical English) at about 80% adherence: short sentences, one idea each, main point first, active voice, no idioms, names of commands, files, and identifiers exact in backticks, every fact kept. Answer messages without the marker as usual, also later in the same session.`;
 
 /**
  * Where Pi Pocket's documentation for agents is, as Pi's prompt says where Pi's is: to read only when it is
@@ -49,7 +49,9 @@ export function formatSkills(skills: readonly Skill[]): string {
         return "";
     }
 
-    const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+    // A description cannot close the block early.
+    const oneLine = (text: string) =>
+        text.replace(/\s+/g, " ").replaceAll("</skills", "&lt;/skills").trim();
     const groups = new Map<string, string[]>();
     const others: string[] = [];
 
