@@ -2069,13 +2069,23 @@ test(
             "no check of its own accord",
         );
         assert.deepEqual((await modes()).on, ["High contrast"]);
+        assert.equal(
+            await count('.dsn-tab[title="Check"] .dsn-count'),
+            0,
+            "no count from another mode's report",
+        );
+        await pressed(".dsn-dock-foot button", "Run the check");
+        await waitFor(
+            "the count on the Check tab",
+            `return JSON.stringify(Boolean(document.querySelector('.dsn-tab[title="Check"] .dsn-count')))`,
+        );
 
         await pressed(".dsy-check-options ~ .dsn-note button", "Follow the canvas");
         await waitFor(
             "following",
             `return JSON.stringify(document.querySelector('.dsy-check-options [aria-label="Mode"] button.on')?.getAttribute("aria-label") === "Dark")`,
         );
-        assert.equal(await inPage<number>(`return JSON.stringify(window.__checks.length)`), 2);
+        assert.equal(await inPage<number>(`return JSON.stringify(window.__checks.length)`), 3);
 
         await setBox("");
         await pressed(".dsn-dock-foot button.primary");
