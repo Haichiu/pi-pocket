@@ -485,37 +485,39 @@ export function createSystemView(env, canvas, sections, widgets) {
                     <${Ico} name="down" size=${14} />
                 </button>
                 ${data && html`<${ModeSwitch} s=${s} modes=${data.modes} narrow=${narrow || !split} />`}
-                ${
-                    canEdit &&
-                    data &&
-                    (edits || s.history.future.length > 0) &&
-                    html`<span class="dsy-history"
-                        >${historyButtons(s, " (Ctrl+Z)", " (Ctrl+Shift+Z)")}</span
-                    >`
-                }
-                ${
-                    env.beside() &&
-                    html`<button
+                <span class="dsy-bar-end">
+                    ${
+                        canEdit &&
+                        data &&
+                        (edits || s.history.future.length > 0) &&
+                        html`<span class="dsy-history"
+                            >${historyButtons(s, " (Ctrl+Z)", " (Ctrl+Shift+Z)")}</span
+                        >`
+                    }
+                    ${
+                        env.beside() &&
+                        html`<button
+                            type="button"
+                            class=${`icon-button ${s.focus ? "on" : ""}`}
+                            title=${s.focus ? "Show the conversation" : "Hide the conversation"}
+                            aria-label=${s.focus ? "Show the conversation" : "Hide the conversation"}
+                            aria-pressed=${s.focus}
+                            onClick=${env.toggleFocus}
+                        >
+                            <${Ico} name=${s.focus ? "unfocus" : "focus"} size=${17} />
+                        </button>`
+                    }
+                    <button
                         type="button"
-                        class=${`icon-button ${s.focus ? "on" : ""}`}
-                        title=${s.focus ? "Show the conversation" : "Hide the conversation"}
-                        aria-label=${s.focus ? "Show the conversation" : "Hide the conversation"}
-                        aria-pressed=${s.focus}
-                        onClick=${env.toggleFocus}
+                        class="icon-button"
+                        title="More"
+                        aria-label="More"
+                        aria-haspopup="dialog"
+                        onClick=${() => setOpen("more")}
                     >
-                        <${Ico} name=${s.focus ? "unfocus" : "focus"} size=${17} />
-                    </button>`
-                }
-                <button
-                    type="button"
-                    class="icon-button"
-                    title="More"
-                    aria-label="More"
-                    aria-haspopup="dialog"
-                    onClick=${() => setOpen("more")}
-                >
-                    <${Ico} name="more" size=${18} />
-                </button>
+                        <${Ico} name="more" size=${18} />
+                    </button>
+                </span>
             </div>
             <${SectionTabs} s=${s} data=${data} split=${split} hasDesign=${design !== null} />
             ${
