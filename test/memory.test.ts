@@ -175,7 +175,7 @@ test("Pi saves a lesson only when asked, or when sure it helps many later sessio
     assert.ok(!(await has("Lessons kept from earlier sessions")), "no lessons yet, no section");
     assert.ok(await has("Use add only when a person asks you to save or remember something"));
     assert.ok(await has("you are sure it will clearly help in many later sessions here"));
-    assert.ok(await has("Never save a one-off fact, a guess, a result of this task"));
+    assert.ok(await has("Never save a one-off fact, a niche detail, a lesson for a rare case"));
     assert.ok(await has("When unsure, do not save"));
     // The safety rules stay.
     assert.ok(await has("secrets, what AGENTS.md or the code already says"));

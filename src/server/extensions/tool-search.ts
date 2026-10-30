@@ -26,6 +26,9 @@ import {
 /** What loading a search matches at most, when the query is not the names of tools. */
 const SEARCH_LIMIT = 2;
 
+/** What the design guide's section would say, for the codemode route, where the section never shows. */
+const DESIGN_NOTE = `Before you make or change a design, read ${DESIGN_GUIDE}. Check each design with design_preview at mobile and desktop sizes before you reply. design_system read gives a summary of the project's design system.`;
+
 /** Tools that wait to be searched for: what each is for, and the key of the prompt section shown once it is loaded. */
 const DEFERRED: Record<string, { use: string; section?: string; note?: string }> = {
     browser: {
@@ -43,12 +46,13 @@ const DEFERRED: Record<string, { use: string; section?: string; note?: string }>
     design_preview: {
         use: "make, change, or check a design (read its guide first)",
         section: "design_mode",
-        note: `Before you make or change a design, read ${DESIGN_GUIDE}. Check each design with design_preview at mobile and desktop sizes before you reply. design_system read gives a summary of the project's design system.`,
+        note: DESIGN_NOTE,
     },
-    design_export: { use: "export a design", section: "design_mode" },
+    design_export: { use: "export a design", section: "design_mode", note: DESIGN_NOTE },
     design_system: {
         use: "read or write the project's design system",
         section: "design_mode",
+        note: DESIGN_NOTE,
     },
     ask_someone: { use: "draft a question for someone outside this chat" },
 };

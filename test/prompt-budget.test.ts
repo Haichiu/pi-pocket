@@ -27,7 +27,7 @@ test("a new session's sections and tool schemas fit the prompt budget", async ()
     cleanUp();
     const items = first!.messages.flatMap((message) => [
         ...Object.entries(message.sections ?? {}).map(
-            ([name, text]) => [name, text.length] as const,
+            ([name, text]) => [name, String(text).length] as const,
         ),
         ...(message.toolsAdded ?? []).map(
             ({ name, description, parameters }) =>
@@ -36,6 +36,13 @@ test("a new session's sections and tool schemas fit the prompt budget", async ()
     ]);
     const ours = items.filter(([name]) => !NOT_OURS.has(name)).sort((a, b) => b[1] - a[1]);
     const total = ours.reduce((sum, [, size]) => sum + size, 0);
+    const names = ours.map(([name]) => name);
+
+    // A change in the request's shape must fail here, not pass with nothing counted.
+    for (const name of ["preamble", "guidelines", "artifacts", "artifact", "subagent"]) {
+        assert.ok(names.includes(name), `the first request has ${name}`);
+    }
+
     const biggest = ours.slice(0, 5).map(([name, size]) => `${name} ${size}`);
 
     assert.ok(

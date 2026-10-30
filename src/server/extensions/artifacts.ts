@@ -205,7 +205,7 @@ function applyEdits(
 }
 
 /** The bullet about the second tool, for sessions that have it. */
-const INLINE_GUIDE = `- artifact_inline shows the page as a card in your reply, for a small interactive piece the person uses right there (a calculator, a chart, a form); artifact is for a whole page, a game, Markdown, or SVG. After an update, say what changed and do not repeat the page. Only a call you make directly shows a card, not one inside codemode. An id made by artifact_inline stays HTML. Write its page for a narrow column with no fixed height: the card grows up to 900 px, then scrolls.
+const INLINE_GUIDE = `- artifact_inline shows the page as a card in your reply, for a small interactive piece the person uses right there (a calculator, a chart, a form); artifact is for a whole page, a game, Markdown, or SVG. Its result says which version it made: after an update, say what changed and do not repeat the page. Only a call you make directly shows a card, not one inside codemode. An id made by artifact_inline stays HTML: use a new id for Markdown or SVG. Write its page for a narrow column with no fixed height: the card grows up to 900 px, then scrolls.
 `;
 
 /** The page-to-app messages (follow-up, saved state): read on demand, as few artifacts use them. */
@@ -553,7 +553,10 @@ const bundleParameters = {
     assets: Type.Optional(
         Type.Array(
             Type.Object({
-                name: Type.String({ description: "Relative path in the bundle." }),
+                name: Type.String({
+                    description:
+                        "Relative path in the bundle, up to 200 characters, with no . or .. segment.",
+                }),
                 path: Type.Optional(
                     Type.String({ description: "A local file to copy (binary allowed)." }),
                 ),
