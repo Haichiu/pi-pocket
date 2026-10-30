@@ -211,7 +211,22 @@ export function namespaceOf(name: string): { category: Category; rest: string } 
         : { category: found[1], rest: name.replace(found[0], "") };
 }
 
+// A bound on memory: 10,000 properties in each of 15 files filled a 128 MB heap.
+const MAX_VARS = 20_000;
+
 export function addVar(facts: Facts, fact: Omit<VarFact, "order" | "rank">): void {
+    if (facts.vars.length >= MAX_VARS) {
+        if (!facts.partial) {
+            facts.partial = true;
+            facts.skipped.push({
+                path: fact.file,
+                why: `over ${MAX_VARS} variables: the rest left out`,
+            });
+        }
+
+        return;
+    }
+
     noteChannels(facts, fact.value);
 
     const scope =

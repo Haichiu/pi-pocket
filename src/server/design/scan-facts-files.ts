@@ -116,7 +116,8 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
     } else if (isPage) {
         const { blocks, inline } = pageStyles(raw);
 
-        for (const block of blocks) {
+        // Each block is looked for in the page from its start: a page with thousands of them is cut.
+        for (const block of blocks.slice(0, 200)) {
             ingestStyles(facts, rel, parseStyles(block, lineOfBlock(raw, block)));
         }
 

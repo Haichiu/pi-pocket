@@ -31,6 +31,11 @@ const LENGTH_NAMES: [RegExp, Category | undefined][] = [
 ];
 
 function looksLikeShadow(text: string): boolean {
+    // The token pattern below backtracks on many open parentheses: no shadow is this long.
+    if (text.length > 600) {
+        return false;
+    }
+
     const layers = commaParts(text.trim());
 
     if (

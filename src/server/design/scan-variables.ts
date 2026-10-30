@@ -204,8 +204,8 @@ export function follow(
     active: Set<Variable> = new Set(),
     memo: Map<Variable, Found | undefined> = new Map(),
 ): Found | undefined {
-    // `$a: $a * 2` is not followed into itself, nor a chain past 256.
-    if (active.has(start) || active.size >= 256) {
+    // `$a: $a * 2` is not followed into itself, nor a chain past 64.
+    if (active.has(start) || active.size >= 64) {
         return undefined;
     }
 
