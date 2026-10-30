@@ -109,7 +109,7 @@ test("agents write to each other in ASD-STE100: team messages, replies, and suba
 
     assert.match(
         own,
-        /A message with the marker .*\[via linked session …\].* comes from another agent \(PiP/,
+        /A message with the marker .*\[via linked session …\].* comes from another agent\. Write your answer to it/,
     );
 });
 
