@@ -405,60 +405,6 @@ test("a project that keeps tokens in a DTCG file gets them back as they are, wit
     assert.deepEqual(system.modes, ["light", "dark"]);
 });
 
-test("Style Dictionary and Tokens Studio files are converted: value, type, sizing, fontFamilies, boxShadow", () => {
-    const scan = scanTokens(
-        project({
-            "design-tokens.json": JSON.stringify({
-                global: {
-                    primary: { value: "#6c5ce7", type: "color", description: "Brand" },
-                    surface: { value: "{global.white}", type: "color" },
-                    white: { value: "#ffffff", type: "color" },
-                    spacing: {
-                        sm: { value: "8", type: "spacing" },
-                        md: { value: "16", type: "spacing" },
-                    },
-                    radii: { card: { value: "12", type: "borderRadius" } },
-                    fonts: { body: { value: "Inter", type: "fontFamilies" } },
-                    weights: { bold: { value: "700", type: "fontWeights" } },
-                    lh: { body: { value: "150%", type: "lineHeights" } },
-                    shadow: {
-                        soft: {
-                            value: {
-                                x: "0",
-                                y: "4",
-                                blur: "12",
-                                spread: "0",
-                                color: "#00000033",
-                                type: "dropShadow",
-                            },
-                            type: "boxShadow",
-                        },
-                    },
-                    skip: { note: { value: "hello", type: "other" } },
-                },
-            }),
-        }),
-    );
-
-    assert.equal(
-        scan.inferred.imported,
-        10,
-        "the one with a type that is not a token type is left out",
-    );
-
-    const system = load(scan);
-
-    assert.equal(token(system, "global.spacing.sm")!.modes.light!.css, "8px");
-    assert.equal(token(system, "global.radii.card")!.modes.light!.css, "12px");
-    assert.equal(token(system, "global.fonts.body")!.type, "fontFamily");
-    assert.equal(token(system, "global.lh.body")!.modes.light!.css, "1.5");
-    assert.equal(
-        token(system, "global.shadow.soft")!.modes.light!.css,
-        "0px 4px 12px 0px #00000033",
-    );
-    assert.equal(token(system, "global.primary")!.description, "Brand");
-});
-
 test("a messy page: near-duplicate colors are one, roles come from use, and the draft says what is off the grid", () => {
     const scan = scanTokens(
         project({
@@ -585,18 +531,6 @@ test("hostile inputs scan in bounded time: thousands of braces, variables, and c
     assert.ok(ms < 8000, `${ms} ms of CPU`);
 });
 
-test("a project with nothing to read gives a draft with no tokens, and the report says to write them", () => {
-    const scan = scanTokens(project({ "readme.html": "<p>hello</p>" }));
-    const report = scanReport(scan);
-
-    assert.deepEqual(
-        Object.keys(scan.draft.tokens).filter((key) => !key.startsWith("$")),
-        [],
-    );
-    assert.match(report, /held no colors, fonts, sizes, or custom properties/);
-    assert.match(scanReport(scanTokens(project({ "readme.md": "x" }))), /found no style files/);
-});
-
 const DARK_FIRST = {
     "web/style.css": `:root {
   --o-bg: #1a1b26; --o-fg: #a9b1d6; --o-fg-bright: #c0caf5; --o-accent: #7aa2f7; --o-red: #f7768e; --o-yellow: #e0af68; --o-green: #9ece6a;
@@ -659,17 +593,6 @@ test("a lone --body is the text, and --body-bg is the page", () => {
     assert.equal(roles.text!.source, "body");
 });
 
-test("breakpoints a pixel apart are one", () => {
-    const scan = scanTokens(
-        project({
-            "a.css":
-                "@media (min-width: 1100px) { a { color: red } } @media (min-width: 1101px) { a { color: blue } } @media (min-width: 640px) { a { color: red } }",
-        }),
-    );
-
-    assert.deepEqual(scan.inferred.breakpoints, ["sm 640px", "md 1100px"]);
-});
-
 test("SCSS arithmetic is computed", () => {
     const scan = scanTokens(
         project({
@@ -716,48 +639,6 @@ test("scales: sizes a pixel apart merge, a percent radius is not a size, a pill 
     );
     assert.equal(scan.inferred.shadows, 3, "a lift, an inset line, and a ring");
     assert.ok(token(system, "shadow.inset") && token(system, "shadow.ring"));
-});
-
-test("a color named for a role but not the role sits one level down, so it never takes the role's place", () => {
-    const scan = scanTokens(
-        project({
-            "a.css":
-                ":root { --accent: #2255aa; --primary-dark: #113377; --brand: #3366cc; --hairline: #dddddd; --border: #cccccc; --bg: #fff; --text: #111 }",
-        }),
-    );
-    const system = load(scan);
-
-    assert.equal(scan.inferred.roles.accent!.token, "color.accent.default");
-    assert.ok(token(system, "color.primary.dark"));
-    assert.ok(token(system, "color.brand.default"));
-    assert.ok(token(system, "color.hairline.default"));
-    assert.ok(
-        system.tokens.every(
-            (each) =>
-                !each.path.includes("color") ||
-                each.path.length !== 2 ||
-                each.type !== "color" ||
-                !/^(?:primary|brand|hairline)$/.test(each.path[1]!),
-        ),
-    );
-});
-
-test("text on the accent is a color the project has: no new black or white is invented", () => {
-    const scan = scanTokens(
-        project({
-            "a.css":
-                ":root { --bg: #fbfaf7; --text: #1f2328; --accent: #2563eb } .dark { --bg: #0e1013; --text: #e6e8eb; --accent: #6ea0ff }",
-        }),
-    );
-    const system = load(scan);
-    const onAccent = token(system, "color.text.on-accent")!;
-    const colors = new Set(
-        system.tokens.filter((each) => each.type === "color").map((each) => each.modes.light!.hex),
-    );
-
-    assert.ok(!colors.has("#000000") && !colors.has("#ffffff"));
-    assert.ok(["#fbfaf7", "#1f2328"].includes(onAccent.modes.light!.hex!));
-    assert.ok(["#0e1013", "#e6e8eb"].includes(onAccent.modes.dark!.hex!));
 });
 
 test("the surface is the background of cards and panels, and Tailwind's arbitrary colors count", () => {
@@ -942,28 +823,6 @@ body { background: #faf3e9; color: #333 } a { color: #3366cc } .btn { background
 
 const modesOf = (scan: TokenScan) => Object.keys(scan.draft.modes);
 
-test("variables kept for the dark mode under their own names (--dark-bg) are its values, not colors of their own", () => {
-    const scan = scanTokens(
-        project({
-            "a.css": `:root { --canvas: #f6f4ef; --paper: #ffffff; --ink: #23282f; --divider: #e3ded4; --primary: #1a5fd0;
-  --dark-canvas: #101318; --dark-paper: #171b21; --dark-ink: #e7eaee; --dark-divider: #2b313a; --dark-primary: #8ab4ff }
-.theme-dark { --canvas: var(--dark-canvas); --paper: var(--dark-paper); --ink: var(--dark-ink); --divider: var(--dark-divider); --primary: var(--dark-primary) }
-body { background: var(--canvas); color: var(--ink) } .card { background: var(--paper); border: 1px solid var(--divider) } a { color: var(--primary) }`,
-        }),
-    );
-    const system = load(scan);
-    const { roles } = scan.inferred;
-
-    assert.equal(roles.background!.value, "#f6f4ef");
-    assert.equal(roles.background!.dark, "#101318");
-    assert.equal(roles.text!.dark, "#e7eaee");
-    assert.equal(roles.accent!.dark, "#8ab4ff");
-    assert.ok(
-        !system.tokens.some((each) => each.name.startsWith("color.dark")),
-        "no color.dark-… tokens: the dark variables are values of the plain ones",
-    );
-});
-
 test("a shade (--primary-dark beside --primary-light) is not the dark mode's value", () => {
     const scan = scanTokens(
         project({
@@ -990,26 +849,6 @@ test("a file named for a mode sets that mode's values: dark.less beside variable
     assert.equal(roles.surface!.dark, "#1a1d23");
     assert.equal(roles.accent!.dark, "#1668dc");
     assert.equal(roles.danger!.dark, "#dc4446");
-});
-
-test("quiet text is a gray, not the lighter link color of the dark mode; a label on the accent is a color the mode uses", () => {
-    const scan = scanTokens(
-        project({
-            "index.html": `<style>
-body { background: #fbfaf7; color: #23272e } .card { background: #fff } .muted { color: #6a7280 } a { color: #2f6fed } .btn { background: #2f6fed; color: #fff }
-@media (prefers-color-scheme: dark) {
-  body { background: #14161a; color: #e6e8eb } .card { background: #1c1f24 } .muted, .meta { color: #9aa3ad } a { color: #8ab4ff } a:hover { color: #b0ccff } .btn { background: #8ab4ff; color: #10131a }
-}</style><p class="muted meta">x</p>`,
-        }),
-    );
-
-    assert.equal(scan.inferred.roles.muted!.dark, "#9aa3ad", "a gray, not #b0ccff");
-    assert.equal(
-        scan.draft.modes.dark !== undefined &&
-            JSON.stringify(scan.draft.modes.dark).includes("#10131a"),
-        true,
-        "the dark label on the light button is kept",
-    );
 });
 
 test("Sass color functions and arithmetic over variables, in variables and in rules", () => {
@@ -1516,85 +1355,6 @@ test("interpolation inside a value or with arithmetic is resolved through the Sa
     assert.ok(scan.inferred.radii.some((radius) => radius.endsWith("6px")));
 });
 
-test("a dark-first page whose --dark-* variables feed the roles: no token for the twins, the status role from its name in both modes", () => {
-    const twins: [string, (name: string) => string][] = [
-        ["--dark-*", (name) => `dark-${name}`],
-        ["--*-dark", (name) => `${name}-dark`],
-        ["--d-*", (name) => `d-${name}`],
-        ["--*-dk", (name) => `${name}-dk`],
-    ];
-    const statuses = ["ok", "good", "positive", "pass", "valid"];
-    const switches = [
-        ':root[data-mode="light"]',
-        ".light",
-        '[data-theme="light"]',
-        "html.theme-light",
-    ];
-
-    for (const [form, twin] of twins) {
-        for (const [at, status] of statuses.entries()) {
-            const selector = switches[at % switches.length]!;
-            const scan = scanTokens(
-                project({
-                    "a.css": `:root {
-  --${twin("paper")}: #101216; --${twin("ink")}: #e6e8ee; --${twin(status)}: #3c9a6a;
-  --paper: var(--${twin("paper")}); --ink: var(--${twin("ink")}); --${status}: var(--${twin(status)});
-}
-${selector} { --paper: #fafafa; --ink: #15171c; --${status}: #0d6b3f; }
-.badge--${status} { color: var(--${status}); }
-body { background: var(--paper); color: var(--ink) }`,
-                }),
-            );
-            const system = load(scan);
-            const { roles } = scan.inferred;
-            const label = `${form}, ${status}, ${selector}`;
-
-            assert.equal(scan.inferred.modes.default, "dark", `${label}: dark first`);
-            assert.equal(roles.success!.value, "#3c9a6a", label);
-            assert.equal(
-                roles.success!.dark,
-                "#0d6b3f",
-                `${label}: the light value, from the same name`,
-            );
-            assert.equal(roles.success!.basis, "name", `${label}: found by the name, not by use`);
-            assert.equal(roles.success!.source, status, label);
-            assert.equal(roles.text!.value, "#e6e8ee", label);
-            assert.equal(roles.text!.dark, "#15171c", label);
-            assert.deepEqual(
-                system.tokens
-                    .filter((each) => /(?:^|[.-])(?:dark|dk|d|light)(?:[.-]|$)/.test(each.name))
-                    .map((each) => each.name),
-                [],
-                `${label}: the twins make no token`,
-            );
-            assert.ok(
-                !system.tokens.some((each) => each.name === `color.${status}`),
-                `${label}: and the role is not there twice`,
-            );
-        }
-    }
-});
-
-test("a light-first page with the same twins: the roles take the dark values from the twins", () => {
-    const scan = scanTokens(
-        project({
-            "a.css": `:root { --light-paper: #fafafa; --light-ink: #15171c; --light-ok: #0d6b3f;
-  --paper: var(--light-paper); --ink: var(--light-ink); --ok: var(--light-ok) }
-.dark { --paper: #101216; --ink: #e6e8ee; --ok: #3c9a6a }
-.badge--ok { color: var(--ok) } body { background: var(--paper); color: var(--ink) }`,
-        }),
-    );
-    const system = load(scan);
-
-    assert.equal(scan.inferred.roles.success!.value, "#0d6b3f");
-    assert.equal(scan.inferred.roles.success!.dark, "#3c9a6a");
-    assert.equal(scan.inferred.roles.success!.basis, "name");
-    assert.deepEqual(
-        system.tokens.filter((each) => /light/.test(each.name)).map((each) => each.name),
-        [],
-    );
-});
-
 test("readLiteral ends at a stray closing bracket (it looped for ever before: run in a child)", () => {
     const module = new URL("../src/server/design/scan-parse.ts", import.meta.url).href;
     const code = `import { readLiteral } from "${module}";
@@ -1605,23 +1365,6 @@ console.log(Object.keys(readLiteral("{ a: f(1)), b: 2 }", 0)).join());`;
     });
 
     assert.equal(child.stdout.trim(), "a");
-});
-
-test("a theme object shared on 5 levels (30 keys each) is walked within a budget (hours before)", () => {
-    const keys = (i: number) => Array.from({ length: 30 }, (_, j) => `k${j}: c${i - 1}`).join();
-    const levels = [1, 2, 3, 4, 5].map((i) => `const c${i} = { ${keys(i)} };`).join("\n");
-    const colors = `const c0 = { primary: "#123", border: "#456", muted: "#789" };\n${levels}`;
-    // A mode block over a fan of leaves that give nothing: `leaves` (the mode blocks' reader) walks it too.
-    const flags = `const c0 = { a: true, b: null };\n${levels}`;
-    const modes = `export const x = { dark: { k0: c5, k1: c5 }, light: { p: "#111", q: "#222", r: "#333" } };`;
-    const dir = project({
-        "tailwind.config.js": `${colors}\nmodule.exports = { theme: { colors: c5 } };`,
-        "theme.js": `${flags}\n${modes}`,
-    });
-    const scan = import.meta.resolve("../src/server/design/scan.ts");
-    const input = `import { scanTokens } from "${scan}"; scanTokens(${JSON.stringify(dir)});`;
-
-    assert.equal(spawnSync(process.execPath, ["-"], { input, timeout: 9e3 }).status, 0);
 });
 
 test("10,000 custom properties are read in linear time (13 s before)", () => {

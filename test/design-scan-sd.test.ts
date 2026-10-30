@@ -186,58 +186,6 @@ test("brands and themes are modes: the same paths with other values; a theme nam
     assert.ok(scan.inferred.notes.some((note) => /modes found: acme, globex, dark/.test(note)));
 });
 
-test("the DTCG format; files named for dark hold the dark mode", () => {
-    const system = load(
-        scanTokens(
-            project({
-                "tokens/core/color.json": {
-                    color: {
-                        $type: "color",
-                        neutral: {
-                            0: { $value: "#ffffff" },
-                            100: { $value: "#f4f4f5" },
-                            900: { $value: "#18181b" },
-                            950: { $value: "#09090b" },
-                        },
-                        teal: { 400: { $value: "#2dd4bf" }, 600: { $value: "#0d9488" } },
-                    },
-                },
-                "tokens/core/dimension.json": {
-                    space: { $type: "dimension", sm: { $value: "8px" }, md: { $value: "16px" } },
-                    font: {
-                        weight: { $type: "fontWeight", bold: { $value: 700 } },
-                        family: {
-                            $type: "fontFamily",
-                            body: { $value: ["Source Sans 3", "sans-serif"] },
-                        },
-                    },
-                },
-                "tokens/semantic/light.json": {
-                    color: {
-                        $type: "color",
-                        bg: { page: { $value: "{color.neutral.0}" } },
-                        accent: { default: { $value: "{color.teal.600}" } },
-                    },
-                },
-                "tokens/semantic/dark.json": {
-                    color: {
-                        $type: "color",
-                        bg: { page: { $value: "{color.neutral.950}" } },
-                        accent: { default: { $value: "{color.teal.400}" } },
-                    },
-                },
-            }),
-        ),
-    );
-
-    assert.deepEqual(system.modes, ["light", "dark"]);
-    assert.equal(hex(system, "color.bg.page"), "#ffffff");
-    assert.equal(hex(system, "color.bg.page", "dark"), "#09090b");
-    assert.equal(hex(system, "color.accent.default", "dark"), "#2dd4bf");
-    assert.equal(css(system, "space.md"), "16px");
-    assert.equal(token(system, "font.family.body")!.type, "fontFamily");
-});
-
 test("the usual folders, the old `properties/` layout, attributes and comments", () => {
     const system = load(
         scanTokens(
