@@ -4,6 +4,7 @@ import {
     cleanUp,
     context,
     lastText,
+    loadTools,
     newSession,
     openApp,
     owner,
@@ -88,6 +89,8 @@ after(async () => {
 async function session(): Promise<ConversationId> {
     const id = await newSession(app);
 
+    // background waits for a search (`tool-search.ts`): Pi loads it first.
+    await loadTools(app, id, "background");
     started.add(id);
 
     return id;
