@@ -26,7 +26,7 @@ const mode = (accent: string) => JSON.stringify({ color: { accent: { $value: acc
 const accent = (cwd: string, name = "light") =>
     loadDesignSystem(cwd)!.tokens.find((token) => token.name === "color.accent")!.modes[name]!.css;
 
-// The cache trusts a file only a second after its last change, so each edit is made, then read after that second.
+// The cache trusts a file only 3 seconds after its last change, so each edit is made, then read after that time.
 test("a kept system is the same object until a file changes; each kind of edit shows on the next load", async () => {
     const base = {
         "tokens.json": tokens("#111111"),
@@ -68,14 +68,14 @@ test("a kept system is the same object until a file changes; each kind of edit s
     const folders = edits.map(() => project(base));
 
     try {
-        await sleep(1100);
+        await sleep(3100);
 
         for (const cwd of folders) {
             assert.equal(loadDesignSystem(cwd), loadDesignSystem(cwd), "kept while unchanged");
         }
 
         edits.forEach(([, edit], index) => edit(folders[index]!));
-        await sleep(1100);
+        await sleep(3100);
         edits.forEach(([what, , check], index) => {
             assert.doesNotThrow(() => check(folders[index]!), what);
         });
@@ -86,7 +86,7 @@ test("a kept system is the same object until a file changes; each kind of edit s
     }
 });
 
-test("an edit shows at once: a file changed in the last second is read again on each load", () => {
+test("an edit shows at once: a file changed in the last 3 seconds is read again on each load", () => {
     const cwd = project({ "tokens.json": tokens("#111111") });
 
     try {
@@ -136,7 +136,7 @@ test("at the limits (5,000 tokens, 16 modes), a repeated load and summary take a
     const cwd = project(files);
 
     try {
-        await sleep(1100);
+        await sleep(3100);
         systemSummary(loadDesignSystem(cwd)!, 12_000);
 
         const start = performance.now();

@@ -1,5 +1,5 @@
 // A loaded system is kept while the revision of its folder stays the same. The revision is read on every call, so an edit by any program shows at once.
-// A file changed in the last second is not trusted: the file system can give two writes in one tick the same time.
+// A file changed in the last 3 seconds is not trusted: two writes in one tick of the file system's clock (2 s on FAT) get the same time.
 import { createHash } from "node:crypto";
 import { lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -8,7 +8,7 @@ import type { DesignSystem } from "./system-types.ts";
 
 const ENTRIES = 8;
 const BUDGET = 48_000_000;
-const RACY_NS = 1_000_000_000n;
+const RACY_NS = 3_000_000_000n;
 
 interface Entry {
     revision: string;
