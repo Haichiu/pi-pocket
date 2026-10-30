@@ -15,9 +15,7 @@ interface RoleInfo {
     dark?: string;
     basis: "name" | "use";
     source: string;
-    /** How sure the scan is: a name that says the role is high; a guess from how colors are used is low. */
     confidence: "high" | "medium" | "low";
-    /** Where the choice comes from, as `file:line`, when the scan knows. */
     at?: string;
 }
 
@@ -30,7 +28,6 @@ export interface Inferred {
     spacing: { base?: number; steps: number[]; off: number[] };
     radii: string[];
     shadows: number;
-    motion: { durations: string[]; easings: string[] };
     breakpoints: string[];
     hasDark: boolean;
     modes: { default: string; alt: string };
@@ -66,24 +63,22 @@ export function bezier(text: string): number[] | undefined {
     }
 
     const numbers = match.slice(1, 5).map(Number);
+    const timesInRange = [numbers[0]!, numbers[2]!].every((x) => x >= 0 && x <= 1);
 
-    return numbers.every(Number.isFinite) &&
-        numbers[0]! >= 0 &&
-        numbers[0]! <= 1 &&
-        numbers[2]! >= 0 &&
-        numbers[2]! <= 1
-        ? numbers
-        : undefined;
+    return numbers.every(Number.isFinite) && timesInRange ? numbers : undefined;
 }
+
+export const rounded = (value: number) => Math.round(value * 100) / 100;
+export const topBy = <T>(list: T[], key: (item: T) => number, limit: number) =>
+    [...list].sort((a, b) => key(b) - key(a)).slice(0, limit);
 
 export function shadowValue(text: string): unknown {
     const layers: Obj[] = [];
+    const dimension = (value: number | undefined) => `${rounded(value ?? 0)}px`;
 
     for (const layer of commaParts(text)) {
-        const found = colorsIn(layer, true);
-        const color = found[0];
-        const rest = layer.replace(color?.text ?? "", " ");
-        const lengths = parts(rest)
+        const color = colorsIn(layer, true)[0];
+        const lengths = parts(layer.replace(color?.text ?? "", " "))
             .filter((part) => part !== "inset")
             .map((part) => px(part));
 
@@ -95,9 +90,6 @@ export function shadowValue(text: string): unknown {
         ) {
             return text;
         }
-
-        const dimension = (value: number | undefined) =>
-            `${Math.round((value ?? 0) * 100) / 100}px`;
 
         layers.push({
             color: color.text.replace(/\s+/g, " "),
@@ -112,21 +104,13 @@ export function shadowValue(text: string): unknown {
     return layers.length === 1 ? layers[0] : layers;
 }
 
-export function elevation(value: unknown): number {
-    const layers = Array.isArray(value)
-        ? (value as Obj[])
-        : typeof value === "object" && value !== null
-          ? [value as Obj]
-          : [];
+const pxOf = (value: unknown) => px(String(value ?? "0")) ?? 0;
+const layersOf = (value: unknown) => (Array.isArray(value) ? value : [value]) as Obj[];
 
-    return Math.max(
-        0,
-        ...layers.map(
-            (layer) =>
-                (px(String(layer.blur ?? "0")) ?? 0) +
-                Math.abs(px(String(layer.offsetY ?? "0")) ?? 0),
-        ),
-    );
+export function elevation(value: unknown): number {
+    const layers = typeof value === "object" && value !== null ? layersOf(value) : [];
+
+    return Math.max(0, ...layers.map((layer) => pxOf(layer.blur) + Math.abs(pxOf(layer.offsetY))));
 }
 
 export class Book {
@@ -148,19 +132,18 @@ export class Book {
     taken() {
         return new Set(this.tokens.keys());
     }
+
+    group(name: string) {
+        return [...this.tokens.values()].filter((entry) => entry.path[0] === name);
+    }
+
+    listed(name: string) {
+        return this.group(name)
+            .sort((a, b) => (px(String(a.node.$value)) ?? 0) - (px(String(b.node.$value)) ?? 0))
+            .map((entry) => `${entry.path[1]} ${String(entry.node.$value)}`);
+    }
 }
 
-const WEIGHT_NAMES: Record<number, string> = {
-    100: "thin",
-    200: "extralight",
-    300: "light",
-    400: "regular",
-    500: "medium",
-    600: "semibold",
-    700: "bold",
-    800: "extrabold",
-    900: "black",
-};
 const TAILWIND_TEXT: Record<string, string> = {
     xs: "0.75rem",
     sm: "0.875rem",
@@ -186,24 +169,45 @@ const TAILWIND_RADIUS: Record<string, string> = {
     "3xl": "1.5rem",
     full: "9999px",
 };
-const TAILWIND_WEIGHT: Record<string, [string, number]> = {
-    thin: ["thin", 100],
-    extralight: ["extralight", 200],
-    light: ["light", 300],
-    normal: ["regular", 400],
-    medium: ["medium", 500],
-    semibold: ["semibold", 600],
-    bold: ["bold", 700],
-    extrabold: ["extrabold", 800],
-    black: ["black", 900],
-};
-
 const SIZE_BELOW = ["sm", "xs", "2xs"];
 const SIZE_ABOVE = ["lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl"];
+const LADDER = ["xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl"];
+const LADDERS: Record<number, string[]> = {
+    1: ["md"],
+    2: ["sm", "lg"],
+    3: ["sm", "md", "lg"],
+    4: ["sm", "md", "lg", "xl"],
+    5: ["xs", "sm", "md", "lg", "xl"],
+};
 
-export const rounded = (value: number) => Math.round(value * 100) / 100;
-export const topBy = <T>(list: T[], key: (item: T) => number, limit: number) =>
-    [...list].sort((a, b) => key(b) - key(a)).slice(0, limit);
+// Entries come most used first, so the first of a group of near values stands for all of them.
+function cluster<K, V>(
+    entries: [K, V][],
+    near: (kept: K, key: K) => boolean,
+    join: (kept: [K, V], value: V) => void,
+): [K, V][] {
+    const clusters: [K, V][] = [];
+
+    for (const [key, value] of entries) {
+        const found = clusters.find(([other]) => near(other, key));
+
+        if (found === undefined) {
+            clusters.push([key, value]);
+        } else {
+            join(found, value);
+        }
+    }
+
+    return clusters;
+}
+
+const addCount = (kept: [unknown, number], count: number) => {
+    kept[1] += count;
+};
+
+const addFactCount = (kept: [unknown, { count: number }], fact: { count: number }) => {
+    kept[1].count += fact.count;
+};
 
 export function fontScale(
     facts: Facts,
@@ -211,13 +215,8 @@ export function fontScale(
     explicit: Set<Category>,
     result: Inferred,
 ): void {
-    const stacks = [...facts.fonts.values()];
-    const named = [...book.tokens.values()].filter(
-        (entry) =>
-            entry.path[0] === "font" &&
-            !entry.path[1]!.startsWith("heading") &&
-            !entry.path[1]!.startsWith("body"),
-    );
+    const ranked = [...facts.fonts.values()].sort((a, b) => b.count - a.count);
+    const named = book.group("font").filter((entry) => !/^(?:heading|body)/.test(entry.path[1]!));
 
     const kindOf = (stack: string[]) =>
         stack.some((name) => /mono|code|courier|consolas|menlo|monaco/i.test(name)) ||
@@ -227,61 +226,6 @@ export function fontScale(
               ? "serif"
               : "sans";
 
-    for (const entry of named) {
-        result.fonts[entry.path.join(".")] = (entry.node.$value as string[]).join(", ");
-    }
-
-    if (explicit.has("font")) {
-        const covered = new Set(
-            named.map((entry) => (entry.node.$value as string[])[0]?.toLowerCase()),
-        );
-
-        for (const fact of [...stacks].sort((a, b) => b.count - a.count).slice(0, 8)) {
-            const first = fact.stack[0]?.toLowerCase();
-            const kind = kindOf(fact.stack);
-
-            if (
-                first !== undefined &&
-                kind === "mono" &&
-                !covered.has(first) &&
-                !named.some((entry) => kindOf(entry.node.$value as string[]) === "mono") &&
-                !book.has(["font", kind])
-            ) {
-                book.add(["font", kind], { $value: fact.stack, $type: "fontFamily" });
-                result.fonts[`font.${kind}`] = fact.stack.join(", ");
-                covered.add(first);
-            }
-        }
-
-        const sans = named.find((entry) => /sans|body|base|text/.test(entry.path[1]!)) ?? named[0];
-        const heading = named.find((entry) => /heading|display|title/.test(entry.path[1]!));
-
-        if (sans !== undefined && !book.has(["font", "body"])) {
-            book.add(["font", "body"], { $value: `{${sans.path.join(".")}}`, $type: "fontFamily" });
-        }
-
-        if (heading !== undefined && !book.has(["font", "heading"])) {
-            book.add(["font", "heading"], {
-                $value: `{${heading.path.join(".")}}`,
-                $type: "fontFamily",
-            });
-        }
-
-        return;
-    }
-
-    if (stacks.length === 0) {
-        return;
-    }
-
-    const ranked = [...stacks].sort((a, b) => b.count - a.count);
-    const used = new Map<string, FontPick>();
-
-    interface FontPick {
-        path: string[];
-        stack: string[];
-    }
-
     const add = (kind: string, stack: string[]) => {
         const path = ["font", kind];
 
@@ -290,18 +234,57 @@ export function fontScale(
         }
 
         book.add(path, { $value: stack, $type: "fontFamily" });
-        used.set(kind, { path, stack });
         result.fonts[path.join(".")] = stack.join(", ");
 
         return path;
     };
 
-    const body = [...ranked]
+    const alias = (kind: string, target: string[]) =>
+        book.add(["font", kind], { $value: `{${target.join(".")}}`, $type: "fontFamily" });
+
+    for (const entry of named) {
+        result.fonts[entry.path.join(".")] = (entry.node.$value as string[]).join(", ");
+    }
+
+    if (explicit.has("font")) {
+        const covered = new Set(
+            named.map((entry) => (entry.node.$value as string[])[0]?.toLowerCase()),
+        );
+        const mono = ranked
+            .slice(0, 8)
+            .find(
+                (fact) =>
+                    fact.stack[0] !== undefined &&
+                    kindOf(fact.stack) === "mono" &&
+                    !covered.has(fact.stack[0].toLowerCase()),
+            );
+
+        if (
+            mono !== undefined &&
+            !named.some((entry) => kindOf(entry.node.$value as string[]) === "mono")
+        ) {
+            add("mono", mono.stack);
+        }
+
+        const sans = named.find((entry) => /sans|body|base|text/.test(entry.path[1]!)) ?? named[0];
+        const heading = named.find((entry) => /heading|display|title/.test(entry.path[1]!));
+
+        if (sans !== undefined && !book.has(["font", "body"])) {
+            alias("body", sans.path);
+        }
+
+        if (heading !== undefined && !book.has(["font", "heading"])) {
+            alias("heading", heading.path);
+        }
+
+        return;
+    }
+
+    const body = ranked
         .filter((fact) => kindOf(fact.stack) !== "mono")
         .sort((a, b) => b.body * 3 + b.count - (a.body * 3 + a.count))[0];
-    const bodyKind = body === undefined ? undefined : kindOf(body.stack);
-    const bodyPath = body === undefined ? undefined : add(bodyKind!, body.stack);
-    const mono = [...ranked]
+    const bodyPath = body === undefined ? undefined : add(kindOf(body.stack), body.stack);
+    const mono = ranked
         .filter((fact) => kindOf(fact.stack) === "mono")
         .sort((a, b) => b.code + b.count - (a.code + a.count))[0];
 
@@ -309,7 +292,7 @@ export function fontScale(
         add("mono", mono.stack);
     }
 
-    const heading = [...ranked]
+    const heading = ranked
         .filter((fact) => fact !== body && fact.heading > 0 && kindOf(fact.stack) !== "mono")
         .sort((a, b) => b.heading - a.heading)[0];
     let headingPath: string[] | undefined;
@@ -334,12 +317,15 @@ export function fontScale(
     }
 
     if (bodyPath !== undefined) {
-        book.add(["font", "body"], { $value: `{${bodyPath.join(".")}}`, $type: "fontFamily" });
-        book.add(["font", "heading"], {
-            $value: `{${(headingPath ?? bodyPath).join(".")}}`,
-            $type: "fontFamily",
-        });
+        alias("body", bodyPath);
+        alias("heading", headingPath ?? bodyPath);
     }
+}
+
+function sizeValue(size: number, fact: SizeFact): string {
+    const form = [...fact.forms].sort((a, b) => b[1] - a[1])[0]?.[0] ?? `${size}px`;
+
+    return /^-?[\d.]+(?:px|rem)$/.test(form) ? form : `${rounded(size)}px`;
 }
 
 export function sizeScale(
@@ -359,47 +345,32 @@ export function sizeScale(
         }
     }
 
-    // Sizes a pixel apart are one size (11px and 12px): the one used more stands for both.
-    const merged: [number, SizeFact][] = [];
-
-    for (const [size, fact] of [...sizes].sort(
-        (a, b) => b[1].count + b[1].body * 2 - (a[1].count + a[1].body * 2) || a[0] - b[0],
-    )) {
-        const near = merged.find(([other]) => Math.abs(other - size) <= 1);
-
-        if (near === undefined) {
-            merged.push([size, { ...fact, forms: new Map(fact.forms) }]);
-        } else {
-            near[1].count += fact.count;
-            near[1].body += fact.body;
-            near[1].heading += fact.heading;
-        }
-    }
+    const weight = ([, fact]: [number, SizeFact]) => fact.count + fact.body * 2;
+    // Sizes a pixel apart are one size (11px and 12px).
+    const merged = cluster(
+        sizes
+            .sort((a, b) => weight(b) - weight(a) || a[0] - b[0])
+            .map(([size, fact]): [number, SizeFact] => [size, { ...fact }]),
+        (other, size) => Math.abs(other - size) <= 1,
+        ([, kept], fact) => {
+            kept.count += fact.count;
+            kept.body += fact.body;
+            kept.heading += fact.heading;
+        },
+    );
 
     if (explicit.has("text")) {
-        const named = [...book.tokens.values()]
-            .filter((entry) => entry.path[0] === "text")
-            .map((entry) => px(String(entry.node.$value)) ?? -99);
+        const named = book.group("text").map((entry) => px(String(entry.node.$value)) ?? -99);
 
-        for (const [size, fact] of topBy(merged, ([, each]) => each.count + each.body * 2, 8)) {
+        for (const [size, fact] of topBy(merged, weight, 8)) {
             const path = ["text", String(rounded(size)).replace(".", "-")];
 
             if (named.every((value) => Math.abs(value - size) > 1) && !book.has(path)) {
-                const form = [...fact.forms].sort((a, b) => b[1] - a[1])[0]?.[0] ?? `${size}px`;
-
-                book.add(path, {
-                    $value: /^-?[\d.]+(?:px|rem)$/.test(form) ? form : `${rounded(size)}px`,
-                    $type: "dimension",
-                });
+                book.add(path, { $value: sizeValue(size, fact), $type: "dimension" });
             }
         }
 
-        result.typeScale = {
-            sizes: [...book.tokens.values()]
-                .filter((entry) => entry.path[0] === "text")
-                .sort((a, b) => (px(String(a.node.$value)) ?? 0) - (px(String(b.node.$value)) ?? 0))
-                .map((entry) => `${entry.path[1]} ${String(entry.node.$value)}`),
-        };
+        result.typeScale = { sizes: book.listed("text") };
 
         return;
     }
@@ -408,7 +379,7 @@ export function sizeScale(
         return;
     }
 
-    let kept = topBy(merged, ([, fact]) => fact.count + fact.body * 2 + fact.heading, 10).sort(
+    let kept = topBy(merged, (entry) => weight(entry) + entry[1].heading, 10).sort(
         (a, b) => a[0] - b[0],
     );
 
@@ -423,12 +394,10 @@ export function sizeScale(
     let base = bodyAt(kept);
 
     while (base > SIZE_BELOW.length || kept.length - base - 1 > SIZE_ABOVE.length) {
-        const first = kept[0]!;
-        const last = kept.at(-1)!;
-
         kept =
             base > SIZE_BELOW.length &&
-            (kept.length - base - 1 <= SIZE_ABOVE.length || first[1].count <= last[1].count)
+            (kept.length - base - 1 <= SIZE_ABOVE.length ||
+                kept[0]![1].count <= kept.at(-1)![1].count)
                 ? kept.slice(1)
                 : kept.slice(0, -1);
         base = bodyAt(kept);
@@ -439,88 +408,18 @@ export function sizeScale(
     );
 
     kept.forEach(([size, fact], at) => {
-        const form = [...fact.forms].sort((a, b) => b[1] - a[1])[0]?.[0] ?? `${size}px`;
-
-        book.add(["text", names[at]!], {
-            $value: /^-?[\d.]+(?:px|rem)$/.test(form) ? form : `${rounded(size)}px`,
-            $type: "dimension",
-        });
+        book.add(["text", names[at]!], { $value: sizeValue(size, fact), $type: "dimension" });
     });
 
     const above = kept.slice(base).map(([size]) => size);
     const ratios = above.slice(1).map((size, at) => size / above[at]!);
+    const logMean = ratios.reduce((sum, ratio) => sum + Math.log(ratio), 0) / ratios.length;
 
     result.typeScale = {
         base: `${rounded(kept[base]![0])}px`,
         sizes: kept.map(([size], at) => `${names[at]} ${rounded(size)}px`),
-        ...(ratios.length > 0
-            ? {
-                  ratio: rounded(
-                      Math.exp(
-                          ratios.reduce((sum, ratio) => sum + Math.log(ratio), 0) / ratios.length,
-                      ),
-                  ),
-              }
-            : {}),
+        ...(ratios.length > 0 ? { ratio: rounded(Math.exp(logMean)) } : {}),
     };
-}
-
-export function detailScales(facts: Facts, book: Book, explicit: Set<Category>): void {
-    if (!explicit.has("weight")) {
-        const counts = new Map(facts.weights);
-
-        if (facts.tailwind) {
-            for (const [name, count] of facts.classWeight) {
-                const weight = TAILWIND_WEIGHT[name]?.[1];
-
-                if (weight !== undefined) {
-                    counts.set(weight, (counts.get(weight) ?? 0) + count);
-                }
-            }
-        }
-
-        const used = topBy([...counts], ([, count]) => count, 5).sort((a, b) => a[0] - b[0]);
-
-        if (used.length >= 2) {
-            for (const [weight] of used) {
-                const name = WEIGHT_NAMES[weight];
-
-                if (name !== undefined) {
-                    book.add(["weight", name], { $value: weight, $type: "fontWeight" });
-                }
-            }
-        }
-    }
-
-    if (!explicit.has("leading")) {
-        const used = topBy([...facts.leadings], ([, count]) => count, 3).sort(
-            (a, b) => a[0] - b[0],
-        );
-        const names =
-            used.length === 1
-                ? ["normal"]
-                : used.length === 2
-                  ? ["tight", "normal"]
-                  : ["tight", "normal", "relaxed"];
-
-        used.forEach(([value], at) =>
-            book.add(["leading", names[at]!], { $value: value, $type: "number" }),
-        );
-    }
-
-    if (!explicit.has("tracking")) {
-        const used = [...facts.tracking].sort((a, b) => b[1] - a[1]);
-        const tight = used.find(([text]) => text.startsWith("-"));
-        const wide = used.find(([text]) => !text.startsWith("-"));
-
-        if (tight !== undefined) {
-            book.add(["tracking", "tight"], { $value: tight[0], $type: "dimension" });
-        }
-
-        if (wide !== undefined) {
-            book.add(["tracking", "wide"], { $value: wide[0], $type: "dimension" });
-        }
-    }
 }
 
 export function spacingScale(
@@ -530,8 +429,8 @@ export function spacingScale(
     result: Inferred,
 ): void {
     const named = () =>
-        [...book.tokens.values()]
-            .filter((entry) => entry.path[0] === "space")
+        book
+            .group("space")
             .map((entry) => px(String(entry.node.$value)))
             .filter((value): value is number => value !== undefined && value > 0);
     const counts = new Map(facts.spacing);
@@ -559,25 +458,16 @@ export function spacingScale(
             .reduce((sum, [, count]) => sum + count, 0) / total;
     const base = share(8) >= 0.85 ? 8 : share(4) >= 0.75 ? 4 : share(2) >= 0.75 ? 2 : 4;
 
-    // Values a pixel apart are one value (15px and 16px; 4px and 5px): the one used more stands for both. Below 4px
-    // every pixel counts.
-    const clusters: [number, number][] = [];
+    // Values a pixel apart are one value (15px and 16px), but below 4px every pixel counts.
+    const clusters = cluster(
+        [...counts]
+            .filter(([size]) => size >= 1 && size <= 192)
+            .sort((a, b) => b[1] - a[1] || a[0] - b[0]),
+        (other, size) => Math.abs(other - size) <= 1 && Math.min(other, size) >= 4,
+        addCount,
+    );
 
-    for (const [size, count] of [...counts]
-        .filter(([size]) => size >= 1 && size <= 192)
-        .sort((a, b) => b[1] - a[1] || a[0] - b[0])) {
-        const near = clusters.find(
-            ([other]) => Math.abs(other - size) <= 1 && Math.min(other, size) >= 4,
-        );
-
-        if (near === undefined) {
-            clusters.push([size, count]);
-        } else {
-            near[1] += count;
-        }
-    }
-
-    // A value used once that is off the grid (6px, 10px in a 4px grid) or under 4px (a hairline) is a one-off, not a step.
+    // A value used once that is off the grid or under 4px (a hairline) is a one-off, not a step.
     const kept = topBy(
         clusters.filter(
             ([size, count]) =>
@@ -587,16 +477,13 @@ export function spacingScale(
         ),
         ([, count]) => count,
         12,
-    ).sort((a, b) => a[0] - b[0]);
-    const own = explicit.has("space") ? named() : [];
-    const fresh = kept.filter(([size]) =>
-        own.every((value) => Math.abs(value - size) > 1 || size < 4),
     );
+    const own = explicit.has("space") ? named() : [];
 
-    for (const [size] of fresh) {
+    for (const [size] of kept.sort((a, b) => a[0] - b[0])) {
         const path = ["space", String(rounded(size / 4)).replace(".", "-")];
 
-        if (!book.has(path)) {
+        if (own.every((value) => Math.abs(value - size) > 1 || size < 4) && !book.has(path)) {
             book.add(path, { $value: `${rounded(size)}px`, $type: "dimension" });
         }
     }
@@ -609,6 +496,9 @@ export function spacingScale(
         off: steps.filter((size) => size % 4 !== 0).slice(0, 6),
     };
 }
+
+const radiusForm = (text: string, fallback: string) =>
+    /^[\d.]+(?:px|rem|em)$/.test(text) ? text : fallback;
 
 export function radiusScale(
     facts: Facts,
@@ -631,102 +521,61 @@ export function radiusScale(
         }
     }
 
-    const has = (key: string) =>
-        [...book.tokens.values()].some(
-            (entry) =>
-                entry.path[0] === "radius" &&
-                (key === "full"
-                    ? (px(String(entry.node.$value)) ?? 0) >= 100
-                    : Math.abs((px(String(entry.node.$value)) ?? -99) - Number(key)) <= 1),
-        );
+    const byCount = [...facts.radii]
+        .sort((a, b) => b[1].count - a[1].count)
+        .map(([key, fact]): [string, typeof fact] => [key, { ...fact }]);
 
     if (explicit.has("radius")) {
-        const extra: [string, { count: number; text: string }][] = [];
-
-        for (const [key, fact] of [...facts.radii]
-            .filter(([each]) => !has(each) && (each === "full" || Number(each) >= 2))
-            .sort((a, b) => b[1].count - a[1].count)) {
-            const near = extra.find(
-                ([other]) =>
-                    other !== "full" &&
-                    key !== "full" &&
-                    Math.abs(Number(other) - Number(key)) <= 1,
+        const own = book.group("radius");
+        const has = (key: string) =>
+            own.some((entry) =>
+                key === "full"
+                    ? (px(String(entry.node.$value)) ?? 0) >= 100
+                    : Math.abs((px(String(entry.node.$value)) ?? -99) - Number(key)) <= 1,
             );
-
-            if (near === undefined) {
-                extra.push([key, { ...fact }]);
-            } else {
-                near[1].count += fact.count;
-            }
-        }
-
-        const taken = new Set(
-            [...book.tokens.values()]
-                .filter((entry) => entry.path[0] === "radius")
-                .map((entry) => entry.path[1]),
+        const extra = cluster(
+            byCount.filter(([key]) => !has(key) && (key === "full" || Number(key) >= 2)),
+            (other, key) =>
+                other !== "full" && key !== "full" && Math.abs(Number(other) - Number(key)) <= 1,
+            addFactCount,
         );
+        const taken = new Set(own.map((entry) => entry.path[1]));
 
         for (const [key, fact] of extra.slice(0, 6)) {
             const name = key === "full" ? "full" : key.replace(".", "-");
 
             if (!taken.has(name)) {
                 book.add(["radius", name], {
-                    $value:
-                        key === "full"
-                            ? /^[\d.]+(?:px|rem|em)$/.test(fact.text)
-                                ? fact.text
-                                : "9999px"
-                            : /^[\d.]+(?:px|rem|em)$/.test(fact.text)
-                              ? fact.text
-                              : `${key}px`,
+                    $value: radiusForm(fact.text, key === "full" ? "9999px" : `${key}px`),
                     $type: "dimension",
                 });
             }
         }
 
-        result.radii = [...book.tokens.values()]
-            .filter((entry) => entry.path[0] === "radius")
-            .sort((a, b) => (px(String(a.node.$value)) ?? 0) - (px(String(b.node.$value)) ?? 0))
-            .map((entry) => `${entry.path[1]} ${String(entry.node.$value)}`);
+        result.radii = book.listed("radius");
 
         return;
     }
 
-    const clusters: [string, { count: number; text: string }][] = [];
-
-    for (const [key, fact] of [...facts.radii]
-        .filter(([each]) => each !== "full")
-        .sort((a, b) => b[1].count - a[1].count)) {
-        const near = clusters.find(([other]) => Math.abs(Number(other) - Number(key)) <= 1);
-
-        if (near === undefined) {
-            clusters.push([key, { ...fact }]);
-        } else {
-            near[1].count += fact.count;
-        }
-    }
-
+    const clusters = cluster(
+        byCount.filter(([key]) => key !== "full"),
+        (other, key) => Math.abs(Number(other) - Number(key)) <= 1,
+        addFactCount,
+    );
     const kept = topBy(clusters, ([, fact]) => fact.count, 5).sort(
         (a, b) => Number(a[0]) - Number(b[0]),
     );
-    const ladders: Record<number, string[]> = {
-        1: ["md"],
-        2: ["sm", "lg"],
-        3: ["sm", "md", "lg"],
-        4: ["sm", "md", "lg", "xl"],
-        5: ["xs", "sm", "md", "lg", "xl"],
-    };
 
     kept.forEach(([key, fact], at) => {
+        const name = LADDERS[kept.length]![at]!;
         const form = /^-?[\d.]+(?:px|rem|em)$/.test(fact.text) ? fact.text : `${key}px`;
 
-        book.add(["radius", ladders[kept.length]![at]!], { $value: form, $type: "dimension" });
-        result.radii.push(`${ladders[kept.length]![at]} ${form}`);
+        book.add(["radius", name], { $value: form, $type: "dimension" });
+        result.radii.push(`${name} ${form}`);
     });
 
     if (facts.radii.has("full")) {
-        const text = facts.radii.get("full")!.text;
-        const value = /^[\d.]+(?:px|rem|em)$/.test(text) ? text : "9999px";
+        const value = radiusForm(facts.radii.get("full")!.text, "9999px");
 
         book.add(["radius", "full"], { $value: value, $type: "dimension" });
         result.radii.push(`full ${value}`);
@@ -734,16 +583,10 @@ export function radiusScale(
 }
 
 function sameShadow(a: unknown, b: unknown): boolean {
-    const layers = (value: unknown) => (Array.isArray(value) ? value : [value]) as Obj[];
-    const first = layers(a);
-    const second = layers(b);
-    const length = (value: unknown) => px(String(value ?? "0")) ?? 0;
-
-    const alpha = (value: unknown) => {
-        const color = typeof value === "string" ? colorsIn(value)[0] : undefined;
-
-        return color === undefined ? undefined : color.hex;
-    };
+    const first = layersOf(a);
+    const second = layersOf(b);
+    const hex = (value: unknown) =>
+        typeof value === "string" ? colorsIn(value)[0]?.hex : undefined;
 
     return (
         first.length === second.length &&
@@ -752,158 +595,65 @@ function sameShadow(a: unknown, b: unknown): boolean {
 
             return (
                 (layer.inset === true) === (other.inset === true) &&
-                Math.abs(length(layer.offsetX) - length(other.offsetX)) <= 1 &&
-                Math.abs(length(layer.offsetY) - length(other.offsetY)) <= 1 &&
-                Math.abs(length(layer.blur) - length(other.blur)) <= 2 &&
-                Math.abs(length(layer.spread) - length(other.spread)) <= 1 &&
-                alpha(layer.color) === alpha(other.color)
+                Math.abs(pxOf(layer.offsetX) - pxOf(other.offsetX)) <= 1 &&
+                Math.abs(pxOf(layer.offsetY) - pxOf(other.offsetY)) <= 1 &&
+                Math.abs(pxOf(layer.blur) - pxOf(other.blur)) <= 2 &&
+                Math.abs(pxOf(layer.spread) - pxOf(other.spread)) <= 1 &&
+                hex(layer.color) === hex(other.color)
             );
         })
     );
 }
 
 export function shadowScale(facts: Facts, book: Book, result: Inferred): void {
-    const clusters: { text: string; value: unknown; count: number }[] = [];
-
-    for (const [text, count] of [...facts.shadows].sort((a, b) => b[1] - a[1])) {
-        const value = shadowValue(text);
-
-        if (typeof value === "string") {
-            continue;
-        }
-
-        const near = clusters.find((other) => sameShadow(other.value, value));
-
-        if (near === undefined) {
-            clusters.push({ text, value, count });
-        } else {
-            near.count += count;
-        }
-    }
-
-    // A ring or an inset line is not a step of elevation: it gets a name of its own.
-    const rings: typeof clusters = [];
-    const lifts: typeof clusters = [];
-
-    const own = [...book.tokens.values()]
-        .filter((entry) => entry.path[0] === "shadow")
-        .map((entry) => entry.node.$value);
-
-    for (const cluster of topBy(
-        clusters.filter((each) => !own.some((value) => sameShadow(value, each.value))),
-        (each) => each.count,
+    const clusters = cluster(
+        [...facts.shadows]
+            .sort((a, b) => b[1] - a[1])
+            .map(([text, count]): [unknown, number] => [shadowValue(text), count])
+            .filter(([value]) => typeof value !== "string"),
+        sameShadow,
+        addCount,
+    );
+    const own = book.group("shadow").map((entry) => entry.node.$value);
+    const top = topBy(
+        clusters.filter(([value]) => !own.some((other) => sameShadow(other, value))),
+        ([, count]) => count,
         8,
-    )) {
-        const layers = (Array.isArray(cluster.value) ? cluster.value : [cluster.value]) as Obj[];
-        const inset = layers.every((layer) => layer.inset === true);
-        const ring = layers.every(
-            (layer) =>
-                (px(String(layer.blur ?? "0")) ?? 0) === 0 &&
-                (px(String(layer.offsetY ?? "0")) ?? 0) === 0,
-        );
-
-        (inset || ring ? rings : lifts).push(cluster);
-    }
-
-    lifts.sort((a, b) => elevation(a.value) - elevation(b.value));
-
-    const ladder = ["xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl"];
-    const names: Record<number, string[]> = {
-        1: ["md"],
-        2: ["sm", "lg"],
-        3: ["sm", "md", "lg"],
-        4: ["sm", "md", "lg", "xl"],
-    };
+    );
+    // A ring or an inset line is not a step of elevation: it gets a name of its own.
+    const isRing = ([value]: [unknown, number]) =>
+        layersOf(value).every((layer) => layer.inset === true) ||
+        layersOf(value).every((layer) => pxOf(layer.blur) === 0 && pxOf(layer.offsetY) === 0);
+    const rings = top.filter(isRing);
+    const lifts = top
+        .filter((entry) => !isRing(entry))
+        .sort((a, b) => elevation(a[0]) - elevation(b[0]));
 
     const free = (name: string) => !book.has(["shadow", name]);
 
-    lifts.forEach((entry, at) => {
-        const wanted = (names[lifts.length] ?? ladder)[at]!;
-        // A name the project already gave to another shadow is not taken: the next free step of the ladder is.
-        const name = free(wanted) ? wanted : (ladder.find(free) ?? `extra-${at + 1}`);
+    lifts.forEach(([value], at) => {
+        const wanted = (LADDERS[lifts.length] ?? LADDER)[at]!;
+        // A name the project already gave to another shadow goes to the next free step of the ladder.
+        const name = free(wanted) ? wanted : (LADDER.find(free) ?? `extra-${at + 1}`);
 
-        book.add(["shadow", name], { $value: entry.value, $type: "shadow" });
+        book.add(["shadow", name], { $value: value, $type: "shadow" });
     });
 
     const seen = new Map<string, number>();
 
-    for (const entry of rings) {
-        const layers = (Array.isArray(entry.value) ? entry.value : [entry.value]) as Obj[];
-        const kind = layers.every((layer) => layer.inset === true) ? "inset" : "ring";
+    for (const [value] of rings) {
+        const kind = layersOf(value).every((layer) => layer.inset === true) ? "inset" : "ring";
         const count = (seen.get(kind) ?? 0) + 1;
+        const name = count === 1 ? kind : `${kind}-${count}`;
 
         seen.set(kind, count);
 
-        const name = count === 1 ? kind : `${kind}-${count}`;
-
         if (free(name)) {
-            book.add(["shadow", name], { $value: entry.value, $type: "shadow" });
+            book.add(["shadow", name], { $value: value, $type: "shadow" });
         }
     }
 
-    result.shadows = [...book.tokens.values()].filter((entry) => entry.path[0] === "shadow").length;
-}
-
-export function motionScale(
-    facts: Facts,
-    book: Book,
-    explicit: Set<Category>,
-    result: Inferred,
-): void {
-    if (!explicit.has("duration")) {
-        const used = topBy([...facts.durations], ([, count]) => count, 4).sort(
-            (a, b) => a[0] - b[0],
-        );
-        const ladders: Record<number, string[]> = {
-            1: ["base"],
-            2: ["fast", "slow"],
-            3: ["fast", "base", "slow"],
-            4: ["instant", "fast", "base", "slow"],
-        };
-
-        used.forEach(([ms], at) => {
-            book.add(["duration", ladders[used.length]![at]!], {
-                $value: `${ms}ms`,
-                $type: "duration",
-            });
-            result.motion.durations.push(`${ladders[used.length]![at]} ${ms}ms`);
-        });
-    }
-
-    if (!explicit.has("ease")) {
-        const NAMES: Record<string, string> = {
-            ease: "standard",
-            "ease-in": "in",
-            "ease-out": "out",
-            "ease-in-out": "in-out",
-            linear: "linear",
-        };
-        const used = topBy([...facts.easings], ([, count]) => count, 4);
-        let custom = 0;
-
-        for (const [text] of used) {
-            const value = bezier(text);
-
-            if (value === undefined) {
-                continue;
-            }
-
-            const key = JSON.stringify(value);
-            const known = Object.entries(BEZIER).find(([, each]) => JSON.stringify(each) === key);
-            const name =
-                NAMES[text] ??
-                (value[0] === 0.4 && value[1] === 0 && value[2] === 0.2 && value[3] === 1
-                    ? "standard"
-                    : known === undefined
-                      ? `custom-${++custom}`
-                      : NAMES[known[0]]!);
-
-            if (!book.has(["ease", name])) {
-                book.add(["ease", name], { $value: value, $type: "cubicBezier" });
-                result.motion.easings.push(`${name} ${text}`);
-            }
-        }
-    }
+    result.shadows = book.group("shadow").length;
 }
 
 export function breakpointScale(
@@ -916,23 +666,17 @@ export function breakpointScale(
         return;
     }
 
-    const clusters: [number, number][] = [];
-
-    for (const [size, count] of [...facts.breakpoints].sort((a, b) => b[1] - a[1])) {
-        const near = clusters.find(([other]) => Math.abs(other - size) <= Math.max(2, size * 0.02));
-
-        if (near === undefined) {
-            clusters.push([size, count]);
-        } else {
-            near[1] += count;
-        }
-    }
-
-    const used = topBy(clusters, ([, count]) => count, 5).sort((a, b) => a[0] - b[0]);
+    const clusters = cluster(
+        [...facts.breakpoints].sort((a, b) => b[1] - a[1]),
+        (other, size) => Math.abs(other - size) <= Math.max(2, size * 0.02),
+        addCount,
+    );
     const names = ["sm", "md", "lg", "xl", "2xl"];
 
-    used.forEach(([size], at) => {
-        book.add(["breakpoint", names[at]!], { $value: `${size}px`, $type: "dimension" });
-        result.breakpoints.push(`${names[at]} ${size}px`);
-    });
+    topBy(clusters, ([, count]) => count, 5)
+        .sort((a, b) => a[0] - b[0])
+        .forEach(([size], at) => {
+            book.add(["breakpoint", names[at]!], { $value: `${size}px`, $type: "dimension" });
+            result.breakpoints.push(`${names[at]} ${size}px`);
+        });
 }

@@ -549,30 +549,23 @@ test("each parameter's description says which actions use it, and the tool refus
     }
 });
 
-test("the values are typed: a token value is a string, a number, or a DTCG object form, in set and in init's changes", () => {
+test("the schema is small: one object, and a token value is any JSON the engine then checks", () => {
     const schema = JSON.parse(JSON.stringify(tool.parameters)) as {
         type: string;
         anyOf?: unknown;
-        properties: Record<
-            string,
-            { items?: { properties: Record<string, { anyOf?: { type?: string }[] }> } }
-        >;
+        properties: Record<string, { items?: { properties: Record<string, object> } }>;
     };
 
     assert.equal(schema.type, "object");
     assert.equal(schema.anyOf, undefined, "the top level stays one object");
+    assert.match(
+        JSON.stringify(schema.properties.changes!.items!.properties.value),
+        /a whole token/,
+    );
 
-    const value = schema.properties.changes!.items!.properties.value!;
-    const kinds = JSON.stringify(value);
+    const size = JSON.stringify(tool.parameters).length + tool.description.length;
 
-    assert.ok(value.anyOf !== undefined && value.anyOf.length >= 2, "a value is not `unknown`");
-    assert.match(kinds, /"type":"string"/);
-    assert.match(kinds, /"type":"number"/);
-    assert.match(kinds, /"colorSpace"/);
-    assert.match(kinds, /"unit"/);
-    assert.match(kinds, /"\$value"/, "a whole token");
-    assert.ok(kinds.length < 4000, `the value's schema stays small: ${kinds.length}`);
-    assert.ok(JSON.stringify(tool.parameters).length < 8000, "the whole schema is in every prompt");
+    assert.ok(size < 4000, `the schema and the description are in every prompt: ${size}`);
 });
 
 test("scan: a scan past its time limit is stopped in its worker, and the server's timers go on meanwhile", async () => {

@@ -1,14 +1,8 @@
 // The walk never follows a symlink, so a project cannot lead it out of the folder.
 import {
-    SD_CONFIG_NAME,
-    type SdConfig,
-    sdConfigOfJson,
-    sdConfigsIn,
-} from "./scan-import-sd-config.ts";
-import { isObject } from "./scan-import-convert.ts";
-import {
     closeSync,
     constants,
+    type Dirent,
     fstatSync,
     lstatSync,
     openSync,
@@ -17,42 +11,12 @@ import {
 } from "node:fs";
 import { extname, join, relative, sep } from "node:path";
 
-const SKIP = new Set([
-    "node_modules",
-    ".git",
-    "dist",
-    "build",
-    "out",
-    "coverage",
-    ".next",
-    ".nuxt",
-    ".svelte-kit",
-    ".cache",
-    ".turbo",
-    ".parcel-cache",
-    ".output",
-    ".vercel",
-    ".netlify",
-    ".yarn",
-    ".pnpm-store",
-    ".venv",
-    "venv",
-    "__pycache__",
-    "target",
-    "vendor",
-    "vendors",
-    "third_party",
-    "third-party",
-    "thirdparty",
-    "bower_components",
-    "exports",
-    "storybook-static",
-    ".pi",
-    ".idea",
-    ".vscode",
-    ".github",
-    ".husky",
-]);
+const SKIP = new Set(
+    `node_modules .git dist build out coverage .next .nuxt .svelte-kit .cache .turbo
+    .parcel-cache .output .vercel .netlify .yarn .pnpm-store .venv venv __pycache__ target
+    vendor vendors third_party third-party thirdparty bower_components exports
+    storybook-static .pi .idea .vscode .github .husky`.split(/\s+/),
+);
 
 const FOLDER_WHY: [RegExp, string][] = [
     [/^(?:node_modules|vendors?|bower_components|third[-_]?party)$/i, "vendored code"],
@@ -67,9 +31,9 @@ export interface Skipped {
 const DOT_STYLE_FOLDERS = new Set([".storybook", ".vitepress", ".vuepress", ".docusaurus"]);
 
 const STYLE =
-    /\.(?:css|scss|sass|less|styl|stylus|pcss|postcss|html?|vue|svelte|astro|mdx|tsx|jsx|ts|js|mjs|cjs|mts|cts)$/i;
+    /\.(?:css|scss|less|pcss|postcss|html?|vue|svelte|astro|mdx|tsx|jsx|ts|js|mjs|cjs|mts|cts)$/i;
 const TOKEN_JSON =
-    /(?:^|\/)(?:design-?tokens?|tokens?|properties|brands?|themes?|style-?dictionary|dictionary)\/(?:[^/]+\/)*[^/]+\.json$|(?:^|\/)(?:config|[\w.-]*config|[\w.-]*[.-]config[.-][\w-]+|config[.-][\w-]+|\.styledictionaryrc)\.json$|(?:^|\/)(?:[^/]*tokens?[^/]*|[^/]*theme[^/]*|[^/]*(?:figma|studio|design-?system|material|m3)[^/]*)\.json$|(?:^|\/)(?:design-)?tokens\/[^/]+\.json$|(?:^|\/)styles\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
+    /(?:^|\/)(?:design-?tokens?|tokens?|properties|brands?|themes?|style-?dictionary|dictionary)\/(?:[^/]+\/)*[^/]+\.json$|(?:^|\/)(?:[^/]*tokens?[^/]*|[^/]*theme[^/]*|[^/]*(?:figma|studio|design-?system)[^/]*)\.json$|(?:^|\/)styles\/[^/]+\.json$|(?:^|\/)\$(?:themes|metadata)\.json$/i;
 
 export const LIMITS = {
     files: 400,
@@ -83,49 +47,34 @@ export const LIMITS = {
     valueChars: 200,
 } as const;
 
+const EXTENSION_SCORE: [RegExp, number][] = [
+    [/^\.(?:css|scss|less|pcss|postcss)$/, 40],
+    [/^\.json$/, 45],
+    [/^\.(?:[cm]?[jt]s)$/, 20],
+    [/^\.(?:html?|vue|svelte|astro|mdx)$/, 25],
+];
+
+const PATH_SCORE: [RegExp, number][] = [
+    [
+        /(?:^|\/)(?:tailwind\.config|theme|tokens?|variables|vars|globals?|global|base|colors?|palette|design|root|index|main|app|styles?)(?:[.\-_/]|$)/,
+        20,
+    ],
+    [/(?:^|\/)(?:theme|themes|tokens|styles|css|design|assets\/css)\//, 8],
+    [/\.min\.|(?:^|\/)(?:vendor|third[-_]?party|generated|__generated__)\/|\.d\.ts$/, -40],
+    [/\.(?:test|spec|stories)\.|(?:^|\/)(?:__tests__|e2e|fixtures?)\//, -10],
+];
+
 export function priority(rel: string): number {
-    const name = rel.split("/").at(-1)!.toLowerCase();
-    const extension = extname(name);
-    let score = 0;
+    const lower = rel.toLowerCase();
+    const extension = extname(lower);
+    let score = EXTENSION_SCORE.find(([pattern]) => pattern.test(extension))?.[1] ?? 12;
 
-    if (/^\.(?:css|scss|sass|less|styl|stylus|pcss|postcss)$/.test(extension)) {
-        score += 40;
-    } else if (extension === ".json") {
-        score += 45;
-    } else if (/^\.(?:[cm]?[jt]s)$/.test(extension)) {
-        score += 20;
-    } else if (/^\.(?:html?|vue|svelte|astro|mdx)$/.test(extension)) {
-        score += 25;
-    } else {
-        score += 12;
-    }
-
-    if (
-        /(?:^|\/)(?:tailwind\.config|theme|tokens?|variables|vars|globals?|global|base|colors?|palette|design|root|index|main|app|styles?)(?:[.\-_/]|$)/.test(
-            rel.toLowerCase(),
-        )
-    ) {
-        score += 20;
-    }
-
-    if (/(?:^|\/)(?:theme|themes|tokens|styles|css|design|assets\/css)\//.test(rel.toLowerCase())) {
-        score += 8;
+    for (const [pattern, points] of PATH_SCORE) {
+        score += pattern.test(lower) ? points : 0;
     }
 
     if (/(?:^|\/)\$(?:themes|metadata)\.json$/.test(rel)) {
         score += 30;
-    }
-
-    if (
-        /\.min\.|(?:^|\/)(?:vendor|third[-_]?party|generated|__generated__)\/|\.d\.ts$/.test(
-            rel.toLowerCase(),
-        )
-    ) {
-        score -= 40;
-    }
-
-    if (/\.(?:test|spec|stories)\.|(?:^|\/)(?:__tests__|e2e|fixtures?)\//.test(rel.toLowerCase())) {
-        score -= 10;
     }
 
     // A script that is not named for a theme or styles comes after every file that is.
@@ -141,18 +90,18 @@ export function priority(rel: string): number {
     return score - rel.split("/").length * 2;
 }
 
-function wanted(rel: string, name: string): boolean {
-    if (!STYLE.test(name)) {
-        return TOKEN_JSON.test(rel) && name.endsWith(".json");
-    }
+// A script is read for the class names in its markup, and a Tailwind config for its theme.
+const wanted = (rel: string, name: string) =>
+    STYLE.test(name) ? !name.endsWith(".d.ts") : TOKEN_JSON.test(rel) && name.endsWith(".json");
 
-    // A script may hold a theme or CSS-in-JS styles. The walk keeps them all (a bounded number, behind the best files);
-    // the scan reads the ones that are not named for a theme only when they look like styles.
-    if (/\.(?:[cm]?[jt]s)$/i.test(name) && !/\.d\.[cm]?ts$/.test(name)) {
-        return true;
+function sortedEntries(dir: string): Dirent[] {
+    try {
+        return readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+            a.name.localeCompare(b.name),
+        );
+    } catch {
+        return [];
     }
-
-    return !name.endsWith(".d.ts");
 }
 
 // A project's config names such folders; none may lead the scan out of the project (no `..`, no absolute path, no symlink).
@@ -181,21 +130,11 @@ export function folderInside(root: string, dir: string): boolean {
 }
 
 function studioSets(root: string, dir: string, depth: number, found: string[]): void {
-    let entries;
-
     if (!folderInside(root, dir)) {
         return;
     }
 
-    try {
-        entries = readdirSync(join(root, dir), { withFileTypes: true }).sort((a, b) =>
-            a.name.localeCompare(b.name),
-        );
-    } catch {
-        return;
-    }
-
-    for (const entry of entries) {
+    for (const entry of sortedEntries(join(root, dir))) {
         const rel = dir === "" ? entry.name : `${dir}/${entry.name}`;
 
         if (found.length >= LIMITS.candidates) {
@@ -232,56 +171,35 @@ export function collectFiles(root: string): {
     };
 
     const walk = (dir: string, depth: number) => {
-        let entries;
-
-        try {
-            entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
-                a.name.localeCompare(b.name),
-            );
-        } catch {
-            return;
-        }
-
-        for (const entry of entries) {
+        for (const entry of sortedEntries(dir)) {
             if (found.length >= LIMITS.candidates || ++seen > LIMITS.entries) {
                 partial = true;
 
                 return;
             }
 
+            const path = join(dir, entry.name);
+            const rel = relative(root, path).split(sep).join("/");
+            const hidden = entry.name.startsWith(".");
+
             // Dirent reports a symlink as a symlink, not as its target: neither branch below takes one.
             if (entry.isDirectory()) {
-                const skip =
-                    SKIP.has(entry.name) ||
-                    (entry.name.startsWith(".") && !DOT_STYLE_FOLDERS.has(entry.name));
+                const skip = SKIP.has(entry.name) || (hidden && !DOT_STYLE_FOLDERS.has(entry.name));
 
-                if (depth < LIMITS.depth && !skip) {
-                    walk(join(dir, entry.name), depth + 1);
-                } else if (depth >= LIMITS.depth && !skip) {
+                if (!skip && depth < LIMITS.depth) {
+                    walk(path, depth + 1);
+                } else if (!skip) {
                     partial = true;
-                    note(
-                        `${relative(root, join(dir, entry.name)).split(sep).join("/")}/`,
-                        `deeper than ${LIMITS.depth} levels`,
-                    );
-                } else if (skip && !entry.name.startsWith(".")) {
-                    note(
-                        `${relative(root, join(dir, entry.name)).split(sep).join("/")}/`,
-                        FOLDER_WHY.find(([pattern]) => pattern.test(entry.name))?.[1] ??
-                            "ignored folder",
-                    );
-                }
-            } else if (entry.isSymbolicLink() && !entry.name.startsWith(".")) {
-                note(
-                    relative(root, join(dir, entry.name)).split(sep).join("/"),
-                    "a link, not followed",
-                );
-            } else if (entry.isFile()) {
-                const path = join(dir, entry.name);
-                const rel = relative(root, path).split(sep).join("/");
+                    note(`${rel}/`, `deeper than ${LIMITS.depth} levels`);
+                } else if (!hidden) {
+                    const why = FOLDER_WHY.find(([pattern]) => pattern.test(entry.name))?.[1];
 
-                if (wanted(rel, entry.name)) {
-                    found.push(rel);
+                    note(`${rel}/`, why ?? "ignored folder");
                 }
+            } else if (entry.isSymbolicLink() && !hidden) {
+                note(rel, "a link, not followed");
+            } else if (entry.isFile() && wanted(rel, entry.name)) {
+                found.push(rel);
             }
         }
     };
@@ -296,61 +214,9 @@ export function collectFiles(root: string): {
         studioSets(root, dir, 0, found);
     }
 
-    for (const rel of [...found].filter((each) =>
-        SD_CONFIG_NAME.test((each.split("/").at(-1) ?? "").replace(/\.(?:json|[cm]?[jt]s)$/i, "")),
-    )) {
-        let text = "";
-
-        try {
-            text = readHead(join(root, ...rel.split("/")), 60_000);
-        } catch {
-            continue;
-        }
-
-        const dir = rel.slice(0, Math.max(0, rel.lastIndexOf("/")));
-        let configs: SdConfig[] = [];
-
-        if (rel.endsWith(".json")) {
-            try {
-                const root: unknown = JSON.parse(text);
-
-                if (isObject(root) && Array.isArray(root.source) && isObject(root.platforms)) {
-                    configs = [sdConfigOfJson(dir, rel, root)];
-                }
-            } catch {
-                // Not JSON, or cut short: not a config that can be read.
-            }
-        } else {
-            configs = sdConfigsIn(dir, rel, text);
-        }
-
-        for (const config of configs.slice(0, 8)) {
-            for (const glob of [...config.include, ...config.source].slice(0, 12)) {
-                const fixed = glob
-                    .replace(/^\.\//, "")
-                    .split("/")
-                    .filter((_, at, all) => at < all.length - 1)
-                    .filter((_, at, all) =>
-                        all.slice(0, at + 1).every((each) => !/[*?{$]/.test(each)),
-                    );
-
-                for (const base of new Set([config.dir, ""])) {
-                    const folder = [base, ...fixed].filter(Boolean).join("/");
-
-                    if (folder !== "" || fixed.length === 0) {
-                        studioSets(root, folder, 0, found);
-                    }
-                }
-            }
-        }
-    }
-
-    // A minified file (`app.min.css`) is the build of a source, not the design: it is left out when the project has style
-    // files of its own, and read (last) when it has nothing else.
+    // A minified file is a build: it is read (last) only when the project has no style files of its own.
     const isMin = (rel: string) => /\.min\.[a-z]+$/i.test(rel);
-    const own = found.filter(
-        (rel) => !isMin(rel) && /\.(?:css|scss|sass|less|styl|stylus|pcss)$/i.test(rel),
-    );
+    const own = found.filter((rel) => !isMin(rel) && /\.(?:css|scss|less|pcss)$/i.test(rel));
     const kept = own.length > 0 ? found.filter((rel) => !isMin(rel)) : found;
 
     for (const rel of found.filter((each) => !kept.includes(each))) {

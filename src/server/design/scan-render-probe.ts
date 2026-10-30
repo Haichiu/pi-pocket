@@ -1,4 +1,5 @@
-// Runs in an isolated world, so the page's own scripts cannot change what it uses. A value that is the same with and without the author's styles is the browser's own, and is left out.
+// Runs in an isolated world, so the page's own scripts cannot change what it uses. A value that
+// is the same with and without the author's styles is the browser's own, and is left out.
 
 export type Weights = Record<string, number>;
 
@@ -6,9 +7,9 @@ export interface Reading {
     vars: Record<string, string>;
     page: { bg: string; text: string; bgAuthored: boolean; textAuthored: boolean };
     count: number;
-    /** Backgrounds (area in px² ÷ 100), by kind of element and then by color. */
+    // Weighed by area in px² ÷ 100.
     bg: Record<string, Weights>;
-    /** Text colors (characters), by kind of text and then by color. */
+    // Weighed by characters.
     text: Record<string, Weights>;
     border: Weights;
     radius: Weights;
@@ -16,14 +17,13 @@ export interface Reading {
     font: Record<string, Weights>;
     size: Record<string, Weights>;
     space: Weights;
-    weight: Weights;
     status: Record<string, { bg: Weights; text: Weights; border: Weights }>;
     buttons: { bg: string; color: string; area: number; primary: boolean }[];
 }
 
 export interface ProbeInput {
     vars: string[];
-    /** Also read the page with no style, to leave out the browser's own values (the first reading only). */
+    // Also read the page with no style, to leave out the browser's own values.
     bare: boolean;
 }
 
@@ -104,7 +104,6 @@ export const PROBE_SOURCE = String.raw`(input) => {
         shadow: style.boxShadow,
         family: style.fontFamily,
         size: style.fontSize,
-        weight: style.fontWeight,
         space: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft, style.marginTop, style.marginBottom, style.rowGap, style.columnGap].join('|'),
     });
     const elements = Array.from(document.querySelectorAll('body, body *')).filter((el) => !/^(script|style|link|meta|noscript|template|svg|path|defs|title)$/.test(el.localName)).slice(0, MAX * 2);
@@ -114,7 +113,6 @@ export const PROBE_SOURCE = String.raw`(input) => {
         if (seen !== undefined) visible.push([el, seen.box, tuple(el, seen.style)]);
         if (visible.length >= MAX) break;
     }
-    // The page with no style of its own: every stylesheet and inline style off, then back on.
     const bare = new Map();
     let bareRoot;
     if (input.bare) {
@@ -135,7 +133,7 @@ export const PROBE_SOURCE = String.raw`(input) => {
         vars: {},
         page: { bg: '', text: '', bgAuthored: true, textAuthored: true },
         count: visible.length,
-        bg: {}, text: {}, border: {}, radius: {}, shadow: {}, font: {}, size: {}, space: {}, weight: {}, status: {}, buttons: [],
+        bg: {}, text: {}, border: {}, radius: {}, shadow: {}, font: {}, size: {}, space: {}, status: {}, buttons: [],
     };
     const rootStyle = getComputedStyle(root);
     for (const name of input.vars.slice(0, 900)) {
@@ -158,37 +156,30 @@ export const PROBE_SOURCE = String.raw`(input) => {
         const same = (key) => was !== undefined && was[key] === now[key];
         const set = words(el);
         const area = Math.min(box.width * box.height, 4e6) / 100;
-        // Background: the author's, not the browser's.
         if (opaque(now.bg) && !same('bg')) {
             const kind = el === body || el === root ? 'page' : bgKind(el, set);
             add(ensure(out.bg, kind), now.bg, area);
         }
-        // Text: the characters this element holds itself.
         let chars = 0;
         for (const node of el.childNodes) if (node.nodeType === 3) chars += node.textContent.trim().length;
         if (chars > 0) {
             const kind = textKind(el, set);
-            // The browser's own text colors (black, the blue of a link) are not the design's.
             if (!same('color') && !(kind === 'link' && UA_LINK.has(now.color))) add(ensure(out.text, kind), now.color, chars);
             if (!same('family')) add(ensure(out.font, /^(code|pre|kbd|samp)$/.test(el.localName) ? 'code' : kind === 'heading' ? 'heading' : 'body'), now.family, chars);
             if (!(same('size') && /^h[1-6]$/.test(el.localName))) add(ensure(out.size, kind === 'heading' ? 'heading' : 'body'), now.size, chars);
-            if (!same('weight')) add(out.weight, now.weight, chars);
         }
-        // Borders, radius, shadow.
         if (now.border !== '' && (!same('border') || !same('bw'))) {
             const colors = now.border.split('|').filter(Boolean);
             if (colors.length > 0 && opaque(colors[0])) add(out.border, colors[0], 1 + Math.min(area / 40, 4));
         }
         if (px(now.radius) > 0 && !same('radius')) add(out.radius, now.radius, 1);
         if (now.shadow !== 'none' && !same('shadow')) add(out.shadow, now.shadow, 1);
-        // Space: the paddings, margins, and gaps the author set.
         if (!same('space')) {
             for (const part of now.space.split('|')) {
                 const value = px(part);
                 if (value >= 1 && value <= 200 && /px$/.test(part)) add(out.space, String(Math.round(value * 100) / 100), 1);
             }
         }
-        // Status: elements named for one.
         for (const [status, list] of STATUS) {
             if (has(set, list)) {
                 const entry = (out.status[status] ??= { bg: {}, text: {}, border: {} });
@@ -197,7 +188,6 @@ export const PROBE_SOURCE = String.raw`(input) => {
                 if (now.border !== '' && !same('border') && opaque(now.border.split('|').find(Boolean) || '')) add(entry.border, now.border.split('|').find(Boolean), 1);
             }
         }
-        // Buttons.
         if ((el.localName === 'button' || el.getAttribute('role') === 'button' || has(set, ['btn', 'button', 'cta']) || (el.localName === 'input' && /^(submit|button)$/.test(el.getAttribute('type') || ''))) && opaque(now.bg) && !same('bg') && out.buttons.length < 40) {
             out.buttons.push({ bg: now.bg, color: same('color') ? '' : now.color, area, primary: has(set, ['primary', 'brand', 'main', 'cta', 'accent', 'submit', 'default']) });
         }
@@ -205,7 +195,7 @@ export const PROBE_SOURCE = String.raw`(input) => {
     for (const key of ['bg', 'text', 'font', 'size']) {
         for (const kind of Object.keys(out[key])) out[key][kind] = keep(out[key][kind]);
     }
-    for (const key of ['border', 'radius', 'shadow', 'space', 'weight']) out[key] = keep(out[key]);
+    for (const key of ['border', 'radius', 'shadow', 'space']) out[key] = keep(out[key]);
     for (const status of Object.keys(out.status)) for (const key of ['bg', 'text', 'border']) out.status[status][key] = keep(out.status[status][key], 8);
     return out;
 }`;

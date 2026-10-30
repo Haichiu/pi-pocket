@@ -1,29 +1,9 @@
-import { words } from "./scan-colors.ts";
+import { type Obj, slug, words } from "./scan-colors.ts";
 import { type Category } from "./scan-facts.ts";
 import { stackOf } from "./scan-facts-use.ts";
 import { bezier, shadowValue } from "./scan-scales.ts";
-import { type Obj, slug } from "./scan-util.ts";
 import { type Variable } from "./scan-variables.ts";
 import { GRADIENT, LENGTH } from "./scan-categorize.ts";
-
-const GROUPS: Record<Category, string> = {
-    color: "color",
-    font: "font",
-    text: "text",
-    space: "space",
-    radius: "radius",
-    shadow: "shadow",
-    duration: "duration",
-    ease: "ease",
-    breakpoint: "breakpoint",
-    weight: "weight",
-    leading: "leading",
-    tracking: "tracking",
-    z: "z",
-    opacity: "opacity",
-    size: "size",
-    gradient: "gradient",
-};
 
 const PREFIX: Record<Category, RegExp> = {
     color: /^(?:theme-)?(?:colou?rs?|clr)-?/,
@@ -44,24 +24,7 @@ const PREFIX: Record<Category, RegExp> = {
     gradient: /^(?:gradient|bg-gradient)-?/,
 };
 
-const FALLBACK_NAME: Record<Category, string> = {
-    color: "base",
-    font: "sans",
-    text: "base",
-    space: "base",
-    radius: "md",
-    shadow: "md",
-    duration: "base",
-    ease: "base",
-    breakpoint: "base",
-    weight: "base",
-    leading: "base",
-    tracking: "base",
-    z: "base",
-    opacity: "base",
-    size: "base",
-    gradient: "base",
-};
+const FALLBACK: Partial<Record<Category, string>> = { font: "sans", radius: "md", shadow: "md" };
 
 const ROLE_WORDS = new Set(
     "accent brand primary link highlight danger error destructive critical negative warning warn caution success positive valid ok bg background canvas page surface card panel elevated raised popover layer text fg foreground ink content muted subtle dim faint quiet tertiary border divider outline stroke line separator hairline".split(
@@ -82,13 +45,13 @@ export function pathOf(variable: Variable, category: Category): string[] {
     const name = nameOf(variable, category);
     const [first, ...tail] = name.split("-");
 
-    // `--accent-hover` is `color.accent.hover`, beside `color.accent.default`; `--primary` is `color.primary.default`.
-    // A color with a role word in its name sits one level down, so that it never takes the place of the role's own token.
+    // A color with a role word sits one level down (`--primary` is `color.primary.default`), so
+    // that it never takes the place of the role's own token.
     if (category === "color" && name !== "" && words(name).some((word) => ROLE_WORDS.has(word))) {
-        return tail.length > 0 ? ["color", first!, tail.join("-")] : ["color", first!, "default"];
+        return ["color", first!, tail.length > 0 ? tail.join("-") : "default"];
     }
 
-    return [GROUPS[category], name === "" ? FALLBACK_NAME[category] : name];
+    return [category, name === "" ? (FALLBACK[category] ?? "base") : name];
 }
 
 export function nodeFor(category: Category, text: string, colorText?: string): Obj | undefined {
@@ -121,11 +84,8 @@ export function nodeFor(category: Category, text: string, colorText?: string): O
             return value === undefined ? undefined : { $value: value, $type: "cubicBezier" };
         }
 
-        case "shadow": {
-            const value = shadowValue(text);
-
-            return { $value: value, $type: "shadow" };
-        }
+        case "shadow":
+            return { $value: shadowValue(text), $type: "shadow" };
 
         case "gradient":
             return GRADIENT.test(text) ? { $value: text, $type: "gradient" } : undefined;
@@ -191,59 +151,7 @@ export function assemble(
     return root;
 }
 
-export function hoistTypes(root: Obj): void {
-    for (const group of Object.values(root)) {
-        if (typeof group !== "object" || group === null || "$value" in group) {
-            continue;
-        }
-
-        const types = new Set<string>();
-
-        const visit = (node: Obj) => {
-            for (const [key, child] of Object.entries(node)) {
-                if (key.startsWith("$") || typeof child !== "object" || child === null) {
-                    continue;
-                }
-
-                if ("$value" in child) {
-                    types.add(String((child as Obj).$type));
-                } else {
-                    visit(child as Obj);
-                }
-            }
-        };
-
-        visit(group as Obj);
-
-        if (types.size === 1) {
-            const [type] = types;
-
-            const strip = (node: Obj) => {
-                for (const [key, child] of Object.entries(node)) {
-                    if (!key.startsWith("$") && typeof child === "object" && child !== null) {
-                        if ("$value" in child) {
-                            delete (child as Obj).$type;
-                        } else {
-                            strip(child as Obj);
-                        }
-                    }
-                }
-            };
-
-            strip(group as Obj);
-
-            const rest = { ...(group as Obj) };
-
-            for (const key of Object.keys(group as Obj)) {
-                delete (group as Obj)[key];
-            }
-
-            Object.assign(group as Obj, { $type: type }, rest);
-        }
-    }
-}
-
-export function dropTypes(node: Obj): Obj {
+function eachToken(node: Obj, visit: (token: Obj) => void): void {
     for (const [key, child] of Object.entries(node)) {
         if (
             typeof child === "object" &&
@@ -252,12 +160,34 @@ export function dropTypes(node: Obj): Obj {
             !key.startsWith("$")
         ) {
             if ("$value" in child) {
-                delete (child as Obj).$type;
+                visit(child as Obj);
             } else {
-                dropTypes(child as Obj);
+                eachToken(child as Obj, visit);
             }
         }
     }
+}
+
+export function hoistTypes(root: Obj): void {
+    for (const [name, group] of Object.entries(root)) {
+        if (typeof group !== "object" || group === null || "$value" in group) {
+            continue;
+        }
+
+        const types = new Set<string>();
+
+        eachToken(group as Obj, (token) => types.add(String(token.$type)));
+
+        if (types.size === 1) {
+            const [type] = types;
+
+            root[name] = { $type: type, ...dropTypes(group as Obj) };
+        }
+    }
+}
+
+export function dropTypes(node: Obj): Obj {
+    eachToken(node, (token) => delete token.$type);
 
     return node;
 }

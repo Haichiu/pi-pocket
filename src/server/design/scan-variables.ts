@@ -1,5 +1,6 @@
-import { type Category, type Facts, type VarFact } from "./scan-facts.ts";
-import { kebab, vkey } from "./scan-util.ts";
+import type { Category, Facts, VarFact } from "./scan-facts.ts";
+import { kebab, vkey } from "./scan-colors.ts";
+import { parseColor } from "./color.ts";
 
 export interface Variable {
     name: string;
@@ -11,7 +12,17 @@ export interface Variable {
     hint?: Category;
 }
 
-export function variables(facts: Facts, alt: "dark" | "light"): Variable[] {
+type Mode = "dark" | "light";
+type Found = { text: string; via?: Variable };
+type Lookup = (name: string, kind: "scss" | "less" | "css") => string | undefined;
+
+export const modeValue = (variable: Variable, mode: Mode) =>
+    (mode === "dark" ? (variable.dark ?? variable.light) : (variable.light ?? variable.dark))
+        ?.value;
+
+const otherMode = (mode: Mode): Mode => (mode === "dark" ? "light" : "dark");
+
+export function variables(facts: Facts, alt: Mode): Variable[] {
     const map = new Map<string, Variable>();
     const better = (a: VarFact | undefined, b: VarFact) =>
         a === undefined || b.rank < a.rank || (b.rank === a.rank && b.order > a.order);
@@ -20,16 +31,12 @@ export function variables(facts: Facts, alt: "dark" | "light"): Variable[] {
         const key = vkey(fact);
         const variable = map.get(key) ?? { name: fact.name, kind: fact.kind, hint: fact.hint };
 
-        // The default scope is the page's own values; `alt` is the other mode. The scope that is neither (the
-        // opposite mode of the project) only fills in what the default scope does not set.
+        // The project's opposite mode only fills in what the default scope does not set.
         if (fact.scope === "default" && better(variable.light, fact)) {
             variable.light = fact;
         } else if (fact.scope === alt && better(variable.dark, fact)) {
             variable.dark = fact;
-        } else if (
-            fact.scope === (alt === "dark" ? "light" : "dark") &&
-            variable.light === undefined
-        ) {
+        } else if (fact.scope === otherMode(alt) && variable.light === undefined) {
             variable.spare = fact;
         }
 
@@ -53,19 +60,15 @@ export function variables(facts: Facts, alt: "dark" | "light"): Variable[] {
     );
 }
 
-// A dark-named variable that the plain one points at in the dark scope (`--bg: var(--dark-bg)`) is one for sure; without that, three pairs make a scheme, and a name with a `-light` or `-main` sibling (`primary-dark` beside `primary-light`) is a shade, not a mode.
-function pairModeTwins(map: Map<string, Variable>, alt: "dark" | "light"): void {
+// `--bg: var(--dark-bg)` in the dark scope makes a sure pair; otherwise three pairs make a scheme,
+// and a `-light` or `-main` sibling (`primary-dark` beside `primary-light`) makes it a shade.
+function pairModeTwins(map: Map<string, Variable>, alt: Mode): void {
     const mode = alt === "dark" ? /^(?:dark|night|dk|drk|d)$/ : /^(?:light|day|lt|lgt|l)$/;
     const plain = (name: string) => kebab(name).replace(/^(?:color|colour|clr)-/, "");
     const byName = new Map<string, Variable>();
 
     for (const [key, variable] of map) {
-        if (
-            key.startsWith("css:") ||
-            key.startsWith("scss:") ||
-            key.startsWith("less:") ||
-            key.startsWith("js:")
-        ) {
+        if (/^(?:css|scss|less|js):/.test(key)) {
             byName.set(`${variable.kind}:${plain(variable.name)}`, variable);
         }
     }
@@ -80,9 +83,8 @@ function pairModeTwins(map: Map<string, Variable>, alt: "dark" | "light"): void 
             continue;
         }
 
-        const base = byName.get(
-            `${variable.kind}:${words.filter((_, index) => index !== at).join("-")}`,
-        );
+        const rest = words.filter((_, index) => index !== at).join("-");
+        const base = byName.get(`${variable.kind}:${rest}`);
 
         if (base === undefined || base === variable) {
             continue;
@@ -90,14 +92,17 @@ function pairModeTwins(map: Map<string, Variable>, alt: "dark" | "light"): void 
 
         const target = new RegExp(String.raw`var\(\s*--${variable.name}\s*[,)]`);
         const sure = base.dark !== undefined && target.test(base.dark.value);
+        const stem = words.slice(0, at).join("-");
         const shade =
             at === words.length - 1 &&
-            [...map.values()].some(
-                (other) =>
-                    /^(?:light|main|base|default)$/.test(
-                        plain(other.name).slice(words.slice(0, at).join("-").length + 1),
-                    ) && plain(other.name).startsWith(`${words.slice(0, at).join("-")}-`),
-            );
+            [...map.values()].some((other) => {
+                const name = plain(other.name);
+
+                return (
+                    name.startsWith(`${stem}-`) &&
+                    /^(?:light|main|base|default)$/.test(name.slice(stem.length + 1))
+                );
+            });
 
         if (sure || !shade) {
             pairs.push({ twin: variable, base, sure });
@@ -114,17 +119,13 @@ function pairModeTwins(map: Map<string, Variable>, alt: "dark" | "light"): void 
     }
 }
 
-function pairModeSuffixes(map: Map<string, Variable>, alt: "dark" | "light"): void {
-    const ends = alt === "dark" ? (["light", "dark"] as const) : (["dark", "light"] as const);
-    const stems = new Map<string, { first?: Variable; second?: Variable }>();
+function pairModeSuffixes(map: Map<string, Variable>, alt: Mode): void {
+    const isMode = (word: string | undefined) => word === "light" || word === "dark";
+    const stems = new Map<string, { name: string; first?: Variable; second?: Variable }>();
 
     for (const variable of map.values()) {
         const words = kebab(variable.name).replace(/^-/, "").split("-");
-        const at = [ends[0], ends[1]].includes(words.at(-1) as never)
-            ? words.length - 1
-            : [ends[0], ends[1]].includes(words[0] as never)
-              ? 0
-              : -1;
+        const at = isMode(words.at(-1)) ? words.length - 1 : isMode(words[0]) ? 0 : -1;
 
         if (
             at === -1 ||
@@ -135,11 +136,11 @@ function pairModeSuffixes(map: Map<string, Variable>, alt: "dark" | "light"): vo
             continue;
         }
 
-        const mode = words[at];
-        const stem = `${variable.kind}:${variable.hint ?? ""}:${words.filter((_, index) => index !== at).join("-")}`;
-        const pair = stems.get(stem) ?? {};
+        const name = words.filter((_, index) => index !== at).join("-");
+        const stem = `${variable.kind}:${variable.hint ?? ""}:${name}`;
+        const pair = stems.get(stem) ?? { name };
 
-        pair[mode === ends[0] ? "first" : "second"] = variable;
+        pair[words[at] === otherMode(alt) ? "first" : "second"] = variable;
         stems.set(stem, pair);
     }
 
@@ -151,10 +152,8 @@ function pairModeSuffixes(map: Map<string, Variable>, alt: "dark" | "light"): vo
         return;
     }
 
-    for (const [key, { first, second }] of complete) {
-        const name = key.split(":").slice(2).join(":");
-
-        if (map.has(`${first!.kind}:${first!.hint ?? ""}:${name}`)) {
+    for (const [stem, { name, first, second }] of complete) {
+        if (map.has(stem)) {
             continue;
         }
 
@@ -172,7 +171,7 @@ function pairModeSuffixes(map: Map<string, Variable>, alt: "dark" | "light"): vo
     }
 }
 
-function pairSassNames(map: Map<string, Variable>, alt: "dark" | "light"): void {
+function pairSassNames(map: Map<string, Variable>, alt: Mode): void {
     const plain = (name: string) =>
         kebab(name).replace(/^(?:bs|ifm|sl|mui|ant|chakra|mantine|pico|vt)-/, "");
     const preprocessed = new Map<string, Variable>();
@@ -201,16 +200,16 @@ function pairSassNames(map: Map<string, Variable>, alt: "dark" | "light"): void 
 export function follow(
     index: Map<string, Variable>,
     start: Variable,
-    scope: "light" | "dark",
+    scope: Mode,
     active: Set<Variable> = new Set(),
-    memo: Map<Variable, { text: string; via?: Variable } | undefined> = new Map(),
-): { text: string; via?: Variable } | undefined {
-    // A variable that arithmetic points back at (`$a: $a * 2`) is not followed into itself, nor a chain past 256.
-    if (active.has(start) || active.size >= 256) {
+    memo: Map<Variable, Found | undefined> = new Map(),
+): Found | undefined {
+    // `$a: $a * 2` is not followed into itself, nor a chain past 64.
+    if (active.has(start) || active.size >= 64) {
         return undefined;
     }
 
-    // Each variable is followed once in a walk: `$b: $a + $a; $c: $b + $b; …` does not double the work at each step.
+    // Each variable is followed once in a walk, so `$b: $a + $a; $c: $b + $b` does not double the work.
     if (memo.has(start)) {
         return memo.get(start);
     }
@@ -231,58 +230,34 @@ export function follow(
 function followOnce(
     index: Map<string, Variable>,
     start: Variable,
-    scope: "light" | "dark",
+    scope: Mode,
     active: Set<Variable>,
-    memo: Map<Variable, { text: string; via?: Variable } | undefined>,
-): { text: string; via?: Variable } | undefined {
-    // A library writes the variables of a theme object under a prefix (`--mantine-color-ink-9` for the theme's `ink` step 9):
-    // a name that is not declared is looked for without its first words.
-    const find = (name: string, kind: Variable["kind"]) => {
-        const lookup = (text: string) =>
-            index.get(`${kind}:${text}`) ?? (kind === "css" ? index.get(`js:${text}`) : undefined);
-        const exact = lookup(name);
+    memo: Map<Variable, Found | undefined>,
+): Found | undefined {
+    const bare = (variable: Variable) =>
+        modeValue(variable, scope)?.replace(/#\{\s*([$@][\w-]+)\s*\}/g, "$1");
 
-        if (exact !== undefined || kind !== "css") {
-            return exact;
-        }
+    const lookup: Lookup = (name, kind) => {
+        const target = index.get(`${kind}:${name}`);
 
-        const parts = name.split("-");
-
-        for (let drop = 1; drop <= 3 && drop < parts.length - 1; drop++) {
-            const found = lookup(parts.slice(drop).join("-"));
-
-            if (found !== undefined) {
-                return found;
-            }
-        }
-
-        return undefined;
+        return target === undefined ? undefined : follow(index, target, scope, active, memo)?.text;
     };
 
-    let current = start;
-    const bare = (value: string | undefined) => value?.replace(/#\{\s*([$@][\w-]+)\s*\}/g, "$1");
-    let text = bare(
-        (scope === "dark" ? (current.dark ?? current.light) : (current.light ?? current.dark))
-            ?.value,
-    );
+    let text = bare(start);
     let via: Variable | undefined;
 
     for (let hop = 0; hop < 8 && text !== undefined; hop++) {
         const css = /^var\(\s*--([\w-]+)\s*(?:,\s*([\s\S]+))?\)$/.exec(text);
-        const scss = /^\$([\w-]+)$/.exec(text);
-        const less = /^@([\w-]+)$/.exec(text);
-        const next =
-            css !== null
-                ? find(css[1]!, "css")
-                : scss !== null
-                  ? find(scss[1]!, "scss")
-                  : less !== null
-                    ? find(less[1]!, "less")
-                    : undefined;
+        const sass = css === null ? /^([$@])([\w-]+)$/.exec(text) : null;
 
-        if (css === null && scss === null && less === null) {
+        if (css === null && sass === null) {
             break;
         }
+
+        const next =
+            css !== null
+                ? index.get(`css:${css[1]}`)
+                : index.get(`${sass![1] === "$" ? "scss" : "less"}:${sass![2]}`);
 
         if (next === undefined) {
             if (css?.[2] !== undefined) {
@@ -295,10 +270,7 @@ function followOnce(
         }
 
         via ??= next;
-        current = next;
-        text = bare(
-            (scope === "dark" ? (next.dark ?? next.light) : (next.light ?? next.dark))?.value,
-        );
+        text = bare(next);
     }
 
     if (text === undefined) {
@@ -306,21 +278,13 @@ function followOnce(
     }
 
     if (text.includes("#{")) {
-        const value = (name: string, kind: "scss" | "less" | "css") => {
-            const target = index.get(`${kind}:${name}`);
-
-            return target === undefined
-                ? undefined
-                : follow(index, target, scope, active, memo)?.text;
-        };
-
         text = text.replace(/#\{\s*([^{}]+?)\s*\}/g, (all, expression: string) => {
             const lone = /^(?:[\w-]+\.)?[$@]([\w-]+)$/.exec(expression);
 
             return (
                 (lone === null
-                    ? evalMath(expression, value)
-                    : (value(lone[1]!, "scss") ?? value(lone[1]!, "less"))) ?? all
+                    ? evalMath(expression, lookup)
+                    : (lookup(lone[1]!, "scss") ?? lookup(lone[1]!, "less"))) ?? all
             );
         });
     }
@@ -331,36 +295,53 @@ function followOnce(
         (/[$@][A-Za-z_]/.test(text) && /[*/+()]|\s-\s/.test(text)) ||
         (calc !== null && /var\(/.test(text))
     ) {
-        const math = evalMath(calc === null ? text : calc[1]!, (name, kind) => {
-            const target = index.get(`${kind}:${name}`);
-
-            return target === undefined
-                ? undefined
-                : follow(index, target, scope, active, memo)?.text;
-        });
-
-        if (math !== undefined) {
-            text = math;
-        }
+        text = evalMath(calc === null ? text : calc[1]!, lookup) ?? text;
     }
 
     return { text: text.trim(), via };
 }
 
-export function evalMath(
-    text: string,
-    value: (name: string, kind: "scss" | "less" | "css") => string | undefined,
-): string | undefined {
+interface Quantity {
+    n: number;
+    unit: string;
+}
+
+const LENGTHS = ["px", "rem", "em"];
+
+// rem and em are 16px when a sum mixes them with pixels (`0.5rem - 2px`).
+const pixels = (quantity: Quantity): Quantity =>
+    quantity.unit === "rem" || quantity.unit === "em"
+        ? { n: quantity.n * 16, unit: "px" }
+        : quantity;
+
+function multiply(op: string, left: Quantity, right: Quantity): Quantity | undefined {
+    if (op === "/" && right.n === 0) {
+        return undefined;
+    }
+
+    return op === "*"
+        ? { n: left.n * right.n, unit: left.unit || right.unit }
+        : { n: left.n / right.n, unit: left.unit === right.unit ? "" : left.unit };
+}
+
+function add(op: string, left: Quantity, right: Quantity): Quantity | undefined {
+    const mixed =
+        left.unit !== right.unit && LENGTHS.includes(left.unit) && LENGTHS.includes(right.unit);
+    const [a, b] = mixed ? [pixels(left), pixels(right)] : [left, right];
+
+    if (a.unit !== b.unit && a.unit !== "" && b.unit !== "") {
+        return undefined;
+    }
+
+    return { n: op === "+" ? a.n + b.n : a.n - b.n, unit: a.unit || b.unit };
+}
+
+export function evalMath(text: string, value: Lookup): string | undefined {
     const tokens = text.match(/var\(\s*--[\w-]+\s*\)|\$[\w-]+|@[\w-]+|\d*\.?\d+[a-z%]*|[()+*/-]/g);
     let at = 0;
 
     if (tokens === null || tokens.join("").length < text.replace(/\s/g, "").length) {
         return undefined;
-    }
-
-    interface Quantity {
-        n: number;
-        unit: string;
     }
 
     const operand = (token: string): Quantity | undefined => {
@@ -377,10 +358,6 @@ export function evalMath(
     const factor = (): Quantity | undefined => {
         const token = tokens[at++];
 
-        if (token === undefined) {
-            return undefined;
-        }
-
         if (token === "(") {
             const inner = sum();
 
@@ -393,68 +370,26 @@ export function evalMath(
             return inner === undefined ? undefined : { n: -inner.n, unit: inner.unit };
         }
 
-        return operand(token);
+        return token === undefined ? undefined : operand(token);
     };
 
-    const product = (): Quantity | undefined => {
-        let left = factor();
+    const chain =
+        (next: () => Quantity | undefined, ops: string[], apply: typeof add) =>
+        (): Quantity | undefined => {
+            let left = next();
 
-        while (left !== undefined && (tokens[at] === "*" || tokens[at] === "/")) {
-            const op = tokens[at++];
-            const right = factor();
+            while (left !== undefined && ops.includes(tokens[at] ?? "")) {
+                const op = tokens[at++]!;
+                const right = next();
 
-            if (right === undefined || (op === "/" && right.n === 0)) {
-                return undefined;
+                left = right === undefined ? undefined : apply(op, left, right);
             }
 
-            left =
-                op === "*"
-                    ? { n: left.n * right.n, unit: left.unit || right.unit }
-                    : { n: left.n / right.n, unit: left.unit === right.unit ? "" : left.unit };
-        }
+            return left;
+        };
 
-        return left;
-    };
-
-    const sum = (): Quantity | undefined => {
-        let left = product();
-
-        while (left !== undefined && (tokens[at] === "+" || tokens[at] === "-")) {
-            const op = tokens[at++];
-            let right = product();
-
-            // rem and em are 16px when a sum mixes them with pixels (`0.5rem - 2px`).
-            if (right !== undefined && left.unit !== right.unit) {
-                const pixels = (quantity: Quantity): Quantity =>
-                    quantity.unit === "rem" || quantity.unit === "em"
-                        ? { n: quantity.n * 16, unit: "px" }
-                        : quantity;
-
-                if (
-                    ["px", "rem", "em"].includes(left.unit) &&
-                    ["px", "rem", "em"].includes(right.unit)
-                ) {
-                    left = pixels(left);
-                    right = pixels(right);
-                }
-            }
-
-            if (
-                right === undefined ||
-                (left.unit !== right.unit && left.unit !== "" && right.unit !== "")
-            ) {
-                return undefined;
-            }
-
-            left = {
-                n: op === "+" ? left.n + right.n : left.n - right.n,
-                unit: left.unit || right.unit,
-            };
-        }
-
-        return left;
-    };
-
+    const product = chain(factor, ["*", "/"], multiply);
+    const sum = chain(product, ["+", "-"], add);
     const result = sum();
 
     return result === undefined || at !== tokens.length || !Number.isFinite(result.n)
@@ -476,4 +411,85 @@ export function channelColor(text: string, name: string): string | undefined {
     }
 
     return undefined;
+}
+
+const FUNCTION = String.raw`\b(rgba?|hsla?|hwb|oklch|oklab|lab|lch)\(\s*`;
+const STARTS_WITH_FUNCTION = new RegExp(String.raw`^${FUNCTION}`, "i");
+
+export function noteChannels(facts: Facts, value: string): void {
+    if (!value.includes("var(") || facts.channels.size > 400) {
+        return;
+    }
+
+    for (const call of value.matchAll(
+        new RegExp(String.raw`${FUNCTION}((?:[^()]|\([^()]*\))*)\)`, "gi"),
+    )) {
+        const kind = call[1]!.toLowerCase().replace(/a$/, "");
+
+        for (const name of call[2]!.matchAll(/var\(\s*--([\w-]+)/g)) {
+            facts.channels.set(name[1]!, kind);
+        }
+    }
+}
+
+const NUMBERS =
+    /^\s*-?[\d.]+(?:deg|%)?(?:\s*[ ,]\s*-?[\d.]+(?:deg|%)?){2,3}(?:\s*\/\s*[\d.]+%?)?\s*$/;
+
+function fill(text: string, values: Map<string, string>, depth = 0): string | undefined {
+    if (depth > 4) {
+        return undefined;
+    }
+
+    let missing = false;
+    const out = text.replace(
+        /var\(\s*--([\w-]+)\s*(?:,\s*([^()]*))?\)/g,
+        (_, name: string, fallback?: string) => {
+            const value = values.get(name) ?? fallback?.trim();
+            const inner = value?.includes("var(") ? fill(value, values, depth + 1) : value;
+
+            missing ||= inner === undefined;
+
+            return inner ?? "";
+        },
+    );
+
+    return missing ? undefined : out;
+}
+
+export function resolveChannels(facts: Facts): void {
+    const own = new Map<string, string>();
+    const dark = new Map<string, string>();
+
+    for (const variable of facts.vars) {
+        if (variable.scope === "default" || variable.scope === "dark") {
+            (variable.scope === "dark" ? dark : own).set(variable.name, variable.value);
+        }
+    }
+
+    // Built once: a copy for each property made the scan quadratic in the number of properties.
+    const darkOwn = new Map([...own, ...dark]);
+
+    for (const variable of facts.vars) {
+        const kind = facts.channels.get(variable.name);
+
+        if (kind !== undefined && !variable.value.includes("(") && NUMBERS.test(variable.value)) {
+            const color = `${kind}(${variable.value.trim().replace(/,\s*/g, " ")})`;
+
+            if (parseColor(color) !== undefined) {
+                variable.value = color;
+            }
+
+            continue;
+        }
+
+        if (variable.value.includes("var(") && STARTS_WITH_FUNCTION.test(variable.value.trim())) {
+            const text = variable.value.replace(/<alpha-value>/g, "1");
+            const filled = fill(text, variable.scope === "dark" ? darkOwn : own);
+            const opaque = filled?.replace(/\s*\/\s*1\s*\)/, ")");
+
+            if (opaque !== undefined && parseColor(opaque) !== undefined) {
+                variable.value = opaque;
+            }
+        }
+    }
 }

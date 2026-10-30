@@ -4,13 +4,11 @@ export type Scope = "default" | "dark" | "light" | "other";
 
 export interface Decl {
     prop: string;
-    /** The value, without `!important` and `!default`, cut to `MAX_VALUE`. */
     value: string;
-    /** The innermost selector, with `&` resolved against its parent. Empty at the top level and for an inline style. */
+    /** The innermost selector, with `&` resolved against its parent. */
     selector: string;
-    /** The at-rule preludes around it, outermost first (`@media (min-width: 768px)`, `@theme`). */
+    /** The at-rule preludes around it, outermost first. */
     at: string[];
-    /** Whether the rule applies in dark mode and, for a custom property, whether it defines the dark values. */
     scope: Scope;
     theme: boolean;
     inline: boolean;
@@ -20,25 +18,22 @@ export interface Decl {
 const MAX_VALUE = 400;
 const MAX_MAP = 8000;
 
-// Comments hold notes and old code, not styles in use. An unclosed comment runs to the end of the text, so the match stays linear; a `/*` or `//` after a word, a quote, or (for `//`) `:` or `(` is a glob or an address.
+// An unclosed comment runs to the end, so the match stays linear; `/*` or `//` after a word, a quote,
+// or (for `//`) `:` or `(` is a glob or an address.
 const COMMENTS =
     /(?<![\w.*"'`/-])\/\*[\s\S]*?(?:\*\/|$)|<!--[\s\S]*?(?:-->|$)|(?<![:\w"'`(/\\])\/\/[^\n]*/g;
 
 const DARK_WORD = String.raw`(?:dark|dark[-_]theme|dark[-_]mode|darkmode|dark[-_]scheme|theme[-_]{0,2}dark|mode[-_]{0,2}dark|scheme[-_]{0,2}dark|color[-_]scheme[-_]dark|is[-_]?dark|has[-_]?dark|ui[-_]dark|app[-_]dark|body[-_]dark|v-theme--dark|chakra-ui-dark|ant-dark|night|night[-_]mode|nightmode|theme[-_]night|dark[-_]?(?:theme|mode|scheme)(?:[-_]active|[-_]on|[-_]enabled)?)`;
 const DARK_PART = String.raw`(?:\.${DARK_WORD}(?![\w-])|\[(?:data-[\w-]*)?(?:theme|mode|color-mode|color-scheme|colorscheme|appearance|scheme)\s*[~|^$*]?=\s*["']?(?:dark|night|slate|dark[-_]mode|darkmode)["']?\s*\])`;
 const DARK_ANY = new RegExp(DARK_PART, "i");
-const DARK_ROOT = new RegExp(
-    String.raw`^(?:html|body|:root|\*|:host)?(?:${DARK_PART})+(?::root)?$`,
-    "i",
-);
+const rootRule = (part: string, tail = String.raw`(?::root)?`) =>
+    new RegExp(String.raw`^(?:html|body|:root|\*|:host)?(?:${part})+${tail}$`, "i");
+const DARK_ROOT = rootRule(DARK_PART);
 const LIGHT_PART = String.raw`(?:\.(?:light|light[-_]theme|light[-_]mode|lightmode|theme[-_]{1,2}light|mode[-_]{1,2}light|scheme[-_]light|v-theme--light|chakra-ui-light|ant-light|day|day[-_]mode)(?![\w-])|\[(?:data-[\w-]*)?(?:theme|mode|color-mode|color-scheme|colorscheme|appearance|scheme)\s*[~|^$*]?=\s*["']?(?:light|day)["']?\s*\])`;
-const LIGHT_ROOT = new RegExp(
-    String.raw`^(?:html|body|:root|\*|:host)?(?:${LIGHT_PART})+(?::root)?$`,
-    "i",
-);
-const DARK_DESC = new RegExp(
-    String.raw`^(?:html|body|:root|\*|:host)?(?:${DARK_PART})+\s+(?:body|html|:root|\*|main|#root|#app|\.app|\.App)$`,
-    "i",
+const LIGHT_ROOT = rootRule(LIGHT_PART);
+const DARK_DESC = rootRule(
+    DARK_PART,
+    String.raw`\s+(?:body|html|:root|\*|main|#root|#app|\.app|\.App)`,
 );
 const ROOT_ONLY =
     /^(?:html|body|:root|\*|:host|#root|#app|#__next|\.app|\.theme|main)(?:\[data-(?:bs-)?(?:theme|mode)\])*$|^\[data-(?:bs-)?(?:theme|mode|color-scheme)\]$/i;
@@ -55,18 +50,11 @@ function partScope(part: string, dark: boolean, light = false): Scope {
         return "light";
     }
 
-    if (light) {
-        // Inside `prefers-color-scheme: light`, the root selectors define the light values (a dark-first project's other mode).
-        return ROOT_ANY.test(part) || ROOT_ONLY.test(part) || /^:root\b/i.test(part)
-            ? "light"
-            : "other";
-    }
+    if (light || dark) {
+        // Inside `prefers-color-scheme`, the root selectors define that mode; `:root:not(.light)` too.
+        const root = ROOT_ANY.test(part) || ROOT_ONLY.test(part) || /^:root\b/i.test(part);
 
-    if (dark) {
-        // Inside `prefers-color-scheme: dark`, the root selectors define the dark values; `:root:not(.light)` too.
-        return ROOT_ANY.test(part) || ROOT_ONLY.test(part) || /^:root\b/i.test(part)
-            ? "dark"
-            : "other";
+        return !root ? "other" : light ? "light" : "dark";
     }
 
     return ROOT_ONLY.test(part) ||
@@ -87,17 +75,7 @@ function varScope(selector: string, dark: boolean, light = false): Scope {
         return dark ? "dark" : light ? "light" : "default";
     }
 
-    if (scopes.includes("default")) {
-        return "default";
-    }
-
-    for (const scope of ["dark", "light"] as const) {
-        if (scopes.every((each) => each === scope)) {
-            return scope;
-        }
-    }
-
-    return scopes.includes("dark") ? "dark" : scopes.includes("light") ? "light" : "other";
+    return (["default", "dark", "light"] as const).find((each) => scopes.includes(each)) ?? "other";
 }
 
 function isDarkWords(name: string): boolean {
@@ -108,14 +86,13 @@ function isDarkWords(name: string): boolean {
         .some((word) => word === "dark" || word === "night");
 }
 
-function isDarkInclude(prelude: string, darkMixins: ReadonlySet<string>): boolean {
+function isDarkInclude(prelude: string): boolean {
     const include = /^@include\s+([\w.-]+)\s*(?:\(([^)]*)\))?/i.exec(prelude);
 
     if (include !== null) {
         const name = include[1]!.replace(/^.*\./, "");
 
         return (
-            darkMixins.has(name) ||
             isDarkWords(name) ||
             /(?:^|[\s,(:])['"]?(?:dark|night)['"]?(?:$|[\s,)])/i.test(include[2] ?? "")
         );
@@ -124,145 +101,37 @@ function isDarkInclude(prelude: string, darkMixins: ReadonlySet<string>): boolea
     return /^@(?:else\s+)?if\b[^{]*(?:==|=)\s*['"]?(?:dark|night)['"]?\s*$/i.test(prelude);
 }
 
-export function darkMixinsIn(text: string): Set<string> {
-    const darkMixins = new Set<string>();
-
-    for (const match of text.matchAll(/@mixin\s+([\w-]+)\s*(?:\([^)]*\))?\s*\{/g)) {
-        // The mixin's own text: up to the next mixin, and at most 600 characters.
-        const body = text
-            .slice(match.index + match[0].length, match.index + match[0].length + 600)
-            .split("@mixin")[0]!;
-        const wrapper = body.split("@content")[0]!;
-
-        if (
-            isDarkWords(match[1]!) ||
-            (body.includes("@content") &&
-                (/prefers-color-scheme\s*:\s*dark/i.test(wrapper) || isDarkSelector(wrapper)))
-        ) {
-            darkMixins.add(match[1]!);
-        }
-    }
-
-    return darkMixins;
-}
-
 const MAX_DECLS = 30_000;
 const MAX_DEPTH = 24;
-
-// One output line for each input line, so that a line number stays the file's.
-export function indentedToBraces(source: string): string {
-    const lines = source.split("\n").slice(0, 20_000);
-    const indentOf = (line: string) => /^[ \t]*/.exec(line)![0].replace(/\t/g, "    ").length;
-    const blank = (line: string) => line.trim() === "" || /^\s*\/\//.test(line);
-    const stack: number[] = [];
-    const out: string[] = [];
-
-    for (const [at, line] of lines.entries()) {
-        if (blank(line)) {
-            out.push("");
-
-            continue;
-        }
-
-        const indent = indentOf(line);
-        let closing = "";
-
-        while (stack.length > 0 && stack.at(-1)! >= indent) {
-            stack.pop();
-            closing += "} ";
-        }
-
-        const next = lines.slice(at + 1).find((each) => !blank(each));
-        const opens = next !== undefined && indentOf(next) > indent;
-        let text = line.trim().replace(/;\s*$/, "");
-
-        if (opens) {
-            text = text
-                .replace(/^=\s*/, "@mixin ")
-                .replace(/^\+\s*/, "@include ")
-                .replace(/(^|\S)\s+\/\/.*$/, "$1");
-            out.push(`${closing}${text} {`);
-            stack.push(indent);
-
-            continue;
-        }
-
-        text = text
-            .replace(/(^|\S)\s+\/\/.*$/, "$1")
-            .replace(/^=\s*/, "@mixin ")
-            .replace(/^\+\s*/, "@include ");
-
-        // `x = 1` (Stylus) is a variable; `:prop value` (indented Sass) and `prop value` (Stylus) are declarations.
-        const variable = /^(\$?[\w-]+)\s*[?:]?=\s*(.+)$/.exec(text);
-        const colonFirst = /^:([\w-]+)\s+(.+)$/.exec(text);
-        const spaced = /^([a-z][a-z-]*)\s+([^:{}][^{}]*)$/.exec(text);
-
-        if (variable !== null) {
-            text = `${variable[1]!.startsWith("$") ? variable[1] : `$${variable[1]}`}: ${variable[2]}`;
-        } else if (colonFirst !== null) {
-            text = `${colonFirst[1]}: ${colonFirst[2]}`;
-        } else if (
-            spaced !== null &&
-            !text.startsWith("@") &&
-            !/^(?:if|else|for|return|unless)\b/.test(text)
-        ) {
-            text = `${spaced[1]}: ${spaced[2]}`;
-        }
-
-        out.push(`${closing}${text};`);
-    }
-
-    out[out.length - 1] = `${out.at(-1) ?? ""}${" }".repeat(stack.length)}`;
-
-    return out.join("\n");
-}
 
 // A comment keeps its line breaks, so that a line counted after it is the file's line; one line of it is a space.
 export const stripComments = (text: string) =>
     text.replace(COMMENTS, (comment) => comment.replace(/[^\n]+/g, "").replace(/^$/, " "));
 
-export function parseStyles(
-    source: string,
-    firstLine: number | undefined = 1,
-    known?: ReadonlySet<string>,
-): Decl[] {
+export function parseStyles(source: string, firstLine: number | undefined = 1): Decl[] {
     const text = stripComments(source);
-    const breaks: number[] = [];
-
-    for (let at = text.indexOf("\n"); at !== -1; at = text.indexOf("\n", at + 1)) {
-        breaks.push(at);
-    }
-
     let cursor = 0;
+    let breaks = 0;
+    let nextBreak = text.indexOf("\n");
 
+    // The cursor only moves forward, so the count of line breaks before it only grows.
     const lineOf = (index: number) => {
-        let low = 0;
-        let high = breaks.length;
-
-        while (low < high) {
-            const middle = (low + high) >> 1;
-
-            if (breaks[middle]! < index) {
-                low = middle + 1;
-            } else {
-                high = middle;
-            }
+        for (; nextBreak !== -1 && nextBreak < index; breaks++) {
+            nextBreak = text.indexOf("\n", nextBreak + 1);
         }
 
-        return (firstLine ?? 1) + low;
+        return (firstLine ?? 1) + breaks;
     };
 
     // `@custom-media --dark (prefers-color-scheme: dark);` names a query: `@media (--dark)` is the dark mode's.
     const darkQueries = [
         ...text.matchAll(/@custom-media\s+(--[\w-]+)\s+[^;{}]*prefers-color-scheme\s*:\s*dark/gi),
     ].map((match) => match[1]!);
-    const darkMixins = new Set([...darkMixinsIn(text), ...(known ?? [])]);
     const decls: Decl[] = [];
     const stack: { prelude: string; selector: string }[] = [];
     let buffer = "";
     let paren = 0;
 
-    const chain = () => stack.map((block) => block.prelude);
     const selector = () =>
         stack.findLast((block) => !block.prelude.startsWith("@"))?.selector ?? "";
 
@@ -289,14 +158,15 @@ export function parseStyles(
         }
 
         const prop = match[1]!;
+        const variable = /^(?:--|[$@])/.test(prop);
         const value = match[2]!.replace(/\s*!(?:important|default|global)\s*$/i, "").trim();
-        const at = chain().filter((part) => part.startsWith("@"));
+        const at = stack.map((block) => block.prelude).filter((part) => part.startsWith("@"));
         const dark = at.some(
             (part) =>
                 /^@media\b[^{]*prefers-color-scheme\s*:\s*dark/i.test(part) ||
                 (/^@media\b/i.test(part) &&
                     darkQueries.some((name) => new RegExp(`\\(\\s*${name}\\s*\\)`).test(part))) ||
-                isDarkInclude(part, darkMixins),
+                isDarkInclude(part),
         );
         const light = at.some((part) =>
             /^@media\b[^{]*prefers-color-scheme\s*:\s*light/i.test(part),
@@ -305,7 +175,7 @@ export function parseStyles(
         const theme = at.some((part) => /^@theme\b/i.test(part));
 
         decls.push({
-            prop: prop.startsWith("--") || /^[$@]/.test(prop) ? prop : prop.toLowerCase(),
+            prop: variable ? prop : prop.toLowerCase(),
             // A Sass map (`$themes: (light: (…), dark: (…))`) is long: it is read whole.
             value: value.slice(
                 0,
@@ -315,18 +185,14 @@ export function parseStyles(
             at,
             theme,
             inline: false,
-            // The statement starts as many line breaks before the cursor as it holds after its first character.
-            ...(firstLine === undefined
-                ? {}
-                : { line: lineOf(cursor) - (buffer.trimStart().match(/\n/g)?.length ?? 0) }),
-            scope:
-                prop.startsWith("--") || prop.startsWith("$") || prop.startsWith("@")
-                    ? theme
-                        ? "default"
-                        : varScope(here, dark, light)
-                    : dark || isDarkSelector(here)
-                      ? "dark"
-                      : "default",
+            ...(firstLine === undefined ? {} : { line: lineOf(cursor) }),
+            scope: variable
+                ? theme
+                    ? "default"
+                    : varScope(here, dark, light)
+                : dark || isDarkSelector(here)
+                  ? "dark"
+                  : "default",
         });
     };
 
@@ -369,18 +235,15 @@ export function parseStyles(
 
             buffer = "";
 
-            // `&` is the parent selector; without it a nested rule is a descendant. An at-rule keeps its parent's.
-            const parent =
-                stack.findLast((block) => !block.prelude.startsWith("@"))?.selector ?? "";
-            let resolved: string;
-
-            if (prelude.startsWith("@") || parent === "") {
-                resolved = prelude.startsWith("@") ? parent : prelude;
-            } else if (prelude.includes("&")) {
-                resolved = prelude.replace(/&/g, parent);
-            } else {
-                resolved = `${parent} ${prelude}`;
-            }
+            // Without `&` a nested rule is a descendant. An at-rule keeps its parent's selector.
+            const parent = selector();
+            const resolved = prelude.startsWith("@")
+                ? parent
+                : parent === ""
+                  ? prelude
+                  : prelude.includes("&")
+                    ? prelude.replace(/&/g, parent)
+                    : `${parent} ${prelude}`;
 
             stack.push({ prelude: prelude.slice(0, 300), selector: resolved.slice(0, 300) });
         } else if (char === "}" && paren === 0) {
@@ -404,9 +267,24 @@ export function parseStyles(
 }
 
 export function pageStyles(source: string): { blocks: string[]; inline: Decl[] } {
-    const blocks = [...source.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)].map(
-        (match) => match[1]!,
-    );
+    const blocks: string[] = [];
+    // A search from each `<style` to its end tag: one regex for the whole block went quadratic on unclosed tags.
+    const open = /<style\b[^>]{0,1000}>/gi;
+    const close = /<\/style\s*>/gi;
+
+    for (let tag = open.exec(source); tag !== null; tag = open.exec(source)) {
+        close.lastIndex = open.lastIndex;
+
+        const end = close.exec(source);
+
+        if (end === null) {
+            break;
+        }
+
+        blocks.push(source.slice(open.lastIndex, end.index));
+        open.lastIndex = close.lastIndex;
+    }
+
     const inline: Decl[] = [];
     let count = 0;
 
@@ -417,24 +295,23 @@ export function pageStyles(source: string): { blocks: string[]; inline: Decl[] }
 
         for (const declaration of (match[1] ?? match[2] ?? "").split(";")) {
             const colon = declaration.indexOf(":");
+            const prop = declaration.slice(0, colon).trim().toLowerCase();
 
-            if (colon > 0) {
-                const prop = declaration.slice(0, colon).trim().toLowerCase();
+            if (colon > 0 && /^(?:--[\w-]+|[a-z-]+)$/.test(prop)) {
+                const value = declaration
+                    .slice(colon + 1)
+                    .trim()
+                    .slice(0, MAX_VALUE);
 
-                if (/^(?:--[\w-]+|[a-z-]+)$/.test(prop)) {
-                    inline.push({
-                        prop,
-                        value: declaration
-                            .slice(colon + 1)
-                            .trim()
-                            .slice(0, MAX_VALUE),
-                        selector: "",
-                        at: [],
-                        scope: "default",
-                        theme: false,
-                        inline: true,
-                    });
-                }
+                inline.push({
+                    prop,
+                    value,
+                    selector: "",
+                    at: [],
+                    scope: "default",
+                    theme: false,
+                    inline: true,
+                });
             }
         }
     }
@@ -442,159 +319,13 @@ export function pageStyles(source: string): { blocks: string[]; inline: Decl[] }
     return { blocks, inline };
 }
 
-export function templateStyles(source: string): string[] {
-    const found: string[] = [];
-    const head =
-        /(?<![\w$.])(?:css|styled(?:\.[a-z][\w]*|\([^)\n]{1,60}\))(?:\.attrs\([^)\n]{0,200}\))?|createGlobalStyle|injectGlobal|keyframes|styles\s*:\s*\[?)\s*`/g;
-
-    for (const match of source.matchAll(head)) {
-        if (found.length >= 400) {
-            break;
-        }
-
-        const start = match.index + match[0].length;
-        let end = start;
-
-        while (end < source.length && source[end] !== "`") {
-            end += source[end] === "\\" ? 2 : 1;
-        }
-
-        // `${…}` holds code: a value we cannot know.
-        const block = source
-            .slice(start, Math.min(end, start + 20_000))
-            .replace(/\$\{[^}]*\}/g, "var(--js)");
-
-        if (block.trim() !== "") {
-            found.push(block);
-        }
-    }
-
-    return found;
-}
-
-const STYLE_KEYS =
-    /\b(color|background|backgroundColor|borderColor|border|borderTop|borderBottom|borderLeft|borderRight|outlineColor|outline|fill|stroke|fontFamily|fontSize|fontWeight|lineHeight|letterSpacing|padding|paddingTop|paddingBottom|paddingLeft|paddingRight|paddingHorizontal|paddingVertical|margin|marginTop|marginBottom|marginLeft|marginRight|marginHorizontal|marginVertical|gap|rowGap|columnGap|borderRadius|boxShadow|textShadow|transition|animation)\s*:\s*(?:(["'`])((?:\\.|(?!\2)[^\\\n]){1,200})\2|(-?\d+(?:\.\d+)?)(?![\w.]))/g;
-
-const kebab = (key: string) => key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
-// A bare number is pixels for these; for the rest it is unitless or not a length.
-const PIXEL_KEYS = new Set([
-    "fontSize",
-    "padding",
-    "paddingTop",
-    "paddingBottom",
-    "paddingLeft",
-    "paddingRight",
-    "paddingHorizontal",
-    "paddingVertical",
-    "margin",
-    "marginTop",
-    "marginBottom",
-    "marginLeft",
-    "marginRight",
-    "marginHorizontal",
-    "marginVertical",
-    "gap",
-    "rowGap",
-    "columnGap",
-    "borderRadius",
-    "letterSpacing",
-]);
-
-function enclosingKey(source: string, index: number): string | undefined {
-    let depth = 0;
-
-    for (let at = index - 1; at >= Math.max(0, index - 2000); at--) {
-        const char = source[at];
-
-        if (char === "}") {
-            depth += 1;
-        } else if (char === "{") {
-            if (depth === 0) {
-                return /([A-Za-z_$][\w$]*)\s*(?::|=)\s*(?:\w+\.create\(\s*)?$/.exec(
-                    source.slice(Math.max(0, at - 80), at),
-                )?.[1];
-            }
-
-            depth -= 1;
-        }
-    }
-
-    return undefined;
-}
-
-export function objectStyles(source: string): Decl[] {
-    const decls: Decl[] = [];
-    // Material UI's `sx` takes numbers as steps of the theme (`p: 2` is two spacings), not as pixels.
-    const themed = /\bsx\s*=\s*\{/.test(source);
-
-    for (const match of source.matchAll(STYLE_KEYS)) {
-        if (decls.length >= 5000) {
-            break;
-        }
-
-        const key = match[1]!;
-
-        if (match[3] === undefined && themed && PIXEL_KEYS.has(key)) {
-            continue;
-        }
-
-        const value = match[3] ?? (PIXEL_KEYS.has(key) ? `${match[4]!}px` : match[4]!);
-        const owner = enclosingKey(source, match.index);
-
-        decls.push({
-            prop: kebab(key)
-                .replace(/-horizontal$/, "-inline")
-                .replace(/-vertical$/, "-block"),
-            value: value.trim().slice(0, MAX_VALUE),
-            selector: owner === undefined ? "" : `.${owner}`,
-            at: [],
-            scope: "default",
-            theme: false,
-            inline: true,
-        });
-    }
-
-    for (const match of source.matchAll(/\bshadowRadius\s*:\s*(\d+(?:\.\d+)?)/g)) {
-        if (decls.length >= 5000) {
-            break;
-        }
-
-        const around = source.slice(Math.max(0, match.index - 300), match.index + 300);
-        const height = /\bheight\s*:\s*(-?\d+(?:\.\d+)?)/.exec(around)?.[1] ?? "0";
-        const width = /\bwidth\s*:\s*(-?\d+(?:\.\d+)?)/.exec(around)?.[1] ?? "0";
-        const opacity = /\bshadowOpacity\s*:\s*(\d*\.?\d+)/.exec(around)?.[1] ?? "0.25";
-        const color = /\bshadowColor\s*:\s*(["'])(#[0-9a-fA-F]{3,8}|[a-z]+)\1/.exec(around)?.[2];
-        const rgb = color === undefined ? undefined : colorsIn(color, true)[0];
-
-        if (rgb !== undefined) {
-            const hex = rgb.hex.slice(1, 7);
-            const channel = (at: number) => parseInt(hex.slice(at, at + 2), 16);
-
-            decls.push({
-                prop: "box-shadow",
-                value: `${width}px ${height}px ${match[1]}px rgba(${channel(0)}, ${channel(2)}, ${channel(4)}, ${opacity})`,
-                selector: "",
-                at: [],
-                scope: "default",
-                theme: false,
-                inline: true,
-            });
-        }
-    }
-
-    return decls;
-}
-
 export const UNKNOWN = Symbol("unknown");
 
 export type Literal =
     string | number | boolean | null | typeof UNKNOWN | Literal[] | { [key: string]: Literal };
 
-export function readLiteral(
-    text: string,
-    start: number,
-    env: ReadonlyMap<string, Literal> = new Map(),
-): Literal | undefined {
+/** A JavaScript object or array literal, read without running anything: what is not a literal is `UNKNOWN`. */
+export function readLiteral(text: string, start: number): Literal | undefined {
     let at = start;
     let nodes = 0;
 
@@ -602,97 +333,66 @@ export function readLiteral(
         while (at < text.length) {
             if (/\s/.test(text[at]!)) {
                 at += 1;
-            } else if (text.startsWith("//", at)) {
-                const end = text.indexOf("\n", at);
+            } else if (text.startsWith("//", at) || text.startsWith("/*", at)) {
+                const end = text.indexOf(text[at + 1] === "/" ? "\n" : "*/", at + 2);
 
-                at = end === -1 ? text.length : end + 1;
-            } else if (text.startsWith("/*", at)) {
-                const end = text.indexOf("*/", at + 2);
-
-                at = end === -1 ? text.length : end + 2;
+                at = end === -1 ? text.length : end + (text[at + 1] === "/" ? 1 : 2);
             } else {
                 break;
             }
         }
     };
 
+    // A template literal with `${…}` is a value the scan cannot know; it is still read to its end.
     const string = (): string | undefined => {
-        const quote = text[at];
-
-        if (quote !== '"' && quote !== "'" && quote !== "`") {
-            return undefined;
-        }
-
+        const quote = text[at]!;
         let out = "";
-        // A template literal with `${…}` is a value we cannot know; it is still read to its end.
-        let dynamic = false;
         let braces = 0;
+        let dynamic = false;
 
-        at += 1;
-
-        while (at < text.length && (text[at] !== quote || braces > 0)) {
+        for (at += 1; at < text.length && (text[at] !== quote || braces > 0); at++) {
             const char = text[at]!;
 
             if (char === "\\") {
-                out += out.length < 2000 ? (text[at + 1] ?? "") : "";
-                at += 2;
-
-                continue;
-            }
-
-            if (quote === "`" && char === "$" && text[at + 1] === "{") {
+                out += text[++at] ?? "";
+            } else if (quote === "`" && char === "$" && text[at + 1] === "{") {
                 dynamic = true;
                 braces += 1;
-                at += 2;
-
-                continue;
-            }
-
-            if (braces > 0 && char === "}") {
-                braces -= 1;
-            } else if (braces > 0 && char === "{") {
-                braces += 1;
-            } else if (out.length < 2000 && braces === 0) {
+                at += 1;
+            } else if (braces > 0) {
+                braces += char === "{" ? 1 : char === "}" ? -1 : 0;
+            } else {
                 out += char;
             }
-
-            at += 1;
         }
 
         at += 1;
 
-        return dynamic ? undefined : out;
+        return dynamic ? undefined : out.slice(0, 2000);
     };
 
     const skipValue = (): typeof UNKNOWN => {
-        let depth = 0;
-
-        while (at < text.length) {
+        for (let depth = 0; at < text.length; at++) {
             const char = text[at]!;
 
             if (char === '"' || char === "'" || char === "`") {
                 string();
-
-                continue;
-            }
-
-            if ("([{".includes(char)) {
+                at -= 1;
+            } else if ("([{".includes(char)) {
                 depth += 1;
-            } else if (")]}".includes(char)) {
+            } else if (")]}".includes(char) || (char === "," && depth === 0)) {
                 if (depth === 0) {
                     break;
                 }
 
                 depth -= 1;
-            } else if (char === "," && depth === 0) {
-                break;
             }
-
-            at += 1;
         }
 
         return UNKNOWN;
     };
+
+    const ended = () => at >= text.length || ",}]".includes(text[at]!);
 
     const value = (depth: number): Literal => {
         skip();
@@ -703,23 +403,19 @@ export function readLiteral(
 
         const char = text[at]!;
 
-        if (char === "{") {
+        if (char === "{" || char === "[") {
+            const close = char === "{" ? "}" : "]";
+            const list: Literal[] = [];
+            const object: { [key: string]: Literal } = {};
+
+            // A closing bracket of another kind (`{ a: 1 ) }`) is read by nothing: the literal ends there.
             at += 1;
 
-            const out: { [key: string]: Literal } = {};
-            let last = -1;
-
-            while (at < text.length) {
+            for (let last = -1; at < text.length && at !== last;) {
                 skip();
-
-                // A closing bracket of another kind (`{ a: 1 ) }`) is read by nothing: the object ends there.
-                if (at === last) {
-                    break;
-                }
-
                 last = at;
 
-                if (text[at] === "}") {
+                if (text[at] === close) {
                     at += 1;
 
                     break;
@@ -727,148 +423,54 @@ export function readLiteral(
 
                 if (text[at] === ",") {
                     at += 1;
+                } else if (char === "[") {
+                    list.push(value(depth + 1));
 
-                    continue;
-                }
+                    if (list.length > 500) {
+                        break;
+                    }
+                } else if (text.startsWith("...", at) || text[at] === "[") {
+                    skipValue();
+                } else {
+                    let key: string | undefined;
 
-                if (text.startsWith("...", at)) {
-                    const named =
-                        /^\.\.\.\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*){0,3})\s*(?=[,}\n])/.exec(
-                            text.slice(at, at + 120),
-                        );
-                    let spread: Literal | undefined;
-
-                    if (named !== null) {
-                        const parts = named[1]!.split(".");
-
-                        spread = env.get(parts[0]!);
-
-                        for (const part of parts.slice(1)) {
-                            spread =
-                                typeof spread === "object" &&
-                                spread !== null &&
-                                !Array.isArray(spread)
-                                    ? spread[part]
-                                    : undefined;
-                        }
+                    if ("\"'`".includes(text[at]!)) {
+                        key = string();
+                    } else {
+                        key = /^[A-Za-z_$][\w$-]*|^-?\d+(?:\.\d+)?/.exec(
+                            text.slice(at, at + 80),
+                        )?.[0];
+                        at += key?.length ?? 0;
                     }
 
-                    if (
-                        named !== null &&
-                        typeof spread === "object" &&
-                        spread !== null &&
-                        !Array.isArray(spread)
-                    ) {
-                        for (const [name, child] of Object.entries(spread)) {
-                            if (name !== "__proto__" && name !== "constructor") {
-                                out[name] = child;
-                            }
-                        }
+                    skip();
 
-                        at += named[0].length;
-
-                        continue;
-                    }
-
-                    skipValue();
-
-                    continue;
-                }
-
-                if (text[at] === "[") {
-                    skipValue();
-
-                    continue;
-                }
-
-                let key = string();
-
-                if (key === undefined) {
-                    const bare = /^[A-Za-z_$][\w$-]*|^-?\d+(?:\.\d+)?/.exec(
-                        text.slice(at, at + 80),
-                    );
-
-                    if (bare === null) {
+                    if (key === undefined || text[at] !== ":") {
                         skipValue();
 
                         continue;
                     }
 
-                    key = bare[0];
-                    at += key.length;
-                }
-
-                skip();
-
-                if (text[at] === ":") {
                     at += 1;
 
                     const child = value(depth + 1);
 
                     if (key !== "__proto__" && key !== "constructor" && key !== "prototype") {
-                        out[key] = child;
+                        object[key] = child;
                     }
-                } else if ((text[at] === "," || text[at] === "}") && env.has(key)) {
-                    out[key] = env.get(key)!;
-                } else {
-                    skipValue();
                 }
             }
 
-            return out;
+            return char === "{" ? object : list;
         }
 
-        if (char === "[") {
-            at += 1;
+        if (char === '"' || char === "'" || char === "`") {
+            const quoted = string();
 
-            const out: Literal[] = [];
-            let last = -1;
-
-            while (at < text.length) {
-                skip();
-
-                if (at === last) {
-                    break;
-                }
-
-                last = at;
-
-                if (text[at] === "]") {
-                    at += 1;
-
-                    break;
-                }
-
-                if (text[at] === ",") {
-                    at += 1;
-
-                    continue;
-                }
-
-                out.push(value(depth + 1));
-
-                if (out.length > 500) {
-                    break;
-                }
-            }
-
-            return out;
-        }
-
-        const before = at;
-        const quoted = string();
-
-        if (quoted === undefined && at > before) {
-            return skipValue();
-        }
-
-        if (quoted !== undefined) {
-            // `"a" + b` and the like are not literals.
             skip();
 
-            return text[at] === "," || text[at] === "}" || text[at] === "]" || at >= text.length
-                ? quoted
-                : skipValue();
+            // `"a" + b` and the like are not literals.
+            return quoted !== undefined && ended() ? quoted : skipValue();
         }
 
         const number = /^-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/i.exec(text.slice(at, at + 40));
@@ -877,9 +479,7 @@ export function readLiteral(
             at += number[0].length;
             skip();
 
-            return text[at] === "," || text[at] === "}" || text[at] === "]" || at >= text.length
-                ? Number(number[0])
-                : skipValue();
+            return ended() ? Number(number[0]) : skipValue();
         }
 
         const word = /^(true|false|null)\b/.exec(text.slice(at, at + 6));
@@ -890,31 +490,12 @@ export function readLiteral(
             return word[1] === "null" ? null : word[1] === "true";
         }
 
-        const name = /^[A-Za-z_$][\w$]*/.exec(text.slice(at, at + 80));
-
-        if (name !== null && env.has(name[0])) {
-            const here = at;
-
-            at += name[0].length;
-            skip();
-
-            if (text[at] === "," || text[at] === "}" || text[at] === "]") {
-                return env.get(name[0])!;
-            }
-
-            at = here;
-        }
-
         return skipValue();
     };
 
     skip();
 
-    if (text[at] !== "{" && text[at] !== "[") {
-        return undefined;
-    }
-
-    return value(0);
+    return text[at] === "{" || text[at] === "[" ? value(0) : undefined;
 }
 
 /** A `#hex` that is a color, not an HTML entity, a link or id, or a selector. */
@@ -943,12 +524,10 @@ export function colorsIn(value: string, named = false): FoundColor[] {
         }
     };
 
-    for (const match of value.matchAll(HEX)) {
-        push(match[0]);
-    }
-
-    for (const match of value.matchAll(COLOR_FUNCTION)) {
-        push(match[0]);
+    for (const pattern of [HEX, COLOR_FUNCTION]) {
+        for (const match of value.matchAll(pattern)) {
+            push(match[0]);
+        }
     }
 
     if (named) {

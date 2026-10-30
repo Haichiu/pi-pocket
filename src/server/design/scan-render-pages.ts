@@ -1,4 +1,5 @@
-// The walk is bounded and follows no link. It goes into `dist` and `build`, which the style scan leaves out, because a built page is what the browser can show.
+// The walk is bounded and follows no link. It enters `dist` and `build`, which the style scan
+// skips, because a built page is what the browser can show.
 import { lstatSync, readdirSync } from "node:fs";
 import { join, posix } from "node:path";
 import { readHead } from "./scan-files.ts";
@@ -16,8 +17,6 @@ export interface RenderPlan {
     assets: PageAsset[];
     vars: string[];
     toggles: DarkToggle[];
-    /** True when a page is only a shell that a script fills (a bundler's `index.html` with no sources built). */
-    notes: string[];
 }
 
 const LIMITS = {
@@ -42,7 +41,20 @@ const TYPES: Record<string, string> = {
     ".svg": "image/svg+xml",
 };
 
+const count = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1);
+
+const top = (map: Map<string, number>, limit: number) =>
+    [...map]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit)
+        .map(([key]) => key);
+
 const extensionOf = (name: string) => /\.[a-z0-9]+$/i.exec(name)?.[0].toLowerCase() ?? "";
+
+const SHOWN =
+    /(?:^|\/)(?:dist|build|out|public|docs?|www|site|_site|storybook-static|static|web|html)\//i;
+
+const TESTED = /(?:^|\/)(?:test|tests|__tests__|fixtures?|e2e|coverage|cypress|playwright)\//i;
 
 function pageScore(rel: string, text: string): number {
     const parts = rel.split("/");
@@ -55,18 +67,11 @@ function pageScore(rel: string, text: string): number {
         score += 12;
     }
 
-    if (
-        /(?:^|\/)(?:dist|build|out|public|docs?|www|site|_site|storybook-static|static|web|html)\//i.test(
-            rel,
-        )
-    ) {
+    if (SHOWN.test(rel)) {
         score += 10;
     }
 
-    if (
-        /(?:^|\/)(?:test|tests|__tests__|fixtures?|e2e|coverage|cypress|playwright)\//i.test(rel) ||
-        /^(?:404|500|error)\./.test(name)
-    ) {
+    if (TESTED.test(rel) || /^(?:404|500|error)\./.test(name)) {
         score -= 25;
     }
 
@@ -115,69 +120,63 @@ function relink(html: string, page: string, has: (path: string) => boolean): str
     );
 }
 
+const CLASS_SIGNS = [
+    /\.([\w-]*(?:dark|night)[\w-]*)(?![\w\\-])/gi,
+    /classList\.(?:add|toggle|replace)\(\s*["']([\w-]*(?:dark|night)[\w-]*)["']/gi,
+];
+
+const ATTR_SIGNS: [RegExp, (name: string) => string][] = [
+    [/\[\s*([\w:-]+)\s*[~|^$*]?=\s*["']?([\w-]*(?:dark|night)[\w-]*)["']?\s*\]/gi, String],
+    [/setAttribute\(\s*["']([\w:-]+)["']\s*,\s*["']([\w-]*(?:dark|night)[\w-]*)["']/gi, String],
+    [
+        /dataset\.(\w+)\s*=\s*["']([\w-]*(?:dark|night)[\w-]*)["']/gi,
+        (name) => `data-${name.replace(/([A-Z])/g, "-$1").toLowerCase()}`,
+    ],
+];
+
+const COMMON_TOGGLES: DarkToggle[] = [
+    { class: "dark" },
+    { attr: "data-theme", value: "dark" },
+    { attr: "data-bs-theme", value: "dark" },
+    { attr: "data-mantine-color-scheme", value: "dark" },
+    { attr: "data-mode", value: "dark" },
+    { attr: "data-color-mode", value: "dark" },
+    { attr: "data-color-scheme", value: "dark" },
+    { class: "dark-mode" },
+    { class: "theme-dark" },
+    { class: "dark-theme" },
+];
+
 function togglesIn(texts: string[]): DarkToggle[] {
     const classes = new Map<string, number>();
     const attrs = new Map<string, number>();
-    const count = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1);
 
     for (const text of texts) {
-        for (const match of text.matchAll(/\.([\w-]*(?:dark|night)[\w-]*)(?![\w\\-])/gi)) {
-            count(classes, match[1]!);
+        for (const sign of CLASS_SIGNS) {
+            for (const match of text.matchAll(sign)) {
+                count(classes, match[1]!);
+            }
         }
 
-        for (const match of text.matchAll(
-            /\[\s*([\w:-]+)\s*[~|^$*]?=\s*["']?([\w-]*(?:dark|night)[\w-]*)["']?\s*\]/gi,
-        )) {
-            count(attrs, `${match[1]}=${match[2]}`);
-        }
-
-        for (const match of text.matchAll(
-            /classList\.(?:add|toggle|replace)\(\s*["']([\w-]*(?:dark|night)[\w-]*)["']/gi,
-        )) {
-            count(classes, match[1]!);
-        }
-
-        for (const match of text.matchAll(
-            /setAttribute\(\s*["']([\w:-]+)["']\s*,\s*["']([\w-]*(?:dark|night)[\w-]*)["']/gi,
-        )) {
-            count(attrs, `${match[1]}=${match[2]}`);
-        }
-
-        for (const match of text.matchAll(
-            /dataset\.(\w+)\s*=\s*["']([\w-]*(?:dark|night)[\w-]*)["']/gi,
-        )) {
-            count(attrs, `data-${match[1]!.replace(/([A-Z])/g, "-$1").toLowerCase()}=${match[2]}`);
+        for (const [sign, nameOf] of ATTR_SIGNS) {
+            for (const match of text.matchAll(sign)) {
+                count(attrs, `${nameOf(match[1]!)}=${match[2]}`);
+            }
         }
     }
 
-    const top = (map: Map<string, number>) =>
-        [...map]
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 4)
-            .map(([key]) => key);
     const toggles: DarkToggle[] = [
-        ...top(classes).map((name) => ({ class: name })),
-        ...top(attrs).flatMap((pair) => {
+        ...top(classes, 4).map((name) => ({ class: name })),
+        ...top(attrs, 4).map((pair) => {
             const at = pair.indexOf("=");
 
-            return [{ attr: pair.slice(0, at), value: pair.slice(at + 1) }];
+            return { attr: pair.slice(0, at), value: pair.slice(at + 1) };
         }),
     ];
 
-    for (const fixed of [
-        { class: "dark" },
-        { attr: "data-theme", value: "dark" },
-        { attr: "data-bs-theme", value: "dark" },
-        { attr: "data-mantine-color-scheme", value: "dark" },
-        { attr: "data-mode", value: "dark" },
-        { attr: "data-color-mode", value: "dark" },
-        { attr: "data-color-scheme", value: "dark" },
-        { class: "dark-mode" },
-        { class: "theme-dark" },
-        { class: "dark-theme" },
-    ] as DarkToggle[]) {
-        if (!toggles.some((each) => JSON.stringify(each) === JSON.stringify(fixed))) {
-            toggles.push(fixed);
+    for (const common of COMMON_TOGGLES) {
+        if (!toggles.some((each) => JSON.stringify(each) === JSON.stringify(common))) {
+            toggles.push(common);
         }
     }
 
@@ -225,11 +224,6 @@ export function planRender(root: string): RenderPlan | undefined {
     const htmlFiles = files.filter(
         (file) => /\.html?$/i.test(file.rel) && file.size > 0 && file.size < LIMITS.html,
     );
-
-    if (htmlFiles.length === 0) {
-        return undefined;
-    }
-
     const texts = new Map<string, string>();
 
     const read = (rel: string, limit: number) => {
@@ -251,21 +245,17 @@ export function planRender(root: string): RenderPlan | undefined {
         .sort((a, b) => b.score - a.score || a.rel.localeCompare(b.rel));
     const pages: string[] = [];
 
-    // Pages of different folders first (an `index.html` and a `dist/index.html` say more than two pages of one site).
-    for (const page of ranked) {
-        if (
-            pages.length < LIMITS.pages &&
-            !pages.some((each) => posix.dirname(each) === posix.dirname(page.rel))
-        ) {
-            pages.push(page.rel);
+    const pick = (fits: (rel: string) => boolean) => {
+        for (const { rel } of ranked) {
+            if (pages.length < LIMITS.pages && fits(rel)) {
+                pages.push(rel);
+            }
         }
-    }
+    };
 
-    for (const page of ranked) {
-        if (pages.length < LIMITS.pages && !pages.includes(page.rel)) {
-            pages.push(page.rel);
-        }
-    }
+    // Pages of different folders first: they say more than two pages of one site.
+    pick((rel) => !pages.some((each) => posix.dirname(each) === posix.dirname(rel)));
+    pick((rel) => !pages.includes(rel));
 
     if (pages.length === 0) {
         return undefined;
@@ -316,29 +306,26 @@ export function planRender(root: string): RenderPlan | undefined {
         assets.push({ name: file.rel, type: TYPES[extensionOf(file.rel)]!, bytes });
     }
 
-    const styleText = assets
-        .filter((asset) => asset.type.startsWith("text/css") || asset.type.startsWith("text/html"))
-        .map((asset) => asset.bytes.toString("utf8"));
-    const names2 = new Map<string, number>();
+    const counts = new Map<string, number>();
 
-    for (const text of styleText) {
-        for (const match of text.matchAll(/(?<![\w-])(--[A-Za-z][\w-]*)\s*:/g)) {
-            names2.set(match[1]!, (names2.get(match[1]!) ?? 0) + 1);
+    for (const asset of assets) {
+        if (asset.type.startsWith("text/css") || asset.type.startsWith("text/html")) {
+            const text = asset.bytes.toString("utf8");
+
+            for (const match of text.matchAll(/(?<![\w-])(--[A-Za-z][\w-]*)\s*:/g)) {
+                count(counts, match[1]!);
+            }
         }
     }
 
     return {
         pages,
         assets,
-        vars: [...names2]
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 800)
-            .map(([name]) => name),
+        vars: top(counts, 800),
         toggles: togglesIn(
             assets
                 .filter((asset) => !asset.type.startsWith("image"))
                 .map((asset) => asset.bytes.toString("utf8")),
         ),
-        notes: [],
     };
 }

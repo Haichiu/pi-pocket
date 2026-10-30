@@ -2,7 +2,6 @@ import { commaParts, px } from "./scan-parse.ts";
 import { parseColor } from "./color.ts";
 import { type Category, type Facts, namespaceOf } from "./scan-facts.ts";
 import { channelColor, type Variable } from "./scan-variables.ts";
-import { SASS_COLOR } from "./scan-sass-colors.ts";
 
 export const LENGTH = /^-?(?:\d+\.?\d*|\.\d+)(?:px|rem|em|%|vw|vh|ch|pt)?$/;
 
@@ -16,7 +15,27 @@ const COLOR_TOKEN =
 export const GRADIENT =
     /^(?:repeating-)?(?:linear|radial|conic)-gradient\([\w\s,.%#()/+*-]{4,360}\)$/i;
 
+const NUMBER_NAMES: [RegExp, Category][] = [
+    [/leading|line-height|lh\b/, "leading"],
+    [/^z|z-?index|layer/, "z"],
+    [/opacity|alpha/, "opacity"],
+];
+
+// A line height written as a length is not a size: it gets no category.
+const LENGTH_NAMES: [RegExp, Category | undefined][] = [
+    [/radius|rounded|corner/, "radius"],
+    [/tracking|letter/, "tracking"],
+    [/breakpoint|screen|^bp-/, "breakpoint"],
+    [/space|spacing|gap|gutter|pad|margin|inset/, "space"],
+    [/line-height|leading|(?:^|-)lh$/, undefined],
+];
+
 function looksLikeShadow(text: string): boolean {
+    // The token pattern below backtracks on many open parentheses: no shadow is this long.
+    if (text.length > 600) {
+        return false;
+    }
+
     const layers = commaParts(text.trim());
 
     if (
@@ -29,21 +48,17 @@ function looksLikeShadow(text: string): boolean {
 
     return layers.every((layer) => {
         const tokens = layer.match(/(?:[^\s(]|\([^)]*(?:\([^)]*\)[^)]*)*\))+/g) ?? [];
-        const lengths = tokens.filter((token) => /^-?(?:\d*\.?\d+)(?:px|rem|em)?$/i.test(token));
-        const others = tokens.filter(
-            (token) =>
-                !/^-?(?:\d*\.?\d+)(?:px|rem|em)?$/i.test(token) && token.toLowerCase() !== "inset",
-        );
+        const isLength = (token: string) => /^-?(?:\d*\.?\d+)(?:px|rem|em)?$/i.test(token);
+        const isInset = (token: string) => token.toLowerCase() === "inset";
+        const lengths = tokens.filter(isLength).length;
+        const others = tokens.filter((token) => !isLength(token) && !isInset(token));
 
         return (
-            lengths.length >= 2 &&
-            lengths.length <= 4 &&
+            lengths >= 2 &&
+            lengths <= 4 &&
             others.length === 1 &&
             COLOR_TOKEN.test(others[0]!) &&
-            tokens.length ===
-                lengths.length +
-                    others.length +
-                    (tokens.some((token) => token.toLowerCase() === "inset") ? 1 : 0)
+            tokens.filter(isInset).length <= 1
         );
     });
 }
@@ -68,11 +83,7 @@ export function categorize(
         channelColor(text, name) !== undefined ||
         parseColor(text) !== undefined ||
         /^color-mix\(/i.test(text) ||
-        // Sass and Less color functions over a variable: `rgba($black, .87)`, `darken($brand, 10%)`.
-        (variable.kind !== "css" &&
-            variable.kind !== "theme" &&
-            /^([a-z][a-z-]*)\(\s*[$@\w#]/i.test(text) &&
-            SASS_COLOR.has(/^([a-z][a-z-]*)/i.exec(text)![1]!.toLowerCase()))
+        /^rgba?\(\s*[$@][\w-]+\s*,/i.test(text)
     ) {
         return "color";
     }
@@ -92,7 +103,7 @@ export function categorize(
         return "ease";
     }
 
-    // A path or an address is not a font stack, whatever the variable is called (`--fa-font-path: "../fonts"`).
+    // A path or an address is not a font stack (`--fa-font-path: "../fonts"`).
     if (
         !/[/\\]|\.(?:woff2?|ttf|otf|eot)\b|^url\(|^https?:/i.test(text) &&
         (FONT_WORDS.test(text) || (/font|family|typeface/.test(name) && /[,"']/.test(text)))
@@ -100,12 +111,8 @@ export function categorize(
         return "font";
     }
 
-    if (/shadow|elevation/.test(name) && /\d/.test(text)) {
-        return "shadow";
-    }
-
-    // Layers of offsets, a blur, a color, and `inset`, whatever the variable is called (`--drop-2`, `--lift`, `--z1`).
-    if (looksLikeShadow(text)) {
+    // A value made of shadow layers is a shadow, whatever the variable is called (`--lift`).
+    if ((/shadow|elevation/.test(name) && /\d/.test(text)) || looksLikeShadow(text)) {
         return "shadow";
     }
 
@@ -114,41 +121,20 @@ export function categorize(
     }
 
     if (/^-?\d*\.?\d+$/.test(text)) {
-        if (/leading|line-height|lh\b/.test(name)) {
-            return "leading";
-        }
-
-        if (/^z|z-?index|layer/.test(name)) {
-            return "z";
-        }
-
-        return /opacity|alpha/.test(name) ? "opacity" : undefined;
+        return NUMBER_NAMES.find(([pattern]) => pattern.test(name))?.[1];
     }
 
     if (LENGTH.test(text)) {
-        if (/radius|rounded|corner/.test(name)) {
-            return "radius";
-        }
+        const named = LENGTH_NAMES.find(([pattern]) => pattern.test(name));
 
-        if (/tracking|letter/.test(name)) {
-            return "tracking";
-        }
-
-        if (/breakpoint|screen|^bp-/.test(name)) {
-            return "breakpoint";
-        }
-
-        if (/space|spacing|gap|gutter|pad|margin|inset/.test(name)) {
-            return "space";
-        }
-
-        // A line height written as a length is not a size.
-        if (/line-height|leading|(?:^|-)lh$/.test(name)) {
-            return undefined;
+        if (named !== undefined) {
+            return named[1];
         }
 
         if (/font-size|typescale|type-scale|^text-|-text-|^fs-|^type-|(?:^|-)step-\d/.test(name)) {
-            return px(text) !== undefined && px(text)! >= 8 && px(text)! <= 160 ? "text" : "size";
+            const size = px(text) ?? 0;
+
+            return size >= 8 && size <= 160 ? "text" : "size";
         }
 
         // A length with a neutral name (`--size-4`) is what the properties that take it say it is.
@@ -161,10 +147,9 @@ export function categorize(
                 each === variable.name ||
                 (/\d$/.test(variable.name) && stem(each) === stem(variable.name))
             ) {
-                layout.space += counts.space;
-                layout.text += counts.text;
-                layout.radius += counts.radius;
-                layout.box += counts.box;
+                for (const key of ["space", "text", "radius", "box"] as const) {
+                    layout[key] += counts[key];
+                }
             }
         }
 
