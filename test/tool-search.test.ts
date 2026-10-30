@@ -3,6 +3,7 @@ import {
     type App,
     cleanUp,
     context,
+    until,
     lastText,
     newSession,
     openApp,
@@ -14,6 +15,7 @@ import { after, before, test } from "node:test";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { ConversationId } from "@earendil-works/pi-durable";
+import { SubagentsDoc } from "../src/server/docs.ts";
 
 let app: App;
 /** The sections of the newest request, by name: every system message adds the ones that changed since the last. */
@@ -33,6 +35,29 @@ const route: FauxResponseStep = (request) => {
         return fauxAssistantMessage([fauxToolCall("tool_search", { query: "browser" })], {
             stopReason: "toolUse",
         });
+    }
+
+    if (role === "user" && text.includes("start a browsing subagent")) {
+        return fauxAssistantMessage(
+            [
+                fauxToolCall("subagent", {
+                    action: "spawn",
+                    name: "looker",
+                    message: "Look.",
+                    tools: ["read", "browser"],
+                }),
+            ],
+            { stopReason: "toolUse" },
+        );
+    }
+
+    if (role !== "toolResult" && text.includes("need pull request checks")) {
+        return fauxAssistantMessage(
+            [fauxToolCall("tool_search", { query: "pull request checks" })],
+            {
+                stopReason: "toolUse",
+            },
+        );
     }
 
     return fauxAssistantMessage([fauxText("ok")]);
@@ -70,14 +95,16 @@ test("a new conversation is offered tool_search, not the tools that wait, and th
 
     await say(app, id, "hello");
 
-    assert.match(sections.deferred_tools ?? "", /browser.*design_preview/);
+    // "no section" matches none of the patterns below, so a missing section fails each of them.
+    assert.match(sections.deferred_tools ?? "no section", /- browser: /);
+    assert.match(sections.deferred_tools ?? "no section", /- background: /);
 
     for (const key of ["browser", "background_tasks", "design_mode"]) {
         assert.equal(sections[key], undefined, `${key} is not shown while its tool waits`);
     }
 });
 
-test("a search loads the matches, with their section, for the rest of the conversation", async () => {
+test("a query of tool names loads exactly those, with their section, for the rest of the conversation", async () => {
     const id = await newSession(app);
 
     await say(app, id, "need the browser");
@@ -87,7 +114,47 @@ test("a search loads the matches, with their section, for the rest of the conver
 
     assert.ok(offered.includes("browser"), "browser is offered after the search");
     assert.ok(!waiting.includes("browser"));
+    // Text search would also load design_preview, whose description names the browser.
+    assert.ok(!offered.includes("design_preview"), "a tool only named by another still waits");
     assert.ok(!offered.includes("schedule"), "a tool the search did not match still waits");
-    assert.match(sections.browser ?? "", /Chromium/);
-    assert.doesNotMatch(sections.deferred_tools ?? "", /browser/);
+    assert.match(sections.browser ?? "no section", /Chromium/);
+    assert.match(sections.deferred_tools ?? "no section", /design_preview/);
+    assert.doesNotMatch(sections.deferred_tools ?? "no section", /- browser:/);
+    assert.equal(sections.design_mode, undefined);
+});
+
+test("a word that is no tool's name searches, and loads at most two matches", async () => {
+    const id = await newSession(app);
+
+    await say(app, id, "need pull request checks");
+
+    const { offered } = await agent(id);
+    const loaded = offered.filter((name) =>
+        ["watch_pr", "browser", "schedule", "background"].includes(name),
+    );
+
+    assert.ok(loaded.length >= 1 && loaded.length <= 2, `loaded ${loaded.join(", ")}`);
+});
+
+test("plan mode lets Pi load a tool", async () => {
+    const { blockedInPlanMode } = await import("../src/server/extensions/plan.ts");
+
+    assert.equal(blockedInPlanMode("tool_search", { query: "browser" }), undefined);
+});
+
+test("a subagent can be given a tool that waits in its session", async () => {
+    const id = await newSession(app);
+
+    await say(app, id, "start a browsing subagent");
+
+    let child: ConversationId | undefined;
+
+    await until(async () => {
+        child = (await app.harness.snapshot(SubagentsDoc, id, context))?.agents.looker
+            ?.conversationId;
+
+        return child !== undefined;
+    }, "the subagent starts");
+
+    assert.deepEqual((await agent(child!)).offered.sort(), ["browser", "read"]);
 });

@@ -26,6 +26,7 @@ const ALWAYS_ALLOWED = new Set([
     "artifact",
     "artifact_inline",
     "design_preview",
+    "tool_search",
     "codemode",
     "subagent",
 ]);

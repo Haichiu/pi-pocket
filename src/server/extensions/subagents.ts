@@ -960,7 +960,11 @@ export default function createSubagents(host: PocketHost) {
                 action === "spawn"
                     ? await chosenModel(host, (args as { model?: unknown }).model, parent.model)
                     : undefined;
-            const parentTools = action === "spawn" && args.tools !== undefined ? parent.tools : [];
+            // Tools that wait for a search (`tool-search.ts`) can be asked for too: the subagent is offered them.
+            const parentTools =
+                action === "spawn" && args.tools !== undefined
+                    ? [...parent.tools, ...parent.deferred]
+                    : [];
             const tools =
                 args.tools === undefined
                     ? undefined
@@ -975,6 +979,9 @@ export default function createSubagents(host: PocketHost) {
 
                           return found;
                       });
+            const waiting = (tools ?? []).filter((tool) =>
+                parent.deferred.some((each) => each.name === tool.name),
+            );
             // TypeBox infers no type from a union built from a list; the schema itself checks the value.
             const asked = args.thinking as ModelThinkingLevel | undefined;
             const wanted = asked ?? parent.thinkingLevel ?? "off";
@@ -1014,6 +1021,9 @@ export default function createSubagents(host: PocketHost) {
                         ...(model === undefined ? {} : { model }),
                         ...(thinking === undefined ? {} : { thinkingLevel: thinking }),
                         ...(tools === undefined ? {} : { tools }),
+                        ...(waiting.length === 0
+                            ? {}
+                            : { modelTools: { remove: [], add: waiting } }),
                     });
                     const plan = await tx.doc(PlanDoc, api.conversationId);
 

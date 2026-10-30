@@ -264,6 +264,7 @@ test(
 
         try {
             const id = await newSession(app);
+
             await loadTools(app, id, "browser");
 
             // A model that takes images keeps the screenshot in the transcript.
