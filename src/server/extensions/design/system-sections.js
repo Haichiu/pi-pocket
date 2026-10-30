@@ -83,16 +83,7 @@ export function createSystemSections(env, widgets) {
                     <${Ico} name="down" size=${15} />
                 </button>
             </div>
-            ${children}
-            ${
-                open &&
-                html`<${TokenEditor}
-                    model=${ctx.model}
-                    token=${token}
-                    modes=${ctx.modes}
-                    canEdit=${ctx.canEdit}
-                />`
-            }
+            ${children}${open && html`<${TokenEditor} ctx=${ctx} token=${token} />`}
         </li>`;
     }
 
@@ -255,12 +246,7 @@ export function createSystemSections(env, widgets) {
                         <${Ico} name="close" size=${15} />
                     </button>
                 </div>
-                <${TokenEditor}
-                    model=${ctx.model}
-                    token=${open}
-                    modes=${ctx.modes}
-                    canEdit=${ctx.canEdit}
-                />
+                <${TokenEditor} ctx=${ctx} token=${open} />
             </div>`
         );
     }
