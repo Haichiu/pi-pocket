@@ -1428,13 +1428,6 @@ button.dsy-chip:disabled {
     opacity: 0.45;
 }
 
-@media (hover: hover) {
-    button.dsy-chip:hover:not(:disabled) {
-        background: var(--dsn-accent-soft);
-        color: var(--accent);
-    }
-}
-
 .dsy-check-options {
     display: flex;
     flex-wrap: wrap;
@@ -1754,6 +1747,11 @@ button.dsy-pin-button[aria-pressed="true"] {
 }
 
 @media (hover: hover) {
+    button.dsy-chip:hover:not(:disabled) {
+        background: var(--dsn-accent-soft);
+        color: var(--accent);
+    }
+
     .dsy-accept:hover {
         background: var(--dsn-fill-2);
         color: var(--text);
