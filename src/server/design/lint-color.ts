@@ -1,4 +1,4 @@
-import { colorObjectCss, contrastRatio, oklabOf, toHex } from "./color.ts";
+import { colorObjectCss, luminance, oklabOf, toHex } from "./color.ts";
 import { sameInEveryMode } from "./fix.ts";
 import type { DesignSystem, ModeValue, ResolvedToken } from "./system-types.ts";
 
@@ -10,24 +10,47 @@ const clamp = (value: number, low: number, high: number) => Math.min(high, Math.
 export const toOklab = (red: number, green: number, blue: number): [number, number, number] =>
     oklabOf({ r: red / 255, g: green / 255, b: blue / 255, a: 1 });
 
+// A Check compares each page color with every token: the conversions are kept by array, and no color array is changed in place.
+const labs = new WeakMap<readonly number[], [number, number, number]>();
+const lights = new WeakMap<readonly number[], number>();
+
+export function labOf(color: readonly number[]): [number, number, number] {
+    let lab = labs.get(color);
+
+    if (lab === undefined) {
+        lab = toOklab(color[0]!, color[1]!, color[2]!);
+        labs.set(color, lab);
+    }
+
+    return lab;
+}
+
+function lightOf(color: readonly number[]): number {
+    let light = lights.get(color);
+
+    if (light === undefined) {
+        light = luminance({ r: color[0]! / 255, g: color[1]! / 255, b: color[2]! / 255, a: 1 });
+        lights.set(color, light);
+    }
+
+    return light;
+}
+
 // The OKLab distance times 100: about 1 is the smallest step a person sees, 0.4 is one 8-bit step. The alpha difference in percent is added.
 export function colorDistance(a: RgbaTuple, b: RgbaTuple): number {
-    const [l1, a1, b1] = toOklab(a[0], a[1], a[2]);
-    const [l2, a2, b2] = toOklab(b[0], b[1], b[2]);
+    const [l1, a1, b1] = labOf(a);
+    const [l2, a2, b2] = labOf(b);
     const lab = Math.hypot(l1 - l2, a1 - a2, b1 - b2) * 100;
 
     return lab + Math.abs(a[3] - b[3]) * 100;
 }
 
+// `contrastRatio` of two opaque colors.
 export function contrastOf(a: readonly number[], b: readonly number[]): number {
-    const color = (value: readonly number[]) => ({
-        r: value[0]! / 255,
-        g: value[1]! / 255,
-        b: value[2]! / 255,
-        a: 1,
-    });
+    const one = lightOf(a);
+    const two = lightOf(b);
 
-    return contrastRatio(color(a), color(b));
+    return (Math.max(one, two) + 0.05) / (Math.min(one, two) + 0.05);
 }
 
 export function formatColor(color: readonly number[]): string {

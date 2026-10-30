@@ -12,6 +12,7 @@ import {
     toHex,
     toOklch,
 } from "../src/server/design/color.ts";
+import { contrastOf } from "../src/server/design/lint-color.ts";
 
 const hex = (text: string) => {
     const color = parseColor(text);
@@ -90,6 +91,27 @@ test("the WCAG 2.2 contrast ratio", () => {
     assert.equal(luminance(white), 1);
     assert.equal(luminance(black), 0);
     assert.equal(contrastRatio(white, black), contrastRatio(black, white));
+});
+
+test("the Check's contrastOf of 0-255 channels is contrastRatio to the last bit", () => {
+    const channels = [0, 0.4, 1, 17, 118.5, 127, 128, 200, 254.6, 255];
+
+    for (const r of channels) {
+        for (const g of channels) {
+            for (const b of [0, 51, 255]) {
+                const front = [r, g, b];
+                const back = [255 - g, b, r];
+                const color = ([red, green, blue]: number[]) => ({
+                    r: red! / 255,
+                    g: green! / 255,
+                    b: blue! / 255,
+                    a: 1,
+                });
+
+                assert.equal(contrastOf(front, back), contrastRatio(color(front), color(back)));
+            }
+        }
+    }
 });
 
 test("translucent colors are composited: the foreground over the background, the background over the page", () => {

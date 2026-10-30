@@ -1,7 +1,7 @@
 // Suggestion rules: a token of the same color to the last digit wins, by role (text for text, a ground for a background, a border for a border), then an accent, a palette step, another role, and a component's own token last.
 // Otherwise the nearest token of the use's role (or with no role, never a component's) that stays in the hue family: a neutral gets a neutral, a chromatic color a near hue.
 // A color that fails contrast gets a passing token by the same rules; if none of its hue passes, a text or border token, and the message says that the hue changes.
-import { colorDistance, type RgbaTuple, toOklab, type TokenSet } from "./lint-color.ts";
+import { colorDistance, labOf, type RgbaTuple, toOklab, type TokenSet } from "./lint-color.ts";
 
 /** Two colors this close (see `colorDistance`) are the same: a little over 2 steps of 8 bits. */
 export const SAME_COLOR = 1;
@@ -27,13 +27,26 @@ const ROLE_WORDS: [ColorRole, RegExp][] = [
     ["background", /^(bg|background|surface|fill|canvas|base|ground|wash|soft|scrim|overlay)$/],
 ];
 
+const roles = new Map<string, ColorRole | undefined>();
+
 export function colorRoleOf(name: string): ColorRole | undefined {
+    if (roles.has(name)) {
+        return roles.get(name);
+    }
+
     const words = name
         .replace(/([a-z])([A-Z])/g, "$1 $2")
         .toLowerCase()
         .split(/[^a-z0-9]+/);
+    const role = ROLE_WORDS.find(([, pattern]) => words.some((word) => pattern.test(word)))?.[0];
 
-    return ROLE_WORDS.find(([, pattern]) => words.some((word) => pattern.test(word)))?.[0];
+    if (roles.size >= 20_000) {
+        roles.clear();
+    }
+
+    roles.set(name, role);
+
+    return role;
 }
 
 export const USE_ROLE: Record<string, ColorRole> = {
@@ -68,10 +81,19 @@ export const USE_PROPERTIES: Record<string, string[]> = {
     outline: ["outline-color", "outline"],
 };
 
-function lch(color: readonly number[]): { c: number; h: number } {
-    const [, a, b] = toOklab(color[0]!, color[1]!, color[2]!);
+const lchs = new WeakMap<readonly number[], { c: number; h: number }>();
 
-    return { c: Math.hypot(a, b), h: ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360 };
+function lch(color: readonly number[]): { c: number; h: number } {
+    let found = lchs.get(color);
+
+    if (found === undefined) {
+        const [, a, b] = labOf(color);
+
+        found = { c: Math.hypot(a, b), h: ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360 };
+        lchs.set(color, found);
+    }
+
+    return found;
 }
 
 const hueGap = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
