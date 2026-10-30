@@ -84,7 +84,7 @@ a { color: var(--accent) } .err { color: var(--danger) }`;
 
 test("the guide promises a system in three design_system calls", () => {
     const text = readFileSync(
-        fileURLToPath(new URL("../src/server/design/guide.ts", import.meta.url)),
+        fileURLToPath(new URL("../src/server/guides/design.md", import.meta.url)),
         "utf8",
     );
 

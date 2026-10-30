@@ -1,5 +1,5 @@
 /** Agent-facing Design tools and workspace export routes. Registered by the Design module. */
-import { Type } from "@earendil-works/pi-ai";
+import { StringEnum, Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { ExtensionWeb, PocketHost } from "../host.ts";
 import { readBundle } from "./bundle.ts";
@@ -28,17 +28,8 @@ import { loadDesignSystem } from "./tokens.ts";
 export { designGuide } from "./guide.ts";
 
 const version = Type.Optional(Type.Integer({ minimum: 1 }));
-const preset = Type.Union([
-    Type.Literal("mobile"),
-    Type.Literal("tablet"),
-    Type.Literal("desktop"),
-]);
-const formatSchema = Type.Union([
-    Type.Literal("png"),
-    Type.Literal("pdf"),
-    Type.Literal("pptx"),
-    Type.Literal("html"),
-]);
+const preset = StringEnum(["mobile", "tablet", "desktop"] as const);
+const formatSchema = StringEnum(["png", "pdf", "pptx", "html"] as const);
 
 interface DesignToolDeps {
     loadSystem?: (cwd: string) => DesignSystem | undefined;
