@@ -16,9 +16,10 @@ import {
     type Obj,
 } from "./tokens-base.ts";
 import { buildSystem, inferType } from "./tokens-model.ts";
+import { cachedSystem, derived } from "./tokens-cache.ts";
+import { systemSummary as summaryOf } from "./tokens-summary.ts";
 
 export { compileDesignSystem, scaleOf, tailwindNames, type Scale } from "./tokens-compile.ts";
-export { systemSummary } from "./tokens-summary.ts";
 export { DESIGN_DIR };
 
 export class DesignSystemError extends Error {
@@ -40,10 +41,17 @@ export function problemLine(problem: SystemProblem): string {
     );
 }
 
+/** The system is frozen and shared: a caller that needs to change it must copy it. */
 export function loadDesignSystem(cwd: string): DesignSystem | undefined {
-    const folder = readFolder(cwd);
+    return cachedSystem(cwd, () => {
+        const folder = readFolder(cwd);
 
-    return folder === undefined ? undefined : buildSystem(folder.raw);
+        return folder === undefined ? undefined : buildSystem(folder.raw);
+    });
+}
+
+export function systemSummary(system: DesignSystem, maxBytes: number): string {
+    return derived(system, `summary:${maxBytes}`, () => summaryOf(system, maxBytes));
 }
 
 const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;

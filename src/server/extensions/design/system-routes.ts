@@ -10,6 +10,7 @@ import { readBundle } from "../../design/bundle.ts";
 import { writeExport } from "../../design/files.ts";
 import { applyExactFixes } from "../../design/fix.ts";
 import { VIEWPORTS } from "../../design/render.ts";
+import { derived } from "../../design/tokens-cache.ts";
 import type {
     CheckFinding,
     CheckReport,
@@ -309,10 +310,12 @@ function refuseUnknown(web: Errors, system: DesignSystem, change: SystemChange) 
 export function revisionOf(system: DesignSystem): string {
     const { modes, schemes, tokens, components, guidelines } = system;
 
-    return createHash("sha256")
-        .update(JSON.stringify([modes, schemes, tokens, components, guidelines]))
-        .digest("hex")
-        .slice(0, 16);
+    return derived(system, "revision", () =>
+        createHash("sha256")
+            .update(JSON.stringify([modes, schemes, tokens, components, guidelines]))
+            .digest("hex")
+            .slice(0, 16),
+    );
 }
 
 function viewOf(system: DesignSystem) {

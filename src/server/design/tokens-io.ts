@@ -18,6 +18,7 @@ import {
 import { basename, join } from "node:path";
 import type { SystemProblem } from "./system-types.ts";
 import { LIMITS, boundedText, type RawSystem } from "./tokens-base.ts";
+import { forgetSystem } from "./tokens-cache.ts";
 
 export const DESIGN_DIR = join(".pi", "design");
 
@@ -347,6 +348,7 @@ interface WriteResult {
 export function writeFiles(cwd: string, files: Map<string, string | null>): WriteResult {
     const result: WriteResult = { written: [], removed: [] };
 
+    forgetSystem(cwd);
     ensureFolder(join(cwd, ".pi"), "The project's .pi folder");
     ensureFolder(join(cwd, DESIGN_DIR), ".pi/design");
 

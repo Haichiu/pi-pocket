@@ -27,7 +27,7 @@ const flagship = (): DesignSystem => {
 
     assert.ok(system !== undefined, "the flagship loads");
 
-    return system;
+    return structuredClone(system);
 };
 
 function token(
