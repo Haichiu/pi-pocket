@@ -10,6 +10,13 @@ const to255 = (value) => Math.round(clamp(value, 0, 1) * 255);
 const encode = (value) => (value <= 0.0031308 ? 12.92 * value : 1.055 * value ** (1 / 2.4) - 0.055);
 const decode = (value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
 
+const fromLinear = (r, g, b, alpha) => ({
+    r: to255(encode(clamp(r, 0, 1))),
+    g: to255(encode(clamp(g, 0, 1))),
+    b: to255(encode(clamp(b, 0, 1))),
+    a: clamp(alpha, 0, 1),
+});
+
 /** A color from OKLab coordinates (the CSS Color 4 matrices), clipped to sRGB. */
 function fromOklab(l, a, b, alpha = 1) {
     const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
@@ -22,12 +29,7 @@ function fromOklab(l, a, b, alpha = 1) {
     const g = -1.2684380046 * lc + 2.6097574011 * mc - 0.3413193965 * sc;
     const bl = -0.0041960863 * lc - 0.7034186147 * mc + 1.707614701 * sc;
 
-    return {
-        r: to255(encode(clamp(r, 0, 1))),
-        g: to255(encode(clamp(g, 0, 1))),
-        b: to255(encode(clamp(bl, 0, 1))),
-        a: clamp(alpha, 0, 1),
-    };
+    return fromLinear(r, g, bl, alpha);
 }
 
 function toOklab({ r, g, b }) {
@@ -117,6 +119,14 @@ const NAMED = {
     white: { r: 255, g: 255, b: 255, a: 1 },
 };
 
+const part = (full) => (text) => component(text, full);
+
+const COLOR_FUNCTIONS = {
+    hsl: [[hueOf, part(100), part(100)], fromHsl],
+    oklch: [[part(1), part(0.4), hueOf], fromOklch],
+    oklab: [[part(1), part(0.4), part(0.4)], fromOklab],
+};
+
 /** The function-style color `name(...)`: the parts, split on commas, spaces, and a slash. */
 function parts(body) {
     const [main, alpha] = body.split("/").map((each) => each.trim());
@@ -176,34 +186,13 @@ function parseString(input) {
         };
     }
 
-    if (name === "hsl" || name === "hsla") {
-        const h = hueOf(list[0] ?? "");
-        const s = component(list[1] ?? "", 100);
-        const l = component(list[2] ?? "", 100);
+    const space = name === "hsla" ? "hsl" : name;
 
-        return finite(h) && finite(s) && finite(l) && finite(alpha(3))
-            ? fromHsl(h, s, l, alpha(3))
-            : null;
-    }
+    if (Object.hasOwn(COLOR_FUNCTIONS, space)) {
+        const [read, make] = COLOR_FUNCTIONS[space];
+        const values = read.map((each, index) => each(list[index] ?? ""));
 
-    if (name === "oklch") {
-        const l = component(list[0] ?? "", 1);
-        const c = component(list[1] ?? "", 0.4);
-        const h = hueOf(list[2] ?? "");
-
-        return finite(l) && finite(c) && finite(h) && finite(alpha(3))
-            ? fromOklch(l, c, h, alpha(3))
-            : null;
-    }
-
-    if (name === "oklab") {
-        const l = component(list[0] ?? "", 1);
-        const a = component(list[1] ?? "", 0.4);
-        const b = component(list[2] ?? "", 0.4);
-
-        return finite(l) && finite(a) && finite(b) && finite(alpha(3))
-            ? fromOklab(l, a, b, alpha(3))
-            : null;
+        return values.every(finite) && finite(alpha(3)) ? make(...values, alpha(3)) : null;
     }
 
     if (name === "color") {
@@ -237,12 +226,7 @@ function fromP3(red, green, blue, alpha) {
     const g = -0.0420569 * lr + 1.0420571 * lg;
     const b = -0.0196376 * lr - 0.0786507 * lg + 1.0982735 * lb;
 
-    return {
-        r: to255(encode(clamp(r, 0, 1))),
-        g: to255(encode(clamp(g, 0, 1))),
-        b: to255(encode(clamp(b, 0, 1))),
-        a: clamp(alpha, 0, 1),
-    };
+    return fromLinear(r, g, b, alpha);
 }
 
 function parseObject(input) {
@@ -267,12 +251,7 @@ function parseObject(input) {
         case "srgb":
             return { r: to255(x), g: to255(y), b: to255(z), a: alpha };
         case "srgb-linear":
-            return {
-                r: to255(encode(clamp(x, 0, 1))),
-                g: to255(encode(clamp(y, 0, 1))),
-                b: to255(encode(clamp(z, 0, 1))),
-                a: alpha,
-            };
+            return fromLinear(x, y, z, alpha);
         case "hsl":
             return fromHsl(x, y, z, alpha);
         case "oklch":

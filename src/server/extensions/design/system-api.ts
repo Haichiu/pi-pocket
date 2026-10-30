@@ -6,43 +6,36 @@ export { loadDesignSystem, writeDesignSystem } from "../../design/tokens.ts";
 export { type CheckOptions, checkDesign } from "../../design/lint.ts";
 export { renderSystemDoc } from "../../design/docsite.ts";
 
-export interface FixResult {
-    content: string;
-    fixed: number;
-    fixes: { rule: CheckFinding["rule"]; from: string; to: string; count: number }[];
-}
-
-export function isFixable(finding: CheckFinding): boolean {
-    return finding.fix !== undefined;
-}
+type Fix = { rule: CheckFinding["rule"]; from: string; to: string; count: number };
 
 export function fixExactMatches(
     bundle: DesignBundle,
     system: DesignSystem,
     report: CheckReport,
-    options?: { mode?: string; accepted?: ReadonlySet<string> },
-): FixResult {
+    accepted: ReadonlySet<string>,
+): { content: string; fixed: number; fixes: Fix[] } {
     const fixable = report.findings.filter(
         (finding) =>
-            isFixable(finding) && !(finding.id !== undefined && options?.accepted?.has(finding.id)),
+            finding.fix !== undefined && !(finding.id !== undefined && accepted.has(finding.id)),
     );
     const result = applyExactFixes(bundle.content, fixable, system);
     const skipped = new Set(result.skipped.map((each) => each.id));
-    const fixes = new Map<string, FixResult["fixes"][number]>();
+    const fixes = new Map<string, Fix>();
 
-    for (const finding of fixable) {
-        if (result.applied === 0 || skipped.has(finding.id ?? "")) {
+    for (const finding of result.applied === 0 ? [] : fixable) {
+        if (skipped.has(finding.id ?? "")) {
             continue;
         }
 
-        const key = `${finding.fix!.literal}\u0000${finding.fix!.cssVar}`;
+        const { literal, cssVar } = finding.fix!;
+        const key = `${literal}\u0000${cssVar}`;
         const known = fixes.get(key);
 
         if (known === undefined) {
             fixes.set(key, {
                 rule: finding.rule,
-                from: finding.fix!.literal,
-                to: `var(${finding.fix!.cssVar})`,
+                from: literal,
+                to: `var(${cssVar})`,
                 count: 1,
             });
         } else {

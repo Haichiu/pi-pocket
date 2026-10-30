@@ -5,8 +5,10 @@
 import { createHash } from "node:crypto";
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
+import type { ConversationId, Tx } from "@earendil-works/pi-durable";
 import { readBundle } from "../../design/bundle.ts";
 import { writeExport } from "../../design/files.ts";
+import { VIEWPORTS } from "../../design/render.ts";
 import type {
     CheckFinding,
     CheckReport,
@@ -31,7 +33,6 @@ import {
     type CheckOptions,
     checkDesign,
     fixExactMatches,
-    isFixable,
     loadDesignSystem,
     renderSystemDoc,
     writeDesignSystem,
@@ -49,9 +50,6 @@ const MODE_NAME = /^[a-z][a-z0-9-]{0,31}$/;
 const TOKEN_NAME = /^[A-Za-z0-9_-]{1,64}(?:\.[A-Za-z0-9_-]{1,64}){0,7}$/;
 // Names that exist on every object: never a group or a token.
 const INHERITED = new Set(["__proto__", "constructor", "prototype"]);
-
-const tokenName = (name: string): boolean =>
-    TOKEN_NAME.test(name) && !name.split(".").some((part) => INHERITED.has(part));
 const KEY = /^[\w-]{8,64}$/;
 const DESIGN_FILES = {
     "ds/tokens.css": "css",
@@ -60,11 +58,6 @@ const DESIGN_FILES = {
 } as const;
 
 export const DOCS_ID = "design-system-docs";
-const VIEWPORTS = {
-    mobile: { width: 390, height: 844 },
-    tablet: { width: 820, height: 1180 },
-    desktop: { width: 1280, height: 800 },
-} as const;
 const RULES: readonly CheckRule[] = [
     "off-system-color",
     "off-system-font",
@@ -86,6 +79,13 @@ const RULES: readonly CheckRule[] = [
     "input-zoom",
 ];
 
+type Errors = Pick<ExtensionWeb, "error">;
+type Rect = { x: number; y: number; width: number; height: number };
+type Prepared = { asset: ArtifactAsset; bytes: Buffer };
+
+const tokenName = (name: string): boolean =>
+    TOKEN_NAME.test(name) && !name.split(".").some((part) => INHERITED.has(part));
+
 const clip = (value: unknown, max: number): string =>
     typeof value === "string" ? value.replace(/[\p{Cc}\p{Bidi_Control}]/gu, " ").slice(0, max) : "";
 
@@ -94,64 +94,119 @@ const coordinate = (value: unknown): number =>
         ? Math.round(Math.max(-1e7, Math.min(1e7, value)) * 10) / 10
         : 0;
 
-function cleanValue(web: Pick<ExtensionWeb, "error">, value: unknown, depth = 0): unknown {
-    const bad = () => web.error(400, "A token value is text, a number, a list, or a small object.");
+const rectOf = (rect: Rect | undefined): { rect?: Rect } =>
+    typeof rect === "object" && rect !== null
+        ? {
+              rect: {
+                  x: coordinate(rect.x),
+                  y: coordinate(rect.y),
+                  width: coordinate(rect.width),
+                  height: coordinate(rect.height),
+              },
+          }
+        : {};
 
+const own = <T>(items: Record<string, T> | undefined, id: string): T | undefined =>
+    items !== undefined && Object.hasOwn(items, id) ? items[id] : undefined;
+
+const present = (files: (readonly [string, string | undefined])[]) =>
+    files.filter((file): file is readonly [string, string] => file[1] !== undefined);
+
+function cleanValue(web: Errors, value: unknown, depth = 0): unknown {
     if (typeof value === "string") {
         return clip(value, 500);
     }
 
-    if (typeof value === "number") {
-        if (!Number.isFinite(value)) {
-            throw bad();
-        }
-
+    if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
         return value;
     }
 
-    if (typeof value === "boolean") {
-        return value;
+    const entries =
+        typeof value === "object" && value !== null && depth < 5
+            ? Object.entries(value)
+            : undefined;
+
+    if (
+        entries === undefined ||
+        (Array.isArray(value) ? value : entries).length > 32 ||
+        (!Array.isArray(value) && entries.some(([key]) => !/^[A-Za-z][\w-]{0,39}$/.test(key)))
+    ) {
+        throw web.error(400, "A token value is text, a number, a list, or a small object.");
     }
 
-    if (depth >= 5) {
-        throw bad();
-    }
-
-    if (Array.isArray(value)) {
-        if (value.length > 32) {
-            throw bad();
-        }
-
-        return value.map((each) => cleanValue(web, each, depth + 1));
-    }
-
-    if (typeof value === "object" && value !== null) {
-        const entries = Object.entries(value);
-
-        if (entries.length > 32) {
-            throw bad();
-        }
-
-        const clean: Record<string, unknown> = {};
-
-        for (const [key, each] of entries) {
-            if (!/^[A-Za-z][\w-]{0,39}$/.test(key)) {
-                throw bad();
-            }
-
-            clean[key] = cleanValue(web, each, depth + 1);
-        }
-
-        return clean;
-    }
-
-    throw bad();
+    return Array.isArray(value)
+        ? value.map((each) => cleanValue(web, each, depth + 1))
+        : Object.fromEntries(entries.map(([key, each]) => [key, cleanValue(web, each, depth + 1)]));
 }
 
-export function cleanChange(
-    web: Pick<ExtensionWeb, "error">,
-    body: Readonly<Record<string, unknown>>,
-) {
+function listOf(web: Errors, list: unknown, message: string): unknown[] {
+    if (!Array.isArray(list) || list.length > LIMITS.set) {
+        throw web.error(400, message);
+    }
+
+    return list;
+}
+
+function tokenRef(web: Errors, each: unknown, message: string) {
+    const entry = each as Record<string, unknown> | null;
+
+    if (
+        typeof entry !== "object" ||
+        entry === null ||
+        typeof entry.mode !== "string" ||
+        !MODE_NAME.test(entry.mode) ||
+        typeof entry.token !== "string" ||
+        !tokenName(entry.token)
+    ) {
+        throw web.error(400, message);
+    }
+
+    return { mode: entry.mode, token: entry.token };
+}
+
+function cleanSetEntry(web: Errors, each: unknown) {
+    const ref = tokenRef(web, each, "Each change names a mode and a token.");
+    const value = cleanValue(web, (each as { value?: unknown }).value);
+
+    if (JSON.stringify(value).length > LIMITS.value) {
+        throw web.error(400, "That value is too large.");
+    }
+
+    return { ...ref, value };
+}
+
+function cleanModes(web: Errors, value: unknown): SystemChange["modes"] {
+    const modes = value as Record<string, unknown> | null;
+
+    if (typeof modes !== "object" || modes === null || Array.isArray(modes)) {
+        throw web.error(400, "Modes are a set of names.");
+    }
+
+    if (Object.keys(modes).length > LIMITS.modes) {
+        throw web.error(400, `A system has up to ${LIMITS.modes} modes.`);
+    }
+
+    const clean: Record<string, unknown> = {};
+
+    for (const [name, each] of Object.entries(modes)) {
+        if (!MODE_NAME.test(name)) {
+            throw web.error(400, "A mode is named in lowercase letters, digits, and hyphens.");
+        }
+
+        if (
+            each !== null &&
+            (typeof each !== "object" || Array.isArray(each) || Object.keys(each).length > 0)
+        ) {
+            throw web.error(400, "A mode is added empty, or removed with null.");
+        }
+
+        clean[name] = each;
+    }
+
+    return clean;
+}
+
+export function cleanChange(web: Errors, body: Readonly<Record<string, unknown>>) {
     const change: SystemChange = {};
 
     for (const key of Object.keys(body)) {
@@ -161,88 +216,21 @@ export function cleanChange(
     }
 
     if (body.set !== undefined) {
-        if (!Array.isArray(body.set) || body.set.length > LIMITS.set) {
-            throw web.error(400, `A save changes up to ${LIMITS.set} tokens.`);
-        }
+        const list = listOf(web, body.set, `A save changes up to ${LIMITS.set} tokens.`);
 
-        change.set = body.set.map((each: unknown) => {
-            const edit = each as Record<string, unknown> | null;
-
-            if (
-                typeof edit !== "object" ||
-                edit === null ||
-                typeof edit.mode !== "string" ||
-                !MODE_NAME.test(edit.mode) ||
-                typeof edit.token !== "string" ||
-                !tokenName(edit.token)
-            ) {
-                throw web.error(400, "Each change names a mode and a token.");
-            }
-
-            const value = cleanValue(web, edit.value);
-
-            if (JSON.stringify(value).length > LIMITS.value) {
-                throw web.error(400, "That value is too large.");
-            }
-
-            return { mode: edit.mode, token: edit.token, value };
-        });
+        change.set = list.map((each) => cleanSetEntry(web, each));
     }
 
     if (body.remove !== undefined) {
-        if (!Array.isArray(body.remove) || body.remove.length > LIMITS.set) {
-            throw web.error(400, `A save gives up to ${LIMITS.set} values back.`);
-        }
+        const list = listOf(web, body.remove, `A save gives up to ${LIMITS.set} values back.`);
 
-        change.remove = body.remove.map((each: unknown) => {
-            const entry = each as Record<string, unknown> | null;
-
-            if (
-                typeof entry !== "object" ||
-                entry === null ||
-                typeof entry.mode !== "string" ||
-                !MODE_NAME.test(entry.mode) ||
-                typeof entry.token !== "string" ||
-                !tokenName(entry.token)
-            ) {
-                throw web.error(400, "Each removal names a mode and a token.");
-            }
-
-            return { mode: entry.mode, token: entry.token };
-        });
+        change.remove = list.map((each) =>
+            tokenRef(web, each, "Each removal names a mode and a token."),
+        );
     }
 
     if (body.modes !== undefined) {
-        const modes = body.modes as Record<string, unknown> | null;
-
-        if (typeof modes !== "object" || modes === null || Array.isArray(modes)) {
-            throw web.error(400, "Modes are a set of names.");
-        }
-
-        if (Object.keys(modes).length > LIMITS.modes) {
-            throw web.error(400, `A system has up to ${LIMITS.modes} modes.`);
-        }
-
-        change.modes = {};
-
-        for (const [name, each] of Object.entries(modes)) {
-            if (!MODE_NAME.test(name)) {
-                throw web.error(400, "A mode is named in lowercase letters, digits, and hyphens.");
-            }
-
-            if (
-                each !== null &&
-                !(
-                    typeof each === "object" &&
-                    !Array.isArray(each) &&
-                    Object.keys(each).length === 0
-                )
-            ) {
-                throw web.error(400, "A mode is added empty, or removed with null.");
-            }
-
-            change.modes[name] = each;
-        }
+        change.modes = cleanModes(web, body.modes);
     }
 
     if (body.guidelines !== undefined) {
@@ -260,72 +248,106 @@ export function cleanChange(
         throw web.error(400, "The revision is text.");
     }
 
-    if (
-        change.set === undefined &&
-        change.remove === undefined &&
-        change.modes === undefined &&
-        change.guidelines === undefined
-    ) {
+    if (Object.keys(change).length === 0) {
         throw web.error(400, "There is nothing to save.");
     }
 
     return { change, baseRevision: body.baseRevision as string | undefined };
 }
 
+function refuseUnknown(web: Errors, system: DesignSystem, change: SystemChange) {
+    const { modes } = system;
+
+    const knownMode = (mode: string) => {
+        if (!modes.includes(mode)) {
+            throw web.error(400, `There is no mode “${mode}”.`);
+        }
+    };
+
+    // `{}` for a mode that is there would empty its file, and the default mode is the tokens file itself.
+    for (const [mode, body] of Object.entries(change.modes ?? {})) {
+        if (body === null && !modes.includes(mode)) {
+            throw web.error(400, "There is no such mode.");
+        }
+
+        if (body === null && mode === modes[0]) {
+            throw web.error(400, "The default mode is the tokens file: it cannot be removed.");
+        }
+
+        if (body !== null && modes.includes(mode)) {
+            throw web.error(400, "There is a mode by that name.");
+        }
+    }
+
+    // The engine would make a new token or mode file of a name that is not there.
+    for (const entry of change.set ?? []) {
+        knownMode(entry.mode);
+
+        if (!system.tokens.some((token) => token.name === entry.token)) {
+            throw web.error(400, `There is no token “${entry.token}”.`);
+        }
+    }
+
+    // In the default mode a removal would delete the token, and the engine would take that as meant.
+    for (const entry of change.remove ?? []) {
+        knownMode(entry.mode);
+
+        if (entry.mode === modes[0]) {
+            throw web.error(
+                400,
+                "The default mode has the values: a token is not given back there.",
+            );
+        }
+
+        if (!(system.overrides?.[entry.mode] ?? []).includes(entry.token)) {
+            throw web.error(400, `The mode “${entry.mode}” does not set “${entry.token}” itself.`);
+        }
+    }
+}
+
 export function revisionOf(system: DesignSystem): string {
+    const { modes, schemes, tokens, components, guidelines } = system;
+
     return createHash("sha256")
-        .update(
-            JSON.stringify([
-                system.modes,
-                system.schemes,
-                system.tokens,
-                system.components,
-                system.guidelines,
-            ]),
-        )
+        .update(JSON.stringify([modes, schemes, tokens, components, guidelines]))
         .digest("hex")
         .slice(0, 16);
 }
 
 function viewOf(system: DesignSystem) {
+    const { compiled } = system;
+
     return {
         name: system.name,
-        ...(system.description === undefined ? {} : { description: system.description }),
+        description: system.description,
         modes: system.modes,
         schemes: system.schemes,
         tokens: system.tokens,
         components: system.components,
         guidelines: system.guidelines,
         problems: system.problems,
-        ...(system.notes === undefined ? {} : { notes: system.notes }),
-        ...(system.overrides === undefined ? {} : { overrides: system.overrides }),
-        componentsCss: system.compiled.components,
-        dist: {
-            "tokens.css": Buffer.byteLength(system.compiled.css),
-            "tailwind.css": Buffer.byteLength(system.compiled.tailwind),
-            "tokens.resolved.json": Buffer.byteLength(system.compiled.json),
-            ...(system.compiled.studio === undefined
-                ? {}
-                : { "tokens.studio.json": Buffer.byteLength(system.compiled.studio) }),
-            ...(system.compiled.names === undefined
-                ? {}
-                : { "names.md": Buffer.byteLength(system.compiled.names) }),
-            "components.css": Buffer.byteLength(system.compiled.components),
-        },
+        notes: system.notes,
+        overrides: system.overrides,
+        componentsCss: compiled.components,
+        dist: Object.fromEntries(
+            present([
+                ["tokens.css", compiled.css],
+                ["tailwind.css", compiled.tailwind],
+                ["tokens.resolved.json", compiled.json],
+                ["tokens.studio.json", compiled.studio],
+                ["names.md", compiled.names],
+                ["components.css", compiled.components],
+            ]).map(([name, text]) => [name, Buffer.byteLength(text)]),
+        ),
         revision: revisionOf(system),
     };
 }
-
-type CheckedReport = CheckReport & {
-    accepted: CheckFinding[];
-    order: string[];
-};
 
 // The report holds text from the page: every field is cut to a fixed shape.
 export function cleanReport(
     report: CheckReport,
     accepted: ReadonlySet<string> = new Set(),
-): CheckedReport {
+): CheckReport & { accepted: CheckFinding[]; order: string[] } {
     const open: CheckFinding[] = [];
     const set: CheckFinding[] = [];
     const order: string[] = [];
@@ -401,10 +423,8 @@ function cleanFinding(each: CheckFinding): CheckFinding | undefined {
         return undefined;
     }
 
-    const rect = each.rect;
     const fix = each.fix;
-
-    const fixable = (each as { fixable?: unknown }).fixable === true || isFixable(each);
+    const fixable = (each as { fixable?: unknown }).fixable === true || fix !== undefined;
 
     return {
         ...(typeof each.id === "string" ? { id: clip(each.id, 60) } : {}),
@@ -415,16 +435,7 @@ function cleanFinding(each: CheckFinding): CheckFinding | undefined {
                       ...(typeof item?.pid === "string" && item.pid !== ""
                           ? { pid: clip(item.pid, 200) }
                           : {}),
-                      ...(typeof item?.rect === "object" && item.rect !== null
-                          ? {
-                                rect: {
-                                    x: coordinate(item.rect.x),
-                                    y: coordinate(item.rect.y),
-                                    width: coordinate(item.rect.width),
-                                    height: coordinate(item.rect.height),
-                                },
-                            }
-                          : {}),
+                      ...rectOf(item?.rect),
                   })),
               }
             : {}),
@@ -451,29 +462,18 @@ function cleanFinding(each: CheckFinding): CheckFinding | undefined {
         ...(typeof each.suggestion === "string" ? { suggestion: clip(each.suggestion, 300) } : {}),
         message: clip(each.message, 400),
         ...(fixable ? { fixable: true } : {}),
-        ...(typeof rect === "object" && rect !== null
-            ? {
-                  rect: {
-                      x: coordinate(rect.x),
-                      y: coordinate(rect.y),
-                      width: coordinate(rect.width),
-                      height: coordinate(rect.height),
-                  },
-              }
-            : {}),
+        ...rectOf(each.rect),
     };
 }
 
 function legacySize(cwd: string): number | null {
     try {
         // Links are refused: only a plain folder and file count.
-        if (!lstatSync(join(cwd, ".pi")).isDirectory()) {
-            return null;
-        }
+        const info = lstatSync(join(cwd, ".pi")).isDirectory()
+            ? lstatSync(join(cwd, ".pi", "design-system.md"))
+            : undefined;
 
-        const info = lstatSync(join(cwd, ".pi", "design-system.md"));
-
-        return info.isFile() ? info.size : null;
+        return info?.isFile() ? info.size : null;
     } catch {
         return null;
     }
@@ -506,8 +506,26 @@ function refusal(error: unknown): { failed: string; problems: SystemProblem[] } 
     return { failed: failed.slice(0, 900), problems };
 }
 
+function prepare(name: string, text: string): Prepared {
+    const bytes = Buffer.from(text, "utf8");
+    const hash = createHash("sha256").update(bytes).digest("hex");
+
+    return { asset: { hash, size: bytes.length, type: assetType(name) }, bytes };
+}
+
+async function storeAsset(tx: Tx, { asset, bytes }: Prepared): Promise<void> {
+    await tx.doc(ArtifactAssetDoc, asset.hash, { base64: bytes.toString("base64") });
+}
+
+async function storeBody(tx: Tx, conversation: ConversationId, name: string, content: string) {
+    const body = await tx.doc(ArtifactBodyDoc, conversation, name, { content });
+
+    if (body.content !== content) {
+        body.content = content;
+    }
+}
+
 export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
-    const view = { conversation: "conversation", access: "view" } as const;
     const steer = { conversation: "conversation", access: "steer" } as const;
 
     // One save at a time for each folder: a save reads the revision and writes, and no other may come between.
@@ -545,7 +563,34 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         }
     };
 
-    const changed = (conversation: number) => web.send("system", { conversation });
+    const existing = (system: DesignSystem | undefined): DesignSystem => {
+        if (system === undefined) {
+            throw web.error(404, "There is no design system yet.");
+        }
+
+        return system;
+    };
+
+    const withoutErrors = (system: DesignSystem): DesignSystem => {
+        if (system.problems.some((problem) => problem.level === "error")) {
+            throw web.error(409, "Fix the errors in the design system first.");
+        }
+
+        return system;
+    };
+
+    const failure = (error: unknown, fallback: string) =>
+        web.error(400, error instanceof Error ? error.message.slice(0, 300) : fallback);
+
+    const keyOf = (request: ConversationWebRequest, message: string): string => {
+        const key = request.body.key;
+
+        if (typeof key !== "string" || !KEY.test(key)) {
+            throw web.error(400, message);
+        }
+
+        return key;
+    };
 
     web.conversationRoute(
         "GET",
@@ -564,7 +609,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 ? { unchanged: true, revision }
                 : { system: viewOf(system), legacy: null };
         },
-        view,
+        { conversation: "conversation", access: "view" },
     );
 
     web.conversationRoute(
@@ -575,11 +620,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             const cwd = folderOf(request);
 
             const result = await exclusive(cwd, async () => {
-                const current = await load(cwd);
-
-                if (current === undefined) {
-                    throw web.error(404, "There is no design system yet.");
-                }
+                const current = existing(await load(cwd));
 
                 if (baseRevision !== undefined && baseRevision !== revisionOf(current)) {
                     throw web.error(
@@ -588,55 +629,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     );
                 }
 
-                // `{}` for a mode that is there would empty its file, and the default mode is the tokens file itself.
-                for (const [mode, body] of Object.entries(change.modes ?? {})) {
-                    if (body === null && !current.modes.includes(mode)) {
-                        throw web.error(400, "There is no such mode.");
-                    }
-
-                    if (body === null && mode === current.modes[0]) {
-                        throw web.error(
-                            400,
-                            "The default mode is the tokens file: it cannot be removed.",
-                        );
-                    }
-
-                    if (body !== null && current.modes.includes(mode)) {
-                        throw web.error(400, "There is a mode by that name.");
-                    }
-                }
-
-                // The engine would make a new token or mode file of a name that is not there.
-                for (const entry of change.set ?? []) {
-                    if (!current.modes.includes(entry.mode)) {
-                        throw web.error(400, `There is no mode “${entry.mode}”.`);
-                    }
-
-                    if (!current.tokens.some((token) => token.name === entry.token)) {
-                        throw web.error(400, `There is no token “${entry.token}”.`);
-                    }
-                }
-
-                // In the default mode a removal would delete the token, and the engine would take that as meant.
-                for (const entry of change.remove ?? []) {
-                    if (!current.modes.includes(entry.mode)) {
-                        throw web.error(400, `There is no mode “${entry.mode}”.`);
-                    }
-
-                    if (entry.mode === current.modes[0]) {
-                        throw web.error(
-                            400,
-                            "The default mode has the values: a token is not given back there.",
-                        );
-                    }
-
-                    if (!(current.overrides?.[entry.mode] ?? []).includes(entry.token)) {
-                        throw web.error(
-                            400,
-                            `The mode “${entry.mode}” does not set “${entry.token}” itself.`,
-                        );
-                    }
-                }
+                refuseUnknown(web, current, change);
 
                 try {
                     return { saved: await writeDesignSystem(cwd, change) };
@@ -649,7 +642,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 return { ok: false, error: result.failed, problems: result.problems };
             }
 
-            changed(request.conversation.id);
+            web.send("system", { conversation: request.conversation.id });
 
             return { ok: true, system: viewOf(result.saved), legacy: null };
         },
@@ -658,15 +651,10 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
 
     const checkTarget = async (request: ConversationWebRequest) => {
         const id = typeof request.body.id === "string" ? request.body.id : "";
-        const version = request.body.version;
-        const scheme = request.body.colorScheme;
-        const mode = request.body.mode;
+        const { version, colorScheme: scheme, mode } = request.body;
         const size = request.body.viewport ?? "mobile";
 
-        if (
-            version !== undefined &&
-            (typeof version !== "number" || !Number.isSafeInteger(version))
-        ) {
+        if (version !== undefined && !Number.isSafeInteger(version)) {
             throw web.error(400, "Choose a version.");
         }
 
@@ -682,8 +670,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             throw web.error(400, "Choose mobile, tablet, or desktop.");
         }
 
-        const cwd = folderOf(request);
-        const system = await load(cwd);
+        const system = await load(folderOf(request));
 
         if (mode !== undefined && system !== undefined && !system.modes.includes(mode)) {
             throw web.error(
@@ -692,7 +679,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             );
         }
 
-        const checked = mode !== undefined && system !== undefined ? mode : undefined;
+        const checked = system === undefined ? undefined : mode;
         const colorScheme =
             scheme ?? (checked === undefined ? undefined : system?.schemes[checked]);
         const options: CheckOptions = {
@@ -704,45 +691,40 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         return { id, version: version as number | undefined, options, system };
     };
 
-    const acceptedOf = async (
+    const runCheck = async (
         request: ConversationWebRequest,
-        id: string,
-    ): Promise<Set<string>> => {
-        const doc = await request.snapshot(
-            DesignCommentsDoc,
-            request.conversation.id,
+        { id, version, options, system }: Awaited<ReturnType<typeof checkTarget>>,
+    ) => {
+        const conversation = request.conversation.id;
+        const bundle = await readBundle(
+            host,
+            request.snapshot,
+            conversation,
+            id,
+            version,
             request.context,
         );
-        const item = Object.hasOwn(doc?.items ?? {}, id) ? doc!.items[id] : undefined;
+        const doc = await request.snapshot(DesignCommentsDoc, conversation, request.context);
+        const item = own(doc?.items, id);
+        const accepted = new Set(Object.keys(item?.accepted ?? {}));
+        const asked = { ...options, ...(accepted.size > 0 ? { accepted: [...accepted] } : {}) };
+        const report = await checkDesign(bundle, system, asked, host, request.signal);
 
-        return new Set(Object.keys(item?.accepted ?? {}));
+        return { bundle, accepted, report };
     };
 
     web.conversationRoute(
         "POST",
         "c/:conversation/system/check",
         async (request) => {
-            const { id, version, options, system } = await checkTarget(request);
+            const target = await checkTarget(request);
 
             try {
-                const bundle = await readBundle(
-                    host,
-                    request.snapshot,
-                    request.conversation.id,
-                    id,
-                    version,
-                    request.context,
-                );
-                const accepted = await acceptedOf(request, id);
-                const asked: CheckOptions & { accepted?: readonly string[] } = {
-                    ...options,
-                    ...(accepted.size > 0 ? { accepted: [...accepted] } : {}),
-                };
-                const report = await checkDesign(bundle, system, asked, host, request.signal);
+                const { bundle, accepted, report } = await runCheck(request, target);
 
                 return {
                     report: cleanReport(report, accepted),
-                    id,
+                    id: target.id,
                     version: bundle.version,
                 };
             } catch (error) {
@@ -750,10 +732,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     throw error;
                 }
 
-                throw web.error(
-                    400,
-                    error instanceof Error ? error.message.slice(0, 300) : "The check failed.",
-                );
+                throw failure(error, "The check failed.");
             }
         },
         steer,
@@ -764,74 +743,42 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         "POST",
         "c/:conversation/system/fix",
         async (request) => {
-            const key = request.body.key;
-
-            if (typeof key !== "string" || !KEY.test(key)) {
-                throw web.error(400, "A fix needs a key.");
-            }
-
-            const { id, version, options, system } = await checkTarget(request);
-
-            if (system === undefined) {
-                throw web.error(404, "There is no design system yet.");
-            }
-
-            const callId = `design-fix:${key}`;
+            const callId = `design-fix:${keyOf(request, "A fix needs a key.")}`;
+            const target = await checkTarget(request);
+            const { id } = target;
+            const system = existing(target.system);
             const index = await request.snapshot(
                 ArtifactsDoc,
                 request.conversation.id,
                 request.context,
             );
-            const known =
-                index !== undefined && Object.hasOwn(index.items, id) ? index.items[id] : undefined;
-            const again = known?.versions.find((each) => each.callId === callId);
+            const again = own(index?.items, id)?.versions.find((each) => each.callId === callId);
 
             if (again !== undefined) {
                 return { id, version: again.version, fixed: 0, again: true };
             }
 
-            if (system.problems.some((problem) => problem.level === "error")) {
-                throw web.error(409, "Fix the errors in the design system first.");
-            }
+            withoutErrors(system);
 
             let result;
-            let from;
 
             try {
-                const bundle = await readBundle(
-                    host,
-                    request.snapshot,
-                    request.conversation.id,
-                    id,
-                    version,
-                    request.context,
-                );
-                const accepted = await acceptedOf(request, id);
-                const asked: CheckOptions & { accepted?: readonly string[] } = {
-                    ...options,
-                    ...(accepted.size > 0 ? { accepted: [...accepted] } : {}),
+                const { bundle, accepted, report } = await runCheck(request, target);
+
+                result = {
+                    from: bundle.version,
+                    ...fixExactMatches(bundle, system, report, accepted),
                 };
-                const report = await checkDesign(bundle, system, asked, host, request.signal);
-
-                from = bundle.version;
-                result = fixExactMatches(bundle, system, report, { mode: options.mode, accepted });
-
-                if (result.fixed > 0 && Buffer.byteLength(result.content) > MAX_BYTES) {
-                    throw web.error(400, "The page is too large.");
-                }
             } catch (error) {
-                if (request.signal.aborted) {
+                if (request.signal.aborted || (error instanceof Error && "status" in error)) {
                     throw error;
                 }
 
-                if (error instanceof Error && "status" in error) {
-                    throw error;
-                }
+                throw failure(error, "The fix failed.");
+            }
 
-                throw web.error(
-                    400,
-                    error instanceof Error ? error.message.slice(0, 300) : "The fix failed.",
-                );
+            if (result.fixed > 0 && Buffer.byteLength(result.content) > MAX_BYTES) {
+                throw web.error(400, "The page is too large.");
             }
 
             if (result.fixed === 0) {
@@ -841,26 +788,15 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                 );
             }
 
-            const content = result.content;
+            const { content, from } = result;
             // The version's `ds/` files are a snapshot and may not define these tokens yet: the new version gets the current ones.
-            const fresh = new Map<string, { asset: ArtifactAsset; bytes: Buffer }>();
-
-            for (const [name, key] of Object.entries(DESIGN_FILES)) {
-                const bytes = Buffer.from(system.compiled[key], "utf8");
-
-                fresh.set(name, {
-                    asset: {
-                        hash: createHash("sha256").update(bytes).digest("hex"),
-                        size: bytes.length,
-                        type: assetType(name),
-                    },
-                    bytes,
-                });
-            }
+            const fresh = Object.entries(DESIGN_FILES).map(
+                ([name, key]) => [name, prepare(name, system.compiled[key])] as const,
+            );
 
             const made = await request.commit(async (tx) => {
                 const items = await tx.doc(ArtifactsDoc, request.conversation.id);
-                const current = Object.hasOwn(items.items, id) ? items.items[id] : undefined;
+                const current = own(items.items, id);
 
                 if (current === undefined || current.type !== "html") {
                     throw web.error(404, "No such design.");
@@ -884,9 +820,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
 
                 for (const [name, each] of fresh) {
                     if (Object.hasOwn(assets, name)) {
-                        await tx.doc(ArtifactAssetDoc, each.asset.hash, {
-                            base64: each.bytes.toString("base64"),
-                        });
+                        await storeAsset(tx, each);
                         assets[name] = each.asset;
                     }
                 }
@@ -899,17 +833,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     size: Buffer.byteLength(content),
                     createdAt: Date.now(),
                 });
-
-                const stored = await tx.doc(
-                    ArtifactBodyDoc,
-                    request.conversation.id,
-                    `${id}@${next}`,
-                    { content },
-                );
-
-                if (stored.content !== content) {
-                    stored.content = content;
-                }
+                await storeBody(tx, request.conversation.id, `${id}@${next}`, content);
 
                 return next;
             });
@@ -924,25 +848,10 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         "POST",
         "c/:conversation/system/docs",
         async (request) => {
-            const key = request.body.key;
-
-            if (typeof key !== "string" || !KEY.test(key)) {
-                throw web.error(400, "Publishing needs a key.");
-            }
-
-            const system = await load(folderOf(request));
-
-            if (system === undefined) {
-                throw web.error(404, "There is no design system yet.");
-            }
-
-            if (system.problems.some((problem) => problem.level === "error")) {
-                throw web.error(409, "Fix the errors in the design system first.");
-            }
-
+            const callId = `design-system-docs:${keyOf(request, "Publishing needs a key.")}`;
+            const system = withoutErrors(existing(await load(folderOf(request))));
             const doc = renderSystemDoc(system);
-            const callId = `design-system-docs:${key}`;
-            const prepared = new Map<string, { asset: ArtifactAsset; bytes: Buffer }>();
+            const prepared = new Map<string, Prepared>();
             let total = 0;
 
             if (Buffer.byteLength(doc.html) > MAX_BYTES) {
@@ -954,34 +863,25 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
             }
 
             for (const entry of doc.assets) {
-                const bytes = Buffer.from(entry.content, "utf8");
+                const each = prepare(entry.name, entry.content);
 
-                total += bytes.length;
+                total += each.bytes.length;
 
                 if (
                     !assetName(entry.name) ||
                     prepared.has(entry.name) ||
-                    bytes.length > MAX_ASSET_BYTES ||
+                    each.bytes.length > MAX_ASSET_BYTES ||
                     total > MAX_ASSETS_BYTES
                 ) {
                     throw web.error(400, "A file of the documentation page is not valid.");
                 }
 
-                prepared.set(entry.name, {
-                    asset: {
-                        hash: createHash("sha256").update(bytes).digest("hex"),
-                        size: bytes.length,
-                        type: assetType(entry.name),
-                    },
-                    bytes,
-                });
+                prepared.set(entry.name, each);
             }
 
             const version = await request.commit(async (tx) => {
                 const index = await tx.doc(ArtifactsDoc, request.conversation.id);
-                const current = Object.hasOwn(index.items, DOCS_ID)
-                    ? index.items[DOCS_ID]
-                    : undefined;
+                const current = own(index.items, DOCS_ID);
 
                 if (current !== undefined && current.type !== "html") {
                     throw web.error(409, `The artifact ${DOCS_ID} is not a page.`);
@@ -993,10 +893,8 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     return again.version;
                 }
 
-                for (const { asset, bytes } of prepared.values()) {
-                    await tx.doc(ArtifactAssetDoc, asset.hash, {
-                        base64: bytes.toString("base64"),
-                    });
+                for (const each of prepared.values()) {
+                    await storeAsset(tx, each);
                 }
 
                 const next = (current?.versions.at(-1)?.version ?? 0) + 1;
@@ -1020,18 +918,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     current.versions.push(record);
                 }
 
-                const body = await tx.doc(
-                    ArtifactBodyDoc,
-                    request.conversation.id,
-                    `${DOCS_ID}@${next}`,
-                    {
-                        content: doc.html,
-                    },
-                );
-
-                if (body.content !== doc.html) {
-                    body.content = doc.html;
-                }
+                await storeBody(tx, request.conversation.id, `${DOCS_ID}@${next}`, doc.html);
 
                 return next;
             });
@@ -1046,16 +933,8 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
         "c/:conversation/system/export",
         async (request) => {
             const cwd = folderOf(request);
-            const system = await load(cwd);
-
-            if (system === undefined) {
-                throw web.error(404, "There is no design system yet.");
-            }
-
-            if (system.problems.some((problem) => problem.level === "error")) {
-                throw web.error(409, "Fix the errors in the design system first.");
-            }
-
+            const system = withoutErrors(existing(await load(cwd)));
+            const { compiled } = system;
             const slug =
                 system.name
                     .toLowerCase()
@@ -1063,21 +942,17 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
                     .replace(/^-+|-+$/g, "")
                     .slice(0, 40) || "design-system";
             const name = `${slug}-tokens.zip`;
-            const files: [string, string][] = [
-                ["tokens.css", system.compiled.css],
-                ["tailwind.css", system.compiled.tailwind],
-                ...Object.entries(system.compiled.modes ?? {}).map(
-                    ([mode, text]): [string, string] => [`tokens.${mode}.resolved.json`, text],
+            const files = present([
+                ["tokens.css", compiled.css],
+                ["tailwind.css", compiled.tailwind],
+                ...Object.entries(compiled.modes ?? {}).map(
+                    ([mode, text]) => [`tokens.${mode}.resolved.json`, text] as const,
                 ),
-                ...(system.compiled.studio === undefined
-                    ? []
-                    : ([["tokens.studio.json", system.compiled.studio]] as [string, string][])),
-                ...(system.compiled.names === undefined
-                    ? []
-                    : ([["names.md", system.compiled.names]] as [string, string][])),
-                ["tokens.resolved.json", system.compiled.json],
-                ["components.css", system.compiled.components],
-            ];
+                ["tokens.studio.json", compiled.studio],
+                ["names.md", compiled.names],
+                ["tokens.resolved.json", compiled.json],
+                ["components.css", compiled.components],
+            ]);
 
             try {
                 const bytes = zip(
@@ -1087,10 +962,7 @@ export function systemRoutes(web: ExtensionWeb, host: PocketHost): void {
 
                 return { path, relative: `exports/${name}`, name, size: bytes.length };
             } catch (error) {
-                throw web.error(
-                    400,
-                    error instanceof Error ? error.message.slice(0, 300) : "The export failed.",
-                );
+                throw failure(error, "The export failed.");
             }
         },
         steer,
