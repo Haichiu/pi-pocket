@@ -539,8 +539,8 @@ body { margin: 0; padding: 24px; background: ${hexOf("color.bg.canvas")}; font: 
         )?.content ?? "";
     const next = await bodyOf(2);
 
-    assert.match(next, /color: var\(--color-text-primary\)/);
-    assert.match(next, /style="margin:0;color:var\(--color-text-primary\)"/);
+    // The role token is another color in dark, so the fix puts in the palette step that is this color in every mode.
+    assert.match(next, /style="margin:0;color:var\(--color-gray-900\)"/);
     assert.ok(
         next.includes(".note { color: #7ba3f8; }"),
         "a value that is only close to a token is not guessed at",
@@ -750,4 +750,19 @@ test("a system with an error is not published or exported, and a revision is a s
     assert.equal((await call("owner", "system/fix", fix, id)).status, 409);
     assert.equal(revisionOf(system), revisionOf(loadDesignSystem(folder)!));
     assert.match(revisionOf(system), /^[0-9a-f]{16}$/);
+});
+
+test("the check marks a finding as fixable only when the fix would change it", async () => {
+    // Two rules set the color for one element: no place is certain to be its own, so the fix skips it.
+    const content = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Two</title><style>.a p, .b p { color: #1c1e26; } .b p { color: #1c1e26; }</style></head><body><main><div class="a"><p>One</p></div></main></body></html>`;
+
+    await publishDesign(app, session, { id: "two", title: "Two", content });
+    const found = (
+        await call("owner", "system/check", { id: "two", mode: "light", viewport: "mobile" })
+    ).data.report.findings;
+
+    assert.deepEqual(
+        found.filter((each: { fixable?: boolean }) => each.fixable),
+        [],
+    );
 });

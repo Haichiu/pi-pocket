@@ -2,6 +2,13 @@
     padding: 0 10px;
 }
 
+.dsy-bar-end {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+}
+
 .dsy-history,
 .dsy-modemenu,
 .dsy-tabs-end {
@@ -1678,22 +1685,27 @@
     min-width: 142px;
 }
 
+/* In a narrow view the bar wraps instead of overflowing: Undo, Redo, and More drop to a second line together when they do not
+   fit beside the picker and the modes. */
+.dsn[data-size="narrow"] .dsy-bars .dsn-bar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+
 .dsn[data-size="narrow"] .dsy-bars .dsn-picker {
-    flex: 1 1 142px;
+    flex: 1 1 120px;
     gap: 6px;
     min-width: 104px;
     padding: 0 8px;
 }
 
-.dsn[data-size="narrow"] .dsy-modes {
-    flex: 0 1 auto;
-    min-width: 0;
-}
-
 .dsn[data-size="narrow"] .dsy-modes button {
-    flex: 1 1 auto;
     min-width: 26px;
     padding: 0 4px;
+}
+
+.dsn[data-size="narrow"] .dsy-bar-end {
+    margin-left: auto;
 }
 
 .dsy-search:focus-within {

@@ -1,4 +1,5 @@
 import { colorObjectCss, contrastRatio, oklabOf, toHex } from "./color.ts";
+import { sameInEveryMode } from "./fix.ts";
 import type { DesignSystem, ModeValue, ResolvedToken } from "./system-types.ts";
 
 export type RgbaTuple = [number, number, number, number];
@@ -141,12 +142,15 @@ interface TokenColor {
     tier: ResolvedToken["tier"];
     css: string;
     rgba?: RgbaTuple;
+    /** False when the value differs between modes: only a steady token may be put in a page by a one-tap fix. */
+    steady?: boolean;
 }
 
 interface TokenFont {
     name: string;
     cssVar: string;
     families: string[];
+    steady?: boolean;
 }
 
 interface TokenLength {
@@ -155,6 +159,7 @@ interface TokenLength {
     cssVar: string;
     css: string;
     px?: number;
+    steady?: boolean;
 }
 
 export interface TokenSet {
@@ -213,13 +218,20 @@ function fontFamilies(value: unknown): string[] {
 export function tokenSet(system: DesignSystem, mode: string): TokenSet {
     const set: TokenSet = { mode, colors: [], fonts: [], lengths: [] };
     const seen = new Set<string>();
+    const steady = (token: ResolvedToken) => sameInEveryMode(token, system.modes);
 
     const addLength = (token: ResolvedToken, kind: LengthKind, value: unknown, suffix = "") => {
         const css = dimensionCss(value);
 
         if (css !== undefined && !seen.has(`${token.name}${suffix}`)) {
             seen.add(`${token.name}${suffix}`);
-            set.lengths.push({ kind, name: token.name, cssVar: token.cssVar, css });
+            set.lengths.push({
+                kind,
+                name: token.name,
+                cssVar: token.cssVar,
+                css,
+                steady: steady(token),
+            });
         }
     };
 
@@ -234,13 +246,24 @@ export function tokenSet(system: DesignSystem, mode: string): TokenSet {
             const css = entry.css.startsWith("var(") ? colorCss(entry.value) : entry.css;
 
             if (css !== undefined) {
-                set.colors.push({ name: token.name, cssVar: token.cssVar, tier: token.tier, css });
+                set.colors.push({
+                    name: token.name,
+                    cssVar: token.cssVar,
+                    tier: token.tier,
+                    css,
+                    steady: steady(token),
+                });
             }
         } else if (token.type === "fontFamily") {
             const families = fontFamilies(entry.value);
 
             if (families.length > 0) {
-                set.fonts.push({ name: token.name, cssVar: token.cssVar, families });
+                set.fonts.push({
+                    name: token.name,
+                    cssVar: token.cssVar,
+                    families,
+                    steady: steady(token),
+                });
             }
         } else if (token.type === "dimension" && token.tier !== "component") {
             const kind = lengthKind(token.path);

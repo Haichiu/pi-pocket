@@ -6,7 +6,9 @@ import { checkDesign } from "../src/server/design/lint.ts";
 import type { CheckFinding, CheckFix } from "../src/server/design/system-types.ts";
 import { bundleOf, check, host, ofRule, page, testSystem, token } from "./design-lint-fixtures.ts";
 
-const system = testSystem();
+// One mode: a token that differs between modes cannot be put in a page by a fix (see the last test).
+const single = () => ({ ...testSystem(), modes: ["light"] });
+const system = single();
 const color = (
     literal: string,
     name: string,
@@ -235,13 +237,13 @@ test("a finding is skipped when it has no fix, when the token changed, or when t
         selector: "",
         message: "m",
     };
-    const moved = testSystem();
+    const moved = single();
 
     Object.assign(moved.tokens.find((item) => item.name === MUTED)!.modes.light!, {
         value: "#5a5f74",
         css: "#5a5f74",
     });
-    const gone = testSystem();
+    const gone = single();
 
     gone.tokens = gone.tokens.filter((item) => item.name !== MUTED);
     const result = applyExactFixes(
@@ -354,7 +356,7 @@ test(
             ".note{margin:0;padding:16px;color:#5a5f73;background:#ffffff;border-radius:8px;font-family:system-ui,sans-serif}",
             `<p class="note" data-pid="note">Quiet</p><p data-pid="loud" style="margin:0;color:#7ba3f8;padding:16px">Loud</p>`,
         );
-        const before = await check(content);
+        const before = await check(content, {}, system);
         const fixable = before.findings.filter((item) => item.fix !== undefined);
 
         assert.deepEqual(fixable.map((item) => `${item.rule}:${item.fix!.token}`).sort(), [
@@ -370,12 +372,12 @@ test(
             ofRule(before, "off-system-color").find((item) => item.pid === "loud")?.fix,
             undefined,
         );
-        const result = applyExactFixes(content, before.findings, testSystem());
+        const result = applyExactFixes(content, before.findings, system);
 
         assert.ok(result.applied >= 6);
         const after = await checkDesign(
             bundleOf(result.content),
-            testSystem(),
+            system,
             { viewport: "mobile" },
             host,
         );
@@ -390,6 +392,30 @@ test(
             0,
         );
         assert.ok(ofRule(after, "off-system-color").some((item) => item.pid === "loud"));
-        assert.equal(applyExactFixes(result.content, after.findings, testSystem()).applied, 0);
+        assert.equal(applyExactFixes(result.content, after.findings, system).applied, 0);
+    },
+);
+
+test(
+    "a fix puts in a token only when it has the literal in every mode",
+    { skip: findBrowser() === undefined, timeout: 120_000 },
+    async () => {
+        const content = page(
+            ".note{margin:0;color:#5a5f73}",
+            `<p class="note" data-pid="note">Quiet</p>`,
+        );
+        const fixOf = async (given: ReturnType<typeof testSystem>) =>
+            ofRule(await check(content, {}, given), "off-system-color").find(
+                (item) => item.pid === "note",
+            )?.fix?.token;
+        const steady = testSystem();
+
+        steady.tokens.push(token("color.gray.600", "color", "#5a5f73", "#5a5f73", "primitive"));
+        assert.equal(
+            await fixOf(testSystem()),
+            undefined,
+            "color.text.muted is another color in dark",
+        );
+        assert.equal(await fixOf(steady), "color.gray.600");
     },
 );
