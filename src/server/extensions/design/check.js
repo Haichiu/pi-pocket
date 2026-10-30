@@ -82,6 +82,10 @@ const pageLevel = (finding) =>
     !finding.pid &&
     /^(?:|html|body|:root|html\s*>\s*body)$/i.test(String(finding.selector ?? "").trim());
 
+const ruleOf = (finding) => RULES[finding.rule] ?? finding.rule;
+
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
 const placedOn = (finding) => Boolean(finding.pid || finding.selector) && !pageLevel(finding);
 
 export function pinsOfReport(report, focus = null) {
@@ -136,7 +140,7 @@ export function createCheck(env, DockHead) {
             }
             <div class="dsy-finding-body">
                 <div class="dsy-finding-head">
-                    <strong>${RULES[finding.rule] ?? finding.rule}</strong>
+                    <strong>${ruleOf(finding)}</strong>
                     <span class=${`dsy-tag ${finding.level === "error" ? "bad" : "warn"}`}
                         >${finding.level}</span
                     >
@@ -171,7 +175,7 @@ export function createCheck(env, DockHead) {
                     </p>`
                 }
                 ${
-                    (placedOn(finding) || pageLevel(finding)) &&
+                    (placed || pageLevel(finding)) &&
                     html`<div class="muted small mono dsy-finding-target">
                         ${
                             pageLevel(finding)
@@ -189,7 +193,7 @@ export function createCheck(env, DockHead) {
                             type="button"
                             class="dsy-accept"
                             title="Accept: this is fine as it is. It leaves the counts, for everyone, until it is undone."
-                            aria-label=${`Accept finding ${number}: ${RULES[finding.rule] ?? finding.rule}`}
+                            aria-label=${`Accept finding ${number}: ${ruleOf(finding)}`}
                             onClick=${(event) => {
                                 event.stopPropagation();
                                 onAccept(finding);
@@ -227,7 +231,7 @@ export function createCheck(env, DockHead) {
                         return html`<li class="dsy-finding accepted" key=${finding.id}>
                             <div class="dsy-finding-body">
                                 <div class="dsy-finding-head">
-                                    <strong>${RULES[finding.rule] ?? finding.rule}</strong>
+                                    <strong>${ruleOf(finding)}</strong>
                                 </div>
                                 <p>${finding.message}</p>
                                 <div class="muted small dsy-accepted-by">
@@ -244,7 +248,7 @@ export function createCheck(env, DockHead) {
                                             type="button"
                                             class="dsy-accept"
                                             title="Undo: it is counted again"
-                                            aria-label=${`Undo the accept of ${RULES[finding.rule] ?? finding.rule}`}
+                                            aria-label=${`Undo the accept of ${ruleOf(finding)}`}
                                             onClick=${() => env.data.unaccept(design.id, finding.id)}
                                         >
                                             Undo
@@ -289,41 +293,31 @@ export function createCheck(env, DockHead) {
         }, [design.id]);
 
         const exact = findings.filter(({ finding }) => finding.fixable === true).length;
+        const matches = `${exact} exact match${exact === 1 ? "" : "es"}`;
         const [fixing, setFixing] = useState(false);
+
+        const target = (now, version) => ({
+            artifact: design.id,
+            version,
+            mode: now.named ? now.mode : undefined,
+            scheme: now.scheme,
+            size: now.size,
+        });
 
         const fix = async () => {
             setFixing(true);
 
-            const made = await systemData.fix({
-                artifact: design.id,
-                version: shown,
-                mode: options.named ? options.mode : undefined,
-                scheme: options.scheme,
-                size: options.size,
-            });
+            const made = await systemData.fix(target(options, shown));
 
             setFixing(false);
 
             if (made) {
                 env.showVersion(null);
-                void systemData.check({
-                    artifact: design.id,
-                    version: made.version,
-                    mode: options.named ? options.mode : undefined,
-                    scheme: options.scheme,
-                    size: options.size,
-                });
+                void systemData.check(target(options, made.version));
             }
         };
 
-        const run = (now = options) =>
-            void systemData.check({
-                artifact: design.id,
-                version: shown,
-                mode: now.named ? now.mode : undefined,
-                scheme: now.scheme,
-                size: now.size,
-            });
+        const run = (now = options) => void systemData.check(target(now, shown));
 
         // A new canvas mode re-runs the check, unless the person chose a mode or it already exists.
         const before = useRef(options.seen);
@@ -379,7 +373,7 @@ export function createCheck(env, DockHead) {
                   : report
                     ? findings.length === 0
                         ? "Nothing to fix"
-                        : `${findings.length} finding${findings.length === 1 ? "" : "s"}`
+                        : plural(findings.length, "finding")
                     : "Not checked yet";
 
             return html`<div class="dsy-check-bar">
@@ -404,8 +398,8 @@ export function createCheck(env, DockHead) {
                         type="button"
                         class="button small"
                         disabled=${fixing || running}
-                        title=${`Fix ${exact} exact match${exact === 1 ? "" : "es"}: a value that is exactly a token's becomes the token`}
-                        aria-label=${`Fix ${exact} exact match${exact === 1 ? "" : "es"}`}
+                        title=${`Fix ${matches}: a value that is exactly a token's becomes the token`}
+                        aria-label=${`Fix ${matches}`}
                         onClick=${fix}
                     >
                         ${fixing ? "Fixing…" : `Fix ${exact} exact`}
@@ -565,7 +559,7 @@ export function createCheck(env, DockHead) {
                                     onClick=${fix}
                                 >
                                     <${Ico} name="sparkle" size=${14} />
-                                    ${fixing ? "Fixing…" : `Fix ${exact} exact match${exact === 1 ? "" : "es"}`}
+                                    ${fixing ? "Fixing…" : `Fix ${matches}`}
                                 </button>
                             </div>`
                         }
