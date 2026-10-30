@@ -290,11 +290,11 @@ function build(system: DesignSystem, referenceRows: number): SystemDoc {
         (mode) => ctx.theme.get(mode) === "dark" && ctx.theme.get(first) !== "dark",
     );
     const modeAttrs = (mode: string) =>
-        `data-mode="${ctx.slug.get(mode)}" data-theme="${ctx.theme.get(mode)}"`;
+        `data-mode="${ctx.slug.get(mode)}" data-theme="${esc(ctx.theme.get(mode) ?? "light")}"`;
     const modeSwitch =
         ctx.modes.length < 2
             ? ""
-            : `<div class="seg" role="group" aria-label="Mode">${ctx.modes.map((mode, index) => `<button type="button" ${modeAttrs(mode)} aria-pressed="${index === 0}">${esc(modeLabel(mode))}</button>`).join("")}</div><select class="modesel" aria-label="Mode">${ctx.modes.map((mode, index) => `<option value="${ctx.slug.get(mode)}" data-theme="${ctx.theme.get(mode)}"${index === 0 ? " selected" : ""}>${esc(modeLabel(mode))}</option>`).join("")}</select>`;
+            : `<div class="seg" role="group" aria-label="Mode">${ctx.modes.map((mode, index) => `<button type="button" ${modeAttrs(mode)} aria-pressed="${index === 0}">${esc(modeLabel(mode))}</button>`).join("")}</div><select class="modesel" aria-label="Mode">${ctx.modes.map((mode, index) => `<option value="${ctx.slug.get(mode)}" data-theme="${esc(ctx.theme.get(mode) ?? "light")}"${index === 0 ? " selected" : ""}>${esc(modeLabel(mode))}</option>`).join("")}</select>`;
     const modeCss = ctx.modes
         .map(
             (mode, index) =>
