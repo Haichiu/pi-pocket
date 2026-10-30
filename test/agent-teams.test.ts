@@ -89,10 +89,12 @@ test("agents write to each other in ASD-STE100: team messages, replies, and suba
     const all = requests.join("\n");
 
     // The source: its team messages, and its tasks for subagents.
-    assert.match(all, /Write messages in ASD-STE100 \(Simplified Technical English\) at about 80%/);
+    // The rule itself is written once, in the guidelines; the team and subagent sections point to it.
+    assert.match(all, /in ASD-STE100 \(Simplified Technical English\) at about 80% adherence/);
+    assert.match(all, /Write messages in ASD-STE100, as the guidelines say for agents/);
     assert.match(
         all,
-        /Write each message to a subagent \(spawn and send\) in ASD-STE100 \(Simplified Technical English\) at about 80%/,
+        /Write each message to a subagent \(spawn and send\) in ASD-STE100, as the guidelines say/,
     );
     assert.match(all, /ask for the report in it too/);
     assert.match(all, /ask for answers in it too/);
