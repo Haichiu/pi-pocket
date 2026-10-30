@@ -1,8 +1,9 @@
 /** The DevTools protocol over a pipe, and the Chromium process at the other end of it. */
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import type { Readable, Writable } from "node:stream";
 
 export class BrowserError extends Error {}
@@ -175,44 +176,73 @@ const LAUNCH_ARGS = [
 ];
 
 /**
- * Some Chromium builds (ego lite) do not exit when the pipe closes. So each launch writes a pid file, a normal exit
- * kills every live child, and the next launch kills the ones a crashed server left behind.
+ * Some Chromium builds (ego lite) do not exit when the pipe closes. So each launch writes a record, a normal exit kills
+ * every live child, and the next launch kills the browsers of servers that died without a normal exit (SIGKILL, crash).
+ * A record names the server that owns the browser: a browser of a live server is never touched.
  */
-const PID_FOLDER = join(tmpdir(), "pi-pocket-chromium-pids");
-const live = new Set<ChildProcess>();
+const RECORD_FOLDER = join(tmpdir(), `pi-pocket-chromium-${process.getuid?.() ?? "user"}`);
+const run = promisify(execFile);
+/** Each live browser and the record file that names it. */
+const live = new Map<ChildProcess, string>();
 
 process.once("exit", () => {
-    for (const child of live) {
+    for (const [child, record] of live) {
         child.kill("SIGKILL");
+        rmSync(record, { force: true });
     }
 });
 
-function sweepOrphans(): void {
+function running(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+
+        return true;
+    } catch (error) {
+        // EPERM: the process exists, owned by someone else.
+        return (error as NodeJS.ErrnoException).code === "EPERM";
+    }
+}
+
+async function sweepOrphans(): Promise<void> {
+    // No `ps` on Windows: there only the exit hook runs.
+    if (process.platform === "win32") {
+        return;
+    }
+
     let names: string[] = [];
 
     try {
-        names = readdirSync(PID_FOLDER);
+        names = readdirSync(RECORD_FOLDER);
     } catch {
         return;
     }
 
     for (const name of names) {
-        const pid = Number(name);
+        const file = join(RECORD_FOLDER, name);
 
         try {
-            // Only an orphan (parent 1) that runs Chromium with a pipe: a reused pid or another server's browser stays.
-            const line = execFileSync("ps", ["-o", "ppid=,command=", "-p", String(pid)], {
-                encoding: "utf8",
-            }).trim();
+            const record = JSON.parse(readFileSync(file, "utf8")) as {
+                server: number;
+                profile: string;
+            };
 
-            if (line.startsWith("1 ") && line.includes("--remote-debugging-pipe")) {
-                process.kill(pid, "SIGKILL");
+            if (record.server === process.pid || running(record.server)) {
+                continue;
             }
-        } catch {
-            // The process is gone already.
+
+            // The owner is dead. A reused pid is not ours: only a process that still has this profile is killed.
+            const { stdout } = await run("ps", ["-o", "command=", "-p", name]).catch(() => ({
+                stdout: "",
+            }));
+
+            if (stdout.includes(`--user-data-dir=${record.profile}`)) {
+                process.kill(Number(name), "SIGKILL");
+            }
+        } catch (error) {
+            console.error(`Could not sweep browser record ${file}:`, error);
         }
 
-        rmSync(join(PID_FOLDER, name), { force: true });
+        rmSync(file, { force: true });
     }
 }
 
@@ -245,7 +275,7 @@ export class Chromium {
         extra: readonly string[],
     ): Promise<Chromium> {
         mkdirSync(profile, { recursive: true, mode: 0o700 });
-        sweepOrphans();
+        await sweepOrphans();
         const child = spawn(
             executable,
             [...LAUNCH_ARGS, `--user-data-dir=${profile}`, ...extra, "about:blank"],
@@ -256,12 +286,21 @@ export class Chromium {
         let stderr = "";
 
         if (child.pid !== undefined) {
-            live.add(child);
-            mkdirSync(PID_FOLDER, { recursive: true });
-            writeFileSync(join(PID_FOLDER, String(child.pid)), "");
+            const record = join(RECORD_FOLDER, String(child.pid));
+
+            live.set(child, record);
+
+            try {
+                mkdirSync(RECORD_FOLDER, { recursive: true, mode: 0o700 });
+                writeFileSync(record, JSON.stringify({ server: process.pid, profile }));
+            } catch (error) {
+                // The browser still works: only a crash of this server could leave it behind.
+                console.error(`Could not record browser ${child.pid}:`, error);
+            }
+
             child.once("exit", () => {
                 live.delete(child);
-                rmSync(join(PID_FOLDER, String(child.pid)), { force: true });
+                rmSync(record, { force: true });
             });
         }
 
