@@ -23,7 +23,6 @@ export interface Reading {
 
 export interface ProbeInput {
     vars: string[];
-    // Also read the page with no style, to leave out the browser's own values.
     bare: boolean;
 }
 

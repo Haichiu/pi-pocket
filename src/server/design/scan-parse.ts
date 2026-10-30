@@ -235,7 +235,6 @@ export function parseStyles(source: string, firstLine: number | undefined = 1): 
 
             buffer = "";
 
-            // Without `&` a nested rule is a descendant. An at-rule keeps its parent's selector.
             const parent = selector();
             const resolved = prelude.startsWith("@")
                 ? parent
@@ -343,7 +342,6 @@ export function readLiteral(text: string, start: number): Literal | undefined {
         }
     };
 
-    // A template literal with `${…}` is a value the scan cannot know; it is still read to its end.
     const string = (): string | undefined => {
         const quote = text[at]!;
         let out = "";
@@ -469,7 +467,6 @@ export function readLiteral(text: string, start: number): Literal | undefined {
 
             skip();
 
-            // `"a" + b` and the like are not literals.
             return quoted !== undefined && ended() ? quoted : skipValue();
         }
 

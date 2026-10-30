@@ -59,7 +59,6 @@ function leaves(
     if (typeof node === "string" || typeof node === "number") {
         out.push({ path, value: String(node) });
     } else if (Array.isArray(node)) {
-        // `fontFamily: { sans: ["Inter", "sans-serif"] }`, `fontSize: { sm: ["14px", { … }] }`.
         const strings = node.filter((item): item is string => typeof item === "string");
         const quoted = (name: string) =>
             /^[\w-]+$/.test(name) || GENERIC.has(name) ? name : `"${name}"`;

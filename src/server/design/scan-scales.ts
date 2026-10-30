@@ -633,7 +633,6 @@ export function shadowScale(facts: Facts, book: Book, result: Inferred): void {
 
     lifts.forEach(([value], at) => {
         const wanted = (LADDERS[lifts.length] ?? LADDER)[at]!;
-        // A name the project already gave to another shadow goes to the next free step of the ladder.
         const name = free(wanted) ? wanted : (LADDER.find(free) ?? `extra-${at + 1}`);
 
         book.add(["shadow", name], { $value: value, $type: "shadow" });

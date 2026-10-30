@@ -25,7 +25,6 @@ import type { Variable } from "./scan-variables.ts";
 export interface RoleChoice {
     role: RoleName;
     hex: string;
-    /** `name` when a variable's name chose it; `use` when how the color is used did. */
     basis: "name" | "use";
     source: string;
     score: number;
@@ -79,7 +78,6 @@ function namedScore(
     }
 
     if (STATUS.includes(role as (typeof STATUS)[number])) {
-        // Of a palette's steps, the middle one is the color (`warn-500`).
         if (segs.some((seg) => /^\d{3}$/.test(seg))) {
             score += segs.includes("500") ? 8 : segs.includes("600") ? 5 : 0;
         }
@@ -215,7 +213,6 @@ export function chooseRoles(
 
     pickNamed("background", undefined);
 
-    // The page the text sits on: the named background, else the neutral color most used on the page's root.
     const bg =
         chosen.background === undefined
             ? entries
@@ -272,7 +269,6 @@ export function chooseRoles(
         !used(color.hex) && color.rgba.a > 0.9 && color.c < chroma;
 
     if (chosen.surface === undefined && page !== undefined) {
-        // A background on a card or a panel counts three times.
         const top = best(
             neutral.filter(
                 (color) =>
@@ -309,7 +305,6 @@ export function chooseRoles(
 
     if (chosen.muted === undefined && ink !== undefined && page !== undefined) {
         const inkRatio = contrastRatio(ink.rgba, page.rgba);
-        // A quiet text is a gray, and clearly softer than the body text.
         const top = best(
             entries.filter((color) => {
                 const ratio = contrastRatio(color.rgba, page.rgba);
@@ -351,7 +346,6 @@ export function chooseRoles(
     }
 
     const chroma = entries.filter((color) => color.c >= 0.07 && color.rgba.a > 0.9);
-    // A color that a variable names for a status or a notice (`--invalid`, `--note`) is not the brand.
     const notice = (color: ColorEntry) =>
         color.names.some(
             (each) =>
@@ -520,7 +514,6 @@ export function chooseColorRoles(context: InferContext): ColorRoles {
     };
 
     for (const [role, choice] of Object.entries(lightRoles) as [RoleName, RoleChoice][]) {
-        // The variable that holds a role's color holds its dark value too: the named one, else the most used one.
         const holder =
             choice.basis === "name"
                 ? colorVars.find((entry) => entry.variable.name === choice.source)

@@ -48,7 +48,6 @@ const fluid = (found: { text: string; via?: Variable } | undefined) => {
         : { ...found!, text: clamp[1]!.trim() };
 };
 
-// What the author wrote when it is a color; the computed color for a `color-mix()` or a `var()`.
 function asColor(text: string | undefined, name: string, mode: Mode, index: Map<string, Variable>) {
     if (text === undefined) {
         return undefined;

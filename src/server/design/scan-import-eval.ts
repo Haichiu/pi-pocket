@@ -213,7 +213,6 @@ export class Mode {
 
         const whole = wholeReference(text);
 
-        // A value that is only a reference keeps the target's form (a shadow, a list, a number).
         if (whole !== undefined) {
             return this.valueOf(this.keyOf(whole), stack);
         }

@@ -30,7 +30,6 @@ interface Found {
 
 export interface Imported extends Found {
     files: string[];
-    // A Tokens Studio source was read: it is one for sure, however few tokens it holds.
     certain: boolean;
     // Sorted into modes only once every file is read, by `finishImports`.
     pending: Pending[];

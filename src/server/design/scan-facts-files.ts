@@ -145,7 +145,6 @@ export function ingestFile(facts: Facts, rel: string, extension: string, raw: st
             facts.rootClasses.add(name);
         }
     });
-    // How often a class is used weighs the rules that set a color by that class.
     eachMatch(text, MARKUP_CLASS, 4000, (match) => {
         for (const name of classNames(match[1]!, 40)) {
             bump(facts.classCount, name);

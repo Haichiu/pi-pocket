@@ -49,7 +49,6 @@ const KINDS = [
     "surface",
 ] as const;
 
-/** `root` and `surface` count backgrounds of the page's root and of cards; `body` counts body text. */
 export type Kinds = Record<(typeof KINDS)[number], number>;
 
 export const emptyKinds = () => Object.fromEntries(KINDS.map((kind) => [kind, 0])) as Kinds;
@@ -57,7 +56,6 @@ export const emptyKinds = () => Object.fromEntries(KINDS.map((kind) => [kind, 0]
 export interface ColorFact extends Kinds {
     hex: string;
     forms: Map<string, number>;
-    /** The earlier of two equal colors is the one the author wrote first. */
     order: number;
     at?: string;
 }
@@ -83,7 +81,6 @@ export interface Facts {
     partial: boolean;
     tailwind: boolean;
     file?: string;
-    /** The mode that the file being read is named for (`dark.less`). */
     fileMode?: Scope;
     skipped: Skipped[];
     deferred: {
@@ -116,7 +113,6 @@ export interface Facts {
     classSpacing: Map<number, number>;
     classText: Map<string, number>;
     classRadius: Map<string, number>;
-    /** Scopes that set custom properties but are neither the root nor a mode, by selector. */
     scoped: Map<string, number>;
     /** Custom properties used inside a color function (`rgb(var(--c))`): their values are channels. */
     channels: Map<string, string>;

@@ -181,8 +181,6 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
         };
     }
 
-    // The text on the accent: the color of the pool that reads best on it. The pool is the mode's page and text, white
-    // and black when the mode has them, and the grays it uses only as text (a dark label on a light button).
     const onAccent = (
         accent: ColorEntry,
         entries: Map<string, ColorEntry>,

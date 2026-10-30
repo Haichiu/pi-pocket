@@ -90,7 +90,6 @@ function pageScore(rel: string, text: string): number {
     return score;
 }
 
-/** Where `pattern` (global) first matches in `text` at or after `from`, or -1. */
 function find(pattern: RegExp, text: string, from: number): number {
     pattern.lastIndex = from;
 
@@ -337,7 +336,6 @@ export function planRender(root: string): RenderPlan | undefined {
         }
     };
 
-    // Pages of different folders first: they say more than two pages of one site.
     pick((rel) => !pages.some((each) => posix.dirname(each) === posix.dirname(rel)));
     pick((rel) => !pages.includes(rel));
 

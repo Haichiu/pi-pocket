@@ -103,7 +103,6 @@ export function categorize(
         return "ease";
     }
 
-    // A path or an address is not a font stack (`--fa-font-path: "../fonts"`).
     if (
         !/[/\\]|\.(?:woff2?|ttf|otf|eot)\b|^url\(|^https?:/i.test(text) &&
         (FONT_WORDS.test(text) || (/font|family|typeface/.test(name) && /[,"']/.test(text)))
@@ -111,7 +110,6 @@ export function categorize(
         return "font";
     }
 
-    // A value made of shadow layers is a shadow, whatever the variable is called (`--lift`).
     if ((/shadow|elevation/.test(name) && /\d/.test(text)) || looksLikeShadow(text)) {
         return "shadow";
     }

@@ -90,7 +90,6 @@ export function priority(rel: string): number {
     return score - rel.split("/").length * 2;
 }
 
-// A script is read for the class names in its markup, and a Tailwind config for its theme.
 const wanted = (rel: string, name: string) =>
     STYLE.test(name) ? !name.endsWith(".d.ts") : TOKEN_JSON.test(rel) && name.endsWith(".json");
 
@@ -214,7 +213,6 @@ export function collectFiles(root: string): {
         studioSets(root, dir, 0, found);
     }
 
-    // A minified file is a build: it is read (last) only when the project has no style files of its own.
     const isMin = (rel: string) => /\.min\.[a-z]+$/i.test(rel);
     const own = found.filter((rel) => !isMin(rel) && /\.(?:css|scss|less|pcss)$/i.test(rel));
     const kept = own.length > 0 ? found.filter((rel) => !isMin(rel)) : found;

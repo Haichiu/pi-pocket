@@ -140,7 +140,6 @@ export function mergeColors(
         }
     }
 
-    // The colors that are used most: a draft needs the palette, not every shade a file ever wrote.
     const rest = [...uses.values()]
         .sort(
             (a, b) =>
@@ -159,7 +158,6 @@ export function mergeColors(
             continue;
         }
 
-        // Near a defined color, or near a more used one, or its own color.
         const target =
             out.get(fact.hex) ??
             pool.find(
@@ -269,9 +267,7 @@ export function step(l: number): number {
     return limits.find(([limit]) => l > limit)?.[1] ?? 950;
 }
 
-// A taken name moves to the nearest free step; a translucent color keeps its alpha in the name.
 export function paletteName(color: ColorEntry, taken: Set<string>): string[] {
-    // Pure white and pure black are not a step of anything.
     if (color.hex === "#ffffff" && !taken.has("color.white")) {
         return ["color", "white"];
     }
@@ -312,11 +308,9 @@ export function words(rawName: string): string[] {
         .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
         // `font-color-base` (Infima) is the text color, not a font.
         .replace(/font[-_]colou?r/gi, "text-color")
-        // `red9`, `gray12`: a name and its step.
         .replace(/([a-z]{3,})(\d{1,3})(?![\d-])/gi, "$1-$2")
         .toLowerCase()
         .split(/[-_.\s]+/);
-    // The prefixes of well-known libraries are no part of what a color is for (`--bs-body-bg`, `--ifm-color-primary`).
     const found = all.filter(
         (word) =>
             word !== "" &&
@@ -374,11 +368,9 @@ const ACCENT_WEIGHTS: Record<string, number> = {
 };
 
 const has = (segs: string[], list: readonly string[]) => segs.some((seg) => list.includes(seg));
-// A plain name (`bg`, `text-primary`, `border-1`): one or two words, all of the role's own.
 const plain = (segs: string[], words: string) =>
     segs.length <= 2 && segs.every((seg) => w(words).includes(seg) || /^\d{1,3}$/.test(seg));
 
-// 0 (not at all) to about 100.
 export function nameScore(role: RoleName, segs: string[]): number {
     if (
         segs.length === 0 ||

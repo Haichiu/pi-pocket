@@ -176,7 +176,6 @@ export function forgetSystem(cwd: string): void {
     kept.delete(cwd);
 }
 
-/** A value made from a loaded system is kept with it, by key; for any other system it is made again. */
 export function derived(system: DesignSystem, key: string, make: () => string): string {
     if (!loaded.has(system)) {
         return make();
