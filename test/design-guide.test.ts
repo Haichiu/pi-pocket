@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { designGuide } from "../src/server/design/guide.ts";
+import { DESIGN_GUIDE, designGuide } from "../src/server/design/guide.ts";
 import { MAX_BYTES, SYSTEM_FILE } from "../src/server/design/system.ts";
 
 const folders = new Set<string>();
@@ -45,8 +45,12 @@ async function render(dir: string, envCwd?: string): Promise<{ text: string; not
     return { text, notices };
 }
 
-test("the section gives all of the design instructions", async () => {
-    const { text } = await render(folder());
+test("the section names the design guide, and the guide gives all of the design instructions", async () => {
+    const section = (await render(folder())).text;
+
+    assert.ok(section.includes(DESIGN_GUIDE), "the section names the guide to read");
+    assert.match(section, /design_preview at mobile and desktop/);
+    const text = readFileSync(DESIGN_GUIDE, "utf8");
 
     for (const part of [
         "HTML artifact",

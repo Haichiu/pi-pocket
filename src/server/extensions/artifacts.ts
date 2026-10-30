@@ -7,8 +7,8 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import { extname, resolve } from "node:path";
-import { Type } from "@earendil-works/pi-ai";
+import { extname, join, resolve } from "node:path";
+import { StringEnum, Type } from "@earendil-works/pi-ai";
 import {
     defineExtension,
     defineTool,
@@ -24,6 +24,7 @@ import {
     type ArtifactType,
     type ArtifactVersion,
 } from "../docs.ts";
+import { APP_ROOT } from "../config.ts";
 import type { PocketHost } from "../host.ts";
 import { assetName, assetType } from "../http/artifact-assets.ts";
 import { expandHome } from "../paths.ts";
@@ -143,22 +144,21 @@ function applyEdits(
 }
 
 /** The bullet about the second tool, for sessions that have it. */
-const INLINE_GUIDE = `- Two tools publish HTML. artifact_inline shows the page as a card in your reply, between your paragraphs, with Preview/Code and Run/Stop, and a button that opens the viewer: use it for a small interactive piece that belongs to what you are explaining (a calculator, a chart, a form), when the person will use it right there. artifact opens it in the viewer only: use it for a whole page, a game, a Markdown document or SVG image, or anything that needs the whole screen. Both share one store: the same id adds a version, whichever tool made the earlier ones. artifact_inline takes HTML only (content or edits, no path), and says in its result which version it made; that card keeps showing that version, so an update never changes an earlier card: say what changed, and do not repeat the page in your reply. Only a call you make directly shows a card: one made inside codemode publishes a version with no card. A page made by artifact_inline stays HTML: the artifact tool cannot change its type, so use a new id for a Markdown or SVG one. Write the card's page to fit a narrow column, with no fixed height: the card grows to fit the page, up to 900 px once it runs (1200 px as a preview), then the page scrolls inside it. Its page gets the same follow-up and saved-state messages as the viewer's.
+const INLINE_GUIDE = `- artifact_inline shows the page as a card in your reply, for a small interactive piece the person uses right there (a calculator, a chart, a form); artifact opens the viewer only: use it for a whole page, a game, a Markdown document or SVG image. Both share one store. A card keeps the version its call made: after an update, say what changed and do not repeat the page. Only a call you make directly shows a card, not one inside codemode. An id made by artifact_inline stays HTML: use a new id for Markdown or SVG. Write the card's page for a narrow column with no fixed height: the card grows up to 900 px, then the page scrolls.
 `;
+
+/** The page-to-app messages (follow-up, saved state): read on demand, as few artifacts use them. */
+export const BRIDGE_GUIDE = join(APP_ROOT, "src", "server", "guides", "artifact-bridge.md");
 
 const guide = (
     inline: boolean,
 ) => `Use the artifact tool for results the user should see rendered rather than read as text: interactive demos, games, visualizations, charts, diagrams, formatted reports. Do not use it for plain answers or for project files (write those with write).
-- HTML artifacts open in a sandboxed frame on the user's device (often a phone). They cannot reach this app, its cookies, or the parent page. Make them self-contained, responsive (include a viewport meta tag), and touch-friendly.
-- Load libraries from a CDN with full URLs, such as https://esm.sh or https://cdn.jsdelivr.net. For ES modules that import bare specifiers (three.js addons import "three"), add an import map, for example: <script type="importmap">{"imports":{"three":"https://esm.sh/three@0.170.0","three/addons/":"https://esm.sh/three@0.170.0/examples/jsm/"}}</script>
-- Show loading and error states inside the page (window.onerror, a visible message), so a broken artifact explains itself.
-- In the app's viewer, an HTML artifact can ask the app for two things with parent.postMessage(message, "*"). Answers come as message events: take only those with event.source === parent. Only the page the frame first loads is heard: a page it goes on to (a link, location) gets no answer.
-  - {type:"pocket-follow-up", text, selection}: puts a message in the person's message box, for them to read and send; it is never sent by itself, and the viewer closes so the box shows. Send it from a button's click or tap: the app takes it only right after the person taps or presses a key on the page (focus alone does not count; a tap serves one follow-up), and once every 2 seconds. text is up to 2,000 characters; selection, optional, is JSON up to 2,000. The app answers {type:"pocket-follow-up", ok, error}. Use it for "Ask Pi about this" buttons.
-  - {type:"pocket-state-get", requestId, schema} and {type:"pocket-state-set", requestId, state, schema}: load and save up to 16 KB of JSON for the person using the artifact, so its controls survive a reload and follow them to other devices. requestId is 1 to 64 letters, digits, and _ . : - (others get no answer). The app answers {type:"pocket-state", requestId, ok, state, at, error}; state is null when nothing is saved. A set with state null clears it. schema, optional, is a string such as "v1" (up to 64 letters, digits, and . _ : -; a number is refused): change it when the state's shape changes, and older state then reads as null. Save after changes settle (at most 20 saves in 10 seconds).
-  - Only HTML artifacts have this (not Markdown or SVG). Neither works in a published link or a tab of its own: the page must still work when no answer comes.
-- Add images, fonts, data, stylesheets, scripts, and other HTML pages with assets: up to 200 entries of {name, path} (local file, binary allowed) or {name, content} (UTF-8 text). Names are relative paths made of letters, digits, dots, underscores, and hyphens, with no . or .. segment. One asset is at most 5 MB; one version keeps at most 20 MB. Relative URLs resolve inside the bundle. A new version keeps previous assets; replace them by name, or drop them with removeAssets. Use group (a lowercase kebab-case slug) for variations, and kind: "page" or "deck" for the design type.
-- Reuse the id to publish a new version. For small fixes, send edits against the latest version instead of the whole content.
-${inline ? INLINE_GUIDE : ""}- To publish an existing local HTML, Markdown, or SVG file without repeating its contents, give path instead of content or edits. This copies a UTF-8 snapshot (up to 2,000,000 bytes), not a live link or its neighboring assets. Everyone who can see the conversation can open the snapshot.`;
+- HTML artifacts open in a sandboxed frame on the user's device (often a phone) and cannot reach this app, its cookies, or the parent page. Make them self-contained, responsive (a viewport meta tag), and touch-friendly, with visible loading and error states (window.onerror).
+- Load libraries from a CDN with full URLs (https://esm.sh, https://cdn.jsdelivr.net). For ES modules that import bare specifiers (three.js addons import "three"), add an import map.
+- A page can ask the app to put a message in the person's message box ("Ask Pi about this"), or to save its state across reloads and devices. Before you build either, read ${BRIDGE_GUIDE}.
+- assets bundle images, fonts, data, scripts, and more pages: relative URLs resolve inside the bundle, and a new version keeps the previous assets.
+- Reuse the id to publish a new version. For small fixes, send edits instead of the whole content.
+${inline ? INLINE_GUIDE : ""}- To publish an existing local file without repeating it, give path: a snapshot that everyone who can see the conversation can open.`;
 
 type Exec = ToolRegistration["execute"];
 
@@ -506,7 +506,7 @@ const bundleParameters = {
             description: "Group variations under one lowercase kebab-case slug.",
         }),
     ),
-    kind: Type.Optional(Type.Union([Type.Literal("page"), Type.Literal("deck")])),
+    kind: Type.Optional(StringEnum(["page", "deck"] as const)),
 };
 
 export default function createArtifacts(_host: PocketHost) {
@@ -523,7 +523,7 @@ export default function createArtifacts(_host: PocketHost) {
             }),
             title: Type.String({ description: "Short human-readable title." }),
             type: Type.Optional(
-                Type.Union([Type.Literal("html"), Type.Literal("markdown"), Type.Literal("svg")], {
+                StringEnum(["html", "markdown", "svg"] as const, {
                     description:
                         "Default html for content, inferred from .html/.md/.markdown/.svg for a new path, or the existing artifact's type. A path cannot change an existing type.",
                 }),
