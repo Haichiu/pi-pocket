@@ -409,6 +409,9 @@ export function CwdSheet({ mode, fromList = false }) {
     const favoriteLabels = recentLabels(favorites, home);
     const labels = recentLabels(recent, home);
     const places = [
+        ...(server?.defaultCwd && server.defaultCwd !== home && server.defaultCwd !== "/"
+            ? [{ path: server.defaultCwd, name: "Default workspace", icon: "folder" }]
+            : []),
         ...(home ? [{ path: home, name: "Home", icon: "home" }] : []),
         { path: "/", name: "Computer", icon: "monitor" },
     ];
