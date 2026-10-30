@@ -43,6 +43,7 @@ const CHARS_PER_TOKEN = 4;
 /** What a script gets of one nested call's text: enough to filter, not enough to exhaust the VM. */
 const MAX_NESTED_CHARS = 1_000_000;
 const MEMORY_LIMIT_BYTES = 256 * 1024 * 1024;
+const MAX_NESTED_IMAGES = 4;
 
 const DESCRIPTION = `Run JavaScript that calls your other tools. The input is raw JavaScript (not JSON, no code fence), run as an async function body in a QuickJS sandbox: top-level \`await\` and \`return\` work. No Node, file system, network, or timers.
 - \`await tools.<name>({ ...args })\` takes the same arguments as calling the tool directly, resolves to its text output, and rejects with an Error when the call fails or is blocked. Calls still running when the script ends are cancelled.
@@ -197,6 +198,9 @@ export default function createCodemode(_host: PocketHost) {
                 (tool) => tool.name !== CODEMODE_TOOL,
             ) as ToolRegistration[];
             const hooks = toolHooks(agent.extensions);
+            const offered = new Set(agent.tools.map((tool) => tool.name));
+            // A tool that is not offered reaches the model only here: its images go to the result.
+            const images: OutputItem[] = [];
             const calls: CallRecord[] = [];
             const publish = () =>
                 void api
@@ -320,6 +324,14 @@ export default function createCodemode(_host: PocketHost) {
                         throw new Error(text || `Tool ${tool.name} failed`);
                     }
 
+                    if (!offered.has(tool.name)) {
+                        for (const part of result.output ?? []) {
+                            if (part.type === "image" && images.length < MAX_NESTED_IMAGES) {
+                                images.push(part);
+                            }
+                        }
+                    }
+
                     record.status = "ok";
 
                     return text;
@@ -392,6 +404,7 @@ export default function createCodemode(_host: PocketHost) {
                 items.push({ type: "text", text: `Script error:\n${formatError(result, calls)}` });
             }
 
+            items.push(...images);
             const shown = await budget(items, options.maxOutputTokens ?? MAX_OUTPUT_TOKENS);
             const header = `${result.ok ? "Script completed" : "Script failed"}\nWall time ${((performance.now() - started) / 1000).toFixed(1)} seconds\nOutput:\n`;
 

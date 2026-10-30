@@ -21,9 +21,17 @@ import { SubagentsDoc } from "../src/server/docs.ts";
 let app: App;
 /** The sections of the newest request, by name: every system message adds the ones that changed since the last. */
 let sections: Record<string, string> = {};
+let resultParts: string[] = [];
 
 const route: FauxResponseStep = (request) => {
     const { role, text } = lastText(request as never);
+    const last = (request.messages as { role: string; content?: { type: string }[] }[]).findLast(
+        (message) => message.role !== "system",
+    );
+
+    if (last?.role === "toolResult") {
+        resultParts = (last.content ?? []).map((part) => part.type);
+    }
 
     sections = Object.assign(
         {},
@@ -42,6 +50,17 @@ const route: FauxResponseStep = (request) => {
         return fauxAssistantMessage([fauxToolCall("tool_search", { query: "design_system" })], {
             stopReason: "toolUse",
         });
+    }
+
+    if (role === "user" && text.includes("screenshot from a script")) {
+        return fauxAssistantMessage(
+            [
+                fauxToolCall("codemode", {
+                    code: 'return await tools.browser({ action: "screenshot" })',
+                }),
+            ],
+            { stopReason: "toolUse" },
+        );
     }
 
     if (role === "user" && text.includes("start a browsing subagent")) {
@@ -181,6 +200,18 @@ test("on any other model, a search leaves the tool list alone and the tool is ca
     );
 
     assert.ok(callable.includes("browser"), "a script can call it");
+});
+
+test("on that route, a screenshot taken by a script reaches the model", async () => {
+    const id = await newSession(app);
+
+    await app.commands.configure(id, owner(app), {
+        model: { provider: "faux", modelId: "faux-vision" },
+    });
+    await say(app, id, "need the browser");
+    await say(app, id, "screenshot from a script");
+
+    assert.deepEqual(resultParts, ["text", "text", "image"]);
 });
 
 test("a word that is no tool's name searches, and gives at most two matches", async () => {
