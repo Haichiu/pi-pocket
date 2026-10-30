@@ -164,7 +164,6 @@
 .dsy-preview-empty p {
     max-width: 34ch;
     margin: 0;
-    line-height: 1.55;
 }
 
 .dsy-group,
@@ -593,12 +592,7 @@
     border: 1px solid var(--dsn-hair);
     border-radius: 9px;
     background: var(--dsn-fill);
-    color: var(--text);
     font-size: 13px;
-}
-
-.dsy-text {
-    width: 100%;
 }
 
 .dsy-colorfield input[type="text"]:focus,
@@ -1505,7 +1499,6 @@
 .dsy-blank p {
     max-width: 44ch;
     margin: 0;
-    line-height: 1.55;
 }
 
 .dsy-blank-mark {
