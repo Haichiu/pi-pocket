@@ -21,36 +21,34 @@ const system = loadDesignSystem(folder)!;
 after(() => rmSync(folder, { recursive: true, force: true }));
 
 test("colors are read in every form a token file has", () => {
-    const rgb = (r: number, g: number, b: number, a = 1) => ({ r, g, b, a });
+    const hex = (value: unknown) => {
+        const read = color.parseColor(value);
 
-    assert.deepEqual(color.parseColor("#3b6cf6"), rgb(59, 108, 246));
-    assert.deepEqual(color.parseColor("#FFF"), rgb(255, 255, 255));
-    assert.deepEqual(color.parseColor("#0008"), rgb(0, 0, 0, 0x88 / 255));
-    assert.deepEqual(color.parseColor("rgb(59, 108, 246)"), rgb(59, 108, 246));
-    assert.deepEqual(color.parseColor("rgb(59 108 246 / 50%)"), rgb(59, 108, 246, 0.5));
-    assert.deepEqual(color.parseColor("rgba(0,0,0,.25)"), rgb(0, 0, 0, 0.25));
-    assert.deepEqual(color.parseColor("hsl(0 100% 50%)"), rgb(255, 0, 0));
-    assert.deepEqual(color.parseColor("hsl(120deg 100% 25%)"), rgb(0, 128, 0));
-    assert.deepEqual(color.parseColor("oklch(0.628 0.2577 29.23)"), rgb(255, 0, 0));
-    assert.deepEqual(color.parseColor("oklch(1 0 0)"), rgb(255, 255, 255));
-    assert.deepEqual(color.parseColor("color(srgb 1 0.5 0 / 0.4)"), rgb(255, 128, 0, 0.4));
-    assert.deepEqual(color.parseColor("transparent"), rgb(0, 0, 0, 0));
-    assert.deepEqual(
-        color.parseColor({ colorSpace: "srgb", components: [0, 0, 0], alpha: 0.4 }),
-        rgb(0, 0, 0, 0.4),
-    );
-    assert.deepEqual(
-        color.parseColor({ colorSpace: "srgb", components: [1, 0, 0], hex: "#ff0000" }),
-        rgb(255, 0, 0),
-    );
-    assert.deepEqual(
-        color.parseColor({ colorSpace: "hsl", components: [240, 100, 50] }),
-        rgb(0, 0, 255),
-    );
-    assert.deepEqual(
-        color.parseColor({ colorSpace: "oklch", components: [1, 0, 0] }),
-        rgb(255, 255, 255),
-    );
+        return read === undefined ? undefined : color.toHex(read);
+    };
+
+    assert.deepEqual(color.parseColor("#3b6cf6"), {
+        r: 59 / 255,
+        g: 108 / 255,
+        b: 246 / 255,
+        a: 1,
+    });
+    assert.equal(hex("#FFF"), "#ffffff");
+    assert.equal(hex("#0008"), "#00000088");
+    assert.equal(hex("rgb(59, 108, 246)"), "#3b6cf6");
+    assert.equal(hex("rgb(59 108 246 / 50%)"), "#3b6cf680");
+    assert.equal(hex("rgba(0,0,0,.25)"), "#00000040");
+    assert.equal(hex("hsl(0 100% 50%)"), "#ff0000");
+    assert.equal(hex("hsl(120deg 100% 25%)"), "#008000");
+    assert.equal(hex("oklch(0.628 0.2577 29.23)"), "#ff0000");
+    assert.equal(hex("oklch(1 0 0)"), "#ffffff");
+    assert.equal(hex("color(srgb 1 0.5 0 / 0.4)"), "#ff800066");
+    assert.equal(hex("transparent"), "#00000000");
+    assert.equal(hex({ colorSpace: "srgb", components: [0, 0, 0], alpha: 0.4 }), "#00000066");
+    assert.equal(hex({ colorSpace: "srgb", components: [1, 0, 0], hex: "#ff0000" }), "#ff0000");
+    assert.equal(hex({ colorSpace: "hsl", components: [240, 100, 50] }), "#0000ff");
+    assert.equal(hex({ colorSpace: "oklch", components: [1, 0, 0] }), "#ffffff");
+    assert.equal(hex({ colorSpace: "lab", components: [1, 2, 3] }), "#0b0200");
 
     for (const bad of [
         "",
@@ -62,21 +60,21 @@ test("colors are read in every form a token file has", () => {
         4,
         null,
         [],
-        { colorSpace: "lab", components: [1, 2, 3] },
+        { colorSpace: "cmyk", components: [1, 2, 3] },
         { components: [1] },
     ]) {
-        assert.equal(color.parseColor(bad), null, String(bad).slice(0, 20));
+        assert.equal(color.parseColor(bad), undefined, String(bad).slice(0, 20));
     }
 });
 
 test("a color is written back as hex, in the dialect of the value it replaces", () => {
-    assert.equal(color.toHex({ r: 59, g: 108, b: 246, a: 1 }), "#3b6cf6");
+    assert.equal(color.toHex({ r: 59 / 255, g: 108 / 255, b: 246 / 255, a: 1 }), "#3b6cf6");
     assert.equal(color.toHex({ r: 0, g: 0, b: 0, a: 0.5 }), "#00000080");
-    assert.equal(color.toOklchText({ r: 255, g: 255, b: 255, a: 1 }), "oklch(1 0 0)");
-    assert.equal(color.writeColor({ r: 255, g: 0, b: 0, a: 1 }, "#000000"), "#ff0000");
+    assert.equal(color.toOklchText({ r: 1, g: 1, b: 1, a: 1 }), "oklch(1 0 0)");
+    assert.equal(color.writeColor({ r: 1, g: 0, b: 0, a: 1 }, "#000000"), "#ff0000");
     assert.deepEqual(
         color.writeColor(
-            { r: 255, g: 0, b: 0, a: 0.5 },
+            { r: 1, g: 0, b: 0, a: 0.5 },
             { colorSpace: "srgb", components: [0, 0, 0] },
         ),
         {
@@ -90,19 +88,19 @@ test("a color is written back as hex, in the dialect of the value it replaces", 
 
 test("contrast follows WCAG 2.2, and a see-through color is laid over its ground first", () => {
     const black = { r: 0, g: 0, b: 0, a: 1 };
-    const white = { r: 255, g: 255, b: 255, a: 1 };
+    const white = { r: 1, g: 1, b: 1, a: 1 };
 
-    assert.equal(Math.round(color.contrast(black, white) * 10) / 10, 21);
-    assert.equal(color.contrast(white, white), 1);
+    assert.equal(Math.round(color.contrastRatio(black, white) * 10) / 10, 21);
+    assert.equal(color.contrastRatio(white, white), 1);
     // #777 on white is 4.48:1, the classic miss of AA.
-    const gray = color.contrast(color.parseColor("#777777"), white);
+    const gray = color.contrastRatio(color.parseColor("#777777"), white);
 
     assert.ok(gray > 4.4 && gray < 4.5);
     assert.equal(color.grade(gray, 4.5).pass, false);
     assert.equal(color.grade(gray, 4.5).level, "AA large");
     assert.equal(color.grade(10).level, "AAA");
     assert.equal(color.ratioText(4.4999), "4.4:1");
-    assert.ok(color.contrast({ ...black, a: 0.5 }, white) < 5);
+    assert.ok(color.contrastRatio({ ...black, a: 0.5 }, white) < 5);
 });
 
 test("a token belongs to the section its type, or the words of its name, say", () => {
