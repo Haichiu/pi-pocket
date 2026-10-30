@@ -434,6 +434,13 @@ test("the picker pins the design system, and it opens as sections of tokens", re
         "the roles come before the palette",
     );
     assert.equal(await count(".dsy-step-tile"), 0, "and the palette starts folded");
+    assert.deepEqual(
+        await inPage<boolean[]>(
+            `return JSON.stringify(["true", "false"].map((folded) => getComputedStyle(document.querySelector('.dsy-group[data-folded="' + folded + '"] .dsy-group-chev')).transform !== "none"))`,
+        ),
+        [true, false],
+        "the chevron turns when a group is folded",
+    );
     const counted = await inPage<{ tab: string; roles: string; palette: string }>(`
         const group = (title) => [...document.querySelectorAll(".dsy-group-head")].find((each) => each.querySelector(".dsy-group-title")?.textContent === title);
         return JSON.stringify({
