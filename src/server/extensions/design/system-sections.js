@@ -37,7 +37,7 @@ const SCALES = {
 const hexOf = (value) => {
     const color = parseColor(value);
 
-    return color === null ? "" : toHex(color);
+    return color === undefined ? "" : toHex(color);
 };
 
 function styleMeta(value) {

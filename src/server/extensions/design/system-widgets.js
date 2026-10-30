@@ -252,7 +252,7 @@ export function createSystemWidgets(env) {
             <input
                 type="text"
                 class=${`mono ${problem ? "bad" : ""}`}
-                value=${draft ?? (color === null ? "" : SHOW_COLOR[format](color))}
+                value=${draft ?? (color === undefined ? "" : SHOW_COLOR[format](color))}
                 disabled=${disabled}
                 spellcheck="false"
                 autocomplete="off"
