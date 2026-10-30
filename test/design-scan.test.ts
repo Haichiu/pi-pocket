@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { LIMITS, checkTokensBlock, scanRoot, scanTokens } from "../src/server/design/scan.ts";
+import { planRender } from "../src/server/design/scan-render-pages.ts";
 import { designSystemTool } from "../src/server/design/system.ts";
 
 const dirs: string[] = [];
@@ -170,6 +171,16 @@ test("the file limit ends the walk and says so", () => {
 
     assert.equal(scan.files.length, LIMITS.files);
     assert.equal(scan.partial, true);
+});
+
+test("the rendered scan picks its pages in linear time, also from openers with no end", () => {
+    const dir = project({
+        "index.html": `<!doctype html><body>${"<style ".repeat(30_000)}${"<p ".repeat(30_000)}`,
+    });
+    const start = performance.now();
+
+    planRender(dir);
+    assert.ok(performance.now() - start < 1_000);
 });
 
 test("checkTokensBlock: none is false, broken or non-object throws", () => {

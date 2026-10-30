@@ -83,23 +83,107 @@ function pageScore(rel: string, text: string): number {
         score -= 25;
     }
 
-    const bodyText = text
-        .replace(/<(script|style)[\s\S]*?<\/\1>/gi, "")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ");
-
-    if (bodyText.trim().length < 40 && !/<script[^>]+src=/i.test(text)) {
+    if (shownText(text).trim().length < 40 && !scriptWithSource(text)) {
         score -= 20;
     }
 
     return score;
 }
 
+/** Where `pattern` (global) first matches in `text` at or after `from`, or -1. */
+function find(pattern: RegExp, text: string, from: number): number {
+    pattern.lastIndex = from;
+
+    return pattern.exec(text)?.index ?? -1;
+}
+
+const BLOCK_END: Record<string, RegExp> = { script: /<\/script>/gi, style: /<\/style>/gi };
+
+/**
+ * The page's text without its scripts, styles, and tags, as `/<(script|style)[\s\S]*?<\/\1>/gi`, then `/<[^>]+>/g`
+ * would leave it, in linear time: those expressions take quadratic time on many openers with no end.
+ */
+function shownText(text: string): string {
+    const opener = /<(script|style)/gi;
+    const noEnd = new Set<string>();
+    let kept = "";
+    let at = 0;
+
+    for (let found = opener.exec(text); found !== null; found = opener.exec(text)) {
+        const kind = found[1]!.toLowerCase();
+        const end = noEnd.has(kind) ? -1 : find(BLOCK_END[kind]!, text, opener.lastIndex);
+
+        if (end === -1) {
+            noEnd.add(kind);
+            opener.lastIndex = found.index + 1;
+            continue;
+        }
+
+        kept += text.slice(at, found.index);
+        at = end + kind.length + 3;
+        opener.lastIndex = at;
+    }
+
+    kept += text.slice(at);
+
+    let shown = "";
+
+    for (let start = 0; start < kept.length;) {
+        const tag = kept.indexOf("<", start);
+        const close = tag === -1 ? -1 : kept.indexOf(">", tag + 1);
+
+        if (close === -1) {
+            shown += kept.slice(start);
+            break;
+        }
+
+        if (close === tag + 1) {
+            shown += kept.slice(start, tag + 1);
+            start = tag + 1;
+            continue;
+        }
+
+        shown += `${kept.slice(start, tag)} `;
+        start = close + 1;
+    }
+
+    return shown.replace(/\s+/g, " ");
+}
+
+/** `/<script[^>]+src=/i.test(text)`, in linear time. */
+function scriptWithSource(text: string): boolean {
+    const opener = /<script/gi;
+    const source = /src=/gi;
+    let close = -1;
+    let at = -1;
+
+    for (let found = opener.exec(text); found !== null; found = opener.exec(text)) {
+        if (close < found.index + 7) {
+            close = text.indexOf(">", found.index + 7);
+            close = close === -1 ? text.length : close;
+        }
+
+        if (at < found.index + 8) {
+            at = find(source, text, found.index + 8);
+        }
+
+        if (at === -1) {
+            return false;
+        }
+
+        if (at < close) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function relink(html: string, page: string, has: (path: string) => boolean): string {
     const dir = posix.dirname(page);
 
     return html.replace(
-        /\b(src|href|poster|data-src|data-href)\s*=\s*(["'])\/(?!\/)([^"'#?]*)([^"']*)\2/gi,
+        /\b(src|href|poster|data-src|data-href)\s*=\s*(["'])\/(?!\/)([^"'#?]*)((?:[#?][^"']*)?)\2/gi,
         (whole, attribute: string, quote: string, path: string, rest: string) => {
             for (let base = dir; ; base = posix.dirname(base)) {
                 const candidate = base === "." ? path : posix.join(base, path);
