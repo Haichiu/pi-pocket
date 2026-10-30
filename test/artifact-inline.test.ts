@@ -147,7 +147,6 @@ test("the module has both tools, and the guide says when to use each", async () 
 
     assert.match(withBoth, /artifact_inline shows the page as a card in your reply/);
     assert.match(withBoth, /only a call you make directly shows a card/i);
-    // The page-to-app messages are read on demand: the section names the guide, and the guide has the rules.
     assert.ok(withBoth.includes(BRIDGE_GUIDE), "the section names the bridge guide");
     const bridge = readFileSync(BRIDGE_GUIDE, "utf8");
 

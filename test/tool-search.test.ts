@@ -1,4 +1,3 @@
-// Tool search: tools that few conversations use (and their prompt sections) wait until Pi searches for them.
 import {
     type App,
     cleanUp,
@@ -130,7 +129,6 @@ test("a new conversation is offered tool_search, not the tools that wait, and th
     }
 });
 
-/** A session on `faux-native`: the model of a provider that takes tool changes in the messages. */
 async function nativeSession() {
     const id = await newSession(app);
 

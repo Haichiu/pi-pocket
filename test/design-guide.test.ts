@@ -23,9 +23,7 @@ import { loadSystem } from "./design-system-loader.ts";
 import { MAX_BYTES, SYSTEM_FILE } from "../src/server/design/system.ts";
 
 const folders = new Set<string>();
-/** The guide that the section points to: Pi reads it before it makes or changes a design. */
 const GUIDE = readFileSync(DESIGN_GUIDE, "utf8");
-/** The guide's last HTML example: the skeleton on a design system. */
 const SYSTEM_EXAMPLE = GUIDE.slice(GUIDE.lastIndexOf("```html\n") + 8, GUIDE.lastIndexOf("\n```"));
 
 after(async () => {

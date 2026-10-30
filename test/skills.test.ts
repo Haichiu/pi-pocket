@@ -229,7 +229,6 @@ test("a session lists them as /skill: commands and in its system prompt", async 
     await say(app, id, "hello");
     assert.match(prompt, /- everywhere: The everywhere skill\./);
     assert.match(prompt, /- here: The here skill\./);
-    // The folder is named once, as <folder>/<name>/SKILL.md, for all of its skills.
     assert.ok(prompt.includes(join(project, ".agents", "skills", "<name>", "SKILL.md")));
     await say(app, id, "/skill:here do the thing");
     assert.match((await modelTexts(app, id)).join("\n"), /<skill name=\\"here\\" location=/);

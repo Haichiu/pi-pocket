@@ -1,4 +1,3 @@
-// The prompt budget: what Pi Pocket adds to the first request of a plain session stays small (issue #222).
 import { cleanUp, newSession, openApp, say, scriptedModel } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";

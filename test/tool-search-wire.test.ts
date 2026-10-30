@@ -1,6 +1,4 @@
-// What a load does to the request on the wire. A model with mid-conversation tool changes (Claude 4.8 and 5 and later)
-// is told of a tool in a `tool_addition` block of the messages, so its tool list, and the prompt cache that starts
-// with it, stay as they were. Any other model is told the tool's description and parameters in the search result, and calls it from a codemode script, so its list does not change either.
+// A load never changes the tool list on the wire, so the prompt cache that starts with it stays.
 import { cleanUp, context, owner, root, work, home } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -10,7 +8,6 @@ import { after, test } from "node:test";
 
 const { PocketApp } = await import("../src/server/app.ts");
 
-/** Request bodies a fake Anthropic endpoint got, oldest first. */
 const bodies: { tools?: { name: string }[]; messages: unknown[] }[] = [];
 
 const sse = (events: object[]) =>
@@ -139,7 +136,6 @@ after(async () => {
     cleanUp();
 });
 
-/** The requests of a session with `modelId` that says hi, asks for the browser, and says more. */
 async function requests(modelId: string) {
     const { id } = await app.commands.createSession(owner(app), { cwd: work });
 

@@ -1,4 +1,3 @@
-// The skills list in the system prompt: one line per skill, each usual folder named once.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Skill } from "@earendil-works/pi-coding-agent";

@@ -144,7 +144,6 @@ export async function newSession(app: App, cwd = work): Promise<ConversationId> 
     return id;
 }
 
-/** Offer tools that wait to be searched for (`tool_search`), as if Pi had loaded them in this session. */
 export async function loadTools(app: App, id: ConversationId, ...names: string[]): Promise<void> {
     await (
         await app.conversation(id)
