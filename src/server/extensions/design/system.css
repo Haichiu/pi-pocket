@@ -1,7 +1,3 @@
-.dsy-bars {
-    padding-bottom: 0;
-}
-
 .dsy-modes button {
     padding: 0 10px;
 }
@@ -55,10 +51,6 @@
         #000 calc(100% - 26px),
         transparent
     );
-}
-
-.dsy-tabs-end .icon-button {
-    position: relative;
 }
 
 .dsy-tabs-end .icon-button.on {
@@ -122,8 +114,6 @@
     border: 0;
     border-radius: 8px;
     background: var(--dsn-fill);
-    color: var(--text);
-    font: inherit;
     font-weight: 600;
 }
 
@@ -356,13 +346,11 @@
     width: 32px;
     height: 32px;
     border-radius: 8px;
-    color: var(--muted);
     transition: transform 160ms var(--ease-out, ease);
 }
 
 .dsy-row.open > .dsy-row-main .dsy-row-open {
     transform: rotate(180deg);
-    color: var(--text);
 }
 
 .dsy-row.stacked .dsy-row-main {
@@ -375,11 +363,7 @@
     gap: 5px;
     max-width: 100%;
     min-height: 24px;
-    padding: 0;
     border-radius: 5px;
-    color: var(--text);
-    font-family: var(--mono, ui-monospace, monospace);
-    font-size: 12.5px;
     text-align: left;
     overflow-wrap: break-word;
 }
@@ -664,9 +648,6 @@
     padding: 0 9px;
     border-radius: 999px;
     background: var(--dsn-fill-2);
-    color: var(--muted);
-    font-family: var(--mono, ui-monospace, monospace);
-    font-size: 11px;
 }
 
 .dsy-amount {
@@ -690,7 +671,6 @@
     height: 40px;
     border-radius: 9px;
     background: var(--dsn-fill);
-    color: var(--muted);
 }
 
 .dsy-step:disabled {
@@ -798,8 +778,6 @@
 }
 
 .dsy-target-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
     font-size: 12.5px;
 }
 
@@ -1106,8 +1084,6 @@
     overflow: hidden;
     color: var(--muted);
     font-size: 9.5px;
-    text-align: center;
-    text-overflow: clip;
     white-space: nowrap;
 }
 
@@ -1128,7 +1104,6 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    min-width: 0;
 }
 
 .dsy-motion-sub > .mono {
@@ -1147,7 +1122,6 @@
 }
 
 .dsy-corner {
-    display: block;
     width: 56px;
     height: 56px;
     border: 2px solid var(--accent);
@@ -1197,7 +1171,6 @@
 }
 
 .dsy-leading {
-    display: inline-block;
     flex: none;
     width: 40px;
     padding: 4px 0;
@@ -1225,7 +1198,6 @@
 }
 
 .dsy-space i {
-    display: block;
     height: 14px;
     border-radius: 4px;
     background: color-mix(in srgb, var(--accent) 75%, transparent);
@@ -1234,7 +1206,6 @@
 .dsy-track {
     position: relative;
     display: block;
-    width: 100%;
     max-width: 280px;
     height: 24px;
     margin-top: 3px;
@@ -1260,7 +1231,6 @@
     height: 40px;
     border-radius: 50%;
     background: var(--dsn-accent-soft);
-    color: var(--accent);
 }
 
 .dsy-play:disabled {
@@ -1275,14 +1245,12 @@
 .dsy-curve-axis {
     fill: none;
     stroke: var(--dsn-hair);
-    stroke-width: 1;
 }
 
 .dsy-curve-handle {
     fill: none;
     stroke: var(--muted);
     stroke-dasharray: 2 3;
-    stroke-width: 1;
     opacity: 0.6;
 }
 
@@ -1379,7 +1347,6 @@
     width: 100%;
     height: 120px;
     border: 0;
-    background: transparent;
 }
 
 .dsy-usage {
@@ -1453,15 +1420,12 @@
 }
 
 .dsy-write textarea {
-    width: 100%;
     min-height: 320px;
     padding: 12px;
     border: 1px solid var(--dsn-hair);
     border-radius: 12px;
     background: var(--dsn-fill);
-    color: var(--text);
     font-size: 13px;
-    line-height: 1.55;
     resize: vertical;
 }
 
@@ -1497,9 +1461,7 @@
     padding: 0 4px;
     border: 0;
     background: none;
-    color: var(--text);
     font-size: 16px;
-    outline: none;
 }
 
 .dsy-readonly {
@@ -1542,7 +1504,6 @@
 }
 
 .dsy-problems-head > svg:last-child {
-    flex: none;
     color: var(--muted);
     transition: transform 160ms var(--ease-out, ease);
 }
@@ -1636,7 +1597,6 @@
 }
 
 .dsy-legacy svg {
-    flex: none;
     margin-top: 3px;
 }
 
@@ -1856,7 +1816,6 @@
 }
 
 .dsy-card-tile.inherited .dsy-hex {
-    color: var(--muted);
     text-decoration: underline dotted;
     text-underline-offset: 3px;
 }
@@ -1961,10 +1920,6 @@
     min-width: 0;
 }
 
-.dsy-part .dsy-amount {
-    flex-wrap: nowrap;
-}
-
 .dsy-part-link {
     display: flex;
     flex-wrap: wrap;
@@ -2008,8 +1963,6 @@
     padding: 0 10px;
     border-radius: 8px;
     background: var(--dsn-fill);
-    font-size: 13px;
-    font-weight: 600;
 }
 
 .dsy-modemenu .dsn-menu-item.on {
@@ -2108,7 +2061,6 @@
     height: 30px;
     border-radius: 8px;
     background: color-mix(in srgb, var(--bg) 82%, transparent);
-    color: var(--muted);
 }
 
 @media (hover: hover) {

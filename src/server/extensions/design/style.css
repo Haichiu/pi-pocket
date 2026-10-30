@@ -1369,8 +1369,6 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
     border: 1px solid var(--dsn-hair);
     border-radius: 8px;
     background: var(--dsn-fill);
-    color: var(--text);
-    font: inherit;
 }
 
 .dsy-tag {
@@ -1649,10 +1647,6 @@ button.dsy-chip:disabled {
         8px 0 0 var(--dsn-accent-soft);
 }
 
-button.dsy-pin-button {
-    cursor: pointer;
-}
-
 button.dsy-pin-button[aria-pressed="true"] {
     box-shadow:
         0 0 0 2px var(--bg),
@@ -1673,9 +1667,7 @@ button.dsy-pin-button[aria-pressed="true"] {
     width: 1px;
     height: 1px;
     margin: -1px;
-    padding: 0;
     overflow: hidden;
-    border: 0;
     clip-path: inset(50%);
     white-space: nowrap;
 }
@@ -1763,9 +1755,6 @@ button.dsy-pin-button[aria-pressed="true"] {
     padding: 0 10px;
     border-radius: 7px;
     background: var(--dsn-fill);
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 600;
 }
 
 @media (hover: hover) {
@@ -1796,7 +1785,6 @@ button.dsy-pin-button[aria-pressed="true"] {
 }
 
 .dsy-accepted-head > svg {
-    flex: none;
     color: var(--muted);
     transition: transform 0.15s;
 }
