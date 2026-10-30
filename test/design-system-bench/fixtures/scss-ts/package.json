@@ -1,9 +1,0 @@
-{
-    "name": "harbor-ui",
-    "private": true,
-    "type": "module",
-    "version": "2.3.1",
-    "dependencies": {
-        "sass": "1.77.0"
-    }
-}
