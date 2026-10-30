@@ -1150,16 +1150,16 @@ export function createSystemSections(env, widgets) {
     }
 
     return {
-        Colors: listed("colors", colorGroups),
-        Type: listed("type", (ctx, groups) => rowGroups(ctx, groups, TypeRow)),
-        Spacing: scaleSection("spacing", spaceTile),
-        Radii: scaleSection("radii", radiusTile),
-        Shadows: listed("shadows", shadowGroups),
-        Motion: listed("motion", (ctx, groups) =>
+        colors: listed("colors", colorGroups),
+        type: listed("type", (ctx, groups) => rowGroups(ctx, groups, TypeRow)),
+        spacing: scaleSection("spacing", spaceTile),
+        radii: scaleSection("radii", radiusTile),
+        shadows: listed("shadows", shadowGroups),
+        motion: listed("motion", (ctx, groups) =>
             rowGroups(ctx, groups, MotionRow, { easing: easingOf(ctx) }),
         ),
-        Other: ({ ctx }) => rowGroups(ctx, groupsFor(ctx, "other"), OtherRow),
-        Components,
-        Guidelines,
+        other: ({ ctx }) => rowGroups(ctx, groupsFor(ctx, "other"), OtherRow),
+        components: Components,
+        guidelines: Guidelines,
     };
 }
