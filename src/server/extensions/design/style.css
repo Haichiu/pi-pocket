@@ -1393,7 +1393,8 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
     color: var(--warn);
 }
 
-.dsy-tag.bad {
+.dsy-tag.bad,
+.button.danger {
     background: var(--err-soft);
     color: var(--err);
 }
@@ -1432,11 +1433,6 @@ button.dsy-chip:disabled {
         background: var(--dsn-accent-soft);
         color: var(--accent);
     }
-}
-
-.button.danger {
-    background: var(--err-soft);
-    color: var(--err);
 }
 
 .dsy-check-options {
