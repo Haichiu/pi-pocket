@@ -1988,7 +1988,7 @@ function backgroundNow() {
 }
 
 const backgroundTitle = (count) =>
-    `${count} ${count === 1 ? "command runs" : "commands run"} in the background: open Running now to see or stop ${count === 1 ? "it" : "them"}`;
+    `${count} ${count === 1 ? "command runs" : "commands run"} in the background: open Background to watch ${count === 1 ? "it" : "them"}, or Running now to stop one`;
 
 defineItem("status", {
     id: "core:background",
@@ -2003,7 +2003,7 @@ defineItem("status", {
                 class="background-now"
                 aria-label=${backgroundTitle(count)}
                 title=${backgroundTitle(count)}
-                onClick=${() => openSheet({ type: "running" })}
+                onClick=${() => openSheet({ type: "background" })}
             >
                 <span class="dot" aria-hidden="true"></span>
                 <span class="num">${count}</span>
