@@ -7628,6 +7628,42 @@ div.group-head {
     color: var(--faint);
 }
 
+/* Pin default workspace to always open there for new sessions. */
+.fp-pin {
+    flex: none;
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-sm, 4px);
+    color: var(--faint);
+    opacity: 0;
+    transition:
+        opacity var(--t-fast, 0.15s),
+        color var(--t-fast, 0.15s);
+}
+
+.fp-place:hover .fp-pin,
+.fp-pin.on {
+    opacity: 1;
+}
+
+.fp-pin.on {
+    color: var(--brand);
+}
+
+@media (hover: hover) {
+    .fp-pin:hover {
+        color: var(--accent);
+    }
+
+    .fp-pin.on:hover {
+        color: var(--brand);
+    }
+}
+
 .fp-places-title {
     margin: 10px 10px 4px;
     font-size: 12px;
