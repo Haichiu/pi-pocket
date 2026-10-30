@@ -6,6 +6,7 @@ import {
     type App,
     cleanUp,
     lastText,
+    loadTools,
     newSession,
     openApp,
     owner,
@@ -591,6 +592,7 @@ test(
 
 test("a hook can keep Pi's own browser tool from typing into a password field", real, async () => {
     const id = await newSession(app);
+    await loadTools(app, id, "browser");
     const { createHandler } = await import("../src/server/http.ts");
     const server = createServer(
         createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} }),
