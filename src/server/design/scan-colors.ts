@@ -117,7 +117,7 @@ export function distance(a: ColorEntry, b: ColorEntry): number {
     return Math.hypot(a.l - b.l, a.la - b.la, a.lb - b.lb);
 }
 
-export const totalUses = (fact: ColorFact | undefined) =>
+const totalUses = (fact: ColorFact | undefined) =>
     fact === undefined ? 0 : fact.bg + fact.text + fact.border + fact.fill + fact.other;
 
 const MAX_COLORS = 300;

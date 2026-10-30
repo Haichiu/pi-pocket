@@ -411,7 +411,7 @@ export function countsLine(ctx: Ctx, id: SectionId): string {
     return count.total === 0 ? "" : `<p class="counts">${parts.join(" · ")}</p>`;
 }
 
-function modeCell(ctx: Ctx, token: ResolvedToken, mode: string, across: number): string {
+function modeCell(token: ResolvedToken, mode: string, across: number): string {
     const value = valueIn(token, mode);
     const hex = token.type === "color" ? hexOf(token, mode) : undefined;
     const body = `${hex === undefined ? "" : `<i class="chip" style="background:${esc(hex)}"></i>`}${esc(clip(plain(token.type, value), 160))}`;
@@ -429,8 +429,8 @@ export function tableRows(ctx: Ctx, tokens: ResolvedToken[]): string {
             );
             const same = ctx.modes.length > 1 && texts.every((text) => text === texts[0]);
             const cells = same
-                ? modeCell(ctx, token, ctx.modes[0]!, ctx.modes.length)
-                : ctx.modes.map((mode) => modeCell(ctx, token, mode, 1)).join("");
+                ? modeCell(token, ctx.modes[0]!, ctx.modes.length)
+                : ctx.modes.map((mode) => modeCell(token, mode, 1)).join("");
             const deprecated =
                 token.deprecated === undefined || token.deprecated === false
                     ? ""

@@ -30,7 +30,7 @@ export interface RoleChoice {
     score: number;
 }
 
-export interface VarColor {
+interface VarColor {
     name: string;
     hex: string;
     uses: number;
@@ -133,7 +133,7 @@ function namedScore(
 }
 
 // `colors` is every color of the project; `named` is the subset that variables hold.
-export function chooseRoles(
+function chooseRoles(
     colors: Map<string, ColorEntry>,
     named: VarColor[],
 ): Partial<Record<RoleName, RoleChoice>> {

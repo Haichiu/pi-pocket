@@ -280,7 +280,7 @@ const total = (map: Map<unknown, number | { count: number }>): number =>
 
 const counted = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
-export function reviewScales(facts: Facts, explicit: Set<Category>, result: Inferred): string[] {
+function reviewScales(facts: Facts, explicit: Set<Category>, result: Inferred): string[] {
     const lines: string[] = [];
 
     const guess = (category: Category, label: string, distinct: number, uses: number) => {
