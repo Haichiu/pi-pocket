@@ -192,7 +192,8 @@ export default function createCodemode(_host: PocketHost) {
             const started = performance.now();
             const { code, options } = parseCodemodeSource(args.code);
             const agent = await api.agent(context);
-            const callable = agent.tools.filter(
+            // Every tool a tool may call, those that wait to be searched for (`tool-search.ts`) too.
+            const callable = agent.callable.filter(
                 (tool) => tool.name !== CODEMODE_TOOL,
             ) as ToolRegistration[];
             const hooks = toolHooks(agent.extensions);

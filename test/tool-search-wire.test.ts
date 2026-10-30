@@ -1,6 +1,6 @@
 // What a load does to the request on the wire. A model with mid-conversation tool changes (Claude 4.8 and 5 and later)
 // is told of a tool in a `tool_addition` block of the messages, so its tool list, and the prompt cache that starts
-// with it, stay as they were. Any other model gets the tool appended to the list, which writes the cache again once.
+// with it, stay as they were. Any other model is told the tool's description and parameters in the search result, and calls it from a codemode script, so its list does not change either.
 import { cleanUp, context, owner, root, work, home } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -175,12 +175,12 @@ test("on a model with mid-conversation tool changes, a load leaves the tool list
     assert.ok(last.additions >= 1, "the tool came in a tool_addition block of the messages");
 });
 
-test("on any other model, a load appends the tool to the list", async () => {
+test("on any other model, a load leaves the tool list as it was too, and the tool comes in a codemode script", async () => {
     const sent = await requests("plain");
     const first = sent[0]!;
     const last = sent.at(-1)!;
 
     assert.ok(!first.tools.includes("browser"));
-    assert.ok(last.tools.includes("browser"), "the list changed: the cache is written again once");
-    assert.equal(last.additions, 0);
+    assert.deepEqual(last.tools, first.tools, "nothing is appended to the list");
+    assert.equal(last.additions, 0, "and no tool_addition block is sent");
 });

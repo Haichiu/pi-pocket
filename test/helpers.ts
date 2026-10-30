@@ -59,7 +59,13 @@ export function scriptedModel(route: FauxResponseStep = echo) {
             { id: "faux-1" },
             { id: "faux-2" },
             { id: "faux-vision", input: ["text", "image"] },
+            { id: "faux-native" },
         ],
+    });
+
+    // A model whose provider takes tool changes in the messages, as Claude 4.8 and 5 and later do.
+    Object.assign(faux.getModel("faux-native")!, {
+        compat: { supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true },
     });
 
     // Plenty: a test file of many subagents (each of whose turns takes one) used 200 up.

@@ -7,6 +7,7 @@ import {
     lastText,
     newSession,
     openApp,
+    owner,
     say,
     scriptedModel,
 } from "./helpers.ts";
@@ -104,8 +105,20 @@ test("a new conversation is offered tool_search, not the tools that wait, and th
     }
 });
 
-test("a query of tool names loads exactly those, with their section, for the rest of the conversation", async () => {
+/** A session on `faux-native`: the model of a provider that takes tool changes in the messages. */
+async function nativeSession() {
     const id = await newSession(app);
+
+    await app.commands.configure(id, owner(app), {
+        model: { provider: "faux", modelId: "faux-native" },
+        thinkingLevel: "off",
+    });
+
+    return id;
+}
+
+test("on a model with tool changes in the messages, a query of tool names loads exactly those, with their section", async () => {
+    const id = await nativeSession();
 
     await say(app, id, "need the browser");
     await say(app, id, "and now?");
@@ -123,17 +136,46 @@ test("a query of tool names loads exactly those, with their section, for the res
     assert.equal(sections.design_mode, undefined);
 });
 
-test("a word that is no tool's name searches, and loads at most two matches", async () => {
+test("on any other model, a search leaves the tool list alone and the tool is called from codemode", async () => {
+    const id = await newSession(app);
+
+    await say(app, id, "need the browser");
+    await say(app, id, "and now?");
+
+    const { offered, waiting } = await agent(id);
+    const result = (await app.transcripts.allEntries(id, false)).find(
+        (entry) =>
+            entry.kind === "toolResult" && (entry as { name?: string }).name === "tool_search",
+    ) as { text?: string } | undefined;
+
+    assert.ok(
+        !offered.includes("browser"),
+        "the list, where the prompt cache starts, did not change",
+    );
+    assert.ok(waiting.includes("browser"));
+    assert.match(result?.text ?? "no result", /tools\.browser\(/);
+    assert.match(result?.text ?? "no result", /Parameters \(JSON Schema\)/);
+    assert.equal(sections.browser, undefined);
+
+    const callable = (await (await app.conversation(id)).agent(context)).callable.map(
+        (tool) => tool.name,
+    );
+
+    assert.ok(callable.includes("browser"), "a script can call it");
+});
+
+test("a word that is no tool's name searches, and gives at most two matches", async () => {
     const id = await newSession(app);
 
     await say(app, id, "need pull request checks");
 
-    const { offered } = await agent(id);
-    const loaded = offered.filter((name) =>
-        ["watch_pr", "browser", "schedule", "background"].includes(name),
-    );
+    const result = (await app.transcripts.allEntries(id, false)).find(
+        (entry) =>
+            entry.kind === "toolResult" && (entry as { name?: string }).name === "tool_search",
+    ) as { text?: string } | undefined;
+    const headings = (result?.text ?? "").match(/^## /gm)?.length ?? 0;
 
-    assert.ok(loaded.length >= 1 && loaded.length <= 2, `loaded ${loaded.join(", ")}`);
+    assert.ok(headings >= 1 && headings <= 2, `matches: ${headings}`);
 });
 
 test("plan mode lets Pi load a tool", async () => {
