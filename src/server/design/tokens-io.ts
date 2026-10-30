@@ -202,10 +202,22 @@ export function readFolder(cwd: string): Folder | undefined {
         throw new Error(`.pi/design could not be read: ${(error as Error).message}`);
     }
 
+    let modeFiles = 0;
+
     for (const entry of entries) {
         const match = /^tokens(?:\.(.+))?\.json$/.exec(entry.name);
 
         if (entry.name.startsWith(".") || match === null) {
+            continue;
+        }
+
+        if (match[1] !== undefined && ++modeFiles > LIMITS.modes * 2) {
+            broken.add(entry.name);
+            problems.push({
+                level: "error",
+                file: entry.name,
+                message: `${entry.name} is not read: a design system has at most ${LIMITS.modes} modes.`,
+            });
             continue;
         }
 

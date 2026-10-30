@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -242,6 +242,24 @@ test("a mode lists the tokens its file sets, so a view can show the rest as inhe
 const tool = designSystemTool();
 const run = (dir: string, args: Record<string, unknown>) =>
     tool.execute(args as never, { agent: async () => ({ cwd: dir }) } as never, undefined as never);
+
+test("mode files past twice the mode limit are not read", () => {
+    const dir = project();
+    const folder = join(dir, ".pi", "design");
+
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "tokens.json"), "{}");
+
+    for (let i = 0; i < 40; i++) {
+        writeFileSync(join(folder, `tokens.m${i}.json`), "{}");
+    }
+
+    const unread = loadDesignSystem(dir)!.problems.filter((problem) =>
+        problem.message.includes("is not read"),
+    );
+
+    assert.equal(unread.length, 8);
+});
 
 test("a parameter that does not fit the action is refused, with the action it fits", async () => {
     const dir = project();
