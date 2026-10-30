@@ -21,6 +21,7 @@
 }
 
 .dsy-tabbar {
+    position: relative;
     display: flex;
     align-items: flex-start;
     min-width: 0;
@@ -1749,10 +1750,6 @@
     padding: 0 10px;
 }
 
-.dsy-mode-name {
-    font-weight: 600;
-}
-
 .dsy-addmode {
     display: flex;
     gap: 8px;
@@ -1821,8 +1818,8 @@
 
 .dsn[data-size="medium"] .dsy-tabs {
     flex-wrap: wrap;
+    gap: 0;
     overflow: visible;
-    row-gap: 2px;
 }
 
 .dsn[data-size="medium"] .dsy-tabs .dsn-tab:not(.on) .dsn-count,
@@ -1832,10 +1829,6 @@
 
 .dsn[data-size="medium"] .dsy-tabs-end {
     margin-left: 0;
-}
-
-.dsn[data-size="medium"] .dsy-tabs {
-    gap: 0;
 }
 
 .dsn[data-size="medium"] .dsy-tabs .dsn-tab {
@@ -1852,13 +1845,10 @@
 }
 
 .dsn[data-size="narrow"] .dsy-bars .dsn-picker {
-    padding: 0 8px;
-    gap: 6px;
-}
-
-.dsn[data-size="narrow"] .dsy-bars .dsn-picker {
     flex: 1 1 142px;
+    gap: 6px;
     min-width: 104px;
+    padding: 0 8px;
 }
 
 .dsn[data-size="narrow"] .dsy-modes {
@@ -1884,10 +1874,7 @@
 
 .dsy-tabs [role="tab"]:focus-visible,
 .dsy-group-head:focus-visible,
-.dsy-step-tile:focus-visible {
-    outline-offset: -2px;
-}
-
+.dsy-step-tile:focus-visible,
 .dsy-scroll:focus-visible {
     outline-offset: -2px;
 }
@@ -2081,10 +2068,6 @@
 
 .dsy-modemenu .dsn-menu-item.on {
     background: var(--dsn-accent-soft);
-}
-
-.dsy-tabbar {
-    position: relative;
 }
 
 .dsy-tabbar:has(.dsy-tabs[data-less="left"])::before,
