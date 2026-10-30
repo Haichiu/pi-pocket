@@ -1,6 +1,6 @@
 # Design systems in Design mode (hill climb)
 
-Status: shipped in 0.27.0. This page was the plan, the contracts between the streams, and the rubric that scored each round. What each feature does now is in [features.md](../features.md) and where its code is in [map.md](../map.md).
+Status: shipped in 0.27.0. This page was the plan, the contracts between the streams, and the rubric that scored each round. Before the release, the bench it describes, the scan's Sass evaluator and JS reader, and the framework readers were removed, and the docs page was cut down. What each feature does now is in [features.md](../features.md) and where its code is in [map.md](../map.md).
 
 ## Goal
 
