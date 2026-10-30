@@ -144,7 +144,7 @@ function applyEdits(
 }
 
 /** The bullet about the second tool, for sessions that have it. */
-const INLINE_GUIDE = `- artifact_inline shows the page as a card in your reply, for a small interactive piece the person uses right there (a calculator, a chart, a form); artifact opens the viewer only: use it for a whole page, a game, a Markdown document or SVG image. Both share one store. A card keeps the version its call made: after an update, say what changed and do not repeat the page. Only a call you make directly shows a card, not one inside codemode. An id made by artifact_inline stays HTML: use a new id for Markdown or SVG. Write the card's page for a narrow column with no fixed height: the card grows up to 900 px, then the page scrolls.
+const INLINE_GUIDE = `- artifact_inline shows the page as a card in your reply, for a small interactive piece the person uses right there (a calculator, a chart, a form); artifact opens the viewer only: use it for a whole page, a game, a Markdown document or SVG image. Both share one store. Its result says which version it made. A card keeps that version: after an update, say what changed and do not repeat the page. Only a call you make directly shows a card, not one inside codemode. An id made by artifact_inline stays HTML: use a new id for Markdown or SVG. Write the card's page for a narrow column with no fixed height: the card grows up to 900 px, then the page scrolls.
 `;
 
 /** The page-to-app messages (follow-up, saved state): read on demand, as few artifacts use them. */
@@ -158,7 +158,7 @@ const guide = (
 - A page can ask the app to put a message in the person's message box ("Ask Pi about this"), or to save its state across reloads and devices. Before you build either, read ${BRIDGE_GUIDE}.
 - assets bundle images, fonts, data, scripts, and more pages: relative URLs resolve inside the bundle, and a new version keeps the previous assets.
 - Reuse the id to publish a new version. For small fixes, send edits instead of the whole content.
-${inline ? INLINE_GUIDE : ""}- To publish an existing local file without repeating it, give path: a snapshot that everyone who can see the conversation can open.`;
+${inline ? INLINE_GUIDE : ""}- To publish an existing local file without repeating it, give path: a copy, not a live link, that everyone who can see the conversation can open.`;
 
 type Exec = ToolRegistration["execute"];
 
@@ -506,7 +506,9 @@ const bundleParameters = {
             description: "Group variations under one lowercase kebab-case slug.",
         }),
     ),
-    kind: Type.Optional(StringEnum(["page", "deck"] as const)),
+    kind: Type.Optional(
+        StringEnum(["page", "deck"] as const, { description: "page or deck (a slide deck)." }),
+    ),
 };
 
 export default function createArtifacts(_host: PocketHost) {
