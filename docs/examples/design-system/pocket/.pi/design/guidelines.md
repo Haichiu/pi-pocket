@@ -64,7 +64,7 @@ Pi Pocket looks like a tiling window manager that learned to be gentle: soft til
 ## Using the system
 
 - Link `ds/tokens.css` and use `var(--…)` for every color, size, space, radius, shadow, and duration.
-- Reuse a component from `components/` before you write a new one. Copy its markup and its classes. The CSS of every component is in `dist/components.css`.
+- Reuse a component from `components/` before you write a new one. Copy its markup and its classes. Link `ds/components.css` for the CSS of every component.
 - For dark mode, set `data-theme="dark"` on the root. The system also follows `prefers-color-scheme`.
 - A design that needs a value the system does not have asks for a new token. It does not invent one in place.
 
