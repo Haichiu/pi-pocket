@@ -996,12 +996,11 @@ export function createSystemSections(env, widgets) {
             }
             ${
                 component.tokens.length > 0 &&
-                html`<${UsedChips}
-                    names=${component.tokens}
-                    max=${8}
-                    moreClass="muted small dsy-used-more"
-                    has=${ctx.model.has}
-                />`
+                html`<${UsedChips} names=${component.tokens} max=${8} has=${ctx.model.has}>
+                    <span class="muted small dsy-used-more"
+                        >${`and ${component.tokens.length - 8} more`}</span
+                    >
+                <//>`
             }
         </article>`;
     }

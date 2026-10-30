@@ -69,7 +69,7 @@ export function createSystemWidgets(env) {
         </button>`;
     }
 
-    function UsedChips({ names, max, moreClass = "muted small", has }) {
+    function UsedChips({ names, max, has, children }) {
         return html`<div class="dsy-used">
             ${names
                 .slice(0, max)
@@ -81,7 +81,7 @@ export function createSystemWidgets(env) {
                             disabled=${has && !has(name)}
                         />`,
                 )}
-            ${names.length > max && html`<span class=${moreClass}>${`and ${names.length - max} more`}</span>`}
+            ${names.length > max && children}
         </div>`;
     }
 
@@ -823,7 +823,12 @@ export function createSystemWidgets(env) {
                     </button>`
                 }
             </div>
-            ${dependents.length > 0 && html`<${UsedChips} names=${dependents} max=${12} />`}
+            ${
+                dependents.length > 0 &&
+                html`<${UsedChips} names=${dependents} max=${12}>
+                    <span class="muted small">and ${dependents.length - 12} more</span>
+                <//>`
+            }
         </div>`;
     }
 
