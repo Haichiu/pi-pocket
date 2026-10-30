@@ -75,6 +75,8 @@ const NEXT_REPORT = /\n\n(?=\[subagent \S+ (?:answered|failed))/;
  */
 const BACKGROUND =
     /^\[background\] Task (\S+) (.+?) after ([^.\n]{1,20})\.\nCommand: (.*)\n([\s\S]*)$/;
+/** Where the next task's message starts, in a message of several that ended together (`background.ts`). */
+const NEXT_BACKGROUND = /\n\n(?=\[background\] Task )/;
 const OUTPUT_OPEN = "<background-output>\n";
 const OUTPUT_CLOSE = "\n</background-output>";
 
@@ -358,7 +360,25 @@ function UserEntry({ entry, view, users }) {
         entry.from === undefined && !view.authors?.[entry.id] ? BACKGROUND.exec(entry.text) : null;
 
     if (background) {
-        return html`<${BackgroundReport} match=${background} />`;
+        // Several tasks that ended together came as one message: a card each. A part that is not a task's start is
+        // more of the one before it.
+        const parts = [];
+
+        for (const part of entry.text.split(NEXT_BACKGROUND)) {
+            if (parts.length > 0 && !BACKGROUND.test(part)) {
+                parts[parts.length - 1] += `\n\n${part}`;
+            } else {
+                parts.push(part);
+            }
+        }
+
+        const tasks = parts.map((part) => BACKGROUND.exec(part)).filter(Boolean);
+
+        return tasks.length === 1
+            ? html`<${BackgroundReport} match=${tasks[0]} />`
+            : html`<div class="report-group">
+                  ${tasks.map((match) => html`<${BackgroundReport} match=${match} />`)}
+              </div>`;
     }
 
     const check = GOAL_CHECK.exec(entry.text);
