@@ -26,7 +26,22 @@ export interface Entry {
     type: string | undefined;
 }
 
-export const segment = (text: string) => text.replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "");
+export function segment(text: string): string {
+    const dashed = text.replace(/[^\w-]+/g, "-");
+    let start = 0;
+    let end = dashed.length;
+
+    while (start < end && dashed[start] === "-") {
+        start++;
+    }
+
+    while (end > start && dashed[end - 1] === "-") {
+        end--;
+    }
+
+    return dashed.slice(start, end);
+}
+
 export const words = (text: string) =>
     text
         .replace(/([a-z0-9])([A-Z])/g, "$1 $2")

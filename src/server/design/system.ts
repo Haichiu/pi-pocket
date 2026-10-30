@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import { INVISIBLE_CLASS, defang } from "../fence.ts";
-import { boundedText } from "./tokens-base.ts";
+import { TOKEN_TYPES, boundedText } from "./tokens-base.ts";
 import { checkTokensBlock, scanProject, scanReport, scanRoot } from "./scan.ts";
 import type { DesignSystem, SystemChange } from "./system-types.ts";
 import { readDesignFile } from "./tokens-io.ts";
@@ -325,10 +325,14 @@ export function designSystemTool(): ToolRegistration {
                         token: Type.String({ description: "A path: color.bg.surface." }),
                         value: Type.Unknown({
                             description:
-                                'A $value ("#7aa2f7", "16px", "{color.blue.500}", 600, a DTCG object) or a whole token.',
+                                'A $value ("#7aa2f7", "16px", "{color.blue.500}", 600, or a DTCG object: { colorSpace, components } for a color, { value, unit } for a dimension) or a whole token.',
                         }),
                         mode: Type.Optional(Type.String({ description: "Default: tokens.json." })),
-                        type: Type.Optional(Type.String({ description: "The $type, if new." })),
+                        type: Type.Optional(
+                            Type.String({
+                                description: `The $type, if new: ${TOKEN_TYPES.join(", ")}.`,
+                            }),
+                        ),
                         description: Type.Optional(Type.String()),
                     }),
                     { maxItems: 200, description: used("changes", "Tokens to add or change.") },
