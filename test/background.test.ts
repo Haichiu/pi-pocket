@@ -19,6 +19,7 @@ import { after, before, test } from "node:test";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { ConversationId } from "@earendil-works/pi-durable";
+import { InboxDoc } from "@earendil-works/pi-durable";
 import {
     BACKGROUND_MARKER,
     type BackgroundTask,
@@ -34,12 +35,19 @@ import { runningNow } from "../src/server/running.ts";
 
 const skip = existsSync("/proc/self/stat") ? false : "no /proc on this machine";
 
-/** Pi runs the background tool as the last message asks: `bg <json args>`. */
-const route: FauxResponseStep = (request) => {
+/** Pi runs the background tool as the last message asks: `bg <json args>`. A message starting "hold" keeps the run
+ * open for a moment, so a task can end while Pi works. */
+const route: FauxResponseStep = async (request) => {
     const { role, text } = lastText(request as never);
 
     if (role === "toolResult") {
         return fauxAssistantMessage([fauxText(`tool said: ${text}`)]);
+    }
+
+    if (text.startsWith("hold ")) {
+        await new Promise((resolve) => setTimeout(resolve, Number(text.slice(5)) * 1000));
+
+        return fauxAssistantMessage([fauxText(`held: ${text}`)]);
     }
 
     // With more than one person on the server, a message starts with whom it is from.
@@ -208,6 +216,66 @@ test(
         await until(() => !app.isBusy(id), "Pi to answer the message");
         assert.equal((await app.background.read(id, ended.id))?.text, "one\ntwo\n");
         assert.equal((await app.background.read(id, ended.id))?.text, "", "nothing new since");
+    },
+);
+
+test("tasks that end together cost Pi one message, and a card each", { skip }, async () => {
+    const id = await session();
+    const first = await app.background.start(id, { command: "echo one; exit 1" });
+    const second = await app.background.start(id, { command: "echo two; exit 2" });
+
+    // One message for both: a task that ends while another's message is gathered goes with it.
+    await until(async () => {
+        const messages = (await userTexts(id)).filter((text) => text.includes("[background] Task"));
+        const both =
+            messages.length === 1 &&
+            messages[0]!.includes(`[background] Task ${first.id} `) &&
+            messages[0]!.includes(`[background] Task ${second.id} `);
+
+        return both;
+    }, "Pi's one message about both tasks");
+
+    const message = (await userTexts(id)).find((text) => text.includes("[background] Task"))!;
+
+    // Each task keeps its own head, command, and output, one after the other, so the app shows a card each.
+    assert.equal(message.match(/\[background\] Task /g)?.length, 2, "both tasks, once each");
+    assert.equal(message.match(/Command: /g)?.length, 2, "a command each");
+    assert.match(message, /\\n\\n\[background\] Task /, "a blank line between them");
+    assert.match(message, /exited with code 1/);
+    assert.match(message, /exited with code 2/);
+
+    await until(() => !app.isBusy(id), "Pi to answer the message");
+});
+
+test(
+    "a task that ends while Pi works joins that run, rather than starting another",
+    { skip },
+    async () => {
+        const id = await session();
+
+        // A run that holds on for a second, so the task ends while it works.
+        await app.commands.submit(id, owner(app), {
+            text: "hold 1",
+            requestId: crypto.randomUUID(),
+        });
+        await until(() => app.isBusy(id), "the run to start");
+        const item = await app.background.start(id, { command: "echo done; exit 0" });
+
+        await until(
+            async () =>
+                ((await app.harness.snapshot(InboxDoc, id, context))?.items ?? []).length > 0,
+            "the notice to wait for the run's pause",
+        );
+        const queued = (await app.harness.snapshot(InboxDoc, id, context))!.items;
+
+        assert.equal(queued.length, 1, "one message");
+        assert.equal(queued[0]!.mode, "steer", "it joins the run rather than waits for another");
+
+        await until(
+            async () => (await userTexts(id)).some((text) => text.includes(item.id)),
+            "Pi's message about it",
+        );
+        await until(() => !app.isBusy(id), "Pi to answer the message");
     },
 );
 

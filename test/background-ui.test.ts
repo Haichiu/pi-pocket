@@ -181,3 +181,32 @@ test("output whose own line says it is the end is not taken for a cut one", real
         null,
     );
 });
+
+test("tasks that ended together show a card each, in one group", real, async () => {
+    const id = await newSession(app);
+
+    await page.setViewport(VIEWPORTS.desktop);
+    await page.navigate(`${base}/s/${id}`);
+    await see(
+        `return JSON.stringify(document.querySelector(".composer textarea") !== null)`,
+        "the session",
+    );
+    const first = await app.background.start(id, { command: "echo one; exit 1" });
+    const second = await app.background.start(id, { command: "echo two; exit 2" });
+
+    // Both ended, so Pi got one message about the two: a card each, in one group.
+    await see(
+        `return JSON.stringify(document.querySelectorAll(".report-group .background-report").length === 2)`,
+        "a card each",
+        20_000,
+    );
+
+    const heads = await inPage<string[]>(
+        `return JSON.stringify([...document.querySelectorAll(".report-group .background-report .report-head")].map((head) => head.textContent.replace(/\\s+/g, " ").trim()))`,
+    );
+    const both = heads.join("\n");
+
+    // Each card says which task it is, how it ended, and how long it took.
+    assert.match(both, new RegExp(`${first.id} exited with code 1 · \\d+s`));
+    assert.match(both, new RegExp(`${second.id} exited with code 2 · \\d+s`));
+});

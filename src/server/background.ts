@@ -11,10 +11,11 @@
  *
  * The watch is a durable task: it looks every second whether any process of the group still runs (a leader that is
  * gone is no end while a child it left runs on), and when none does, tells Pi in the session, with the exit code and
- * the end of the output, as schedules send their messages. Stopping the task (Pi's tool, or Running now) stops the
- * group, and any process with its marker that left it: politely, then by force. A sweep, apart from the watches, keeps
- * each log under its limit. The background extension (`extensions/background.ts`) installs the task and gives Pi its
- * tool; while it is off, the watches wait.
+ * the end of the output. The tasks that ended together go as one message, steered into the run in flight as a
+ * subagent's report is, so they cost Pi one turn rather than one each and the answer it was writing keeps its place.
+ * Stopping the task (Pi's tool, or Running now) stops the group, and any process with its marker that left it:
+ * politely, then by force. A sweep, apart from the watches, keeps each log under its limit. The background extension
+ * (`extensions/background.ts`) installs the task and gives Pi its tool; while it is off, the watches wait.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -35,6 +36,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
     type ConversationId,
     defineTask,
+    LiveDoc,
     type Task,
     type TaskRuntime,
 } from "@earendil-works/pi-durable";
@@ -66,6 +68,8 @@ const MAX_COMMAND = 4000;
 /** How much a read gives Pi, and how much of the end of the output Pi's message holds. */
 const READ_CHARS = 20_000;
 const TELL_CHARS = 3000;
+/** How long a message waits, in a session that is idle, for the tasks that end a moment after its own. */
+const GATHER_MS = 2_000;
 /** Terminal escape codes (colors, cursor moves): some tools print them even when nobody reads a terminal. */
 const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
 
@@ -449,6 +453,8 @@ export class BackgroundTasks {
                     if (stored?.status === "running" || stored?.status === "starting") {
                         stored.status = "stopped";
                         stored.endedAt = this.#app.now();
+                        // Stopped, not ended of itself: Pi did it, or someone here, so no message about it is needed.
+                        stored.notify = false;
                     }
 
                     pruned = this.#prune(doc.items);
@@ -880,18 +886,96 @@ export class BackgroundTasks {
         return true;
     }
 
-    /** Tell Pi the task ended, once: the request id is the task's. */
+    /**
+     * Tell Pi the tasks that ended, once: every task that ended and was not told goes as one message, so tasks that end
+     * together cost Pi one message and one turn rather than one each. It is a steer, as a subagent's report is: a task
+     * is the work of the run that started it, so its end joins that run at its next pause instead of waiting to start
+     * another, and the answer Pi was writing keeps its place.
+     */
     async #tell(id: string, runtime: Runtime, context: Context): Promise<void> {
         const app = this.#app;
         const conversationId = runtime.conversationId;
-        const item = await this.#stored(conversationId, id);
         const conversation = await runtime.conversation(conversationId, context);
 
-        if (item === undefined || conversation === undefined) {
+        if (conversation === undefined) {
             return runtime.commit(() => finished, context);
         }
 
-        // Not while a spend limit holds Pi back, nor for someone who can no longer steer here: Pi finds out with list.
+        // A session that is idle would start a turn for the first task alone, and tasks started together often end a
+        // moment apart: it waits that moment for theirs. A busy session takes them at its next pause, and tasks that
+        // end meanwhile join them there.
+        const live = await runtime.snapshot(LiveDoc, conversationId, context);
+
+        if (live?.run === undefined) {
+            const signals = [runtime.signal, context.abortSignal].filter(
+                (signal): signal is AbortSignal => signal !== undefined,
+            );
+            const signal = signals.length === 0 ? undefined : AbortSignal.any(signals);
+
+            await wait(GATHER_MS, signal);
+            signal?.throwIfAborted();
+        }
+
+        const items = (await runtime.snapshot(BackgroundDoc, conversationId, context))?.items ?? {};
+        const ended = Object.values(items)
+            .filter(
+                (item) => item.notify && item.endedAt !== undefined && item.toldAt === undefined,
+            )
+            .sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0));
+
+        // Not while a spend limit holds Pi back, nor for someone who can no longer steer here: those wait unread.
+        const told = ended.filter((item) => this.#askable(conversationId, item));
+        const unasked = ended.filter((item) => !told.includes(item));
+        // This watch's own task must be in the batch: another watch that tells first takes it, and this one then has
+        // nothing to say. Only what is sent is marked below, so a batch this watch leaves alone is still to come.
+        const sent = told.some((item) => item.id === id) ? told : [];
+
+        if (sent.length > 0) {
+            const ids = sent.map((item) => item.id);
+            const person = sent.every((item) => item.requestedBy === sent[0]?.requestedBy)
+                ? sent[0]?.requestedBy
+                : undefined;
+            const key = `background-batch-${ids.join("+")}`;
+            const requestId =
+                person === undefined ? `background:${ids.join("+")}` : requestFor(person, key);
+
+            // Under one request id for the batch: a watch a crash stopped before it marked the tasks sends the same
+            // batch again under the same id, and Pi Durable places it once.
+            await conversation.submit(
+                {
+                    type: "input",
+                    content: sent.map((item) => this.#message(conversationId, item)).join("\n\n"),
+                    whenBusy: "steer",
+                    requestId,
+                },
+                context,
+            );
+        }
+
+        // Marked once the message is sent: a crash between the two can say an end twice at worst, never none, and the
+        // same request id keeps a retry of the same batch from saying it twice.
+        await runtime.commit(async (tx) => {
+            const doc = await tx.doc(BackgroundDoc, conversationId);
+            const at = app.now();
+
+            for (const item of [...sent, ...unasked]) {
+                const stored = doc.items[item.id];
+
+                if (stored !== undefined) {
+                    stored.toldAt = at;
+                }
+            }
+
+            return finished;
+        }, context);
+    }
+
+    /**
+     * Whether Pi may be told about this task: it works for someone who may still steer here, and the session is not
+     * past a spend limit. One that is not is never told, as before: Pi finds out with `list`.
+     */
+    #askable(conversationId: ConversationId, item: BackgroundTask): boolean {
+        const app = this.#app;
         const person =
             item.requestedBy === undefined ? undefined : app.config.userById(item.requestedBy);
         const mayAsk =
@@ -899,27 +983,8 @@ export class BackgroundTasks {
             (person !== undefined &&
                 person.role !== "viewer" &&
                 app.canSee(person, conversationId));
-        const held = app.spend.heldBack(conversationId, mayAsk ? item.requestedBy : undefined);
 
-        if (mayAsk && held === undefined) {
-            const key = `background-${String(runtime.taskId)}`;
-            const requestId =
-                item.requestedBy === undefined
-                    ? `background:${String(runtime.taskId)}`
-                    : requestFor(item.requestedBy, key);
-
-            await conversation.submit(
-                {
-                    type: "input",
-                    content: this.#message(conversationId, item),
-                    whenBusy: "followUp",
-                    requestId,
-                },
-                context,
-            );
-        }
-
-        await runtime.commit(() => finished, context);
+        return mayAsk && app.spend.heldBack(conversationId, item.requestedBy) === undefined;
     }
 
     /** Pi's message about a task that ended: how, its command quoted, and the end of its output fenced, as data. */
