@@ -208,7 +208,6 @@ function applyEdits(
 const INLINE_GUIDE = `- artifact_inline shows the page as a card in your reply, for a small interactive piece the person uses right there (a calculator, a chart, a form); artifact is for a whole page, a game, Markdown, or SVG. Its result says which version it made: after an update, say what changed and do not repeat the page. Only a call you make directly shows a card, not one inside codemode. An id made by artifact_inline stays HTML: use a new id for Markdown or SVG. Write its page for a narrow column with no fixed height: the card grows up to 900 px, then scrolls.
 `;
 
-/** The page-to-app messages (follow-up, saved state): read on demand, as few artifacts use them. */
 export const BRIDGE_GUIDE = join(APP_ROOT, "src", "server", "guides", "artifact-bridge.md");
 
 const guide = (

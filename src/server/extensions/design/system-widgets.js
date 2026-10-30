@@ -739,7 +739,6 @@ export function createSystemWidgets(env) {
         const { model, modes, canEdit } = ctx;
         const now = model.value(token.name, mode);
         const saved = token.modes[mode];
-        // Write in the dialect of the saved value, else the default mode's.
         const like =
             (saved?.alias === undefined ? saved?.value : now.value) ??
             token.modes[model.defaultMode]?.value;

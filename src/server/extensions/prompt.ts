@@ -31,17 +31,12 @@ function docs(dataDir: string): string {
     const code = resolve(APP_ROOT);
     const folder = join(code, "docs");
 
-    // docs/index.md routes each kind of question to its page: the prompt names only the way in.
     return `Pi Pocket's docs, only for questions about Pi Pocket itself (how it works, changing how you behave in it, extending it, changing its code): start at ${join(folder, "index.md")}, an index (follow only the links your task needs), and read a doc completely before changing anything.
 - Code: ${code}${code.split(sep).includes("node_modules") ? " (an npm install: read it, never edit it, since the next npm update replaces it; to change Pi Pocket, clone https://github.com/TannerMidd/pi-pocket and run that)" : ""}. Data: ${dataDir}; change it through the app, never by editing its files, except extensions/ (drop-ins) and themes/.
 - Pi's own docs (skills, prompt templates, models, providers, settings): ${getDocsPath()}`;
 }
 
-/**
- * The skills the model may pick, one line each. Pi's own format (XML, a location per skill) costs about 150
- * characters more for each; here a folder that holds several skills as `<folder>/<name>/SKILL.md` is named once.
- * Skills that ask not to be picked by the model (`disable-model-invocation`) stay out, as in Pi.
- */
+/** Pi's own format (XML, a location per skill) costs about 150 characters more for each skill. */
 export function formatSkills(skills: readonly Skill[]): string {
     const visible = skills.filter((skill) => !skill.disableModelInvocation);
 

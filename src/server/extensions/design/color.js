@@ -198,7 +198,6 @@ function amount(token, scale) {
     return match[2] === "%" ? (Number(match[1]) / 100) * scale : Number(match[1]);
 }
 
-// Both `50%` and `50` mean half.
 function percentage(token) {
     const value = amount(token.replace(/%$/, ""), 100);
 

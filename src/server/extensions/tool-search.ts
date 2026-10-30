@@ -1,11 +1,4 @@
-/**
- * Tool search keeps tools that few conversations use out of every request until Pi asks for them. Each of them, with its
- * prompt section, costs tokens on every request of every conversation; here Pi gets one `tool_search` tool and a line
- * that names what it can load, and a search loads the matches for the next call. Loaded tools stay offered on that
- * branch. Turn this module off and every tool below is offered again, as before.
- *
- * Edit `DEFERRED` to choose which tools wait: what each is for, and the prompt section that goes with it, if one does.
- */
+/** Tool search keeps tools that few conversations use out of every request until Pi asks for them. */
 import type { Context } from "@earendil-works/chord/context";
 import { Type } from "@earendil-works/pi-ai";
 import { DESIGN_GUIDE } from "../design/guide.ts";
@@ -23,13 +16,11 @@ import {
     wrapTool,
 } from "@earendil-works/pi-durable";
 
-/** What loading a search matches at most, when the query is not the names of tools. */
 const SEARCH_LIMIT = 2;
 
 /** What the design guide's section would say, for the codemode route, where the section never shows. */
 const DESIGN_NOTE = `Before you make or change a design, read ${DESIGN_GUIDE}. Check each design with design_preview at mobile and desktop sizes before you reply. design_system read gives a summary of the project's design system.`;
 
-/** Tools that wait to be searched for: what each is for, and the key of the prompt section shown once it is loaded. */
 const DEFERRED: Record<string, { use: string; section?: string; note?: string }> = {
     browser: {
         use: "open and test web pages in a real browser",
@@ -57,7 +48,6 @@ const DEFERRED: Record<string, { use: string; section?: string; note?: string }>
     ask_someone: { use: "draft a question for someone outside this chat" },
 };
 
-/** Each prompt section that waits, and the tools that show it once any of them is loaded. */
 const sections = new Map<string, string[]>();
 
 for (const [name, { section: key }] of Object.entries(DEFERRED)) {
@@ -70,12 +60,8 @@ export default function createToolSearch() {
     const base = createToolSearchExtension();
     const search = base.tools![0]!;
 
-    /**
-     * A model whose provider takes tool changes in the messages (Claude 4.8 and 5 and later) keeps its tool list, and its
-     * prompt cache, when a tool loads. For any other model a load changes the list and writes the cache again, so there
-     * the tool is not loaded: Pi gets its description and parameters in the result, and calls it from a codemode script,
-     * which can call a tool that is not offered. The conversation's tool list never changes.
-     */
+    // For a model without mid-conversation tool changes, a new tool would rewrite the prompt cache: Pi calls it
+    // through codemode instead, so the tool list never changes.
     const throughCodemode = async (api: ToolExecutionApi<never>, context: Context) => {
         const agent = await api.agent(context);
         const ref = agent.model;
