@@ -27,26 +27,34 @@ const ROLE_WORDS: [ColorRole, RegExp][] = [
     ["background", /^(bg|background|surface|fill|canvas|base|ground|wash|soft|scrim|overlay)$/],
 ];
 
-const roles = new Map<string, ColorRole | undefined>();
+const names = new Map<string, { words: string[]; role: ColorRole | undefined }>();
+
+function wordsOf(name: string): { words: string[]; role: ColorRole | undefined } {
+    let found = names.get(name);
+
+    if (found === undefined) {
+        const words = name
+            .replace(/([a-z])([A-Z])/g, "$1 $2")
+            .toLowerCase()
+            .split(/[^a-z0-9]+/);
+
+        found = {
+            words,
+            role: ROLE_WORDS.find(([, pattern]) => words.some((word) => pattern.test(word)))?.[0],
+        };
+
+        if (names.size >= 20_000) {
+            names.clear();
+        }
+
+        names.set(name, found);
+    }
+
+    return found;
+}
 
 export function colorRoleOf(name: string): ColorRole | undefined {
-    if (roles.has(name)) {
-        return roles.get(name);
-    }
-
-    const words = name
-        .replace(/([a-z])([A-Z])/g, "$1 $2")
-        .toLowerCase()
-        .split(/[^a-z0-9]+/);
-    const role = ROLE_WORDS.find(([, pattern]) => words.some((word) => pattern.test(word)))?.[0];
-
-    if (roles.size >= 20_000) {
-        roles.clear();
-    }
-
-    roles.set(name, role);
-
-    return role;
+    return wordsOf(name).role;
 }
 
 export const USE_ROLE: Record<string, ColorRole> = {
@@ -169,18 +177,16 @@ function rank(token: Token, role: ColorRole | undefined): number {
     return role === undefined ? 1 : 3;
 }
 
-function strength(token: Token, role: ColorRole | undefined): number {
-    const words = token.name
-        .replace(/([a-z])([A-Z])/g, "$1 $2")
-        .toLowerCase()
-        .split(/[^a-z0-9]+/);
-    const named = {
-        text: ["text"],
-        background: ["bg", "background", "surface"],
-        border: ["border"],
-    }[role ?? "text"];
+const STRONG: Record<ColorRole, string[]> = {
+    text: ["text"],
+    background: ["bg", "background", "surface"],
+    border: ["border"],
+};
 
-    return words.some((word) => named.includes(word)) ? 0 : 1;
+function strength(token: Token, role: ColorRole | undefined): number {
+    const named = STRONG[role ?? "text"];
+
+    return wordsOf(token.name).words.some((word) => named.includes(word)) ? 0 : 1;
 }
 
 const colored = (set: TokenSet) => set.colors.filter((token) => token.rgba !== undefined);
@@ -193,15 +199,33 @@ export function exactColorToken(
     worst = 4,
 ): Token | undefined {
     const role = use === undefined ? undefined : USE_ROLE[use];
+    let best: { token: Token; rank: number; strength: number } | undefined;
 
-    return colored(set)
-        .filter((token) => sameBytes(color, token.rgba!) && rank(token, role) <= worst)
-        .sort(
-            (a, b) =>
-                rank(a, role) - rank(b, role) ||
-                strength(a, role) - strength(b, role) ||
-                a.name.localeCompare(b.name),
-        )[0];
+    // The first of a stable sort by rank, strength, and name: each key is made once per token.
+    for (const token of colored(set)) {
+        if (!sameBytes(color, token.rgba!)) {
+            continue;
+        }
+
+        const level = rank(token, role);
+
+        if (level > worst) {
+            continue;
+        }
+
+        const next = { token, rank: level, strength: strength(token, role) };
+
+        if (
+            best === undefined ||
+            (next.rank - best.rank ||
+                next.strength - best.strength ||
+                token.name.localeCompare(best.token.name)) < 0
+        ) {
+            best = next;
+        }
+    }
+
+    return best?.token;
 }
 
 export function nearestColor(set: TokenSet, color: RgbaTuple, use?: string): Nearest | undefined {
