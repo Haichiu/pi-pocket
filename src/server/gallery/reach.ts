@@ -42,11 +42,44 @@ function keywordBeforeRegex(code: string): boolean {
     return keyword !== undefined && !end.slice(0, -keyword.length).trimEnd().endsWith(".");
 }
 
+/**
+ * Where a regular expression literal whose body starts at each position ends (its closing `/`), or -1, from outside and
+ * from inside a character class: one pass from the end, so that a line of `(/[` takes linear time.
+ */
+function regexEnds(code: string): { outside: Int32Array; inside: Int32Array } {
+    const outside = new Int32Array(code.length + 2).fill(-1);
+    const inside = new Int32Array(code.length + 2).fill(-1);
+
+    for (let i = code.length - 1; i >= 0; i--) {
+        const char = code[i];
+
+        if (char === "\\") {
+            outside[i] = outside[i + 2]!;
+            inside[i] = inside[i + 2]!;
+        } else if (char === "[") {
+            outside[i] = inside[i + 1]!;
+            inside[i] = inside[i + 1]!;
+        } else if (char === "]") {
+            outside[i] = outside[i + 1]!;
+            inside[i] = outside[i + 1]!;
+        } else if (char === "/") {
+            outside[i] = i;
+            inside[i] = inside[i + 1]!;
+        } else if (char !== "\n") {
+            outside[i] = outside[i + 1]!;
+            inside[i] = inside[i + 1]!;
+        }
+    }
+
+    return { outside, inside };
+}
+
 export function stripComments(code: string): string {
     let out = "";
     let tail = "";
     let at = 0;
     let last = "";
+    let ends: { outside: Int32Array; inside: Int32Array } | undefined;
 
     // A separate, whitespace-collapsed tail avoids flattening `out` and preserves long keyword gaps.
     const append = (text: string) => {
@@ -97,24 +130,10 @@ export function stripComments(code: string): string {
         }
 
         if (char === "/" && (last === "" || BEFORE_REGEX.test(last) || keywordBeforeRegex(tail))) {
-            let stop = at + 1;
-            let inClass = false;
+            ends ??= regexEnds(code);
+            let stop = ends.outside[at + 1]!;
 
-            while (stop < code.length && code[stop] !== "\n") {
-                if (code[stop] === "\\") {
-                    stop++;
-                } else if (code[stop] === "[") {
-                    inClass = true;
-                } else if (code[stop] === "]") {
-                    inClass = false;
-                } else if (code[stop] === "/" && !inClass) {
-                    break;
-                }
-
-                stop++;
-            }
-
-            if (code[stop] === "/") {
+            if (stop !== -1) {
                 // Keep ambiguous line comments literal so a commented /* cannot hide later code.
                 if (code[stop + 1] === "/" && keywordBeforeRegex(tail)) {
                     const end = code.indexOf("\n", stop + 2);

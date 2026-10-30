@@ -198,6 +198,7 @@ test("the scan reports code that can load or run unnamed programs", () => {
     ['require("'.repeat(25_000), '"' + "/".repeat(100_000)].forEach(scanCode);
     scanCode('"/'.repeat(256_000));
     scanCode("/x".repeat(128_000));
+    scanCode("(/[".repeat(40_000));
     assert.ok(performance.now() - start < 1_000);
 });
 
