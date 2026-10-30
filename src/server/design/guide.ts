@@ -10,7 +10,6 @@ import { loadDesignSystem, systemSummary } from "./tokens.ts";
 
 export const SUMMARY_BYTES = 12_000;
 
-/** The full instructions (order of work, skeleton, craft, checks, design systems): read when a design is made. */
 export const DESIGN_GUIDE = join(APP_ROOT, "src", "server", "guides", "design.md");
 
 const GUIDE = `Designs live in the Design canvas as HTML artifacts, shown beside the chat. Before you make or change a design, read ${DESIGN_GUIDE}: the order of work, the page skeleton, craft, checks, feedback, the hand-off to code, and how to make or use a design system. Check each design with design_preview at mobile and desktop sizes before you reply.`;

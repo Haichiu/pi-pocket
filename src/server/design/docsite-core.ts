@@ -92,7 +92,6 @@ export function stackOf(value: unknown): string | undefined {
 export const valueIn = (token: ResolvedToken, mode: string): ModeValue | undefined =>
     token.modes[mode];
 
-/** A color as CSS text: the engine's own form when it gave one, else the value itself. */
 function colorText(value: unknown): string | undefined {
     if (typeof value === "string") {
         return value;
@@ -242,7 +241,6 @@ export interface Ctx {
 
 export const nameOfRef = (text: string) => text.replace(/^\{|\}$/g, "").trim();
 
-/** Text that is the same in every mode is written once; texts that differ show by the mode in force, in CSS alone. */
 export function variants(ctx: Ctx, make: (mode: string) => string): string {
     const texts = ctx.modes.map((mode) => make(mode));
 
@@ -352,7 +350,6 @@ export const copyName = (token: ResolvedToken) => `<button class="tk">${esc(toke
 export const descOf = (token: ResolvedToken) =>
     token.description === undefined ? "" : `<span class="desc">${esc(token.description)}</span>`;
 
-/** Specimens of one section, and whether any list was cut, for one note under it. */
 export function limiter(ctx: Ctx): {
     take: (list: ResolvedToken[]) => ResolvedToken[];
     note: () => string;
@@ -378,18 +375,13 @@ export function limiter(ctx: Ctx): {
     };
 }
 
-/** A token as a row: its name and description, its value in each mode, and a sample. */
 export function rowOf(ctx: Ctx, token: ResolvedToken, sample: string): string {
     const value = variants(ctx, (mode) => esc(plain(token.type, valueIn(token, mode))));
 
     return `<div class="row" data-s><div class="meta">${copyName(token)}${descOf(token)}</div><div class="val">${value}</div><div class="sample">${sample}</div></div>`;
 }
 
-/**
- * The headline (the number in the navigation) is the section's role tokens, the semantic tier; a section with none
- * counts its primitives. The palette and a component's own tokens are counted inside the section. The System view
- * counts the same way.
- */
+/** The System view counts the same way: semantic tokens, else primitives. */
 export function sectionCount(ctx: Ctx, id: SectionId) {
     const list = tokensOf(ctx, id);
     const semantic = list.filter((token) => token.tier === "semantic").length;
@@ -429,7 +421,6 @@ function modeCell(ctx: Ctx, token: ResolvedToken, mode: string, across: number):
         : `<td data-label="${esc(modeLabel(mode))}" class="v">${body}</td>`;
 }
 
-/** Rows of the token table: a column for each mode, or one cell across them when the value is the same in every mode. */
 export function tableRows(ctx: Ctx, tokens: ResolvedToken[]): string {
     return tokens
         .map((token) => {
@@ -450,7 +441,6 @@ export function tableRows(ctx: Ctx, tokens: ResolvedToken[]): string {
         .join("");
 }
 
-/** The tokens of a section that no specimen drew (most are a component's), so every token is on the page. */
 export function moreTokens(ctx: Ctx, id: SectionId): string {
     const left = tokensOf(ctx, id).filter((token) => !ctx.claimed.has(token));
 

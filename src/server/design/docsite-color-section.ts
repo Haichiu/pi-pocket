@@ -208,7 +208,6 @@ export function colorSection(ctx: Ctx): string | undefined {
             `<h3 id="color-roles">Roles</h3><p class="sub">Roles say what a color is for. Use a role, never a palette step, so the color follows the mode.</p>${capNote(roles.length, allRoles.length)}`,
         );
 
-        // Groups of one or two cards would leave rows half empty: they share one grid.
         const groups = grouped(roles);
         const small = groups.filter(([, list]) => list.length <= 2);
         const shown: [string, ResolvedToken[]][] = [

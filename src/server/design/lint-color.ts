@@ -165,7 +165,6 @@ interface TokenColor {
     tier: ResolvedToken["tier"];
     css: string;
     rgba?: RgbaTuple;
-    /** False when the value differs between modes: only a steady token may be put in a page by a one-tap fix. */
     steady?: boolean;
 }
 

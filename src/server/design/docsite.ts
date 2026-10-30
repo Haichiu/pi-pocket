@@ -58,7 +58,6 @@ const ACCENTS = [
     "color.accent",
 ];
 
-/** The page's own accent: the system's, when it reads at 4.5:1 on the page's ground in that scheme. */
 function chromeAccent(ctx: Ctx, theme: "light" | "dark"): string {
     const fallback = theme === "dark" ? "#8fb0ff" : "#3557a5";
     const page = parseColor(theme === "dark" ? "#0e0f15" : "#fafafc")!;
@@ -75,7 +74,6 @@ function chromeAccent(ctx: Ctx, theme: "light" | "dark"): string {
 
 const ICON_MENU = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg>`;
 
-/** The swatches of the overview: the base roles first, in a fixed order, then any semantic color, up to 12. */
 const SAMPLER: [string, string[], RegExp][] = [
     ["background", BASE_GROUNDS, /^color\.(bg|background)\.(base|default|canvas|page)$/],
     [
@@ -138,7 +136,6 @@ function sampler(ctx: Ctx): string {
               .join("")}</div>`;
 }
 
-/** The tokens as custom properties on `body.ds`: the first mode's values, then what each other mode changes. */
 function tokenVars(ctx: Ctx): string {
     const first = ctx.modes[0]!;
     const declare = (mode: string, only: (token: ResolvedToken) => boolean) =>
@@ -168,7 +165,6 @@ function tokenVars(ctx: Ctx): string {
     return rules.join("\n");
 }
 
-// An artifact holds 2 MB at most: a system so large that its page would not fit shows fewer rows in the token table.
 export function renderSystemDoc(system: DesignSystem): SystemDoc {
     let rows = MAX_TOKENS;
     let doc = build(system, rows);

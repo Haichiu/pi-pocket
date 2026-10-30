@@ -37,7 +37,6 @@ export function spacingSection(ctx: Ctx): string | undefined {
     const own = mine.filter((token) => token.tier !== "component" && token.type === "dimension");
     const space = take(own.filter((token) => SPACE_ROOT.test(rootOf(token))));
     const sizes = take(own.filter((token) => SIZE_ROOT.test(rootOf(token))));
-    // The roles that use a step: semantic tokens of the section that are neither the scale nor sizes.
     const roles = take(
         own.filter(
             (token) =>
@@ -111,7 +110,6 @@ export function shadowSection(ctx: Ctx): string | undefined {
         .join("")}</div>${note()}${moreTokens(ctx, "shadows")}`;
 }
 
-/** Breakpoints, borders, layers, and what fits no other section: one table. */
 export function otherSection(ctx: Ctx): string | undefined {
     const mine = tokensOf(ctx, "other");
 

@@ -405,7 +405,6 @@ function colorIn(entry: ModeValue) {
     return css === undefined ? undefined : parseColor(css);
 }
 
-/** True when the token has one value in every mode of the system: a page that uses it looks the same in each. */
 export function sameInEveryMode(token: ResolvedToken, modes: string[]): boolean {
     const [first, ...rest] = modes.map((mode) => token.modes[mode]);
 
@@ -509,7 +508,6 @@ interface Piece {
     color: ReturnType<typeof parseColor> | null | false;
 }
 
-// Each declaration is split, and each piece read as a color, once for all the findings.
 const pieces = new WeakMap<Declaration, Piece[]>();
 
 function piecesOf(declaration: Declaration): Piece[] {
@@ -536,7 +534,7 @@ type Color = NonNullable<ReturnType<typeof parseColor>>;
 const byteOf = (channel: number) => Math.round(channel * 255);
 const colorIndexes = new WeakMap<Declaration[], Map<string, [number, number][]>>();
 
-// Every color of the declarations by its rounded bytes. A color that `sameColor` takes is at most half a step away, so it is in this bucket or a next one.
+// A color that `sameColor` takes is at most half a byte step away: in this bucket or a next one.
 function colorIndexOf(all: Declaration[]): Map<string, [number, number][]> {
     let index = colorIndexes.get(all);
 

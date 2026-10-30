@@ -15,7 +15,6 @@ import type { ComponentSpec } from "./system-types.ts";
 export const snippet = (id: string, text: string, label: string, kind = "") =>
     `<div class="snip"${kind === "" ? "" : ` data-kind="${kind}" data-panel="${esc(label)}"`}><div class="snip-head"><span>${esc(label)}</span><button class="mini" type="button" data-copy-from="${esc(id)}">Copy</button></div><pre id="${esc(id)}"><code>${esc(text)}</code></pre></div>`;
 
-// The page's script draws each state from the listings below, sanitized, in a shadow root (see docsite-js.ts).
 function stage(ctx: Ctx): string {
     const ground = groundToken(ctx);
     const text = textToken(ctx);
