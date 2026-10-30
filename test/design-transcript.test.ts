@@ -1,6 +1,7 @@
 import { cleanUp, context, newSession, openApp, scriptedModel, work } from "./helpers.ts";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -189,7 +190,7 @@ test(
     },
 );
 
-test("the tool refuses a value that is not a token value, with the schema's words, before the engine sees it", () => {
+test("the schema takes any token value, and the engine refuses one that is not a token value", async () => {
     const refuse = (value: unknown) =>
         validateToolArguments(
             system as never,
@@ -215,5 +216,31 @@ test("the tool refuses a value that is not a token value, with the schema's word
         assert.doesNotThrow(() => refuse(value), JSON.stringify(value));
     }
 
-    assert.throws(() => refuse({ color: { nested: { deeper: [{}] } } }));
+    const dir = join(tmpdir(), `pi-pocket-ds-value-${process.pid}`);
+
+    mkdirSync(dir, { recursive: true });
+
+    try {
+        await system.execute(
+            {
+                action: "init",
+                tokens: { color: { $type: "color", a: { $value: "#fff" } } },
+            } as never,
+            { agent: async () => ({ cwd: dir }) } as never,
+            undefined as never,
+        );
+        await assert.rejects(
+            system.execute(
+                {
+                    action: "set",
+                    changes: [{ token: "color.a", value: { color: { nested: { deeper: [{}] } } } }],
+                } as never,
+                { agent: async () => ({ cwd: dir }) } as never,
+                undefined as never,
+            ),
+            /Nothing was written/,
+        );
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
 });
