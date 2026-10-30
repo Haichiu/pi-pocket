@@ -912,7 +912,6 @@
 
 .dsy-tiles[data-size="role"] .dsy-swatch {
     width: 100%;
-    height: 46px;
 }
 
 .dsy-card-name {
@@ -1016,7 +1015,6 @@
 
 .dsy-step-tile .dsy-swatch {
     width: 100%;
-    height: 40px;
     border-radius: 6px;
 }
 
