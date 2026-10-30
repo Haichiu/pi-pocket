@@ -30,50 +30,37 @@ export interface VarFact {
     scope: Scope;
     kind: "css" | "theme" | "scss" | "less" | "js";
     file: string;
-    /** The category that the place of the variable states (a Tailwind namespace, a theme key such as `borderRadius`). */
     hint?: Category;
     order: number;
-    /** The file's rank by priority (0 is read first). The lowest rank wins; in one file the later declaration wins. */
+    /** The lowest rank wins; in one file the later declaration wins. */
     rank: number;
     line?: number;
 }
 
-export interface ColorFact {
+const KINDS = [
+    "bg",
+    "text",
+    "border",
+    "fill",
+    "shadow",
+    "other",
+    "root",
+    "body",
+    "surface",
+] as const;
+
+/** `root` and `surface` count backgrounds of the page's root and of cards; `body` counts body text. */
+export type Kinds = Record<(typeof KINDS)[number], number>;
+
+export const emptyKinds = () => Object.fromEntries(KINDS.map((kind) => [kind, 0])) as Kinds;
+
+export interface ColorFact extends Kinds {
     hex: string;
     forms: Map<string, number>;
-    bg: number;
-    text: number;
-    border: number;
-    fill: number;
-    shadow: number;
-    other: number;
-    /** As a background on the page's root (`body`, `html`, `:root`, `#app`). */
-    root: number;
-    /** As the text color of the root or of paragraphs. */
-    body: number;
-    /** As a background on a card, panel, modal, or the like. */
-    surface: number;
-    /** When it was first seen: the earlier of two equal colors is the one the author wrote first. */
+    /** The earlier of two equal colors is the one the author wrote first. */
     order: number;
     at?: string;
 }
-
-export type Kinds = Pick<
-    ColorFact,
-    "bg" | "text" | "border" | "fill" | "shadow" | "other" | "root" | "body" | "surface"
->;
-
-export const emptyKinds = (): Kinds => ({
-    bg: 0,
-    text: 0,
-    border: 0,
-    fill: 0,
-    shadow: 0,
-    other: 0,
-    root: 0,
-    body: 0,
-    surface: 0,
-});
 
 interface FontFact {
     stack: string[];
@@ -96,11 +83,9 @@ export interface Facts {
     partial: boolean;
     tailwind: boolean;
     file?: string;
-    /** The mode that the file being read is named for (`dark.less`), when it is one. */
+    /** The mode that the file being read is named for (`dark.less`). */
     fileMode?: Scope;
-    /** What the walk and the read left out, and why (a vendored folder, a minified file, a file cut at its limit). */
     skipped: Skipped[];
-    /** Declarations that compute a size from custom properties (`calc(var(--gap) * 2)`): the scan resolves them later. */
     deferred: {
         prop: string;
         value: string;
@@ -109,22 +94,18 @@ export interface Facts {
         file?: string;
         line?: number;
     }[];
-    /** 3 or 4: which defaults the utility classes mean. */
     tailwindVersion: 3 | 4;
     classColors: Map<string, Kinds>;
     vars: VarFact[];
     colors: Map<string, ColorFact>;
     darkColors: Map<string, ColorFact>;
     varUse: Map<string, number>;
-    /** How each custom property is used as a color: `background: var(--ink)` is a background use of `--ink`. */
     varKinds: Map<string, Kinds>;
-    /** What each length variable is used for: spacing, type size, radius, or the size of a box. */
     varLayout: Map<string, { space: number; text: number; radius: number; box: number }>;
     classUse: Map<string, number>;
-    /** The classes on the page's `<body>` and `<html>`: their rules style the whole page. */
     rootClasses: Set<string>;
     classCount: Map<string, number>;
-    /** The colors that a rule with one class sets (`.text-gray-900 { color: … }`), by class, in each mode. */
+    /** Keyed `class|kind`: the colors that a rule with one class sets, in each mode. */
     classRules: Map<string, { kind: "bg" | "text" | "border"; light?: string; dark?: string }>;
     fonts: Map<string, FontFact>;
     sizes: Map<number, SizeFact>;
@@ -132,14 +113,12 @@ export interface Facts {
     radii: Map<string, { count: number; text: string }>;
     shadows: Map<string, number>;
     breakpoints: Map<number, number>;
-    /** Spacing from Tailwind classes (`p-4` is 16px): used only when the project uses Tailwind. */
     classSpacing: Map<number, number>;
-    /** Tailwind utility classes by size name: `text-sm` → `sm`, `rounded-lg` → `lg`, `font-bold` → `bold`. */
     classText: Map<string, number>;
     classRadius: Map<string, number>;
-    /** Scopes that set custom properties but are neither the root nor dark mode, by selector. */
+    /** Scopes that set custom properties but are neither the root nor a mode, by selector. */
     scoped: Map<string, number>;
-    /** Custom properties used inside a color function (`rgb(var(--c-brand))`), and which function: their values are channels. */
+    /** Custom properties used inside a color function (`rgb(var(--c))`): their values are channels. */
     channels: Map<string, string>;
     imported: Imported;
 }
@@ -192,42 +171,49 @@ export function newFacts(): Facts {
 export const bump = <K>(map: Map<K, number>, key: K, by = 1) =>
     map.set(key, (map.get(key) ?? 0) + by);
 
+export function entry<K, V>(map: Map<K, V>, key: K, make: () => NoInfer<V>): V {
+    let value = map.get(key);
+
+    if (value === undefined) {
+        value = make();
+        map.set(key, value);
+    }
+
+    return value;
+}
+
 export const GENERIC = new Set(
     w(
         "serif sans-serif monospace cursive fantasy system-ui ui-serif ui-sans-serif ui-monospace ui-rounded math emoji fangsong",
     ),
 );
 
+const NAMESPACES: [RegExp, Category][] = [
+    [/^color-/, "color"],
+    [/^font-weight-/, "weight"],
+    [/^font-/, "font"],
+    [/^text-(?!.*--)/, "text"],
+    [/^spacing-/, "space"],
+    [/^radius-/, "radius"],
+    [/^shadow-|^inset-shadow-|^drop-shadow-/, "shadow"],
+    [/^ease-/, "ease"],
+    [/^breakpoint-/, "breakpoint"],
+    [/^leading-/, "leading"],
+    [/^tracking-/, "tracking"],
+    [/^blur-|^container-/, "size"],
+];
+
 export function namespaceOf(name: string): { category: Category; rest: string } | undefined {
-    const table: [RegExp, Category][] = [
-        [/^color-/, "color"],
-        [/^font-weight-/, "weight"],
-        [/^font-/, "font"],
-        [/^text-(?!.*--)/, "text"],
-        [/^spacing-/, "space"],
-        [/^radius-/, "radius"],
-        [/^shadow-|^inset-shadow-|^drop-shadow-/, "shadow"],
-        [/^ease-/, "ease"],
-        [/^breakpoint-/, "breakpoint"],
-        [/^leading-/, "leading"],
-        [/^tracking-/, "tracking"],
-        [/^blur-/, "size"],
-        [/^container-/, "size"],
-    ];
+    const found = NAMESPACES.find(([pattern]) => pattern.test(name));
 
-    for (const [pattern, category] of table) {
-        if (pattern.test(name)) {
-            return { category, rest: name.replace(pattern, "") };
-        }
-    }
-
-    return undefined;
+    return found === undefined
+        ? undefined
+        : { category: found[1], rest: name.replace(found[0], "") };
 }
 
 export function addVar(facts: Facts, fact: Omit<VarFact, "order" | "rank">): void {
     noteChannels(facts, fact.value);
 
-    // A file that is the other mode's (`dark.less`, `themes/night/colors.css`) sets that mode's values.
     const scope =
         fact.scope === "default" && facts.fileMode !== undefined ? facts.fileMode : fact.scope;
 

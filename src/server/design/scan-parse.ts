@@ -4,13 +4,11 @@ export type Scope = "default" | "dark" | "light" | "other";
 
 export interface Decl {
     prop: string;
-    /** The value, without `!important` and `!default`, cut to `MAX_VALUE`. */
     value: string;
-    /** The innermost selector, with `&` resolved against its parent. Empty at the top level and for an inline style. */
+    /** The innermost selector, with `&` resolved against its parent. */
     selector: string;
-    /** The at-rule preludes around it, outermost first (`@media (min-width: 768px)`, `@theme`). */
+    /** The at-rule preludes around it, outermost first. */
     at: string[];
-    /** Whether the rule applies in dark mode and, for a custom property, whether it defines the dark values. */
     scope: Scope;
     theme: boolean;
     inline: boolean;
@@ -20,25 +18,22 @@ export interface Decl {
 const MAX_VALUE = 400;
 const MAX_MAP = 8000;
 
-// Comments hold notes and old code, not styles in use. An unclosed comment runs to the end of the text, so the match stays linear; a `/*` or `//` after a word, a quote, or (for `//`) `:` or `(` is a glob or an address.
+// An unclosed comment runs to the end, so the match stays linear; `/*` or `//` after a word, a quote,
+// or (for `//`) `:` or `(` is a glob or an address.
 const COMMENTS =
     /(?<![\w.*"'`/-])\/\*[\s\S]*?(?:\*\/|$)|<!--[\s\S]*?(?:-->|$)|(?<![:\w"'`(/\\])\/\/[^\n]*/g;
 
 const DARK_WORD = String.raw`(?:dark|dark[-_]theme|dark[-_]mode|darkmode|dark[-_]scheme|theme[-_]{0,2}dark|mode[-_]{0,2}dark|scheme[-_]{0,2}dark|color[-_]scheme[-_]dark|is[-_]?dark|has[-_]?dark|ui[-_]dark|app[-_]dark|body[-_]dark|v-theme--dark|chakra-ui-dark|ant-dark|night|night[-_]mode|nightmode|theme[-_]night|dark[-_]?(?:theme|mode|scheme)(?:[-_]active|[-_]on|[-_]enabled)?)`;
 const DARK_PART = String.raw`(?:\.${DARK_WORD}(?![\w-])|\[(?:data-[\w-]*)?(?:theme|mode|color-mode|color-scheme|colorscheme|appearance|scheme)\s*[~|^$*]?=\s*["']?(?:dark|night|slate|dark[-_]mode|darkmode)["']?\s*\])`;
 const DARK_ANY = new RegExp(DARK_PART, "i");
-const DARK_ROOT = new RegExp(
-    String.raw`^(?:html|body|:root|\*|:host)?(?:${DARK_PART})+(?::root)?$`,
-    "i",
-);
+const rootRule = (part: string, tail = String.raw`(?::root)?`) =>
+    new RegExp(String.raw`^(?:html|body|:root|\*|:host)?(?:${part})+${tail}$`, "i");
+const DARK_ROOT = rootRule(DARK_PART);
 const LIGHT_PART = String.raw`(?:\.(?:light|light[-_]theme|light[-_]mode|lightmode|theme[-_]{1,2}light|mode[-_]{1,2}light|scheme[-_]light|v-theme--light|chakra-ui-light|ant-light|day|day[-_]mode)(?![\w-])|\[(?:data-[\w-]*)?(?:theme|mode|color-mode|color-scheme|colorscheme|appearance|scheme)\s*[~|^$*]?=\s*["']?(?:light|day)["']?\s*\])`;
-const LIGHT_ROOT = new RegExp(
-    String.raw`^(?:html|body|:root|\*|:host)?(?:${LIGHT_PART})+(?::root)?$`,
-    "i",
-);
-const DARK_DESC = new RegExp(
-    String.raw`^(?:html|body|:root|\*|:host)?(?:${DARK_PART})+\s+(?:body|html|:root|\*|main|#root|#app|\.app|\.App)$`,
-    "i",
+const LIGHT_ROOT = rootRule(LIGHT_PART);
+const DARK_DESC = rootRule(
+    DARK_PART,
+    String.raw`\s+(?:body|html|:root|\*|main|#root|#app|\.app|\.App)`,
 );
 const ROOT_ONLY =
     /^(?:html|body|:root|\*|:host|#root|#app|#__next|\.app|\.theme|main)(?:\[data-(?:bs-)?(?:theme|mode)\])*$|^\[data-(?:bs-)?(?:theme|mode|color-scheme)\]$/i;
@@ -55,18 +50,11 @@ function partScope(part: string, dark: boolean, light = false): Scope {
         return "light";
     }
 
-    if (light) {
-        // Inside `prefers-color-scheme: light`, the root selectors define the light values (a dark-first project's other mode).
-        return ROOT_ANY.test(part) || ROOT_ONLY.test(part) || /^:root\b/i.test(part)
-            ? "light"
-            : "other";
-    }
+    if (light || dark) {
+        // Inside `prefers-color-scheme`, the root selectors define that mode; `:root:not(.light)` too.
+        const root = ROOT_ANY.test(part) || ROOT_ONLY.test(part) || /^:root\b/i.test(part);
 
-    if (dark) {
-        // Inside `prefers-color-scheme: dark`, the root selectors define the dark values; `:root:not(.light)` too.
-        return ROOT_ANY.test(part) || ROOT_ONLY.test(part) || /^:root\b/i.test(part)
-            ? "dark"
-            : "other";
+        return !root ? "other" : light ? "light" : "dark";
     }
 
     return ROOT_ONLY.test(part) ||
@@ -87,17 +75,7 @@ function varScope(selector: string, dark: boolean, light = false): Scope {
         return dark ? "dark" : light ? "light" : "default";
     }
 
-    if (scopes.includes("default")) {
-        return "default";
-    }
-
-    for (const scope of ["dark", "light"] as const) {
-        if (scopes.every((each) => each === scope)) {
-            return scope;
-        }
-    }
-
-    return scopes.includes("dark") ? "dark" : scopes.includes("light") ? "light" : "other";
+    return (["default", "dark", "light"] as const).find((each) => scopes.includes(each)) ?? "other";
 }
 
 function isDarkWords(name: string): boolean {
@@ -132,29 +110,17 @@ export const stripComments = (text: string) =>
 
 export function parseStyles(source: string, firstLine: number | undefined = 1): Decl[] {
     const text = stripComments(source);
-    const breaks: number[] = [];
-
-    for (let at = text.indexOf("\n"); at !== -1; at = text.indexOf("\n", at + 1)) {
-        breaks.push(at);
-    }
-
     let cursor = 0;
+    let breaks = 0;
+    let nextBreak = text.indexOf("\n");
 
+    // The cursor only moves forward, so the count of line breaks before it only grows.
     const lineOf = (index: number) => {
-        let low = 0;
-        let high = breaks.length;
-
-        while (low < high) {
-            const middle = (low + high) >> 1;
-
-            if (breaks[middle]! < index) {
-                low = middle + 1;
-            } else {
-                high = middle;
-            }
+        for (; nextBreak !== -1 && nextBreak < index; breaks++) {
+            nextBreak = text.indexOf("\n", nextBreak + 1);
         }
 
-        return (firstLine ?? 1) + low;
+        return (firstLine ?? 1) + breaks;
     };
 
     // `@custom-media --dark (prefers-color-scheme: dark);` names a query: `@media (--dark)` is the dark mode's.
@@ -166,7 +132,6 @@ export function parseStyles(source: string, firstLine: number | undefined = 1): 
     let buffer = "";
     let paren = 0;
 
-    const chain = () => stack.map((block) => block.prelude);
     const selector = () =>
         stack.findLast((block) => !block.prelude.startsWith("@"))?.selector ?? "";
 
@@ -193,8 +158,9 @@ export function parseStyles(source: string, firstLine: number | undefined = 1): 
         }
 
         const prop = match[1]!;
+        const variable = /^(?:--|[$@])/.test(prop);
         const value = match[2]!.replace(/\s*!(?:important|default|global)\s*$/i, "").trim();
-        const at = chain().filter((part) => part.startsWith("@"));
+        const at = stack.map((block) => block.prelude).filter((part) => part.startsWith("@"));
         const dark = at.some(
             (part) =>
                 /^@media\b[^{]*prefers-color-scheme\s*:\s*dark/i.test(part) ||
@@ -209,7 +175,7 @@ export function parseStyles(source: string, firstLine: number | undefined = 1): 
         const theme = at.some((part) => /^@theme\b/i.test(part));
 
         decls.push({
-            prop: prop.startsWith("--") || /^[$@]/.test(prop) ? prop : prop.toLowerCase(),
+            prop: variable ? prop : prop.toLowerCase(),
             // A Sass map (`$themes: (light: (…), dark: (…))`) is long: it is read whole.
             value: value.slice(
                 0,
@@ -219,18 +185,14 @@ export function parseStyles(source: string, firstLine: number | undefined = 1): 
             at,
             theme,
             inline: false,
-            // The statement starts as many line breaks before the cursor as it holds after its first character.
-            ...(firstLine === undefined
-                ? {}
-                : { line: lineOf(cursor) - (buffer.trimStart().match(/\n/g)?.length ?? 0) }),
-            scope:
-                prop.startsWith("--") || prop.startsWith("$") || prop.startsWith("@")
-                    ? theme
-                        ? "default"
-                        : varScope(here, dark, light)
-                    : dark || isDarkSelector(here)
-                      ? "dark"
-                      : "default",
+            ...(firstLine === undefined ? {} : { line: lineOf(cursor) }),
+            scope: variable
+                ? theme
+                    ? "default"
+                    : varScope(here, dark, light)
+                : dark || isDarkSelector(here)
+                  ? "dark"
+                  : "default",
         });
     };
 
@@ -273,18 +235,15 @@ export function parseStyles(source: string, firstLine: number | undefined = 1): 
 
             buffer = "";
 
-            // `&` is the parent selector; without it a nested rule is a descendant. An at-rule keeps its parent's.
-            const parent =
-                stack.findLast((block) => !block.prelude.startsWith("@"))?.selector ?? "";
-            let resolved: string;
-
-            if (prelude.startsWith("@") || parent === "") {
-                resolved = prelude.startsWith("@") ? parent : prelude;
-            } else if (prelude.includes("&")) {
-                resolved = prelude.replace(/&/g, parent);
-            } else {
-                resolved = `${parent} ${prelude}`;
-            }
+            // Without `&` a nested rule is a descendant. An at-rule keeps its parent's selector.
+            const parent = selector();
+            const resolved = prelude.startsWith("@")
+                ? parent
+                : parent === ""
+                  ? prelude
+                  : prelude.includes("&")
+                    ? prelude.replace(/&/g, parent)
+                    : `${parent} ${prelude}`;
 
             stack.push({ prelude: prelude.slice(0, 300), selector: resolved.slice(0, 300) });
         } else if (char === "}" && paren === 0) {
@@ -321,24 +280,23 @@ export function pageStyles(source: string): { blocks: string[]; inline: Decl[] }
 
         for (const declaration of (match[1] ?? match[2] ?? "").split(";")) {
             const colon = declaration.indexOf(":");
+            const prop = declaration.slice(0, colon).trim().toLowerCase();
 
-            if (colon > 0) {
-                const prop = declaration.slice(0, colon).trim().toLowerCase();
+            if (colon > 0 && /^(?:--[\w-]+|[a-z-]+)$/.test(prop)) {
+                const value = declaration
+                    .slice(colon + 1)
+                    .trim()
+                    .slice(0, MAX_VALUE);
 
-                if (/^(?:--[\w-]+|[a-z-]+)$/.test(prop)) {
-                    inline.push({
-                        prop,
-                        value: declaration
-                            .slice(colon + 1)
-                            .trim()
-                            .slice(0, MAX_VALUE),
-                        selector: "",
-                        at: [],
-                        scope: "default",
-                        theme: false,
-                        inline: true,
-                    });
-                }
+                inline.push({
+                    prop,
+                    value,
+                    selector: "",
+                    at: [],
+                    scope: "default",
+                    theme: false,
+                    inline: true,
+                });
             }
         }
     }
@@ -412,7 +370,7 @@ export function readLiteral(text: string, start: number): Literal | undefined {
                     break;
                 }
 
-                depth -= char === "," ? 0 : 1;
+                depth -= 1;
             }
         }
 
@@ -551,12 +509,10 @@ export function colorsIn(value: string, named = false): FoundColor[] {
         }
     };
 
-    for (const match of value.matchAll(HEX)) {
-        push(match[0]);
-    }
-
-    for (const match of value.matchAll(COLOR_FUNCTION)) {
-        push(match[0]);
+    for (const pattern of [HEX, COLOR_FUNCTION]) {
+        for (const match of value.matchAll(pattern)) {
+            push(match[0]);
+        }
     }
 
     if (named) {

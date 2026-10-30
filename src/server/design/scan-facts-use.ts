@@ -1,6 +1,14 @@
 import { colorsIn, commaParts, type Decl, isDarkSelector, parts, px } from "./scan-parse.ts";
 import { nameScore, words } from "./scan-colors.ts";
-import { addVar, bump, type ColorFact, emptyKinds, type Facts, type Kinds } from "./scan-facts.ts";
+import {
+    addVar,
+    bump,
+    type ColorFact,
+    emptyKinds,
+    entry,
+    type Facts,
+    type Kinds,
+} from "./scan-facts.ts";
 import { noteChannels } from "./scan-variables.ts";
 
 const COLOR_PROPERTY: [RegExp, "bg" | "text" | "border" | "fill" | "shadow"][] = [
@@ -37,32 +45,21 @@ const BODY = /(?:^|[\s,>+~])(?:body|html|p|:root|\.text|\.body|main)(?![\w-])/i;
 
 const CODE = /(?:^|[\s,>+~])(?:code|pre|kbd|samp|\.mono|\.code)(?![\w-])/i;
 
+const VAR_REF = /var\(\s*--([\w-]+)/g;
+
 export function colorFact(
     map: Map<string, ColorFact>,
     hex: string,
     text: string,
     at?: string,
 ): ColorFact {
-    let fact = map.get(hex);
-
-    if (fact === undefined) {
-        fact = {
-            hex,
-            forms: new Map(),
-            bg: 0,
-            text: 0,
-            border: 0,
-            fill: 0,
-            shadow: 0,
-            other: 0,
-            root: 0,
-            body: 0,
-            surface: 0,
-            order: map.size,
-            ...(at === undefined ? {} : { at }),
-        };
-        map.set(hex, fact);
-    }
+    const fact = entry(map, hex, () => ({
+        hex,
+        forms: new Map(),
+        ...emptyKinds(),
+        order: map.size,
+        ...(at === undefined ? {} : { at }),
+    }));
 
     bump(fact.forms, text.replace(/\s+/g, " ").slice(0, 80));
 
@@ -71,12 +68,9 @@ export function colorFact(
 
 function useColors(facts: Facts, decl: Decl, dark: boolean): void {
     const known = COLOR_PROPERTY.find(([pattern]) => pattern.test(decl.prop))?.[1];
-    // Any other property may still hold a literal color (`filter: drop-shadow(… #000)`); a color name counts only where
-    // the property takes a color.
     const kind = known ?? "other";
-
     const map = dark ? facts.darkColors : facts.colors;
-    // A color name counts only where the property takes a color and the value is short (not a font stack or a URL).
+    // A color name counts only where the property takes a color: `font-family: Rose` is no color.
     const found = colorsIn(
         decl.value,
         known !== undefined && (kind !== "shadow" || !/^none$/i.test(decl.value)),
@@ -98,17 +92,13 @@ function useColors(facts: Facts, decl: Decl, dark: boolean): void {
         }
     };
 
+    const where =
+        facts.file === undefined || decl.line === undefined
+            ? undefined
+            : `${facts.file}:${decl.line}`;
+
     for (const color of found) {
-        count(
-            colorFact(
-                map,
-                color.hex,
-                color.text,
-                facts.file === undefined || decl.line === undefined
-                    ? undefined
-                    : `${facts.file}:${decl.line}`,
-            ),
-        );
+        count(colorFact(map, color.hex, color.text, where));
     }
 
     const single = /^(?:[^\s,]*\s+)?\.([\w-]+)$/.exec(decl.selector.trim());
@@ -120,25 +110,20 @@ function useColors(facts: Facts, decl: Decl, dark: boolean): void {
         facts.classRules.size < 600 &&
         (decl.selector.trim() === `.${single[1]}` || (dark && isDarkSelector(decl.selector)))
     ) {
-        const rule = facts.classRules.get(`${single[1]}|${kind}`) ?? { kind };
+        const rule = entry(facts.classRules, `${single[1]}|${kind}`, () => ({ kind }));
 
         rule[dark ? "dark" : "light"] = found[0]!.hex;
-        facts.classRules.set(`${single[1]}|${kind}`, rule);
     }
 
-    // A color that comes by a variable is a use of that variable (and of the color it holds, once the scan knows it).
     if (known !== undefined && !dark) {
-        for (const match of decl.value.matchAll(/var\(\s*--([\w-]+)/g)) {
-            const kinds = facts.varKinds.get(match[1]!) ?? emptyKinds();
-
-            count(kinds);
-            facts.varKinds.set(match[1]!, kinds);
+        for (const match of decl.value.matchAll(VAR_REF)) {
+            count(entry(facts.varKinds, match[1]!, emptyKinds));
         }
     }
 }
 
 export function stackOf(value: string): string[] | undefined {
-    if (/^(?:inherit|initial|unset|revert)$/i.test(value.trim()) || /^var\(/i.test(value.trim())) {
+    if (/^(?:(?:inherit|initial|unset|revert)$|var\()/i.test(value.trim())) {
         return undefined;
     }
 
@@ -150,21 +135,29 @@ export function stackOf(value: string): string[] | undefined {
     return names.length === 0 ? undefined : names;
 }
 
-const stackKey = (stack: string[]) => stack.map((name) => name.toLowerCase()).join(",");
-
-function useFont(facts: Facts, stack: string[], decl: Decl): void {
-    const key = stackKey(stack);
-    const fact = facts.fonts.get(key) ?? { stack, count: 0, heading: 0, body: 0, code: 0 };
-
+function countPlace(fact: { count: number; heading: number; body: number }, selector: string) {
     fact.count += 1;
 
-    if (HEADING.test(decl.selector)) {
+    if (HEADING.test(selector)) {
         fact.heading += 1;
     }
 
-    if (BODY.test(decl.selector) || rootish(decl.selector)) {
+    if (BODY.test(selector) || rootish(selector)) {
         fact.body += 1;
     }
+}
+
+function useFont(facts: Facts, value: string, decl: Decl): void {
+    const stack = stackOf(value);
+
+    if (stack === undefined) {
+        return;
+    }
+
+    const key = stack.map((name) => name.toLowerCase()).join(",");
+    const fact = entry(facts.fonts, key, () => ({ stack, count: 0, heading: 0, body: 0, code: 0 }));
+
+    countPlace(fact, decl.selector);
 
     if (
         CODE.test(decl.selector) ||
@@ -173,8 +166,6 @@ function useFont(facts: Facts, stack: string[], decl: Decl): void {
     ) {
         fact.code += 1;
     }
-
-    facts.fonts.set(key, fact);
 }
 
 function useSize(facts: Facts, text: string, decl: Decl): void {
@@ -185,20 +176,15 @@ function useSize(facts: Facts, text: string, decl: Decl): void {
     }
 
     const rounded = Math.round(size * 100) / 100;
-    const fact = facts.sizes.get(rounded) ?? { count: 0, body: 0, heading: 0, forms: new Map() };
+    const fact = entry(facts.sizes, rounded, () => ({
+        count: 0,
+        body: 0,
+        heading: 0,
+        forms: new Map(),
+    }));
 
-    fact.count += 1;
+    countPlace(fact, decl.selector);
     bump(fact.forms, text.trim());
-
-    if (HEADING.test(decl.selector)) {
-        fact.heading += 1;
-    }
-
-    if (BODY.test(decl.selector) || rootish(decl.selector)) {
-        fact.body += 1;
-    }
-
-    facts.sizes.set(rounded, fact);
 }
 
 const SPACING_PROPS =
@@ -219,21 +205,14 @@ const FULL_RADIUS = /^(?:9{3,}px|9{3,}rem|100vmax|calc\(infinity \* 1px\))$/i;
 function useRadius(facts: Facts, value: string): void {
     for (const part of value.split("/").flatMap((half) => parts(half))) {
         const text = part.trim();
-
-        // A percentage makes a circle of a square; it is not a size.
-        if (text.endsWith("%")) {
-            continue;
-        }
-
         const full = FULL_RADIUS.test(text);
         const size = full ? undefined : px(text);
 
-        if (full || (size !== undefined && size > 0 && size <= 200)) {
+        // A percentage makes a circle of a square; it is not a size.
+        if (!text.endsWith("%") && (full || (size !== undefined && size > 0 && size <= 200))) {
             const key = full ? "full" : `${Math.round(size! * 100) / 100}`;
-            const fact = facts.radii.get(key) ?? { count: 0, text };
 
-            fact.count += 1;
-            facts.radii.set(key, fact);
+            entry(facts.radii, key, () => ({ count: 0, text })).count += 1;
         }
     }
 }
@@ -244,39 +223,35 @@ const SASS_PROPS =
 const SCALE_PROPS =
     /^(?:padding|margin|gap|row-gap|column-gap|border-radius|font-size)(?:-[a-z-]+)?$/;
 
+const emptyLayout = () => ({ space: 0, text: 0, radius: 0, box: 0 });
+
+const LAYOUT_GROUP: [RegExp, "space" | "text" | "radius" | "box"][] = [
+    [SPACING_PROPS, "space"],
+    [/^font-size$/, "text"],
+    [/^border(?:-\w+)*-radius$/, "radius"],
+    [
+        /^(?:width|height|min-width|min-height|max-width|max-height|inline-size|block-size|flex-basis)$/,
+        "box",
+    ],
+];
+
+const FONT_SHORTHAND =
+    /^(?:(?:italic|oblique|normal|small-caps|bold|bolder|lighter|\d{3})\s+)*(?<size>[\d.]+(?:px|rem|em|pt))(?:\/(?<line>[\d.]+(?:px|rem|em)?))?\s+(?<family>.+)$/i;
+
 export function ingest(facts: Facts, decl: Decl): void {
     noteChannels(facts, decl.value);
 
-    if (decl.value.includes("var(")) {
-        const group = SPACING_PROPS.test(decl.prop)
-            ? "space"
-            : decl.prop === "font-size"
-              ? "text"
-              : /^border(?:-\w+)*-radius$/.test(decl.prop)
-                ? "radius"
-                : /^(?:width|height|min-width|min-height|max-width|max-height|inline-size|block-size|flex-basis)$/.test(
-                        decl.prop,
-                    )
-                  ? "box"
-                  : undefined;
+    const group = decl.value.includes("var(")
+        ? LAYOUT_GROUP.find(([pattern]) => pattern.test(decl.prop))?.[1]
+        : undefined;
 
-        if (group !== undefined) {
-            for (const match of decl.value.matchAll(/var\(\s*--([\w-]+)/g)) {
-                const layout = facts.varLayout.get(match[1]!) ?? {
-                    space: 0,
-                    text: 0,
-                    radius: 0,
-                    box: 0,
-                };
-
-                layout[group] += 1;
-                facts.varLayout.set(match[1]!, layout);
-            }
+    if (group !== undefined) {
+        for (const match of decl.value.matchAll(VAR_REF)) {
+            entry(facts.varLayout, match[1]!, emptyLayout)[group] += 1;
         }
     }
 
-    // A size computed from custom properties or from Sass and Less variables (`$unit * 2`) is resolved once the scan
-    // knows the variables.
+    // Sizes from variables (`calc(var(--gap) * 2)`, `$unit * 2`) wait until the variables are known.
     if (
         ((SCALE_PROPS.test(decl.prop) && /calc\(/.test(decl.value) && /var\(/.test(decl.value)) ||
             (SASS_PROPS.test(decl.prop) && /(?<![\w$@-])[$@][A-Za-z_]/.test(decl.value))) &&
@@ -303,30 +278,17 @@ export function ingest(facts: Facts, decl: Decl): void {
     }
 
     switch (decl.prop) {
-        case "font-family": {
-            const stack = stackOf(decl.value);
-
-            if (stack !== undefined) {
-                useFont(facts, stack, decl);
-            }
+        case "font-family":
+            useFont(facts, decl.value, decl);
 
             return;
-        }
 
         case "font": {
-            const match =
-                /^(?:(?:italic|oblique|normal|small-caps|bold|bolder|lighter|\d{3})\s+)*(?<size>[\d.]+(?:px|rem|em|pt))(?:\/(?<line>[\d.]+(?:px|rem|em)?))?\s+(?<family>.+)$/i.exec(
-                    decl.value,
-                );
+            const groups = FONT_SHORTHAND.exec(decl.value)?.groups;
 
-            if (match?.groups !== undefined) {
-                const stack = stackOf(match.groups.family!);
-
-                useSize(facts, match.groups.size!, decl);
-
-                if (stack !== undefined) {
-                    useFont(facts, stack, decl);
-                }
+            if (groups !== undefined) {
+                useSize(facts, groups.size!, decl);
+                useFont(facts, groups.family!, decl);
             }
 
             return;
@@ -345,6 +307,7 @@ export function ingest(facts: Facts, decl: Decl): void {
             useRadius(facts, decl.value);
 
             return;
+
         case "box-shadow":
             if (
                 !/^(?:none|inherit|initial|unset)$/i.test(decl.value) &&
@@ -368,53 +331,42 @@ function lightDark(value: string): [string, string] | undefined {
     let at = 0;
     let found = false;
 
+    const both = (text: string) => {
+        light += text;
+        dark += text;
+    };
+
     while (at < value.length) {
         const open = value.indexOf("light-dark(", at);
+        let start = open === -1 ? value.length : open + 11;
 
-        if (open === -1 || (open > 0 && /[\w-]/.test(value[open - 1]!))) {
-            const rest = open === -1 ? value.slice(at) : value.slice(at, open + 11);
-
-            light += rest;
-            dark += rest;
-            at = open === -1 ? value.length : open + 11;
+        if (open === -1 || /[\w-]/.test(value[open - 1] ?? "")) {
+            both(value.slice(at, start));
+            at = start;
 
             continue;
         }
 
-        light += value.slice(at, open);
-        dark += value.slice(at, open);
+        both(value.slice(at, open));
 
         const parts = [];
         let depth = 0;
-        let start = open + 11;
-        let end = -1;
+        let end = start;
 
-        for (let index = start; index < value.length; index++) {
-            const char = value[index]!;
+        for (; end < value.length && (depth > 0 || value[end] !== ")"); end++) {
+            const char = value[end];
 
-            if (char === "(") {
-                depth += 1;
-            } else if (char === ")") {
-                if (depth === 0) {
-                    end = index;
-
-                    break;
-                }
-
-                depth -= 1;
-            } else if (char === "," && depth === 0) {
-                parts.push(value.slice(start, index));
-                start = index + 1;
+            if (char === "," && depth === 0) {
+                parts.push(value.slice(start, end));
+                start = end + 1;
             }
-        }
 
-        if (end === -1) {
-            return undefined;
+            depth += char === "(" ? 1 : char === ")" ? -1 : 0;
         }
 
         parts.push(value.slice(start, end));
 
-        if (parts.length !== 2) {
+        if (end === value.length || parts.length !== 2) {
             return undefined;
         }
 
@@ -427,16 +379,16 @@ function lightDark(value: string): [string, string] | undefined {
     return found ? [light, dark] : undefined;
 }
 
+const VAR_KIND: Record<string, "scss" | "less"> = { $: "scss", "@": "less" };
+
 export function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
     const mode = facts.fileMode;
-    const decls =
-        mode === undefined
-            ? all
-            : all.map((decl) =>
-                  decl.scope === "default" && !decl.inline ? { ...decl, scope: mode } : decl,
-              );
 
-    const expanded = decls.flatMap((decl): Decl[] => {
+    const expanded = all.flatMap((each): Decl[] => {
+        const decl =
+            mode !== undefined && each.scope === "default" && !each.inline
+                ? { ...each, scope: mode }
+                : each;
         const pair = decl.value.includes("light-dark(") ? lightDark(decl.value) : undefined;
 
         if (pair === undefined || decl.scope === "other") {
@@ -452,49 +404,36 @@ export function ingestStyles(facts: Facts, file: string, all: Decl[]): void {
     });
 
     for (const decl of expanded) {
-        if (decl.prop.startsWith("--")) {
-            const name = decl.prop.slice(2);
+        const custom = decl.prop.startsWith("--");
+        const name = decl.prop.slice(custom ? 2 : 1);
 
-            if (decl.scope === "other") {
-                bump(facts.scoped, decl.selector.slice(0, 80));
+        if (custom && decl.scope === "other") {
+            bump(facts.scoped, decl.selector.slice(0, 80));
 
-                // The surface is often set on the card itself (`.card { --bs-card-bg: #fff }`): a component variable that
-                // is named for a card or a panel is the surface, in the mode its selector names.
-                if (
-                    nameScore("surface", words(name)) >= 60 &&
-                    colorsIn(decl.value).length === 1 &&
-                    /^\s*(?:#|rgb|hsl|oklch)/i.test(decl.value)
-                ) {
-                    addVar(facts, {
-                        name,
-                        value: decl.value,
-                        scope: isDarkSelector(decl.selector) ? "dark" : "default",
-                        kind: "css",
-                        file,
-                    });
-                }
-
-                continue;
+            // The surface is often set on the card itself (`.card { --bs-card-bg: #fff }`).
+            if (
+                nameScore("surface", words(name)) >= 60 &&
+                colorsIn(decl.value).length === 1 &&
+                /^\s*(?:#|rgb|hsl|oklch)/i.test(decl.value)
+            ) {
+                addVar(facts, {
+                    name,
+                    value: decl.value,
+                    scope: isDarkSelector(decl.selector) ? "dark" : "default",
+                    kind: "css",
+                    file,
+                });
             }
-
-            addVar(facts, {
-                name,
-                value: decl.value,
-                scope: decl.scope,
-                kind: decl.theme ? "theme" : "css",
-                file,
-                ...(decl.line === undefined ? {} : { line: decl.line }),
-            });
 
             continue;
         }
 
-        if (decl.prop.startsWith("$") || decl.prop.startsWith("@")) {
+        if (custom || decl.prop.startsWith("$") || decl.prop.startsWith("@")) {
             addVar(facts, {
-                name: decl.prop.slice(1),
+                name,
                 value: decl.value,
                 scope: decl.scope,
-                kind: decl.prop.startsWith("$") ? "scss" : "less",
+                kind: VAR_KIND[decl.prop[0]!] ?? (decl.theme ? "theme" : "css"),
                 file,
                 ...(decl.line === undefined ? {} : { line: decl.line }),
             });
