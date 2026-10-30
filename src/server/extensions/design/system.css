@@ -6,7 +6,9 @@
     padding: 0 10px;
 }
 
-.dsy-history {
+.dsy-history,
+.dsy-modemenu,
+.dsy-tabs-end {
     display: inline-flex;
     flex: none;
 }
@@ -33,8 +35,6 @@
 }
 
 .dsy-tabs-end {
-    display: inline-flex;
-    flex: none;
     height: 34px;
     align-items: center;
 }
@@ -82,7 +82,8 @@
     min-height: 0;
 }
 
-.dsy-column {
+.dsy-column,
+.dsy-preview {
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -102,14 +103,6 @@
     overflow: auto;
     overscroll-behavior: contain;
     scroll-padding: 12px;
-}
-
-.dsy-preview {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
 }
 
 .dsy-preview-head {
@@ -184,12 +177,19 @@
     line-height: 1.55;
 }
 
-.dsy-group {
-    margin: 0 0 12px;
-    overflow: clip;
+.dsy-group,
+.dsy-group.bare > .dsy-ramp-wrap,
+.dsy-group.bare > .dsy-rows,
+.dsy-component,
+.dsy-prose {
     border: 1px solid var(--dsn-hair);
     border-radius: 12px;
     background: color-mix(in srgb, var(--text) 3%, var(--bg));
+}
+
+.dsy-group {
+    margin: 0 0 12px;
+    overflow: clip;
 }
 
 .dsy-group.bare {
@@ -208,12 +208,17 @@
     text-align: left;
 }
 
-.dsy-group-title {
+.dsy-group-title,
+.dsy-section-label,
+.dsy-mode-name {
     color: var(--muted);
-    font-size: 11.5px;
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
+}
+
+.dsy-group-title {
+    font-size: 11.5px;
 }
 
 .dsy-group-count {
@@ -260,13 +265,6 @@
     border-top: 1px solid var(--dsn-hair);
 }
 
-.dsy-group.bare > .dsy-ramp-wrap,
-.dsy-group.bare > .dsy-rows {
-    border: 1px solid var(--dsn-hair);
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--text) 3%, var(--bg));
-}
-
 .dsy-rows {
     margin: 0;
     padding: 0;
@@ -282,7 +280,8 @@
 }
 
 .dsy-row.edited::before,
-.dsy-card-tile.edited::after {
+.dsy-card-tile.edited::after,
+.dsy-step-tile.edited::after {
     content: "";
     position: absolute;
     background: var(--accent);
@@ -527,15 +526,19 @@
     font-weight: 500;
 }
 
+.dsy-editor,
+.dsy-ramp-editor {
+    margin: 0 12px 12px;
+    border-radius: 10px;
+    background: var(--bg);
+    box-shadow: 0 0 0 1px var(--dsn-hair);
+}
+
 .dsy-editor {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    margin: 0 12px 12px;
     padding: 12px;
-    border-radius: 10px;
-    background: var(--bg);
-    box-shadow: 0 0 0 1px var(--dsn-hair);
     cursor: default;
 }
 
@@ -568,11 +571,7 @@
 
 .dsy-mode-name {
     margin: 0;
-    color: var(--muted);
     font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
 }
 
 .dsy-colorfield {
@@ -906,13 +905,15 @@
     font-size: 10.5px;
 }
 
-.dsy-card-tile.on {
+.dsy-card-tile.on,
+.dsy-step-tile.on {
     background: var(--dsn-accent-soft);
     box-shadow: 0 0 0 2px var(--accent);
 }
 
 @media (hover: hover) {
-    .dsy-card-tile:hover:not(.on) {
+    .dsy-card-tile:hover:not(.on),
+    .dsy-step-tile:hover:not(.on) {
         background: var(--hover);
     }
 }
@@ -924,13 +925,6 @@
     height: 8px;
     border-radius: 50%;
     box-shadow: 0 0 0 2px var(--bg);
-}
-
-.dsy-ramp-editor {
-    margin: 0 12px 12px;
-    border-radius: 10px;
-    background: var(--bg);
-    box-shadow: 0 0 0 1px var(--dsn-hair);
 }
 
 .dsy-ramp-editor .dsy-editor {
@@ -1032,11 +1026,7 @@
     align-items: center;
     gap: 8px;
     margin: 4px 2px 10px;
-    color: var(--muted);
     font-size: 11.5px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
 }
 
 .dsy-group-note {
@@ -1121,26 +1111,12 @@
     white-space: nowrap;
 }
 
-.dsy-step-tile.on {
-    background: var(--dsn-accent-soft);
-    box-shadow: 0 0 0 2px var(--accent);
-}
-
-@media (hover: hover) {
-    .dsy-step-tile:hover:not(.on) {
-        background: var(--hover);
-    }
-}
-
 .dsy-step-tile.edited::after {
-    content: "";
-    position: absolute;
     top: 6px;
     right: 6px;
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--accent);
     box-shadow: 0 0 0 2px var(--bg);
 }
 
@@ -1350,9 +1326,6 @@
 .dsy-component {
     margin: 0 0 12px;
     padding: 14px;
-    border: 1px solid var(--dsn-hair);
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--text) 3%, var(--bg));
 }
 
 .dsy-component header {
@@ -1464,9 +1437,6 @@
 .dsy-prose {
     position: relative;
     padding: 14px 16px;
-    border: 1px solid var(--dsn-hair);
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--text) 3%, var(--bg));
     line-height: 1.6;
 }
 
@@ -2028,11 +1998,6 @@
 .dsy-bar-history .icon-button {
     width: 34px;
     height: 34px;
-}
-
-.dsy-modemenu {
-    display: inline-flex;
-    flex: none;
 }
 
 .dsy-modemenu-button {
