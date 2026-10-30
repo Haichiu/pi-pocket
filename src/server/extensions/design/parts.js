@@ -65,10 +65,10 @@ export function createParts(pocket) {
     const { html, Icon, useEffect, useLayoutEffect, useRef, useState } = pocket;
 
     /** One of the app's icons, or one of ours. */
-    function Ico({ name, size = 16 }) {
+    function Ico({ name, size = 16, class: className }) {
         return PATHS[name]
-            ? html`<${Icon} path=${PATHS[name]} size=${size} />`
-            : html`<${Icon} name=${name} size=${size} />`;
+            ? html`<${Icon} path=${PATHS[name]} size=${size} class=${className} />`
+            : html`<${Icon} name=${name} size=${size} class=${className} />`;
     }
 
     /** The size of an element, kept up to date as it changes. */
