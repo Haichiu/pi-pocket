@@ -792,7 +792,6 @@
 .dsy-look-button {
     padding: 4px 12px;
     border-radius: 7px;
-    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
 }
@@ -1208,7 +1207,6 @@
 }
 
 .dsy-bezier input {
-    width: 100%;
     text-align: center;
 }
 
@@ -1436,8 +1434,7 @@
 
 /* Folded, a problem box is one line: on a phone it must not take a third of the screen before the first token. */
 .dsy-problems:not(.open) {
-    padding-top: 6px;
-    padding-bottom: 6px;
+    padding-block: 6px;
 }
 
 .dsy-problems.error .dsy-problems-head {
@@ -1650,10 +1647,6 @@
 .dsn[data-size="medium"] .dsy-tabs .dsn-tab:not(.on) .dsn-count,
 .dsn[data-size="narrow"] .dsy-tabs .dsn-tab:not(.on) .dsn-count {
     display: none;
-}
-
-.dsn[data-size="medium"] .dsy-tabs-end {
-    margin-left: 0;
 }
 
 .dsn[data-size="medium"] .dsy-tabs .dsn-tab {
@@ -1880,7 +1873,6 @@
     place-items: center;
     width: 18px;
     height: 34px;
-    color: var(--text);
     font-size: 20px;
     line-height: 1;
     pointer-events: none;
