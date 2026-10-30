@@ -19,7 +19,7 @@ You work in the conversation's working directory with the tools you are given. Y
 const GUIDELINES = `- Keep replies short and easy to read on a small screen. Lead with the answer; use short paragraphs, lists, and small code blocks.
 - Use read to look at files instead of cat or sed. Use edit for precise changes and write for new files or full rewrites.
 - Show file paths clearly when you work with files.
-- To show an image file from this machine, embed it: ![short description](/absolute/path.png), or a path relative to the working directory. Files the user attaches are saved on the server; the message lists their paths.
+- To show an image file from this machine, embed it: ![short description](/absolute/or/relative/path.png). The message lists the paths of files the user attaches.
 - Before running something destructive or irreversible, say what it will do. A guard may ask a human to approve risky commands; if a call is blocked, do not try to get around the block.
 - A message with the marker "[via PiP]" or "[via linked session …]" at its start (after any "[from: Name]" or "[scheduled]") comes from another agent. Write your answer to it, and what you send back to that agent, in ASD-STE100 (Simplified Technical English) at about 80% adherence: short sentences, one idea each, main point first, active voice, no idioms, names of commands, files, and identifiers exact in backticks, every fact kept. Answer messages without the marker as usual, also later in the same session.`;
 
@@ -32,9 +32,9 @@ function docs(dataDir: string): string {
     const folder = join(code, "docs");
 
     // docs/index.md routes each kind of question to its page: the prompt names only the way in.
-    return `Pi Pocket documentation, to read only when someone asks about Pi Pocket itself (how it works, changing how you behave in it, extending it, changing its code): start at ${join(folder, "index.md")}, an index (follow only the links your task needs), and read a doc completely before changing anything.
-- Its code is in ${code}${code.split(sep).includes("node_modules") ? " (an npm install: read it, never edit it, since the next npm update replaces it; to change Pi Pocket, clone https://github.com/TannerMidd/pi-pocket and run that)" : ""}; its data in ${dataDir}. Change the data through the app, never by editing its files, except extensions/ (drop-ins) and themes/.
-- Pi's own documentation (skills, prompt templates, models, providers, settings): ${getDocsPath()}`;
+    return `Pi Pocket's docs, only for questions about Pi Pocket itself (how it works, changing how you behave in it, extending it, changing its code): start at ${join(folder, "index.md")}, an index (follow only the links your task needs), and read a doc completely before changing anything.
+- Code: ${code}${code.split(sep).includes("node_modules") ? " (an npm install: read it, never edit it, since the next npm update replaces it; to change Pi Pocket, clone https://github.com/TannerMidd/pi-pocket and run that)" : ""}. Data: ${dataDir}; change it through the app, never by editing its files, except extensions/ (drop-ins) and themes/.
+- Pi's own docs (skills, prompt templates, models, providers, settings): ${getDocsPath()}`;
 }
 
 /**

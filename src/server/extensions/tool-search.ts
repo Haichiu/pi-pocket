@@ -41,7 +41,7 @@ const DEFERRED: Record<string, { use: string; section?: string; note?: string }>
     schedule: { use: "send yourself a message later" },
     watch_pr: { use: "watch a pull request's checks" },
     design_preview: {
-        use: "load it, then read its guide, before you make or change a design",
+        use: "make, change, or check a design (read its guide first)",
         section: "design_mode",
         note: `Before you make or change a design, read ${DESIGN_GUIDE}. Check each design with design_preview at mobile and desktop sizes before you reply. design_system read gives a summary of the project's design system.`,
     },
