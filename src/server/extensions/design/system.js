@@ -544,24 +544,19 @@ export function createModel(system, edits = new Map()) {
         return token?.modes[mode] ? rawOf(token.modes[mode]) : undefined;
     };
 
-    const ownSets = new Map();
-
-    const ownSet = (mode) => {
-        if (!ownSets.has(mode)) {
-            const list = system.overrides?.[mode];
-
-            ownSets.set(mode, Array.isArray(list) ? new Set(list) : null);
-        }
-
-        return ownSets.get(mode);
-    };
+    const ownSets = new Map(
+        Object.entries(system.overrides ?? {}).map(([mode, list]) => [
+            mode,
+            Array.isArray(list) ? new Set(list) : null,
+        ]),
+    );
 
     const inherits = (name, mode) => {
         if (mode === defaultMode) {
             return false;
         }
 
-        const set = ownSet(mode);
+        const set = ownSets.get(mode) ?? null;
 
         return set === null
             ? same(savedRaw(name, mode), savedRaw(name, defaultMode))
@@ -1080,20 +1075,6 @@ export function safeCss(value) {
 // The artifact bridge takes `--` and up to 78 letters, digits, `_`, `-`.
 const bridgeName = (cssVar) => /^--[A-Za-z0-9_-]{1,78}$/.test(cssVar);
 
-function varsOf(model, mode) {
-    const out = [];
-
-    for (const token of model.tokens) {
-        const css = safeCss(model.value(token.name, mode).css);
-
-        if (css !== "" && /^--[A-Za-z0-9_-]+$/.test(token.cssVar)) {
-            out.push([token.cssVar, css]);
-        }
-    }
-
-    return out;
-}
-
 // The bridge refuses a value past 200 characters, and a refused batch changes nothing: a long one is left out.
 export function previewVars(model, mode) {
     const base = model.defaultMode;
@@ -1119,7 +1100,9 @@ export function previewVars(model, mode) {
 }
 
 export function themeCss(model, mode) {
-    return `:root{${varsOf(model, mode)
+    return `:root{${model.tokens
+        .map((token) => [token.cssVar, safeCss(model.value(token.name, mode).css)])
+        .filter(([name, css]) => css !== "" && /^--[A-Za-z0-9_-]+$/.test(name))
         .map(([name, css]) => `${name}:${css}`)
         .join(";")}}`;
 }
