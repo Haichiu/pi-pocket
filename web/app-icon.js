@@ -94,7 +94,7 @@ function setLink(rel, href, type) {
 
 /**
  * A phone fetches the page and the icon in a session of its own, with no cookie: the owner's browser tells the server the
- * colors too (a guest's is refused, and keeps its cookie). Not awaited; a failure only leaves the cookie's colors.
+ * colors too (`reportIconsAs`). Not awaited; a failure only leaves the cookie's colors.
  */
 async function reportToServer(colors) {
     try {
@@ -115,6 +115,18 @@ async function reportToServer(colors) {
 }
 
 let applied = "";
+/** The colors in use, `frame.card.ring1.ring2.pi`, and whether this browser reports them: only the owner's may. */
+let colorsInUse = null;
+let reports = false;
+
+/** Once the person is known: the owner's browser reports the colors (a guest's or a viewer's would be refused). */
+export function reportIconsAs(owner) {
+    reports = owner;
+
+    if (owner && colorsInUse !== null) {
+        void reportToServer(colorsInUse);
+    }
+}
 
 /** Put the icons for `vars` on the page: the tab's icon and the home-screen icon. The same colors again do nothing. */
 export function applyIcons(vars) {
@@ -127,6 +139,10 @@ export function applyIcons(vars) {
     applied = key;
     setLink("icon", svgUrl(iconSvg(vars)), "image/svg+xml");
     setLink("apple-touch-icon", homeIconUrl(vars));
-    document.cookie = `${COOKIE}=${cookieValue(vars)}; path=/; max-age=31536000; samesite=lax`;
-    reportToServer(cookieValue(vars));
+    colorsInUse = cookieValue(vars);
+    document.cookie = `${COOKIE}=${colorsInUse}; path=/; max-age=31536000; samesite=lax`;
+
+    if (reports) {
+        void reportToServer(colorsInUse);
+    }
 }
