@@ -527,6 +527,11 @@ export type BackgroundTask = {
     endedAt?: number;
     /** When Pi was told that it ended, if it was: a task told once is not told again. */
     toldAt?: number;
+    /**
+     * Pi is still to be told that it ended. Set when it ends, so a task that ended before 0.28 (told then, with no
+     * `toldAt`) is not told again.
+     */
+    untold?: true;
     /** Whether Pi gets a message when it ends: false for one Pi stopped itself, which needs no message. */
     notify: boolean;
     /** Whom Pi worked for when it started the command: its message goes out as their work. */

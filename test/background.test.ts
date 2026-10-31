@@ -250,6 +250,30 @@ test("tasks that end together cost Pi one message, and a card each", { skip }, a
     await until(() => !app.isBusy(id), "Pi to answer the message");
 });
 
+test("a task told before 0.28 is not told again when the next one ends", { skip }, async () => {
+    const id = await session();
+    const old = await app.background.start(id, { command: "echo old" });
+    const told = async (taskId: string) =>
+        (await items(id)).find((item) => item.id === taskId)?.toldAt !== undefined;
+
+    await until(() => told(old.id), "the first message");
+    await until(() => !app.isBusy(id), "Pi to answer it");
+    // As 0.27 stored a task it told: no mark either way.
+    await app.harness.commit(async (tx) => {
+        delete (await tx.doc(BackgroundDoc, id)).items[old.id]!.toldAt;
+    }, context);
+
+    const fresh = await app.background.start(id, { command: "echo fresh" });
+
+    await until(() => told(fresh.id), "the second message");
+    assert.equal(
+        (await userTexts(id)).filter((text) => text.includes(`[background] Task ${old.id} `))
+            .length,
+        1,
+    );
+    await until(() => !app.isBusy(id), "Pi to answer it");
+});
+
 test(
     "a task that ends while Pi works joins that run, rather than starting another",
     { skip },

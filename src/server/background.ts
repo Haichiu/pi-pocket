@@ -804,6 +804,10 @@ export class BackgroundTasks {
         stored.status = codes === undefined ? "lost" : "exited";
         stored.endedAt = Math.min(codes?.at ?? Infinity, this.#app.now());
 
+        if (stored.notify) {
+            stored.untold = true;
+        }
+
         if (left.length > 0) {
             stored.left = left;
         }
@@ -928,9 +932,14 @@ export class BackgroundTasks {
         }
 
         const items = (await runtime.snapshot(BackgroundDoc, conversationId, context))?.items ?? {};
+        // This watch's own task goes too when it ended before 0.28 marked tasks `untold`: its message was never sent.
         const ended = Object.values(items)
             .filter(
-                (item) => item.notify && item.endedAt !== undefined && item.toldAt === undefined,
+                (item) =>
+                    item.notify &&
+                    item.endedAt !== undefined &&
+                    item.toldAt === undefined &&
+                    (item.untold === true || item.id === id),
             )
             .sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0));
 
@@ -974,6 +983,7 @@ export class BackgroundTasks {
 
                 if (stored !== undefined) {
                     stored.toldAt = at;
+                    delete stored.untold;
                 }
             }
 
