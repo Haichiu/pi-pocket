@@ -306,8 +306,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         }
     };
 
-    // A pin's badge sits where it covers no text of the page: it tries outside the element (above, left, right, below), and
-    // then inside at its right edge. A place is free when no text and no picture of the page lies under the badge.
+    // A pin's badge goes where no text or picture of the page lies under it.
     const REPLACED = /^(IMG|SVG|VIDEO|CANVAS|INPUT|SELECT|TEXTAREA|BUTTON|IFRAME|PICTURE)$/i;
 
     const covered = (x, y, w, h) => {
@@ -346,8 +345,6 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         return false;
     };
 
-    // The places, in the order they are tried, for a badge w wide: outside the element above it, to its left, to its right,
-    // above its right edge, below it, and inside at its right edge.
     const BADGE_H = 22;
 
     const placesOf = (rect, w) => [
@@ -361,8 +358,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
     const onScreen = ([x, y], w) => x >= 0 && y >= 0 && x + w <= win.innerWidth && y + BADGE_H <= win.innerHeight;
 
-    // The first place on the screen that covers no text, else the first on the screen, else the first. It costs a hit test
-    // for each place, so it is worked out when a pin first shows and when its element's layout changes, not every frame.
+    // Each place costs a hit test: work it out when a pin first shows or its layout changes, not every frame.
     const findPlace = (rect, w) => {
         const places = placesOf(rect, w);
         let first = -1;
@@ -380,8 +376,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         return first === -1 ? 0 : first;
     };
 
-    // What may have changed the page's layout since a pin was placed: its size, or its content (a throttled stamp that a
-    // pin compares with its own).
+    // A throttled stamp of what may have changed the layout; a pin compares it with its own.
     let layoutStamp = 0;
     let layoutDirty = false;
     let stampedAt = 0;
@@ -413,8 +408,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         }
     };
 
-    // The pins: all the reads first, then all the writes, so that the page's layout is worked out once and not once for each
-    // pin. A pin whose element is off the screen is hidden and costs a rectangle; one whose place is known costs arithmetic.
+    // All the reads first, then all the writes, so the layout is worked out once, not once for each pin.
     const updatePins = () => {
         const started = now();
         const sx = win.scrollX;
@@ -422,7 +416,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         const vw = win.innerWidth;
         const vh = win.innerHeight;
 
-        // The page's content changes (a mutation that the page makes, at most once a second): the places are looked at again.
+        // After a mutation of the page, re-place at most once a second.
         if (layoutDirty && started - stampedAt > 1000) {
             layoutDirty = false;
             stampedAt = started;
@@ -443,7 +437,6 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
             let at = null;
 
             if (near) {
-                // Where the element is on the page, and how big: a scroll changes neither.
                 const key = rect.left + sx + "," + (rect.top + sy) + "," + rect.width + "," + rect.height;
                 const known =
                     pin.place !== undefined &&
@@ -451,7 +444,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                     pin.stamp === layoutStamp &&
                     (pin.fallback === true || onScreen(placesOf(rect, pin.w)[pin.place], pin.w));
 
-                // (one that has a place moves to its new one at once; one with none waits, when the frame's time is spent)
+                // A pin with a place moves at once; one without waits when the frame's time is spent.
                 if (!known && (pin.place !== undefined || now() - started < PLACE_BUDGET)) {
                     pin.place = findPlace(rect, pin.w);
                     pin.key = key;
@@ -592,7 +585,6 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                     cursor: "pointer",
                 });
 
-                // A tap on a pin is told to the app (it opens the finding): the page's own handlers get nothing from it.
                 node.addEventListener("click", (event) => {
                     event.stopPropagation();
                     send({ type: "pocket-pin", label: text, tap: true });
@@ -603,10 +595,9 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
 
                 const pin = { selector: clip(target.selector, 500), pid: typeof target.pid === "string" ? clip(target.pid, 200) : "" };
 
-                // w: the width the badge has (its words and its padding), for finding it a place before it is drawn.
+                // w: the badge's width (words and padding), to find a place before it is drawn.
                 pins.push({ target: pin, el: null, node, outline, w: Math.max(22, 12 + 8 * text.length), drawn: {} });
 
-                // One that is asked for comes into view (the app asks for the one that a person tapped in a list).
                 if (target.reveal === true) {
                     const el = findPinTarget(pin);
 
@@ -616,7 +607,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
                     if (el && typeof el.scrollIntoView === "function") {
                         el.scrollIntoView({ block: "center", inline: "nearest" });
 
-                        // Where it is now, in the frame: the app, whose canvas may be bigger than its room, brings it into view too.
+                        // The canvas can be bigger than its room: tell the app where the pin is.
                         const at = el.getBoundingClientRect();
 
                         send({
@@ -1081,8 +1072,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         const { width, height } = deck.size;
         const scale = Math.min(win.innerWidth / width, win.innerHeight / height) || 1;
 
-        // The window size this scale was made for: the watch below paints again when it is another (a frame that was
-        // not laid out when the deck started has no resize event to tell of its first size).
+        // A frame not laid out at the start gets no resize event for its first size: the watch below compares with this.
         deck.fit = [win.innerWidth, win.innerHeight];
 
         return (
@@ -1306,8 +1296,7 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
             deckEvents.add("keydown", onDeckKey);
             deckEvents.add("resize", paintDeck);
 
-            // The page's root is as big as the window (the sheet says so): when the window gets its size after the
-            // deck started, with no resize event, the root changes size, and the slide is scaled for the new size.
+            // A window sized after the deck started fires no resize: the root is as big as the window, so watch it.
             if (typeof win.ResizeObserver === "function") {
                 deck.watch = new win.ResizeObserver(() => {
                     if (deck && (deck.fit[0] !== win.innerWidth || deck.fit[1] !== win.innerHeight)) {
@@ -1356,15 +1345,14 @@ export const ARTIFACT_INSPECT = String.raw`(send, standalone) => {
         }
     };
 
-    // ---------------------------------------------------------------------------------------------------------------
-    // The height of the page's content, told to the app: a Check shortens a frame that has more room than its page.
+    // The height of the page's content, so that a Check can shorten a frame with more room than its page.
 
     const SIZE_SCAN = 1500;
     let sizeWatch = null;
     let sizeTimer = null;
     let sizeSent = -1;
 
-    /** The lowest edge of anything on the page, or null when the page is too big to scan (the frame then keeps its room). */
+    /** Null when the page is too big to scan: the frame then keeps its room. */
     const contentBottom = () => {
         const body = doc.body;
 

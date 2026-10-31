@@ -29,7 +29,7 @@ import {
 } from "./scan-fig-nodes.ts";
 import { type Imported, addTo } from "./scan-import.ts";
 import { assemble, type Progress, dropTypes, hoistTypes, rewrite } from "./scan-tree.ts";
-import { type Obj } from "./scan-util.ts";
+import { type Obj } from "./scan-colors.ts";
 
 /** The tokens of one `.fig`, and what the report says about it. */
 export interface FigTokens {

@@ -174,15 +174,12 @@ export const MAX_PEEKS = 20;
  */
 const FAILED_RUN = new Set(["model_error", "no_model", "faulted"]);
 
-/** How much of a failed run's reason the session list carries: it goes to every tab on each change. */
+/** The session list goes to every tab on each change: these bound what it carries. */
 const FAILURE_TEXT = 120;
-/** How much of a waiting call the session list carries (a tile's peek has more): enough to tell calls apart. */
 const ASK_SUBJECT = 200;
 const ASK_REASON = 200;
-/** The most failed subagents a session's row names: the list goes to every tab. */
 const FAILED_AGENTS = 5;
 
-/** The call a session waits on, as its row in the session list carries it. */
 type SessionAsk = {
     id: string;
     conversationId: number;
@@ -190,11 +187,8 @@ type SessionAsk = {
     subject: string;
     reason: string;
     requestedBy?: string;
-    /** An extension's question (`host.ask`): answered on its card, where its fields are. */
     form?: true;
-    /** When it asked (the server's clock). */
     at: number;
-    /** How many calls wait in the session, its subagents' too. */
     count: number;
 };
 
@@ -283,10 +277,6 @@ function countSubagents(
     return counts;
 }
 
-/**
- * A session's failed subagents that nobody dealt with, newest first: what the list's Dismiss needs (the failure is
- * named by when it failed, as `dismissSubagent` takes it). Stopped ones did not fail, and the rest are dealt with.
- */
 function failedSubagents(
     entries: readonly SubagentEntry[],
 ): { name: string; conversationId: number; at: number }[] {
@@ -2362,10 +2352,6 @@ export class PocketApp {
         }
     }
 
-    /**
-     * The call each session waits on, by session: the oldest one waiting there or in a subagent of it, as a tile's peek
-     * shows its calls, cut short (the list goes to every tab), and how many wait.
-     */
     #oldestAsks(): Map<string, SessionAsk> {
         const asks = new Map<string, SessionAsk>();
 
@@ -2673,11 +2659,13 @@ export class PocketApp {
                 .catch((error: unknown) => this.#log(`decision not recorded: ${describe(error)}`));
         }
 
-        await this.collab.activity(
-            conversationId,
-            user,
-            `${allow ? "allowed" : "denied"} the ${request.tool} call: ${snippet(request.subject, 120)}`,
-        );
+        const form = request.form;
+        const what =
+            form === undefined
+                ? `${allow ? "allowed" : "denied"} the ${request.tool} call: ${request.subject}`
+                : `${allow ? "answered" : "declined"}: ${form.fields.some((field) => field.choices) ? request.reason : request.subject}`;
+
+        await this.collab.activity(conversationId, user, snippet(what, 160));
 
         return true;
     }

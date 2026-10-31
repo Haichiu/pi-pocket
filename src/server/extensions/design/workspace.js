@@ -22,8 +22,7 @@ export function createWorkspace(env) {
     const canvas = createCanvas(env);
     const { Picker } = createPicker(env);
 
-    // The parts that a person may never use load when they are first needed, and stay: the docks (the tabs beside the
-    // canvas), the compare and variation views with the slide strip and the presentation, and the System view.
+    // Parts a person may never use: loaded when first needed.
     const LAZY = {
         docks: () => import("./docks.js").then((module) => module.createDocks(env)),
         views: () => import("./views.js").then((module) => module.createViews(env, canvas)),
@@ -32,7 +31,7 @@ export function createWorkspace(env) {
     const loaded = {};
     const loading = {};
 
-    /** A lazy part, or null while it loads (this draws again when it is in). It starts loading when `wanted` first is true. */
+    /** A lazy part, or null while it loads; it starts loading when `wanted` first is true. */
     function useLazy(name, wanted) {
         const [, draw] = useState(0);
 
@@ -312,7 +311,7 @@ export function createWorkspace(env) {
         const edits = (s.edits[`${design.id}@${shown}`] ?? []).length;
         const moved = changed(s.knobs, s.tweaks[design.id] ?? {}).length;
         const check = checkOptions(s, env.canvasDark(s));
-        const report = s.checks[checkKey(design.id, shown, check.scheme, check.size)]?.report;
+        const report = s.checks[checkKey(design.id, shown, check.mode, check.size)]?.report;
         const found = report ? report.summary.errors + report.summary.warnings : 0;
         const tabs = [
             { id: "view", label: "Preview", icon: "eye" },
@@ -592,7 +591,6 @@ export function createWorkspace(env) {
             }
 
             if (design === null && designs.length > 0) {
-                // The System view keeps the screen: the design is only the one it shows its edits on.
                 if (s.view === "system") {
                     store.set({ artifact: designs[0].id, version: null });
                 } else {
@@ -622,7 +620,6 @@ export function createWorkspace(env) {
             }
         }, [s.artifact, s.conversation]);
 
-        // The design system is read once in the background, so that the picker can say what it holds.
         useEffect(() => {
             if (s.conversation !== null && s.system.status === "idle") {
                 void env.systemData.load({ quiet: true });
@@ -631,7 +628,6 @@ export function createWorkspace(env) {
 
         // A deck is shown at slide size by default, and a page is never shown at it.
         const deck = design?.kind === "deck" || s.deck !== null;
-        // Until the person picks a size, the page follows the panel: the phone's frame in a narrow one.
         const chosen = resolveDevice(s.device, store.get().width || width);
         const device =
             deck && chosen === "desktop"
@@ -679,7 +675,6 @@ export function createWorkspace(env) {
             </div>`;
         }
 
-        // The System view: its own bar and body, with the open design (if there is one) beside it or behind a tap.
         if (s.view === "system" && system === null) {
             return html`<div
                 class="dsn dsy"

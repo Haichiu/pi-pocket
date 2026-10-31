@@ -1,5 +1,4 @@
-// The design picker: a card (a bottom sheet on a phone) that lists the session's designs, variations together, with the
-// design system pinned above them.
+// The design picker: the session's designs, variations together, with the design system pinned above them.
 import { latestOf } from "./data.js";
 import { unsavedOf } from "./unsaved.js";
 
@@ -11,7 +10,6 @@ export function createPicker(env) {
     const listNote = (design) =>
         `${design.id} · v${latestOf(design)} · ${ago(design.versions.at(-1)?.createdAt ?? 0)}`;
 
-    /** The line under "Design system": what the project has. */
     function systemNote(system, count) {
         if (system.status === "idle" || system.status === "loading") {
             return "Tokens, components, and guidelines";

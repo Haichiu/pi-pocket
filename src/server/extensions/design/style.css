@@ -1,6 +1,3 @@
-/* The workspace of Design: the bars, the canvas, the docks, the picker. The System view has its own sheet, `system.css`, which loads
-   with it. */
-
 /*
  * Design: the canvas beside the chat. It uses the app's own tokens (--bg, --text, --muted, --accent, --line, --ok, --warn,
  * --err) and mixes the rest from them, so a theme that changes those changes the canvas with the app.
@@ -242,6 +239,11 @@
 
 .dsn[data-size="narrow"] .dsn-tab:not(.on) {
     padding: 0 9px;
+}
+
+.dsn[data-size="narrow"] .dsn-tabs:not(.dsy-tabs) .dsn-tab:not(.on) {
+    gap: 4px;
+    padding: 0 7px;
 }
 
 .dsn-count {
@@ -1334,11 +1336,6 @@ button.dsn-chip {
     }
 }
 
-/* ═══════════════════════════════════════════════════════════════
- * The System view: the design system as a place to work in
- * ═══════════════════════════════════════════════════════════════ */
-
-/* Focus mode: the conversation goes, and the panel has the whole width. */
 html[data-dsn-focus] .layout.paneling:has(.ext-panel[data-module="design"]) > .pane {
     display: none;
 }
@@ -1350,7 +1347,6 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
     border-left: 0;
 }
 
-/* What the picker says it is: a palette, and the system's name. */
 .dsn-list > li:has(> .dsy-pinned) {
     margin-bottom: 4px;
     padding-bottom: 6px;
@@ -1369,23 +1365,20 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
 }
 
 .dsy-modeselect {
-    flex: none;
+    flex: 0 1 auto;
     width: auto;
+    min-width: 0;
     max-width: 150px;
     height: 34px;
     padding: 0 8px;
     border: 1px solid var(--dsn-hair);
     border-radius: 8px;
     background: var(--dsn-fill);
-    color: var(--text);
-    font: inherit;
 }
 
 .dsy-tag {
     padding: 0 6px;
     border-radius: 4px;
-    background: var(--dsn-fill-2);
-    color: var(--muted);
     font-size: 10.5px;
     font-weight: 600;
     line-height: 16px;
@@ -1403,7 +1396,8 @@ html[data-dsn-focus] .layout.paneling .ext-panel.wide[data-module="design"] {
     color: var(--warn);
 }
 
-.dsy-tag.bad {
+.dsy-tag.bad,
+.button.danger {
     background: var(--err-soft);
     color: var(--err);
 }
@@ -1437,20 +1431,6 @@ button.dsy-chip:disabled {
     opacity: 0.45;
 }
 
-@media (hover: hover) {
-    button.dsy-chip:hover:not(:disabled) {
-        background: var(--dsn-accent-soft);
-        color: var(--accent);
-    }
-}
-
-.button.danger {
-    background: var(--err-soft);
-    color: var(--err);
-}
-
-/* ─── The Check dock ───────────────────────────────────────── */
-
 .dsy-check-options {
     display: flex;
     flex-wrap: wrap;
@@ -1467,7 +1447,6 @@ button.dsy-chip:disabled {
     min-width: 0;
 }
 
-/* A long mode name ("High contrast") is cut with dots (its title has the whole name), never run into its icon. */
 .dsn-seg button > span {
     min-width: 0;
     overflow: hidden;
@@ -1490,8 +1469,8 @@ button.dsy-chip:disabled {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px 12px;
-    margin-bottom: 8px;
+    gap: 8px;
+    margin: 0 0 6px;
 }
 
 .dsy-stat {
@@ -1502,20 +1481,9 @@ button.dsy-chip:disabled {
     font-size: 12.5px;
 }
 
-.dsy-stat.bad {
-    background: var(--err-soft);
-    color: var(--err);
-}
-
-.dsy-stat.warn {
-    background: var(--warn-soft);
-    color: var(--warn);
-}
-
 .dsy-check-filter {
     display: flex;
-    gap: 4px;
-    margin: 4px 0 8px;
+    gap: 2px;
 }
 
 .dsy-check-filter button {
@@ -1606,11 +1574,6 @@ button.dsy-chip:disabled {
     padding: 8px 14px;
 }
 
-.dsy-unsaved {
-    background: var(--dsn-accent-soft);
-}
-
-/* The check's two buttons share a row, and on a narrow panel its options are icons: the findings keep the room. */
 .dsy-check-foot {
     flex-direction: row;
 }
@@ -1628,8 +1591,6 @@ button.dsy-chip:disabled {
 .dsn[data-size="narrow"] .dsy-check-options .dsn-seg button span {
     display: none;
 }
-
-/* ─── The findings on a phone: a bottom sheet, with the page above it ─── */
 
 .dsn-dock[data-sheet="true"] {
     height: var(--sheet, 62%);
@@ -1655,22 +1616,7 @@ button.dsy-chip:disabled {
 }
 
 .dsy-sheet-handle:focus-visible {
-    outline: 2px solid var(--focus-ring, var(--accent));
-    outline-offset: -2px;
     border-radius: 10px;
-}
-
-.dsy-check-summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0 0 6px;
-}
-
-.dsy-check-filter {
-    display: flex;
-    gap: 2px;
-    margin: 0;
 }
 
 .dsy-check-filter button.error.on {
@@ -1692,10 +1638,6 @@ button.dsy-chip:disabled {
         8px 0 0 var(--dsn-accent-soft);
 }
 
-button.dsy-pin-button {
-    cursor: pointer;
-}
-
 button.dsy-pin-button[aria-pressed="true"] {
     box-shadow:
         0 0 0 2px var(--bg),
@@ -1710,30 +1652,21 @@ button.dsy-pin-button[aria-pressed="true"] {
     }
 }
 
-/* Words for a screen reader only: always in the page, so that a change in them is read out. */
+/* Always in the page, so that a change in it is read out. */
 .dsy-sr {
     position: absolute;
     width: 1px;
     height: 1px;
     margin: -1px;
-    padding: 0;
     overflow: hidden;
-    border: 0;
     clip-path: inset(50%);
     white-space: nowrap;
-}
-
-/* The mode list gives way to the picker's name: it keeps what its longest word needs, and no more. */
-.dsy-modeselect {
-    flex: 0 1 auto;
-    min-width: 0;
 }
 
 .dsn[data-size="narrow"] .dsy-modeselect {
     width: 108px;
 }
 
-/* Where the keyboard is: a ring of two pixels on every control of the view and its dock, and it never hides under a neighbor. */
 .dsn-dock :focus-visible {
     outline: 2px solid var(--focus-ring, var(--accent));
     outline-offset: 1px;
@@ -1743,7 +1676,6 @@ button.dsy-pin-button[aria-pressed="true"] {
     outline-offset: -2px;
 }
 
-/* One tap for the findings that are exactly a token's value. */
 .dsy-fixbar {
     display: flex;
     flex-wrap: wrap;
@@ -1759,7 +1691,6 @@ button.dsy-pin-button[aria-pressed="true"] {
     flex: 1 1 160px;
 }
 
-/* The findings of a check on a phone, shut: one bar at the foot with the count by level and the one tap that fixes. */
 .dsn-dock[data-shut="true"] {
     height: auto;
     max-height: none;
@@ -1778,7 +1709,7 @@ button.dsy-pin-button[aria-pressed="true"] {
     display: flex;
     flex: 1;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     min-width: 0;
     min-height: 44px;
     padding: 0 4px;
@@ -1786,26 +1717,16 @@ button.dsy-pin-button[aria-pressed="true"] {
     text-align: left;
 }
 
-.dsy-check-bar-main strong {
-    flex: none;
-    white-space: nowrap;
-}
-
-.dsy-check-bar-main {
-    gap: 6px;
-}
-
-/* The counts by level keep their words on one line; the bar gives way in the title ("10 findings"), not in them. */
-.dsy-check-bar-main .dsy-tag {
-    flex: none;
-    letter-spacing: 0;
-    text-transform: none;
-    white-space: nowrap;
-}
-
+.dsy-check-bar-main strong,
+.dsy-check-bar-main .dsy-tag,
 .dsy-check-bar .button {
     flex: none;
     white-space: nowrap;
+}
+
+.dsy-check-bar-main .dsy-tag {
+    letter-spacing: 0;
+    text-transform: none;
 }
 
 .dsy-check-bar-up {
@@ -1813,8 +1734,6 @@ button.dsy-pin-button[aria-pressed="true"] {
     transform: rotate(180deg);
     color: var(--muted);
 }
-
-/* ─── Accepted findings: a button on each finding, and a folded group below the list ─── */
 
 .dsy-finding-actions {
     display: flex;
@@ -1827,12 +1746,14 @@ button.dsy-pin-button[aria-pressed="true"] {
     padding: 0 10px;
     border-radius: 7px;
     background: var(--dsn-fill);
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 600;
 }
 
 @media (hover: hover) {
+    button.dsy-chip:hover:not(:disabled) {
+        background: var(--dsn-accent-soft);
+        color: var(--accent);
+    }
+
     .dsy-accept:hover {
         background: var(--dsn-fill-2);
         color: var(--text);
@@ -1860,7 +1781,6 @@ button.dsy-pin-button[aria-pressed="true"] {
 }
 
 .dsy-accepted-head > svg {
-    flex: none;
     color: var(--muted);
     transition: transform 0.15s;
 }

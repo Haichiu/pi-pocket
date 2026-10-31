@@ -1,5 +1,3 @@
-// A session's actions from its row in the session list: a sheet for a finger held on the row (touch screens cannot hover
-// to show them), and a small menu at the pointer for a right-click.
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { sessionActions } from "../extension-ui.js";
 import { deselectInList, selectedInList, selectFromList, setArchived } from "../sessions.js";
@@ -19,20 +17,16 @@ import {
 import { isPinned, movePin, togglePin } from "../theme.js";
 import { copyText, html, item, scrimPress, Sheet } from "../ui.js";
 
-/** The session's own address in the app. */
 const linkOf = (id) => `${location.origin}/s/${id}`;
 
-/** Copy `text`, and say so (or why not). */
 const copy = (text, what) =>
     copyText(text).then(
         () => notify("info", `Copied the ${what}.`),
         () => notify("error", `Could not copy the ${what}.`),
     );
 
-/** A fork on its way: a second click waits for it. */
 let forking = false;
 
-/** A new session with this one's whole history, opened once made. */
 function fork(id) {
     if (forking) {
         return;
@@ -49,7 +43,6 @@ function fork(id) {
     });
 }
 
-/** A new session in this one's folder, opened once made. */
 const newIn = (cwd) =>
     attempt(async () => {
         const created = await actions.createSession(cwd);
@@ -57,10 +50,6 @@ const newIn = (cwd) =>
         navigate(created.id);
     });
 
-/**
- * What a session's row offers, in groups, the same in the sheet and the menu: `{ label, run, hint, opens }`. `run`
- * closes the sheet first unless it opens another (`opens`).
- */
 function sessionItems(session) {
     const { id } = session;
     const steer = canSteer();
@@ -140,7 +129,6 @@ function sessionItems(session) {
         .filter((group) => group.length > 0);
 }
 
-/** Run an item: close the sheet, unless the item opens another in its place. */
 const runItem = (each) => () => {
     if (!each.opens) {
         closeSheet();
@@ -149,11 +137,6 @@ const runItem = (each) => () => {
     each.run();
 };
 
-/**
- * What a finger held on a row (or a right-click on it, at `at`) offers: open, copy, rename, fork, start a session in its
- * folder, share, pin and order the pins, mark it unread (or read), extensions' actions (`pocket.sessionAction`), select
- * it to act on more at once, and archive it or bring it back.
- */
 export function SessionSheet({ id, at = null }) {
     const session = store.state.sessions.find((each) => each.id === id);
     const groups = sessionItems(session);
@@ -169,17 +152,14 @@ export function SessionSheet({ id, at = null }) {
     <//>`;
 }
 
-/**
- * The actions as a small menu at the pointer (`at`, `{ x, y }`), kept inside the window: to the left of the pointer when
- * there is no room right of it, and above when none below. Arrows, Home, and End move through it; Esc, a click
- * outside, or another right-click closes it.
- */
 function SessionMenu({ title, groups, at }) {
     const box = useRef(null);
 
     useLayoutEffect(() => {
         const menu = box.current;
-        const { width, height } = menu.getBoundingClientRect();
+        // Unscaled: the opening animation scales the menu, and a scaled size is a little short.
+        const width = menu.offsetWidth;
+        const height = menu.offsetHeight;
         const left = at.x + width + 8 > innerWidth ? Math.max(8, at.x - width) : at.x;
         const top = at.y + height + 8 > innerHeight ? Math.max(8, at.y - height) : at.y;
 
@@ -228,7 +208,6 @@ function SessionMenu({ title, groups, at }) {
         }
     };
 
-    // A right-click outside closes the menu, and the browser's own menu stays shut for it: one at a time.
     const onScrimMenu = (event) => {
         if (event.target === event.currentTarget) {
             event.preventDefault();

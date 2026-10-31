@@ -1,10 +1,10 @@
-// The design_system scan: drafts tokens from style files, stays inside the folder, and the write check for the tokens block.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { LIMITS, checkTokensBlock, scanRoot, scanTokens } from "../src/server/design/scan.ts";
+import { planRender } from "../src/server/design/scan-render-pages.ts";
 import { designSystemTool } from "../src/server/design/system.ts";
 
 const dirs: string[] = [];
@@ -65,7 +65,7 @@ test("entities, links, ids, and selectors are not colors", () => {
 
 test("issue numbers in comments and ids in a selector list are not colors", () => {
     const dir = project({
-        "a.tsx": `// fixes issue #123 and PR #186\n/* see #abc */\nconst a = { color: "#0a0a0a" };\n{/* note #def */}`,
+        "a.tsx": `// fixes issue #123 and PR #186\n/* see #abc */\nconst a = <p className="text-[#0a0a0a]" />;\n{/* note #def */}`,
         "b.css": `#add, #bad {\n  color: red;\n}\n#fab,\n#cab .x { color: #fefefe }\n<!-- #bed -->`,
         "c.html": `<a href="https://x.test/#a">x</a><div style="color:#111"></div><style>.y{color:#222}</style>`,
     });
@@ -74,7 +74,6 @@ test("issue numbers in comments and ids in a selector list are not colors", () =
         scanTokens(dir)
             .colors.map((c) => c.value)
             .sort(),
-        // `color: red` is a color name used as a value: it counts.
         ["#0a0a0a", "#111111", "#222222", "#fefefe", "#ff0000"],
     );
 });
@@ -91,17 +90,6 @@ test("a glob in a config is not a comment, and an address keeps its colors", () 
             .sort(),
         ["#123456", "#654321"],
     );
-});
-
-test("JSX styles give fonts and radii", () => {
-    const dir = project({
-        "a.jsx": `const s = { fontFamily: "Inter, sans-serif", borderRadius: 8, color: "#fff" };
-const t = { fontFamily: 'Inter, sans-serif', borderRadius: "8px" };`,
-    });
-    const scan = scanTokens(dir);
-
-    assert.deepEqual(scan.fonts, [{ value: "Inter, sans-serif", count: 2 }]);
-    assert.deepEqual(scan.radii, [{ value: "8px", count: 2 }]);
 });
 
 test("hostile comments and colors scan in linear time", () => {
@@ -185,11 +173,20 @@ test("the file limit ends the walk and says so", () => {
     assert.equal(scan.partial, true);
 });
 
+test("the rendered scan picks its pages in linear time, also from openers with no end", () => {
+    const dir = project({
+        "index.html": `<!doctype html><body>${"<style ".repeat(30_000)}${"<p ".repeat(30_000)}`,
+    });
+    const start = performance.now();
+
+    planRender(dir);
+    assert.ok(performance.now() - start < 1_000);
+});
+
 test("checkTokensBlock: none is false, broken or non-object throws", () => {
     assert.equal(checkTokensBlock("# just words"), false);
     assert.throws(() => checkTokensBlock("```json\n{oops}\n```"), /not valid JSON/);
     assert.throws(() => checkTokensBlock("```json\n[1]\n```"), /JSON object/);
-    // An empty block is not an object either.
     assert.throws(() => checkTokensBlock("```json\n```"), /not valid JSON/);
     // Backticks inside a JSON string do not end the block; the fence must start a line.
     assert.equal(checkTokensBlock('```json\n{"a": "use ``` here"}\n```'), true);

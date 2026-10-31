@@ -1,6 +1,6 @@
 # Example design system: Pi Pocket
 
-`pocket/.pi/design/` is Pi Pocket's own design system, written the way Design mode expects it (see [Design systems](../../design/design-system.md)). It is the reference for the file format and a ready system to try.
+`pocket/.pi/design/` is Pi Pocket's own design system, written the way Design mode expects it (see the design system in [features.md](../../features.md)). It is the reference for the file format and a ready system to try.
 
 | File                        | What it holds                                                                                                                               |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |

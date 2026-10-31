@@ -1,13 +1,6 @@
-/**
- * Compiles a design system into the files of `.pi/design/dist/` (stream T): `tokens.css`, a Tailwind v4 `tailwind.css`,
- * `tokens.resolved.json`, and `components.css`. A pure function of the resolved tokens, so the same system always
- * gives the same bytes.
- *
- * `tokens.css` has the default mode on `:root`, each other mode in `[data-theme="<mode>"]`, and a media query for the
- * operating system's light or dark preference. A mode block repeats every token whose value differs from the default,
- * the tokens that only refer to a changed one included: a custom property that holds `var(--x)` is computed where it
- * is declared, so a nested `[data-theme]` scope must declare it again to see the new `--x`.
- */
+// A pure function of the resolved tokens: the same system always gives the same bytes.
+// A mode block repeats every token whose value differs from the default, the tokens that only refer to a changed one included:
+// a custom property that holds `var(--x)` is computed where it is declared, so a nested `[data-theme]` scope must declare it again to see the new `--x`.
 import type { CompiledFiles, DesignSystem, ResolvedToken, TokenTier } from "./system-types.ts";
 import { compactJson, dtcgJson, studioJson } from "./tokens-dtcg.ts";
 import { namesMarkdown } from "./tokens-names.ts";
@@ -41,17 +34,12 @@ const TIERS: { tier: TokenTier; title: string }[] = [
     { tier: "component", title: "Component tokens" },
 ];
 
-/**
- * A primitive (or a step of a scale, `space.4`) is a raw value, so the stylesheet holds the value (`--space-4: 16px`),
- * also when a person wrote it as a reference to another primitive (`{dim.16}`): DevTools then shows `16px`, not
- * `var(--dim-16)`. A role or a component token that refers to a token keeps its `var()`: the reference is what a
- * person wrote, and what a mode changes.
- */
+// A primitive holds its raw value even when it is written as a reference to another primitive (`{dim.16}`): DevTools then shows `16px`, not `var(--dim-16)`.
+// A role or a component token that refers to a token keeps its `var()`: the reference is what a person wrote, and what a mode changes.
 function literalPrimitives(system: CompileInput): CompileInput {
     const byName = new Map(system.tokens.map((token) => [token.name, token]));
     const composite = new Set(["typography", "shadow", "border", "transition", "gradient"]);
     const tokens = system.tokens.map((token) => {
-        // A primitive, or a step of a scale (`space.4`, `neutral.500`): both are raw values, whatever the file calls them.
         const raw =
             token.tier === "primitive" ||
             (token.tier !== "component" && /^\d/.test(token.path.at(-1)!));
@@ -84,7 +72,6 @@ function literalPrimitives(system: CompileInput): CompileInput {
     return { ...system, tokens };
 }
 
-/** The declarations of a token in a mode: its variable, and the variables of a typography token's members. */
 function declarations(token: ResolvedToken, mode: string): Decl[] {
     const value = token.modes[mode]!;
     const decls: Decl[] = [[token.cssVar, value.css]];
@@ -99,7 +86,6 @@ function declarations(token: ResolvedToken, mode: string): Decl[] {
     return decls;
 }
 
-/** Whether a token's value in `mode` differs from the default's, or its CSS does. */
 function differs(token: ResolvedToken, mode: string, base: string): boolean {
     const a = token.modes[mode]!;
     const b = token.modes[base]!;
@@ -111,7 +97,6 @@ function differs(token: ResolvedToken, mode: string, base: string): boolean {
     );
 }
 
-/** The tokens in tier order (primitives, semantic roles, components), each tier in file order. */
 function inTiers(tokens: readonly ResolvedToken[]): { title: string; tokens: ResolvedToken[] }[] {
     return TIERS.map(({ tier, title }) => ({
         title,
@@ -119,7 +104,6 @@ function inTiers(tokens: readonly ResolvedToken[]): { title: string; tokens: Res
     })).filter((section) => section.tokens.length > 0);
 }
 
-/** Writes declarations with a comment where the group changes, and a token's description after it. */
 function body(
     sections: { title: string; tokens: ResolvedToken[] }[],
     decl: (token: ResolvedToken) => Decl[],
@@ -165,10 +149,8 @@ function body(
     return lines;
 }
 
-/** The `color-scheme` value of a mode. */
 const schemeOf = (system: CompileInput, mode: string) => system.schemes[mode] ?? "light";
 
-/** The mode that the operating system's other preference selects, and the preference's name. */
 function preferred(system: CompileInput): { mode: string; scheme: "light" | "dark" } | undefined {
     const base = system.modes[0]!;
     const other = schemeOf(system, base) === "dark" ? "light" : "dark";
@@ -179,7 +161,6 @@ function preferred(system: CompileInput): { mode: string; scheme: "light" | "dar
     return mode === undefined ? undefined : { mode, scheme: other };
 }
 
-/** The declaration lines of each block of a stylesheet: the default mode, the other modes, and the media query. */
 interface Blocks {
     base: string[];
     others: { mode: string; lines: string[] }[];
@@ -192,7 +173,6 @@ function blocks(
     notes: boolean,
 ): Blocks {
     const base = system.modes[0]!;
-    // The tokens of a mode that differ from the default, in tiers.
     const changed = (mode: string) =>
         inTiers(system.tokens.filter((token) => differs(token, mode, base)));
     const alternate = preferred(system);
@@ -278,8 +258,6 @@ function tokensCss(system: CompileInput): string {
 
     return `${out.join("\n")}\n`;
 }
-
-// --- Tailwind v4 ----------------------------------------------------------------------------------------------------
 
 function tailwindCss(system: CompileInput): string {
     const names = tailwindNames(system);
@@ -405,8 +383,6 @@ function tailwindCss(system: CompileInput): string {
     return `${out.join("\n")}\n`;
 }
 
-// --- Resolved JSON and component CSS ------------------------------------------------------------------------------------
-
 function componentsCss(system: CompileInput): string {
     const head = header(system, "components.css", [
         'Use it:  <link rel="stylesheet" href="ds/components.css">  then use the markup of a component specimen.',
@@ -424,7 +400,6 @@ function componentsCss(system: CompileInput): string {
     return `${head}\n\n${blocks.join("\n\n")}\n`;
 }
 
-/** Compiles a system into the files of `.pi/design/dist/`: four, a DTCG file for each mode, and one for Tokens Studio. */
 export function compileDesignSystem(input: CompileInput): CompiledFiles {
     const system = literalPrimitives(input);
 

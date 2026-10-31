@@ -1,7 +1,4 @@
-/**
- * A part of the script that `lint.ts` runs inside a rendered design (see `lint-page.ts`): the first lines of the page script: the input, a few helpers, the motion scan (before the calm style hides it), and the calm style. The parts are one
- * function body, in this order: setup, values, literals, states, elements, checks, focus. Plain JavaScript in a string.
- */
+// Plain JavaScript in a string: one part of the page script of `lint-page.ts`. The parts form one function body, so they share its locals.
 export const PAGE_SETUP = String.raw`(async (input) => {
 const doc = document;
 const win = window;
@@ -43,9 +40,7 @@ for (const sheet of doc.styleSheets) {
     }
 }
 
-// Motion first: the calm style below would hide it. A transition or animation that runs longer than 500 ms, or an
-// animation that repeats forever, is motion that a person who asks for less (prefers-reduced-motion) should not get,
-// unless the page's CSS has a prefers-reduced-motion rule.
+// Motion first: the calm style below would hide it.
 const MOTION_MS = 500;
 const motion = { count: 0, longest: 0, first: null, override: false, unreadable: false };
 const toMs = (text) => text.split(',').map((part) => { const t = part.trim(); return t.endsWith('ms') ? parseFloat(t) : t.endsWith('s') ? parseFloat(t) * 1000 : 0; });
@@ -95,7 +90,6 @@ for (const rules of sheetRules) {
 
 motion.unreadable = sheetsUnreadable;
 
-// A style that stops transitions and animations, so every computed value is the resting one.
 const calm = doc.createElement('style');
 calm.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}';
 doc.head.append(calm);

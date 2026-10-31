@@ -1,10 +1,6 @@
-// The System view: the project's design system as a place to work in. The bar (the pinned picker item, the mode in view, undo
-// and redo), the sections, the unsaved edits and the bar that saves them, and, when there is room, the open design beside it
-// that shows every edit live. A person who cannot steer sees all of it and changes none of it.
 import { clampSize, DEVICES } from "./devices.js";
-import { modeTitle } from "./system-widgets.js";
+import { modeTitle, plural } from "./system-widgets.js";
 import {
-    changeOf,
     createModel,
     editsOf,
     linkOf,
@@ -17,24 +13,30 @@ import {
     withPart,
 } from "./system.js";
 
-/** How often the open view asks whether Pi (or someone else) changed the system on disk. */
 const REFRESH_MS = 20_000;
 
 const MODE_ICONS = { light: "sun", dark: "moon" };
 
-/** Whether the keys go to a field: undo and save then belong to it. */
 const typing = (target) =>
     target instanceof HTMLElement &&
     (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+
+function sectionsOf(tokens) {
+    const present = new Set(tokens.map(sectionOf));
+
+    return SECTIONS.filter(
+        (section) =>
+            section.id === "components" || section.id === "guidelines" || present.has(section.id),
+    );
+}
+
+const currentOf = (list, id) => (list.some((section) => section.id === id) ? id : list[0].id);
 
 export function createSystemView(env, canvas, sections, widgets) {
     const { pocket, store, parts, systemData } = env;
     const { html, useEffect, useMemo, useRef, useState } = pocket;
     const { Ico, Popover } = parts;
 
-    // ─── The bar ─────────────────────────────────────────────────────────────
-
-    /** Which mode is in view: each mode, and the modes side by side. */
     function ModeSwitch({ s, modes, narrow }) {
         const [menu, setMenu] = useState(false);
 
@@ -53,8 +55,6 @@ export function createSystemView(env, canvas, sections, widgets) {
             { value: "both", label: modes.length === 2 ? "Both" : "All", icon: "compare" },
         ];
 
-        // Up to four modes: a segmented control, a button each (an icon on a phone, the name too where there is room).
-        // More than that: one button that shows the mode in view and opens the list.
         if (modes.length > 4) {
             const shown = options.find((option) => option.value === current) ?? options[0];
 
@@ -122,7 +122,6 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
-    /** What the system's menu offers: publish, export, modes, reload, and the conversation's room. */
     function SystemMenu({ s, data, canEdit, onClose, onModes }) {
         const [busy, setBusy] = useState(null);
         const errors = data?.problems.some((problem) => problem.level === "error") ?? false;
@@ -139,6 +138,10 @@ export function createSystemView(env, canvas, sections, widgets) {
                 <${Ico} name=${icon} size=${16} /><span class="grow">${label}</span
                 >${hint && html`<span class="muted small">${hint}</span>`}
             </button>`;
+        const unless = (title) => ({
+            disabled: busy !== null || errors,
+            title: errors ? "Fix the errors first" : title,
+        });
 
         return html`<${Popover}
             label="Design system menu"
@@ -150,56 +153,43 @@ export function createSystemView(env, canvas, sections, widgets) {
                 ${data && html`<div class="dsn-menu-label">${data.name}</div>`}
                 ${
                     data &&
-                    canEdit &&
-                    item(
-                        "book",
-                        busy === "docs" ? "Publishing…" : "Publish documentation",
-                        "a design",
-                        {
-                            disabled: busy !== null || errors,
-                            title: errors
-                                ? "Fix the errors first"
-                                : "Make the system's documentation page a design",
-                            onClick: () =>
-                                run("docs", async () => {
-                                    const made = await systemData.publishDocs();
+                    canEdit && [
+                        item(
+                            "book",
+                            busy === "docs" ? "Publishing…" : "Publish documentation",
+                            "a design",
+                            {
+                                ...unless("Make the system's documentation page a design"),
+                                onClick: () =>
+                                    run("docs", async () => {
+                                        const made = await systemData.publishDocs();
 
-                                    if (made) {
-                                        env.open(made.id);
-                                        pocket.notify(
-                                            "info",
-                                            `Published as ${made.id}, version ${made.version}. Share it from the menu.`,
-                                        );
-                                    }
-                                }),
-                        },
-                    )
-                }
-                ${
-                    data &&
-                    canEdit &&
-                    item(
-                        "box",
-                        busy === "export" ? "Making the files…" : "Export for code",
-                        "CSS, Tailwind, JSON",
-                        {
-                            disabled: busy !== null || errors,
-                            title: errors
-                                ? "Fix the errors first"
-                                : "Download the generated files as a zip",
-                            onClick: () => run("export", () => systemData.exportCode()),
-                        },
-                    )
-                }
-                ${
-                    data &&
-                    canEdit &&
-                    item("layers", "Modes…", `${data.modes.length}`, {
-                        onClick: () => {
-                            onClose();
-                            onModes();
-                        },
-                    })
+                                        if (made) {
+                                            env.open(made.id);
+                                            pocket.notify(
+                                                "info",
+                                                `Published as ${made.id}, version ${made.version}. Share it from the menu.`,
+                                            );
+                                        }
+                                    }),
+                            },
+                        ),
+                        item(
+                            "box",
+                            busy === "export" ? "Making the files…" : "Export for code",
+                            "CSS, Tailwind, JSON",
+                            {
+                                ...unless("Download the generated files as a zip"),
+                                onClick: () => run("export", () => systemData.exportCode()),
+                            },
+                        ),
+                        item("layers", "Modes…", `${data.modes.length}`, {
+                            onClick: () => {
+                                onClose();
+                                onModes();
+                            },
+                        }),
+                    ]
                 }
                 ${item("reload", "Read it again", null, { onClick: () => run("reload", () => systemData.load()) })}
                 ${
@@ -220,7 +210,6 @@ export function createSystemView(env, canvas, sections, widgets) {
         <//>`;
     }
 
-    /** Add a mode, or remove one. A removed mode loses its file. */
     function ModesPopover({ data, onClose, narrow }) {
         const [name, setName] = useState("");
         const [busy, setBusy] = useState(false);
@@ -316,27 +305,13 @@ export function createSystemView(env, canvas, sections, widgets) {
         <//>`;
     }
 
-    /** The section tabs: only the sections that have something in them, and Components and Guidelines. */
     function SectionTabs({ s, data, split, hasDesign }) {
         const unsaved = unsavedCount(data, s.history);
         const bar = useRef(null);
-        // What a tab counts is what its section shows open (`sectionCounts`): the roles of Colors; a folded group has its own count.
         const counts = useMemo(() => sectionCounts(data?.tokens ?? []), [data]);
-        const present = useMemo(
-            () => new Set((data?.tokens ?? []).map((token) => sectionOf(token))),
-            [data],
-        );
-        const list = SECTIONS.filter(
-            (section) =>
-                section.id === "components" ||
-                section.id === "guidelines" ||
-                (data !== null && present.has(section.id)),
-        );
-        const current = list.some((section) => section.id === s.sysSection)
-            ? s.sysSection
-            : list[0]?.id;
+        const list = useMemo(() => sectionsOf(data?.tokens ?? []), [data]);
+        const current = currentOf(list, s.sysSection);
 
-        // The tab that is on comes into view in a bar that scrolls (a phone's).
         useEffect(() => {
             const box = bar.current;
             const tab = box?.querySelector('[aria-selected="true"]');
@@ -349,9 +324,7 @@ export function createSystemView(env, canvas, sections, widgets) {
             }
         }, [current]);
 
-        // A bar that scrolls marks where more of it is out of sight (`data-more`, `data-less`). A tab that is not whole, or that
-        // is under a mark, is left out (`data-cut`) at once, while the bar scrolls too: it never shows half a letter, only whole
-        // tabs and a mark toward the rest.
+        // A tab that is not whole, or is under a mark, is left out (`data-cut`) so a half letter never shows.
         useEffect(() => {
             const box = bar.current;
 
@@ -359,7 +332,6 @@ export function createSystemView(env, canvas, sections, widgets) {
                 return undefined;
             }
 
-            // The width of the mark at an edge that has more: a tab under it is not read, so it is not whole.
             const FADE = 26;
 
             const mark = () => {
@@ -392,28 +364,17 @@ export function createSystemView(env, canvas, sections, widgets) {
             };
         }, [list.length, data === null, current]);
 
-        // With no system there are no sections to go between.
         if (data === null) {
             return null;
         }
 
-        // Arrow keys move between the tabs (and Home and End go to the ends); Tab goes past them, to the next control.
         const move = (event) => {
             const at = list.findIndex((section) => section.id === current);
-            const to =
-                event.key === "ArrowRight"
-                    ? (at + 1) % list.length
-                    : event.key === "ArrowLeft"
-                      ? (at - 1 + list.length) % list.length
-                      : event.key === "Home"
-                        ? 0
-                        : event.key === "End"
-                          ? list.length - 1
-                          : -1;
+            const steps = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: -1 };
 
-            if (to !== -1) {
+            if (Object.hasOwn(steps, event.key)) {
                 event.preventDefault();
-                env.setSection(list[to].id);
+                env.setSection(list.at(steps[event.key] % list.length).id);
                 requestAnimationFrame(() =>
                     bar.current?.querySelector('[role="tab"][aria-selected="true"]')?.focus(),
                 );
@@ -431,7 +392,7 @@ export function createSystemView(env, canvas, sections, widgets) {
                 ${list.map((section) => {
                     const count =
                         section.id === "components"
-                            ? (data?.components.length ?? 0)
+                            ? data.components.length
                             : (counts[section.id]?.open ?? 0);
                     const more = counts[section.id]?.folded ?? 0;
 
@@ -454,7 +415,6 @@ export function createSystemView(env, canvas, sections, widgets) {
             </div>
             <span class="dsy-tabs-end">
                 ${
-                    data &&
                     !split &&
                     hasDesign &&
                     html`<button
@@ -469,25 +429,42 @@ export function createSystemView(env, canvas, sections, widgets) {
                         ${unsaved > 0 && html`<i class="dsy-eye-dot"></i>`}
                     </button>`
                 }
-                ${
-                    data &&
-                    html`<button
-                        type="button"
-                        class=${`icon-button ${s.sysSearch ? "on" : ""}`}
-                        title="Find a token"
-                        aria-label="Find a token"
-                        aria-pressed=${s.sysSearch}
-                        onClick=${() => store.set({ sysSearch: !s.sysSearch, sysQuery: s.sysSearch ? "" : s.sysQuery })}
-                    >
-                        <${Ico} name="search" size=${16} />
-                    </button>`
-                }</span
-            >
+                <button
+                    type="button"
+                    class=${`icon-button ${s.sysSearch ? "on" : ""}`}
+                    title="Find a token"
+                    aria-label="Find a token"
+                    aria-pressed=${s.sysSearch}
+                    onClick=${() => store.set({ sysSearch: !s.sysSearch, sysQuery: s.sysSearch ? "" : s.sysQuery })}
+                >
+                    <${Ico} name="search" size=${16} /></button
+            ></span>
         </div>`;
     }
 
-    /** The bar of the System view: the picker, the mode in view, undo and redo, and the menu. */
-    function SystemBar({ s, designs, design, shown, room, canEdit, Picker }) {
+    const historyButtons = (s, undoKeys, redoKeys, saving = false) =>
+        html`<button
+                type="button"
+                class="icon-button"
+                title=${`Undo${undoKeys}`}
+                aria-label="Undo"
+                disabled=${s.history.past.length === 0 || saving}
+                onClick=${env.undo}
+            >
+                <${Ico} name="undo" size=${16} />
+            </button>
+            <button
+                type="button"
+                class="icon-button"
+                title=${`Redo${redoKeys}`}
+                aria-label="Redo"
+                disabled=${s.history.future.length === 0 || saving}
+                onClick=${env.redo}
+            >
+                <${Ico} name="redo" size=${16} />
+            </button>`;
+
+    function SystemBar({ s, designs, design, room, canEdit, Picker }) {
         const [open, setOpen] = useState(null);
         const data = s.system.data;
         const narrow = env.sizeClass(s) === "narrow";
@@ -508,56 +485,39 @@ export function createSystemView(env, canvas, sections, widgets) {
                     <${Ico} name="down" size=${14} />
                 </button>
                 ${data && html`<${ModeSwitch} s=${s} modes=${data.modes} narrow=${narrow || !split} />`}
-                ${
-                    canEdit &&
-                    data &&
-                    (edits || s.history.future.length > 0) &&
-                    html`<span class="dsy-history">
-                        <button
+                <span class="dsy-bar-end">
+                    ${
+                        canEdit &&
+                        data &&
+                        (edits || s.history.future.length > 0) &&
+                        html`<span class="dsy-history"
+                            >${historyButtons(s, " (Ctrl+Z)", " (Ctrl+Shift+Z)")}</span
+                        >`
+                    }
+                    ${
+                        env.beside() &&
+                        html`<button
                             type="button"
-                            class="icon-button"
-                            title="Undo (Ctrl+Z)"
-                            aria-label="Undo"
-                            disabled=${!edits}
-                            onClick=${env.undo}
+                            class=${`icon-button ${s.focus ? "on" : ""}`}
+                            title=${s.focus ? "Show the conversation" : "Hide the conversation"}
+                            aria-label=${s.focus ? "Show the conversation" : "Hide the conversation"}
+                            aria-pressed=${s.focus}
+                            onClick=${env.toggleFocus}
                         >
-                            <${Ico} name="undo" size=${16} />
-                        </button>
-                        <button
-                            type="button"
-                            class="icon-button"
-                            title="Redo (Ctrl+Shift+Z)"
-                            aria-label="Redo"
-                            disabled=${s.history.future.length === 0}
-                            onClick=${env.redo}
-                        >
-                            <${Ico} name="redo" size=${16} />
-                        </button>
-                    </span>`
-                }
-                ${
-                    env.beside() &&
-                    html`<button
+                            <${Ico} name=${s.focus ? "unfocus" : "focus"} size=${17} />
+                        </button>`
+                    }
+                    <button
                         type="button"
-                        class=${`icon-button ${s.focus ? "on" : ""}`}
-                        title=${s.focus ? "Show the conversation" : "Hide the conversation"}
-                        aria-label=${s.focus ? "Show the conversation" : "Hide the conversation"}
-                        aria-pressed=${s.focus}
-                        onClick=${env.toggleFocus}
+                        class="icon-button"
+                        title="More"
+                        aria-label="More"
+                        aria-haspopup="dialog"
+                        onClick=${() => setOpen("more")}
                     >
-                        <${Ico} name=${s.focus ? "unfocus" : "focus"} size=${17} />
-                    </button>`
-                }
-                <button
-                    type="button"
-                    class="icon-button"
-                    title="More"
-                    aria-label="More"
-                    aria-haspopup="dialog"
-                    onClick=${() => setOpen("more")}
-                >
-                    <${Ico} name="more" size=${18} />
-                </button>
+                        <${Ico} name="more" size=${18} />
+                    </button>
+                </span>
             </div>
             <${SectionTabs} s=${s} data=${data} split=${split} hasDesign=${design !== null} />
             ${
@@ -583,12 +543,8 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
-    // ─── Under the bar ───────────────────────────────────────────────────────
-
-    /** What the validator found: errors stop a save, warnings do not. A tap on one with a token goes to the token. */
     function Problems({ problems, has, narrow }) {
         const errors = problems.filter((problem) => problem.level === "error").length;
-        // Errors stay open where there is room; on a phone, and for warnings, it is one line with a count until a tap.
         const [open, setOpen] = useState(errors > 0 && !narrow);
         const [all, setAll] = useState(false);
 
@@ -597,10 +553,7 @@ export function createSystemView(env, canvas, sections, widgets) {
         }
 
         const list = all ? problems : problems.slice(0, 3);
-        const title =
-            errors > 0
-                ? `${errors} error${errors === 1 ? "" : "s"}`
-                : `${problems.length} warning${problems.length === 1 ? "" : "s"}`;
+        const title = errors > 0 ? plural(errors, "error") : plural(problems.length, "warning");
         const more =
             errors > 0 && problems.length > errors ? `and ${problems.length - errors} more` : "";
 
@@ -629,21 +582,11 @@ export function createSystemView(env, canvas, sections, widgets) {
                             html`<li key=${index} class=${problem.level}>
                                 ${
                                     problem.token && has(problem.token)
-                                        ? html`<button
-                                              type="button"
-                                              class="dsy-chip"
-                                              onClick=${() => env.openToken(problem.token)}
-                                          >
-                                              ${problem.token}
-                                          </button>`
-                                        : problem.token
-                                          ? html`<span class="dsy-chip-static mono"
-                                                >${problem.token}</span
-                                            >`
-                                          : problem.file &&
-                                            html`<span class="dsy-chip-static mono"
-                                                >${problem.file}</span
-                                            >`
+                                        ? html`<${widgets.TokenChip} name=${problem.token} />`
+                                        : (problem.token || problem.file) &&
+                                          html`<span class="dsy-chip-static mono"
+                                              >${problem.token || problem.file}</span
+                                          >`
                                 }
                                 <span>${problem.message}</span>
                             </li>`,
@@ -660,45 +603,26 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
-    /**
-     * What the system says that needs no action (`notes`): a contrast pair that is below its minimum on purpose (a disabled or
-     * decorative color: exempt). One quiet line that opens; it is not a problem, so it never shows as a warning. It is about
-     * colors, so it shows on the Colors tab only.
-     */
     function Notes({ notes, has }) {
         if (!Array.isArray(notes) || notes.length === 0) {
             return null;
         }
 
         return html`<details class="dsy-notes">
-            <summary>
-                ${`${notes.length} note${notes.length === 1 ? "" : "s"}, no action needed`}
-            </summary>
+            <summary>${`${plural(notes.length, "note")}, no action needed`}</summary>
             <ul>
                 ${notes.map(
                     (note, index) =>
                         html`<li key=${index}>
-                            ${
-                                note.token && has(note.token)
-                                    ? html`<button
-                                          type="button"
-                                          class="dsy-chip"
-                                          onClick=${() => env.openToken(note.token)}
-                                      >
-                                          ${note.token}
-                                      </button> `
-                                    : ""
-                            }${note.message}
+                            ${note.token && has(note.token) ? html`<${widgets.TokenChip} name=${note.token} /> ` : ""}${note.message}
                         </li>`,
                 )}
             </ul>
         </details>`;
     }
 
-    /** Unsaved edits and the save: how many, undo, give up, and Save. */
     function SaveBar({ s, count, data, canEdit }) {
-        // "Discard" with more than one change asks again, for a few seconds: nothing brings the changes back. The question is
-        // about the changes there are when it is asked: if their number moves, it is no longer the question.
+        // The confirmation is about the changes there are when it is asked: if their number moves, it is no longer the question.
         const [askedFor, setAskedFor] = useState(null);
         const asking = askedFor === count && count > 1;
 
@@ -760,28 +684,9 @@ export function createSystemView(env, canvas, sections, widgets) {
                 }
                 ${
                     (s.history.past.length > 0 || s.history.future.length > 0) &&
-                    html`<span class="dsy-bar-history" role="group" aria-label="Undo and redo">
-                        <button
-                            type="button"
-                            class="icon-button"
-                            title="Undo"
-                            aria-label="Undo"
-                            disabled=${s.history.past.length === 0 || status === "saving"}
-                            onClick=${() => env.undo()}
-                        >
-                            <${Ico} name="undo" size=${16} />
-                        </button>
-                        <button
-                            type="button"
-                            class="icon-button"
-                            title="Redo"
-                            aria-label="Redo"
-                            disabled=${s.history.future.length === 0 || status === "saving"}
-                            onClick=${() => env.redo()}
-                        >
-                            <${Ico} name="redo" size=${16} />
-                        </button>
-                    </span>`
+                    html`<span class="dsy-bar-history" role="group" aria-label="Undo and redo"
+                        >${historyButtons(s, "", "", status === "saving")}</span
+                    >`
                 }
                 <span class="grow"></span>
                 ${
@@ -813,7 +718,6 @@ export function createSystemView(env, canvas, sections, widgets) {
         </footer>`;
     }
 
-    /** What shows when the project has no tokens yet. */
     function Blank({ s, canEdit }) {
         const legacy = s.system.legacy;
 
@@ -865,16 +769,12 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
-    // ─── The open design beside the view ─────────────────────────────────────
-
-    /** The open design, live with the edits: a choice of design and size, and the page. */
     function Preview({ s, designs, design, shown, size, canEdit, pane }) {
         const narrowHead = pane === "page";
         const edits = unsavedCount(s.system.data, s.history);
         const box = useRef(null);
         const room = parts.useSize(box);
-        // Beside the view, with no size chosen, the page has the room that the pane has: a page at the size of a desktop in a
-        // pane a third as wide is a card in a corner. A size that was chosen (a phone, a tablet, a desktop) is kept.
+        // Beside the view, with no size chosen, the page fills the pane; a chosen size is kept.
         const fitted =
             s.device === "auto" && pane === "side" && room.w > 0 && room.h > 0
                 ? { w: clampSize(room.w - 36), h: clampSize(room.h - 78) }
@@ -962,8 +862,6 @@ export function createSystemView(env, canvas, sections, widgets) {
         </div>`;
     }
 
-    // ─── The whole ───────────────────────────────────────────────────────────
-
     function SystemView({ s, designs, design, shown, size, room, canEdit }) {
         const system = s.system;
         const data = system.data;
@@ -978,30 +876,18 @@ export function createSystemView(env, canvas, sections, widgets) {
                 ? names.slice(0, 3)
                 : [names.includes(s.sysMode) ? s.sysMode : names[0]].filter(Boolean);
         const guidelines = editsOf(s.history).get("guidelines")?.text ?? data?.guidelines ?? "";
-        const count = useMemo(
-            () => (data ? changeOf(data, s.history).count : 0),
-            [data, s.history],
-        );
-        const available = SECTIONS.filter(
-            (section) =>
-                section.id === "components" ||
-                section.id === "guidelines" ||
-                (model?.tokens ?? []).some((token) => sectionOf(token) === section.id),
-        );
-        const current = available.some((section) => section.id === s.sysSection)
-            ? s.sysSection
-            : (available[0]?.id ?? "colors");
+        const count = useMemo(() => unsavedCount(data, s.history), [data, s.history]);
+        const available = sectionsOf(model?.tokens ?? []);
+        const current = currentOf(available, s.sysSection);
         const ctx = {
             s,
             model,
             modes,
             canEdit,
-            narrow,
             guidelines,
             query: s.sysSearch ? s.sysQuery.trim() : "",
         };
 
-        // The first read, and then a quiet look every so often: Pi changes the files too.
         useEffect(() => {
             if (system.status === "idle") {
                 void systemData.load();
@@ -1016,7 +902,6 @@ export function createSystemView(env, canvas, sections, widgets) {
             return () => clearInterval(timer);
         }, []);
 
-        // Undo, redo, and save, as the keys that do them elsewhere (a field keeps its own).
         useEffect(() => {
             const onKey = (event) => {
                 if (
@@ -1047,7 +932,6 @@ export function createSystemView(env, canvas, sections, widgets) {
             return () => document.removeEventListener("keydown", onKey);
         }, [canEdit]);
 
-        // A section starts at its top.
         useEffect(() => scroll.current?.scrollTo({ top: 0 }), [current]);
 
         let body;
@@ -1066,17 +950,7 @@ export function createSystemView(env, canvas, sections, widgets) {
         } else if (!data) {
             body = html`<${Blank} s=${s} canEdit=${canEdit} />`;
         } else {
-            const Section = {
-                colors: sections.Colors,
-                type: sections.Type,
-                spacing: sections.Spacing,
-                radii: sections.Radii,
-                shadows: sections.Shadows,
-                motion: sections.Motion,
-                other: sections.Other,
-                components: sections.Components,
-                guidelines: sections.Guidelines,
-            }[current];
+            const Section = sections[current];
 
             body = html`${
                     s.sysSearch &&
@@ -1113,8 +987,7 @@ export function createSystemView(env, canvas, sections, widgets) {
                 <${Section} ctx=${ctx} />`;
         }
 
-        // What a screen reader is told after a save: a place that is always there, so that the words put in it are read out.
-        // (A refusal and a conflict have their own `alert`s.)
+        // A live region that is always there, so that words put in it are read out.
         const said = s.save.status === "saved" ? s.save.note : "";
 
         const column = html`<div class="dsy-column">
@@ -1143,8 +1016,10 @@ export function createSystemView(env, canvas, sections, widgets) {
             pane=${split ? "side" : "page"}
         />`;
 
-        // The list of tokens to link to is drawn here, over the whole view: a row would hold it inside its own box.
+        // Drawn over the whole view: a row would hold it inside its own box.
         const picking = s.sysPick && model?.has(s.sysPick.token) ? s.sysPick : null;
+        const part = picking?.part;
+        const layers = part ? model.shadowRaw(picking.token, picking.mode).layers : [];
 
         return html`<div class="dsy-main" data-split=${split} data-pane=${s.sysPane}>
             ${split ? html`${column}${preview}` : s.sysPane === "preview" ? preview : column}
@@ -1156,36 +1031,21 @@ export function createSystemView(env, canvas, sections, widgets) {
                     mode=${picking.mode}
                     narrow=${narrow}
                     onClose=${env.closePick}
-                    part=${picking.part}
-                    current=${
-                        picking.part
-                            ? linkOf(
-                                  model.shadowRaw(picking.token, picking.mode).layers[
-                                      picking.part.layer
-                                  ]?.[picking.part.key],
-                              )
-                            : undefined
-                    }
+                    part=${part}
+                    current=${part ? linkOf(layers[part.layer]?.[part.key]) : undefined}
                     onPick=${(name) => {
                         env.closePick();
-
-                        if (picking.part) {
-                            // A part of a shadow links to the token: the member is written as a reference, as in the file.
-                            const { layers } = model.shadowRaw(picking.token, picking.mode);
-
-                            env.editToken(picking.token, picking.mode, {
-                                value: shadowValue(
-                                    withPart(
-                                        layers,
-                                        picking.part.layer,
-                                        picking.part.key,
-                                        `{${name}}`,
-                                    ),
-                                ),
-                            });
-                        } else {
-                            env.editToken(picking.token, picking.mode, { alias: name });
-                        }
+                        env.editToken(
+                            picking.token,
+                            picking.mode,
+                            part
+                                ? {
+                                      value: shadowValue(
+                                          withPart(layers, part.layer, part.key, `{${name}}`),
+                                      ),
+                                  }
+                                : { alias: name },
+                        );
                     }}
                 />`
             }

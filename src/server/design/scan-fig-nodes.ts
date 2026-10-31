@@ -7,7 +7,7 @@
 import { toHex } from "./color.ts";
 import { weightOf } from "./scan-import-convert.ts";
 import { shadowValue } from "./scan-scales.ts";
-import { type Obj, slug } from "./scan-util.ts";
+import { type Obj, slug } from "./scan-colors.ts";
 
 /** A variable collection: its modes, in the file's order, so the first is the default. */
 export interface Collection {

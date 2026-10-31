@@ -1,30 +1,31 @@
-/* The System view (`system-ui.js` loads this when the view is first opened). */
-
-.dsy-bars {
-    padding-bottom: 0;
-}
-
 .dsy-modes button {
     padding: 0 10px;
 }
 
-.dsy-history {
+.dsy-bar-end {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+}
+
+.dsy-history,
+.dsy-modemenu,
+.dsy-tabs-end {
     display: inline-flex;
     flex: none;
 }
 
 .dsy-tabs {
     position: relative;
-    padding-right: 0;
 }
 
 .dsy-tabs .dsn-tab {
     padding: 0 11px;
 }
 
-/* The sections and the two buttons are side by side, never one over the other: the bar of sections scrolls where it is,
-   and the buttons keep their place at its end. */
 .dsy-tabbar {
+    position: relative;
     display: flex;
     align-items: flex-start;
     min-width: 0;
@@ -36,13 +37,10 @@
 }
 
 .dsy-tabs-end {
-    display: inline-flex;
-    flex: none;
     height: 34px;
     align-items: center;
 }
 
-/* Where more sections are out of sight, the bar fades there: the last one in view is not cut off, it goes on. */
 .dsy-tabs[data-more="right"] {
     mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
 }
@@ -61,10 +59,6 @@
     );
 }
 
-.dsy-tabs-end .icon-button {
-    position: relative;
-}
-
 .dsy-tabs-end .icon-button.on {
     background: color-mix(in srgb, var(--accent) 16%, var(--bg));
 }
@@ -80,15 +74,14 @@
     box-shadow: 0 0 0 2px var(--bg);
 }
 
-/* ─── Layout ───────────────────────────────────────────────── */
-
 .dsy-main {
     display: flex;
     flex: 1;
     min-height: 0;
 }
 
-.dsy-column {
+.dsy-column,
+.dsy-preview {
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -110,14 +103,6 @@
     scroll-padding: 12px;
 }
 
-.dsy-preview {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-}
-
 .dsy-preview-head {
     display: flex;
     flex: none;
@@ -135,8 +120,6 @@
     border: 0;
     border-radius: 8px;
     background: var(--dsn-fill);
-    color: var(--text);
-    font: inherit;
     font-weight: 600;
 }
 
@@ -187,17 +170,21 @@
 .dsy-preview-empty p {
     max-width: 34ch;
     margin: 0;
-    line-height: 1.55;
 }
 
-/* ─── Groups and rows ──────────────────────────────────────── */
+.dsy-group,
+.dsy-group.bare > .dsy-ramp-wrap,
+.dsy-group.bare > .dsy-rows,
+.dsy-component,
+.dsy-prose {
+    border: 1px solid var(--dsn-hair);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--text) 3%, var(--bg));
+}
 
 .dsy-group {
     margin: 0 0 12px;
     overflow: clip;
-    border: 1px solid var(--dsn-hair);
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--text) 3%, var(--bg));
 }
 
 .dsy-group.bare {
@@ -216,19 +203,32 @@
     text-align: left;
 }
 
-.dsy-group-title {
+.dsy-group-title,
+.dsy-section-label,
+.dsy-mode-name {
     color: var(--muted);
-    font-size: 11.5px;
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
 }
 
-.dsy-group-count {
-    padding: 1px 7px;
+.dsy-group-title {
+    font-size: 11.5px;
+}
+
+.dsy-group-count,
+.dsy-chip-static,
+.dsy-mode-chip,
+.dsy-inherit-tag,
+.dsy-format,
+.dsy-badge.exempt {
     border-radius: 999px;
     background: var(--dsn-fill-2);
     color: var(--muted);
+}
+
+.dsy-group-count {
+    padding: 1px 7px;
     font-size: 11px;
     font-variant-numeric: tabular-nums;
 }
@@ -268,13 +268,6 @@
     border-top: 1px solid var(--dsn-hair);
 }
 
-.dsy-group.bare > .dsy-ramp-wrap,
-.dsy-group.bare > .dsy-rows {
-    border: 1px solid var(--dsn-hair);
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--text) 3%, var(--bg));
-}
-
 .dsy-rows {
     margin: 0;
     padding: 0;
@@ -290,7 +283,8 @@
 }
 
 .dsy-row.edited::before,
-.dsy-card-tile.edited::after {
+.dsy-card-tile.edited::after,
+.dsy-step-tile.edited::after {
     content: "";
     position: absolute;
     background: var(--accent);
@@ -317,12 +311,6 @@
     cursor: pointer;
 }
 
-@media (hover: hover) {
-    .dsy-row-main:hover {
-        background: var(--hover);
-    }
-}
-
 .dsy-row-visual {
     display: inline-flex;
     flex: none;
@@ -345,13 +333,21 @@
     min-width: 0;
 }
 
-.dsy-row-sub {
-    min-width: 0;
+.dsy-row-sub,
+.dsy-group-note,
+.dsy-tile-name,
+.dsy-card-name,
+.dsy-shadow-line > span {
     overflow: hidden;
-    color: var(--muted);
-    font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.dsy-row-sub,
+.dsy-group-note {
+    min-width: 0;
+    color: var(--muted);
+    font-size: 12px;
 }
 
 .dsy-row-value {
@@ -365,13 +361,11 @@
     width: 32px;
     height: 32px;
     border-radius: 8px;
-    color: var(--muted);
     transition: transform 160ms var(--ease-out, ease);
 }
 
 .dsy-row.open > .dsy-row-main .dsy-row-open {
     transform: rotate(180deg);
-    color: var(--text);
 }
 
 .dsy-row.stacked .dsy-row-main {
@@ -384,11 +378,7 @@
     gap: 5px;
     max-width: 100%;
     min-height: 24px;
-    padding: 0;
     border-radius: 5px;
-    color: var(--text);
-    font-family: var(--mono, ui-monospace, monospace);
-    font-size: 12.5px;
     text-align: left;
     overflow-wrap: break-word;
 }
@@ -414,35 +404,6 @@
     opacity: 1;
 }
 
-@media (hover: hover) {
-    .dsy-name-icon {
-        opacity: 0;
-    }
-
-    .dsy-name:hover .dsy-name-icon,
-    .dsy-name:focus-visible .dsy-name-icon {
-        opacity: 1;
-    }
-}
-
-.dsy-name:focus-visible {
-    outline: 2px solid var(--focus-ring, var(--accent));
-    outline-offset: 2px;
-}
-
-.dsy-values {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
-}
-
-.dsy-value-line {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-}
-
 .dsy-hex {
     color: var(--muted);
     font-size: 12px;
@@ -450,7 +411,6 @@
     white-space: nowrap;
 }
 
-/* Side by side on a narrow panel: the two badges go under the name, where there is room for them. */
 .dsn[data-size="narrow"] .dsy-row-main:has(.dsy-badge-mode) {
     flex-wrap: wrap;
 }
@@ -461,26 +421,9 @@
     padding-left: 72px;
 }
 
-.dsn[data-size="narrow"] .dsy-row-value:has(.dsy-badge-mode) .dsy-values {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-}
-
 .dsn[data-size="narrow"] .dsy-row-main:has(.dsy-badge-mode) .dsy-row-open {
     order: 2;
 }
-
-.dsn[data-size="narrow"] .dsy-value-line .dsy-hex {
-    display: none;
-}
-
-.dsn[data-size="narrow"] .dsy-values:not(:has(.dsy-badge)) .dsy-hex {
-    display: inline;
-}
-
-/* ─── Swatches and badges ──────────────────────────────────── */
 
 .dsy-swatch {
     position: relative;
@@ -544,12 +487,6 @@
     color: var(--err);
 }
 
-/* A pair that is exempt (a disabled or decorative color) is told as a note: neither the green of a pass nor the red of a fail. */
-.dsy-badge.exempt {
-    background: var(--dsn-fill-2);
-    color: var(--muted);
-}
-
 .dsy-badge.auto {
     background: transparent;
     box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 45%, transparent);
@@ -572,17 +509,19 @@
     font-weight: 500;
 }
 
-/* ─── The editor under a row ───────────────────────────────── */
+.dsy-editor,
+.dsy-ramp-editor {
+    margin: 0 12px 12px;
+    border-radius: 10px;
+    background: var(--bg);
+    box-shadow: 0 0 0 1px var(--dsn-hair);
+}
 
 .dsy-editor {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    margin: 0 12px 12px;
     padding: 12px;
-    border-radius: 10px;
-    background: var(--bg);
-    box-shadow: 0 0 0 1px var(--dsn-hair);
     cursor: default;
 }
 
@@ -615,11 +554,7 @@
 
 .dsy-mode-name {
     margin: 0;
-    color: var(--muted);
     font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
 }
 
 .dsy-colorfield {
@@ -679,19 +614,15 @@
     border: 1px solid var(--dsn-hair);
     border-radius: 9px;
     background: var(--dsn-fill);
-    color: var(--text);
     font-size: 13px;
-}
-
-.dsy-text {
-    width: 100%;
 }
 
 .dsy-colorfield input[type="text"]:focus,
 .dsy-amount input:focus,
 .dsy-text:focus,
 .dsy-bezier input:focus,
-.dsy-unit:focus {
+.dsy-unit:focus,
+.dsy-write textarea:focus {
     outline: 2px solid var(--focus-ring, var(--accent));
     outline-offset: -1px;
 }
@@ -710,11 +641,6 @@
 .dsy-format {
     height: 28px;
     padding: 0 9px;
-    border-radius: 999px;
-    background: var(--dsn-fill-2);
-    color: var(--muted);
-    font-family: var(--mono, ui-monospace, monospace);
-    font-size: 11px;
 }
 
 .dsy-amount {
@@ -730,7 +656,9 @@
     text-align: center;
 }
 
-.dsy-step {
+.dsy-step,
+.dsy-glyph,
+.dsy-play {
     display: inline-grid;
     flex: none;
     place-items: center;
@@ -738,18 +666,11 @@
     height: 40px;
     border-radius: 9px;
     background: var(--dsn-fill);
-    color: var(--muted);
 }
 
-.dsy-step:disabled {
+.dsy-step:disabled,
+.dsy-play:disabled {
     opacity: 0.4;
-}
-
-@media (hover: hover) {
-    .dsy-step:hover:not(:disabled) {
-        background: var(--dsn-fill-2);
-        color: var(--text);
-    }
 }
 
 .dsy-unit {
@@ -777,9 +698,6 @@
 
 .dsy-chip-static {
     padding: 2px 8px;
-    border-radius: 999px;
-    background: var(--dsn-fill-2);
-    color: var(--muted);
     font-size: 11px;
 }
 
@@ -846,12 +764,8 @@
 }
 
 .dsy-target-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
     font-size: 12.5px;
 }
-
-/* ─── The overview, ramps, and tiles ───────────────────────── */
 
 .dsy-overview {
     display: grid;
@@ -900,7 +814,6 @@
 .dsy-look-button {
     padding: 4px 12px;
     border-radius: 7px;
-    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
 }
@@ -928,17 +841,6 @@
     border-radius: 50%;
 }
 
-.dsy-look-dots {
-    display: inline-flex;
-    gap: 5px;
-}
-
-.dsy-look-dots i {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-}
-
 .dsy-look figcaption {
     padding-left: 2px;
     font: 600 10.5px/1 var(--mono, ui-monospace, monospace);
@@ -953,11 +855,8 @@
 
 .dsy-tile-name {
     padding: 0 2px;
-    overflow: hidden;
     font-size: 11.5px;
     font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .dsy-tile-hex {
@@ -966,15 +865,10 @@
     font-size: 10.5px;
 }
 
-.dsy-card-tile.on {
+.dsy-card-tile.on,
+.dsy-step-tile.on {
     background: var(--dsn-accent-soft);
     box-shadow: 0 0 0 2px var(--accent);
-}
-
-@media (hover: hover) {
-    .dsy-card-tile:hover:not(.on) {
-        background: var(--hover);
-    }
 }
 
 .dsy-card-tile.edited::after {
@@ -984,13 +878,6 @@
     height: 8px;
     border-radius: 50%;
     box-shadow: 0 0 0 2px var(--bg);
-}
-
-.dsy-ramp-editor {
-    margin: 0 12px 12px;
-    border-radius: 10px;
-    background: var(--bg);
-    box-shadow: 0 0 0 1px var(--dsn-hair);
 }
 
 .dsy-ramp-editor .dsy-editor {
@@ -1014,14 +901,10 @@
 
 .dsy-mode-chip {
     padding: 2px 8px;
-    border-radius: 999px;
-    background: var(--dsn-fill-2);
-    color: var(--muted);
     font-size: 11.5px;
     font-weight: 600;
 }
 
-/* An editor under a row keeps its token's row (the name, and the way to close it) at the top while the editor scrolls. */
 .dsy-row.open > .dsy-row-main {
     position: sticky;
     top: 0;
@@ -1036,11 +919,6 @@
     padding: 12px;
 }
 
-.dsy-tiles[data-size="lg"] {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-}
-
-/* Roles as cards: a swatch across the top, the name, the value, and the contrast on its pair. */
 .dsy-tiles[data-size="role"] {
     grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
 }
@@ -1054,15 +932,11 @@
 
 .dsy-tiles[data-size="role"] .dsy-swatch {
     width: 100%;
-    height: 46px;
 }
 
 .dsy-card-name {
-    overflow: hidden;
     font-size: 12.5px;
     font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .dsy-card-meta {
@@ -1088,32 +962,17 @@
     display: none;
 }
 
-/* A pair that falls says so in words, not in color alone. */
 .dsy-card-meta .dsy-badge.fail .dsy-badge-level,
 .dsy-card-meta .dsy-badge.exempt .dsy-badge-level {
     display: inline;
 }
 
-/* A label over a run of groups, and the line a group's head may carry after its count. */
 .dsy-section-label {
     display: flex;
     align-items: center;
     gap: 8px;
     margin: 4px 2px 10px;
-    color: var(--muted);
     font-size: 11.5px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-}
-
-.dsy-group-note {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--muted);
-    font-size: 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .dsn[data-size="narrow"] .dsy-group-note {
@@ -1135,7 +994,6 @@
     font-weight: 600;
 }
 
-/* A ramp as one strip: the steps side by side. */
 .dsy-strip-row {
     padding: 10px 12px 12px;
 }
@@ -1177,7 +1035,6 @@
 
 .dsy-step-tile .dsy-swatch {
     width: 100%;
-    height: 40px;
     border-radius: 6px;
 }
 
@@ -1185,31 +1042,15 @@
     overflow: hidden;
     color: var(--muted);
     font-size: 9.5px;
-    text-align: center;
-    text-overflow: clip;
     white-space: nowrap;
 }
 
-.dsy-step-tile.on {
-    background: var(--dsn-accent-soft);
-    box-shadow: 0 0 0 2px var(--accent);
-}
-
-@media (hover: hover) {
-    .dsy-step-tile:hover:not(.on) {
-        background: var(--hover);
-    }
-}
-
 .dsy-step-tile.edited::after {
-    content: "";
-    position: absolute;
     top: 6px;
     right: 6px;
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--accent);
     box-shadow: 0 0 0 2px var(--bg);
 }
 
@@ -1221,7 +1062,6 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    min-width: 0;
 }
 
 .dsy-motion-sub > .mono {
@@ -1240,7 +1080,6 @@
 }
 
 .dsy-corner {
-    display: block;
     width: 56px;
     height: 56px;
     border: 2px solid var(--accent);
@@ -1270,8 +1109,6 @@
     background: var(--bg);
 }
 
-/* ─── Type, spacing, motion ────────────────────────────────── */
-
 .dsy-specimen {
     margin: 0;
     padding: 2px 16px 14px;
@@ -1279,20 +1116,12 @@
 }
 
 .dsy-glyph {
-    display: inline-grid;
-    flex: none;
-    place-items: center;
-    width: 40px;
-    height: 40px;
     overflow: hidden;
-    border-radius: 9px;
-    background: var(--dsn-fill);
     font-size: 20px;
     line-height: 1;
 }
 
 .dsy-leading {
-    display: inline-block;
     flex: none;
     width: 40px;
     padding: 4px 0;
@@ -1302,7 +1131,6 @@
     text-align: center;
 }
 
-/* A spacing step is a tile: its bar at its own scale (the widest step fills the tile), its name, and its value. */
 .dsy-tiles[data-size="space"] {
     grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
 }
@@ -1321,7 +1149,6 @@
 }
 
 .dsy-space i {
-    display: block;
     height: 14px;
     border-radius: 4px;
     background: color-mix(in srgb, var(--accent) 75%, transparent);
@@ -1330,7 +1157,6 @@
 .dsy-track {
     position: relative;
     display: block;
-    width: 100%;
     max-width: 280px;
     height: 24px;
     margin-top: 3px;
@@ -1349,28 +1175,8 @@
 }
 
 .dsy-play {
-    display: inline-grid;
-    flex: none;
-    place-items: center;
-    width: 40px;
-    height: 40px;
     border-radius: 50%;
     background: var(--dsn-accent-soft);
-    color: var(--accent);
-}
-
-.dsy-play.wide {
-    display: inline-flex;
-    gap: 6px;
-    width: auto;
-    padding: 0 11px;
-    border-radius: 999px;
-    color: var(--text);
-    font-size: 11.5px;
-}
-
-.dsy-play:disabled {
-    opacity: 0.4;
 }
 
 .dsy-curve {
@@ -1381,14 +1187,12 @@
 .dsy-curve-axis {
     fill: none;
     stroke: var(--dsn-hair);
-    stroke-width: 1;
 }
 
 .dsy-curve-handle {
     fill: none;
     stroke: var(--muted);
     stroke-dasharray: 2 3;
-    stroke-width: 1;
     opacity: 0.6;
 }
 
@@ -1425,18 +1229,12 @@
 }
 
 .dsy-bezier input {
-    width: 100%;
     text-align: center;
 }
-
-/* ─── Components and guidelines ────────────────────────────── */
 
 .dsy-component {
     margin: 0 0 12px;
     padding: 14px;
-    border: 1px solid var(--dsn-hair);
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--text) 3%, var(--bg));
 }
 
 .dsy-component header {
@@ -1490,7 +1288,6 @@
     width: 100%;
     height: 120px;
     border: 0;
-    background: transparent;
 }
 
 .dsy-usage {
@@ -1500,13 +1297,19 @@
     margin-top: 12px;
 }
 
-.dsy-usage ul {
+.dsy-usage ul,
+.dsy-problems ul,
+.dsy-contrasts ul {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 6px;
     margin: 0;
     padding: 0;
     list-style: none;
+}
+
+.dsy-usage ul {
+    gap: 5px;
     font-size: 12.5px;
     line-height: 1.45;
 }
@@ -1548,9 +1351,6 @@
 .dsy-prose {
     position: relative;
     padding: 14px 16px;
-    border: 1px solid var(--dsn-hair);
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--text) 3%, var(--bg));
     line-height: 1.6;
 }
 
@@ -1567,21 +1367,13 @@
 }
 
 .dsy-write textarea {
-    width: 100%;
     min-height: 320px;
     padding: 12px;
     border: 1px solid var(--dsn-hair);
     border-radius: 12px;
     background: var(--dsn-fill);
-    color: var(--text);
     font-size: 13px;
-    line-height: 1.55;
     resize: vertical;
-}
-
-.dsy-write textarea:focus {
-    outline: 2px solid var(--focus-ring, var(--accent));
-    outline-offset: -1px;
 }
 
 .dsy-write-foot {
@@ -1589,8 +1381,6 @@
     align-items: center;
     gap: 8px;
 }
-
-/* ─── What shows around the sections ───────────────────────── */
 
 .dsy-search {
     position: sticky;
@@ -1613,9 +1403,7 @@
     padding: 0 4px;
     border: 0;
     background: none;
-    color: var(--text);
     font-size: 16px;
-    outline: none;
 }
 
 .dsy-readonly {
@@ -1658,7 +1446,6 @@
 }
 
 .dsy-problems-head > svg:last-child {
-    flex: none;
     color: var(--muted);
     transition: transform 160ms var(--ease-out, ease);
 }
@@ -1669,8 +1456,7 @@
 
 /* Folded, a problem box is one line: on a phone it must not take a third of the screen before the first token. */
 .dsy-problems:not(.open) {
-    padding-top: 6px;
-    padding-bottom: 6px;
+    padding-block: 6px;
 }
 
 .dsy-problems.error .dsy-problems-head {
@@ -1682,12 +1468,7 @@
 }
 
 .dsy-problems ul {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
     margin: 8px 0 4px;
-    padding: 0;
-    list-style: none;
 }
 
 .dsy-problems li {
@@ -1721,7 +1502,6 @@
 .dsy-blank p {
     max-width: 44ch;
     margin: 0;
-    line-height: 1.55;
 }
 
 .dsy-blank-mark {
@@ -1752,7 +1532,6 @@
 }
 
 .dsy-legacy svg {
-    flex: none;
     margin-top: 3px;
 }
 
@@ -1761,7 +1540,6 @@
     font-size: 12px;
 }
 
-/* The save bar: how many edits wait, and the two things to do with them. */
 .dsy-savebar {
     display: flex;
     flex: none;
@@ -1818,10 +1596,6 @@
     padding: 0 10px;
 }
 
-.dsy-mode-name {
-    font-weight: 600;
-}
-
 .dsy-addmode {
     display: flex;
     gap: 8px;
@@ -1845,7 +1619,6 @@
     }
 }
 
-/* Fingers: bigger targets. */
 @media (pointer: coarse) {
     .dsy-step,
     .dsy-play {
@@ -1859,7 +1632,6 @@
     .dsy-unit,
     .dsy-bezier input {
         height: 44px;
-        font-size: 16px;
     }
 
     .dsy-well {
@@ -1885,31 +1657,19 @@
     }
 }
 
-/* A row with a play button has room for its name when the chevron goes: the whole row opens it. */
 .dsn[data-size="narrow"] .dsy-row:has(.dsy-play) .dsy-row-open {
     display: none;
 }
 
-/* A panel of middling width (the chat beside it): the sections wrap under each other, and only the one in use shows its
-   count, so that every section is in view. A narrow one scrolls, with the section in use brought to the middle. */
 .dsn[data-size="medium"] .dsy-tabs {
     flex-wrap: wrap;
+    gap: 0;
     overflow: visible;
-    row-gap: 2px;
 }
 
 .dsn[data-size="medium"] .dsy-tabs .dsn-tab:not(.on) .dsn-count,
 .dsn[data-size="narrow"] .dsy-tabs .dsn-tab:not(.on) .dsn-count {
     display: none;
-}
-
-.dsn[data-size="medium"] .dsy-tabs-end {
-    margin-left: 0;
-}
-
-/* ... and a little closer together, so that nine of them very likely fit in one row. */
-.dsn[data-size="medium"] .dsy-tabs {
-    gap: 0;
 }
 
 .dsn[data-size="medium"] .dsy-tabs .dsn-tab {
@@ -1920,20 +1680,30 @@
     width: 30px;
 }
 
-/* The bar keeps the room that the picker's name needs; the rest gives way. */
 .dsy-bars .dsn-picker {
     flex: 1 0 142px;
     min-width: 142px;
 }
 
+.dsn[data-size="narrow"] .dsy-bars .dsn-bar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+
 .dsn[data-size="narrow"] .dsy-bars .dsn-picker {
-    padding: 0 8px;
+    flex: 1 1 120px;
     gap: 6px;
+    min-width: 104px;
+    padding: 0 8px;
 }
 
 .dsn[data-size="narrow"] .dsy-modes button {
-    min-width: 32px;
-    padding: 0 6px;
+    min-width: 26px;
+    padding: 0 4px;
+}
+
+.dsn[data-size="narrow"] .dsy-bar-end {
+    margin-left: auto;
 }
 
 .dsy-search:focus-within {
@@ -1948,15 +1718,10 @@
 
 .dsy-tabs [role="tab"]:focus-visible,
 .dsy-group-head:focus-visible,
-.dsy-step-tile:focus-visible {
-    outline-offset: -2px;
-}
-
+.dsy-step-tile:focus-visible,
 .dsy-scroll:focus-visible {
     outline-offset: -2px;
 }
-
-/* ─── A mode's token that it takes from the default mode, the pairs of a color, and a shadow's parts ─── */
 
 .dsy-inherit {
     display: flex;
@@ -1972,9 +1737,6 @@
     align-items: center;
     gap: 5px;
     padding: 2px 8px;
-    border-radius: 999px;
-    background: var(--dsn-fill-2);
-    color: var(--muted);
     font-weight: 600;
 }
 
@@ -1984,7 +1746,6 @@
 }
 
 .dsy-card-tile.inherited .dsy-hex {
-    color: var(--muted);
     text-decoration: underline dotted;
     text-underline-offset: 3px;
 }
@@ -2000,15 +1761,6 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-}
-
-.dsy-contrasts ul {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
 }
 
 .dsy-contrasts li {
@@ -2089,10 +1841,6 @@
     min-width: 0;
 }
 
-.dsy-part .dsy-amount {
-    flex-wrap: nowrap;
-}
-
 .dsy-part-link {
     display: flex;
     flex-wrap: wrap;
@@ -2112,7 +1860,6 @@
     font-size: 12.5px;
 }
 
-/* The save bar keeps its place at the foot of the view while there are edits: the count, undo and redo, give up, and save. */
 .dsy-column > .dsy-savebar {
     position: sticky;
     bottom: 0;
@@ -2129,12 +1876,6 @@
     height: 34px;
 }
 
-/* More than four modes: one button that shows the mode in view and opens the list. */
-.dsy-modemenu {
-    display: inline-flex;
-    flex: none;
-}
-
 .dsy-modemenu-button {
     display: inline-flex;
     align-items: center;
@@ -2143,17 +1884,10 @@
     padding: 0 10px;
     border-radius: 8px;
     background: var(--dsn-fill);
-    font-size: 13px;
-    font-weight: 600;
 }
 
 .dsy-modemenu .dsn-menu-item.on {
     background: var(--dsn-accent-soft);
-}
-
-/* A bar of sections that goes on says so with a mark at the edge that has more, as well as the fade. */
-.dsy-tabbar {
-    position: relative;
 }
 
 .dsy-tabbar:has(.dsy-tabs[data-less="left"])::before,
@@ -2165,7 +1899,6 @@
     place-items: center;
     width: 18px;
     height: 34px;
-    color: var(--text);
     font-size: 20px;
     line-height: 1;
     pointer-events: none;
@@ -2185,7 +1918,6 @@
     left: 0;
 }
 
-/* A bar of sections that scrolls: it settles on a whole tab at the left, and it shows no tab that is not whole, at rest or not. */
 .dsn[data-size="narrow"] .dsy-tabs {
     scroll-snap-type: x proximity;
     scroll-padding-inline: 26px;
@@ -2203,7 +1935,6 @@
     pointer-events: none;
 }
 
-/* Roles under the step of the scale that they point at. */
 .dsy-by-step + .dsy-by-step {
     border-top: 1px solid var(--dsn-hair);
 }
@@ -2222,12 +1953,10 @@
     padding-top: 8px;
 }
 
-/* A size is a square of its own size (up to 44 px). */
 .dsy-space .dsy-size {
     border-radius: 3px;
 }
 
-/* A shadow tile: the stage, the name, and every layer on a line of its own with its color; the copy of the CSS sits at the corner. */
 .dsy-tiles[data-size="shadow"] {
     grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
 }
@@ -2252,14 +1981,6 @@
     height: 30px;
     border-radius: 8px;
     background: color-mix(in srgb, var(--bg) 82%, transparent);
-    color: var(--muted);
-}
-
-@media (hover: hover) {
-    .dsy-copy:hover {
-        background: var(--hover);
-        color: var(--text);
-    }
 }
 
 .dsy-shadow-lines {
@@ -2294,12 +2015,6 @@
     font-size: 10.5px;
 }
 
-.dsy-shadow-line > span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 /* The color of a layer, on a checker so that a see-through one (a shadow's 14% black) still shows. */
 .dsy-shadow-line > i {
     flex: none;
@@ -2310,4 +2025,31 @@
         linear-gradient(var(--c), var(--c)),
         conic-gradient(#fff 25%, #b9bcc4 0 50%, #fff 0 75%, #b9bcc4 0) 0 0 / 6px 6px;
     box-shadow: 0 0 0 1px var(--dsn-hair);
+}
+
+@media (hover: hover) {
+    .dsy-row-main:hover,
+    .dsy-card-tile:hover:not(.on),
+    .dsy-step-tile:hover:not(.on),
+    .dsy-copy:hover {
+        background: var(--hover);
+    }
+
+    .dsy-step:hover:not(:disabled) {
+        background: var(--dsn-fill-2);
+    }
+
+    .dsy-step:hover:not(:disabled),
+    .dsy-copy:hover {
+        color: var(--text);
+    }
+
+    .dsy-name-icon {
+        opacity: 0;
+    }
+
+    .dsy-name:hover .dsy-name-icon,
+    .dsy-name:focus-visible .dsy-name-icon {
+        opacity: 1;
+    }
 }

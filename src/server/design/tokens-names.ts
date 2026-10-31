@@ -1,13 +1,7 @@
-/**
- * `dist/names.md` (stream T): for every token, its name in each generated file: the variable in `tokens.css`, the variable
- * in `tailwind.css`, and the utilities that Tailwind makes from it. Generated, so a person who reads a class (`bg-surface`)
- * finds the token (`color.bg.surface`) and the other way round, and so that Pi can write a class that exists.
- */
 import type { ResolvedToken } from "./system-types.ts";
 import type { CompileInput } from "./tokens-compile.ts";
 import { namespaceOf, norm, tailwindNames } from "./tokens-tailwind.ts";
 
-/** The utility that a role's group names (`color.bg.*` is for `bg-`): the first word of the path after `color`. */
 const GROUP_UTILITY: Record<string, string> = {
     bg: "bg",
     background: "bg",
@@ -21,7 +15,6 @@ const GROUP_UTILITY: Record<string, string> = {
     stroke: "stroke",
 };
 
-/** The utilities of a token, from the namespace of its Tailwind variable. */
 function utilitiesOf(token: ResolvedToken, variable: string): string {
     const namespace = namespaceOf(variable);
 
@@ -60,7 +53,6 @@ function utilitiesOf(token: ResolvedToken, variable: string): string {
 
 const cell = (text: string) => text.replace(/\|/g, "\\|");
 
-/** The Markdown of `dist/names.md`. */
 export function namesMarkdown(system: CompileInput): string {
     const names = tailwindNames(system);
     const groups = new Map<string, ResolvedToken[]>();

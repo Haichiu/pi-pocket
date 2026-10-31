@@ -45,6 +45,7 @@ if (!answer.answered) {
 
 - The values are in `answer.values`, by field name. They are not in the transcript, nor sent to the other people in the session. A plain Allow, as from a notification, is refused: each field must be filled in.
 - With no fields, the card is a question that the button answers: "Solve the CAPTCHA in the browser, then tap Done".
+- Since 0.27.0, a field can have `choices`: 2 to 4 answers that show as buttons, with `multiple` for one or more and `other` for an answer the person types. Its value is the label chosen (labels one per line with `multiple`). Pi's own `ask` tool uses them ([the reference](reference/host.md#askfield)).
 - **Do not keep the values** in `api.memo` or a document: a restart would find them there. A tool that asks is not safe to replay (the default), so a call that a restart cut off comes back as interrupted, and Pi asks again.
 - Tell Pi what happened, never the values: "Signed in as the person".
 

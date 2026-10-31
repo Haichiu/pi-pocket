@@ -1,19 +1,12 @@
-/**
- * Token values (stream T): converts the `$value` of each DTCG token type into CSS. A value is written two ways: with
- * references as `var(--name)` (what the stylesheet holds) and with them resolved (what a swatch or the contrast check
- * shows). Every converter says how to fix a bad value.
- */
 import { colorObjectCss, parseColor } from "./color.ts";
 import type { TokenType } from "./system-types.ts";
 import { LIMITS, clip, isObject, show, type Obj } from "./tokens-base.ts";
 
-/** `{color.bg}` and `{color.bg.$root}` both name `color.bg`. */
 export const refName = (text: string) => text.trim().replace(/\.\$root$/, "");
 export const WHOLE_REF = /^\s*\{([^{}]+)\}\s*$/;
 export const wholeRef = (value: unknown): string | undefined =>
     typeof value === "string" ? WHOLE_REF.exec(value)?.[1] : undefined;
 
-/** A converted value: its CSS with references as `var()`, its CSS with them resolved, and the DTCG value. */
 export interface Out {
     css: string;
     literal: string;
@@ -22,7 +15,6 @@ export interface Out {
     alias?: string;
 }
 
-/** A referenced token's result. */
 export interface Target extends Out {
     name: string;
     type: TokenType;
@@ -58,6 +50,9 @@ const UNITS = new Set([
     "in",
 ]);
 
+const LOADS_OR_HIDES =
+    /\/\*|\*\/|url\(|image-set\(|(?<![\w-])(?:image|src)\(|cross-fade\(|expression\(|@import|javascript:/i;
+
 /** Why text is not safe as a CSS value, or undefined: it ends a rule, opens markup, hides a comment, or loads a URL. */
 function cssProblem(text: string): string | undefined {
     if (text.length > LIMITS.valueChars) {
@@ -68,8 +63,8 @@ function cssProblem(text: string): string | undefined {
         return "has a character that is not allowed in a token value (; { } < > \\ or a control character)";
     }
 
-    if (/\/\*|\*\/|url\(|expression\(|@import|javascript:/i.test(text)) {
-        return "has a comment, url(), or @import";
+    if (LOADS_OR_HIDES.test(text)) {
+        return "has a comment, url(), image-set(), or @import";
     }
 
     let depth = 0;
@@ -93,7 +88,9 @@ function cssProblem(text: string): string | undefined {
     return undefined;
 }
 
-/** Text with `{reference}`s expanded two ways. Undefined when a reference fails (it reported itself). */
+/** The longest resolved text of a token. A chain that doubles at each step stops here, not at memory's end. */
+const MAX_EXPANDED = 10_000;
+
 function expand(text: string, ctx: Ctx): { css: string; literal: string } | undefined {
     let failed = false;
     let css = "";
@@ -112,6 +109,12 @@ function expand(text: string, ctx: Ctx): { css: string; literal: string } | unde
         } else {
             css += `var(${target.cssVar})`;
             literal += target.literal;
+
+            if (literal.length > MAX_EXPANDED) {
+                return ctx.error(
+                    `{${clip(match[1]!)}} expands past ${MAX_EXPANDED.toLocaleString("en-US")} characters.`,
+                );
+            }
         }
     }
 
@@ -121,7 +124,6 @@ function expand(text: string, ctx: Ctx): { css: string; literal: string } | unde
     return failed ? undefined : { css, literal };
 }
 
-/** A CSS text value (a font stack, an easing, a gradient, a `calc()`): checked, with its references expanded. */
 function cssText(text: string, ctx: Ctx, what: string): Out | undefined {
     const problem = cssProblem(text.replace(/\{[^{}]+\}/g, "0"));
 
@@ -131,11 +133,9 @@ function cssText(text: string, ctx: Ctx, what: string): Out | undefined {
 
     const expanded = expand(text.trim().replace(/\s+/g, " "), ctx);
 
-    // The value has no reference left: the text with each one replaced by what it holds.
     return expanded === undefined ? undefined : { ...expanded, value: expanded.literal };
 }
 
-/** Wraps a whole-value reference: the same value, kept as a `var()` in CSS. */
 function alias(name: string, expect: readonly TokenType[], ctx: Ctx): Out | undefined {
     const target = ctx.ref(refName(name), expect);
 
@@ -478,7 +478,6 @@ function number(raw: unknown, ctx: Ctx): Out | undefined {
     return lit(String(value), value);
 }
 
-/** The members of a composite: each converted by its type, joined by `join`. */
 function member(type: TokenType, raw: unknown, ctx: Ctx, what: string): Out | undefined {
     if (raw === undefined) {
         return ctx.error(`${what} is missing.`);
@@ -507,7 +506,6 @@ function shadow(raw: unknown, ctx: Ctx): Out | undefined {
     const css: string[] = [];
     const literal: string[] = [];
     const value: unknown[] = [];
-    // The members of each layer as CSS, so that an editor can show and change one (`color`, `offset-x`, …).
     const members: Record<string, string> = {};
 
     for (const [index, layer] of layers.entries()) {
@@ -758,7 +756,6 @@ function typography(raw: unknown, ctx: Ctx): Out | undefined {
     let leading: Out | undefined;
 
     if (raw.lineHeight !== undefined) {
-        // A line height is a plain number (a multiple of the font size) or a length.
         const reference = wholeRef(raw.lineHeight);
         const unitless =
             typeof raw.lineHeight === "number" ||
@@ -807,7 +804,6 @@ function typography(raw: unknown, ctx: Ctx): Out | undefined {
     };
 }
 
-/** Converts a raw `$value` of `type` (or a composite's member). References are expanded through `ctx`. */
 export function convert(type: TokenType, raw: unknown, ctx: Ctx): Out | undefined {
     switch (type) {
         case "color":
@@ -839,7 +835,6 @@ export function convert(type: TokenType, raw: unknown, ctx: Ctx): Out | undefine
     }
 }
 
-/** The type that a value's shape says, for a token with no `$type`. */
 export function inferType(value: unknown): TokenType | undefined {
     if (typeof value === "number") {
         return "number";

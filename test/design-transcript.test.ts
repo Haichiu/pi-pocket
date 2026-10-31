@@ -1,8 +1,7 @@
-// The whole path of a design system, as an agent walks it: scan a project, init from the scan, validate, publish a design
-// that links ds/tokens.css, and check the page. The guide promises three design_system calls; this counts them.
 import { cleanUp, context, newSession, openApp, scriptedModel, work } from "./helpers.ts";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -22,7 +21,6 @@ let conversation: ConversationId;
 const host = { fetchPublic: createPublicFetch() } as PocketHost;
 const [artifact] = createArtifacts(host).tools!;
 const system = designSystemTool();
-/** Every tool call of the transcript, in order: the tool's name and the action. */
 const transcript: string[] = [];
 
 before(async () => {
@@ -35,7 +33,6 @@ after(async () => {
     cleanUp();
 });
 
-/** A call of the design_system tool, as the agent loop makes it: the arguments are checked against the tool's schema first. */
 async function call(args: Record<string, unknown>): Promise<string> {
     transcript.push(`design_system ${String(args.action)}`);
 
@@ -87,7 +84,7 @@ a { color: var(--accent) } .err { color: var(--danger) }`;
 
 test("the guide promises a system in three design_system calls", () => {
     const text = readFileSync(
-        fileURLToPath(new URL("../src/server/design/guide.ts", import.meta.url)),
+        fileURLToPath(new URL("../src/server/guides/design.md", import.meta.url)),
         "utf8",
     );
 
@@ -104,14 +101,12 @@ test(
         mkdirSync(join(work, "src"), { recursive: true });
         writeFileSync(join(work, "src", "styles.css"), PROJECT_CSS);
 
-        // 1. scan: a report with a draft; nothing is saved.
         const report = await call({ action: "scan" });
 
         assert.match(report, /Color roles \(\d of 9 found\)/);
         assert.match(report, /design_system init fromScan: true|init fromScan/);
         assert.equal(loadDesignSystem(work), undefined, "a scan saves nothing");
 
-        // 2. init from the scan, correcting a role in the same call (the value is typed: a string).
         const made = await call({
             action: "init",
             name: "Harbor",
@@ -121,7 +116,6 @@ test(
 
         assert.match(made, /Design system "Harbor"/);
 
-        // 3. validate: no error.
         const checked = await call({ action: "validate" });
 
         assert.doesNotMatch(checked, /\b[1-9]\d* error/);
@@ -130,7 +124,6 @@ test(
 
         assert.equal(loaded.problems.filter((problem) => problem.level === "error").length, 0);
 
-        // 4. publish: the page links ds/tokens.css and uses only the variables of the summary.
         const byName = (name: string) => loaded.tokens.find((token) => token.name === name)?.cssVar;
         const first = (group: string, type: string) =>
             loaded.tokens.find(
@@ -157,7 +150,6 @@ test(
 
         assert.match(reply, /Attached ds\/tokens\.css from the design system "Harbor"/);
 
-        // 5. check the stored page against the system.
         const bundle = await readBundle(
             host,
             app.harness.snapshot.bind(app.harness),
@@ -189,7 +181,6 @@ test(
             );
         }
 
-        // The calls: three design_system calls made the system, then one publish; the check is not a tool call of the agent's own.
         assert.deepEqual(transcript, [
             "design_system scan",
             "design_system init",
@@ -199,7 +190,7 @@ test(
     },
 );
 
-test("the tool refuses a value that is not a token value, with the schema's words, before the engine sees it", () => {
+test("the schema takes any token value, and the engine refuses one that is not a token value", async () => {
     const refuse = (value: unknown) =>
         validateToolArguments(
             system as never,
@@ -211,7 +202,6 @@ test("the tool refuses a value that is not a token value, with the schema's word
             } as never,
         );
 
-    // The forms that a DTCG token takes pass: text, a number, a list, a color object, a quantity, a shadow, a whole token.
     for (const value of [
         "#7aa2f7",
         400,
@@ -226,6 +216,31 @@ test("the tool refuses a value that is not a token value, with the schema's word
         assert.doesNotThrow(() => refuse(value), JSON.stringify(value));
     }
 
-    // A nested object where a member should be text or a number, and a function-like value, do not.
-    assert.throws(() => refuse({ color: { nested: { deeper: [{}] } } }));
+    const dir = join(tmpdir(), `pi-pocket-ds-value-${process.pid}`);
+
+    mkdirSync(dir, { recursive: true });
+
+    try {
+        await system.execute(
+            {
+                action: "init",
+                tokens: { color: { $type: "color", a: { $value: "#fff" } } },
+            } as never,
+            { agent: async () => ({ cwd: dir }) } as never,
+            undefined as never,
+        );
+        await assert.rejects(
+            system.execute(
+                {
+                    action: "set",
+                    changes: [{ token: "color.a", value: { color: { nested: { deeper: [{}] } } } }],
+                } as never,
+                { agent: async () => ({ cwd: dir }) } as never,
+                undefined as never,
+            ),
+            /Nothing was written/,
+        );
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
 });

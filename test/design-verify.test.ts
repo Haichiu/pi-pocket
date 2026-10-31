@@ -1,5 +1,3 @@
-// Stream V: the render queue, design_preview's new arguments, and the export fixes (deck slides, tweaks, sizes, PDF
-// width, PPTX notes and image size).
 import { cleanUp, context, newSession, openApp, scriptedModel } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -26,9 +24,6 @@ import { bundleOf, host, page, testSystem } from "./design-lint-fixtures.ts";
 import { loadDesignSystem } from "../src/server/design/tokens.ts";
 
 const browser = { skip: findBrowser() === undefined, timeout: 120_000 };
-
-// ---------------------------------------------------------------------------------------------------------------------
-// The queue.
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
@@ -219,9 +214,6 @@ test("the checks text: a summary, the worst first, at most 30, and notes", () =>
     );
 });
 
-// ---------------------------------------------------------------------------------------------------------------------
-// design_preview.
-
 let app: Awaited<ReturnType<typeof openApp>>;
 let conversation: ConversationId;
 let cwd: string;
@@ -380,7 +372,6 @@ test(
         );
 
         assert.match(tweaked, /off-system-size .*15px is not on the spacing scale/);
-        // A dark scheme compares with the dark mode, and the report names it.
         const light = textOf(await call(preview(), { id: "dark", viewports: ["mobile"] }));
         const dark = textOf(
             await call(preview(), { id: "dark", viewports: ["mobile"], colorScheme: "dark" }),
@@ -394,7 +385,6 @@ test(
             "the dark value is a system color in dark",
         );
         assert.match(light, /- error off-system-color/, "and not one in light");
-        // Another page of the bundle.
         const about = textOf(
             await call(preview(), { id: "lint", viewports: ["mobile"], page: "about.html" }),
         );
@@ -441,10 +431,6 @@ test("design_preview keeps its screenshots when the system cannot be read", brow
     assert.match(textOf(result), /no design system/);
 });
 
-// ---------------------------------------------------------------------------------------------------------------------
-// Exports.
-
-/** A pixel of a PNG, read in a page (no image library needed). */
 async function pixel(png: Buffer, x: number, y: number): Promise<number[]> {
     return withRender(bundleOf("<p>x</p>"), host, undefined, async (view) => {
         await view.load(viewportOf("mobile"));
@@ -465,7 +451,6 @@ async function pixel(png: Buffer, x: number, y: number): Promise<number[]> {
 
 const size = (png: Buffer) => [png.readUInt32BE(16), png.readUInt32BE(20)];
 
-/** The files of a zip, read from its central directory. */
 function unzip(bytes: Buffer): Map<string, Buffer> {
     const files = new Map<string, Buffer>();
     const end = bytes.lastIndexOf(Buffer.from([0x50, 0x4b, 5, 6]));
@@ -645,7 +630,6 @@ test("the export tool and route take slide, tweaks, and a custom size", browser,
         call(tool, { id: "pitch", format: "png", tweaks: { a: null } }),
         /needs a string/,
     );
-    // The route: the same options from a request body.
     let handler: ((request: ConversationWebRequest) => unknown) | undefined;
 
     designRoutes(
@@ -711,7 +695,7 @@ async function realpath(path: string): Promise<string> {
 
 test("design_preview and design_export take a mode of the system", browser, async () => {
     const flagship = loadDesignSystem(
-        join(import.meta.dirname, "fixtures", "design-system", "flagship"),
+        join(import.meta.dirname, "..", "docs", "examples", "design-system", "pocket"),
     )!;
 
     await publish({
@@ -731,11 +715,24 @@ test("design_preview and design_export take a mode of the system", browser, asyn
         await run("design_preview", { id: "modes", viewports: ["mobile"], mode: "high-contrast" }),
     );
 
+    // A dark default system and a page that keeps its own data-theme="dark": the preview checks the mode it shows.
+    const night = { ...flagship, modes: ["dark", "light", "high-contrast"] };
+
+    await publish({
+        id: "own",
+        title: "Own",
+        content: `<!doctype html><html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="ds/tokens.css"></head><body><p data-pid="t" style="margin:0;color:var(--color-text-primary);background:var(--color-bg-base)">Own</p></body></html>`,
+        assets: [{ name: "ds/tokens.css", content: flagship.compiled.css }],
+    });
+    const own = designTools(host, { loadSystem: () => night }).find(
+        (t) => t.name === "design_preview",
+    )!;
+
+    assert.match(textOf(await call(own, { id: "own", viewports: ["mobile"] })), /", mode dark/);
     assert.match(plain, /light; system "Pi Pocket", mode light/);
     assert.match(plain, /contrast \[data-pid="quiet"\]/);
     assert.match(high, /dark; system "Pi Pocket", mode high-contrast/, "the mode's own scheme");
     assert.doesNotMatch(high, /contrast \[data-pid="quiet"\]/);
-    // The screenshot is in the mode too, even with the checks off.
     const shot = await run("design_preview", {
         id: "modes",
         viewports: ["mobile"],
@@ -760,7 +757,6 @@ test("design_preview and design_export take a mode of the system", browser, asyn
         /needs a design system/,
     );
 
-    // The export draws in the mode as well: the tool, and the route.
     const file = async (args: object) =>
         readFile(
             (

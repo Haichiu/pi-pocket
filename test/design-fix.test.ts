@@ -1,6 +1,3 @@
-// One-tap fixes: `applyExactFixes` rewrites only literals that equal a token exactly, only in `<style>` elements and
-// `style` attributes, only in the property that the finding names, and only where the place is certain. These tests are
-// hostile on purpose: the same literal in a script, a comment, a string, a URL, a `var()` fallback, a custom property.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { findBrowser } from "../src/server/browser/discovery.ts";
@@ -9,7 +6,9 @@ import { checkDesign } from "../src/server/design/lint.ts";
 import type { CheckFinding, CheckFix } from "../src/server/design/system-types.ts";
 import { bundleOf, check, host, ofRule, page, testSystem, token } from "./design-lint-fixtures.ts";
 
-const system = testSystem();
+// One mode: a token that differs between modes cannot be put in a page by a fix (see the last test).
+const single = () => ({ ...testSystem(), modes: ["light"] });
+const system = single();
 const color = (
     literal: string,
     name: string,
@@ -68,7 +67,6 @@ test("a literal is replaced where it is the declaration of the named property, a
     const found = color("#5a5f73", MUTED, ["color"], { pid: "t", selector: '[data-pid="t"]' });
     const result = applyExactFixes(content, [found], system);
 
-    // Two places set `color` to the literal; the finding's element has a data-pid and its inline style is the certain one.
     assert.equal(result.applied, 1);
     assert.deepEqual(result.skipped, []);
     assert.equal(
@@ -78,7 +76,6 @@ test("a literal is replaced where it is the declaration of the named property, a
             'style="margin:0;color:var(--color-text-muted)"',
         ),
     );
-    // Everything else is byte for byte what it was.
     assert.match(result.content, /\.a \{ color: #5a5f73; \}/);
     assert.match(result.content, /\/\* color: #5a5f73 in a comment \*\//);
     assert.match(result.content, /content: "#5a5f73"; background: url\(x\.png#5a5f73\)/);
@@ -91,7 +88,6 @@ test("a literal is replaced where it is the declaration of the named property, a
         /const c = "color: #5a5f73"; document\.body\.style\.color = '#5a5f73'/,
     );
     assert.match(result.content, /title="color:#5a5f73" data-x='style="color:#5a5f73"'>x #5a5f73/);
-    // The finding of the rule's own element (its selector is the rule's) takes the rule.
     const rule = applyExactFixes(
         content,
         [color("#5a5f73", MUTED, ["color"], { selector: ".a" })],
@@ -125,7 +121,6 @@ test("where several places match and none is certain, one finding is skipped and
 
     assert.equal(three.applied, 3);
     assert.equal(three.content, content.replaceAll("#5a5f73", "var(--color-text-muted)"));
-    // The only place is certain.
     assert.equal(
         applyExactFixes(
             `<style>.a{color:#5a5f73}</style>`,
@@ -146,7 +141,6 @@ test("shorthands: only the literal changes, not the rest of the value; important
     const result = applyExactFixes(
         content,
         [
-            // The same literal in three rules: one finding for each element.
             ...[".a", ".c", ".d"].map((selector) =>
                 color("#5a5f73", MUTED, ["border", "border-color", "border-bottom"], {
                     id: `border${selector}`,
@@ -243,13 +237,13 @@ test("a finding is skipped when it has no fix, when the token changed, or when t
         selector: "",
         message: "m",
     };
-    const moved = testSystem();
+    const moved = single();
 
     Object.assign(moved.tokens.find((item) => item.name === MUTED)!.modes.light!, {
         value: "#5a5f74",
         css: "#5a5f74",
     });
-    const gone = testSystem();
+    const gone = single();
 
     gone.tokens = gone.tokens.filter((item) => item.name !== MUTED);
     const result = applyExactFixes(
@@ -279,7 +273,6 @@ test("a finding is skipped when it has no fix, when the token changed, or when t
             .skipped[0]!.reason,
         /not in the design system any more/,
     );
-    // The token is right, but the literal is only in a script.
     const script = applyExactFixes(
         `<script>x = "color: #5a5f73"</script><p>#5a5f73</p>`,
         [color("#5a5f73", MUTED, ["color"], { id: "s" })],
@@ -333,12 +326,45 @@ test("broken and hostile pages are read safely", () => {
         applyExactFixes(cases[4]![1], found, system).content,
         /<STYLE>\.a\{COLOR:var\(--color-text-muted\)\}<\/STYLE>/,
     );
-    // A page that is too large is not touched.
     const huge = `<style>.a{color:#5a5f73}</style>${"x".repeat(2_000_001)}`;
     const refused = applyExactFixes(huge, found, system);
 
     assert.equal(refused.content, huge);
     assert.match(refused.skipped[0]!.reason, /too large/);
+});
+
+test("a large page with many findings is fixed in time: each declaration is read once", () => {
+    const hex = (index: number) =>
+        `#${(index * 40_503 + 4_097).toString(16).padStart(6, "0").slice(-6)}`;
+    const many = {
+        ...single(),
+        tokens: Array.from({ length: 300 }, (_, index) =>
+            token(`color.c${index}`, "color", hex(index)),
+        ),
+    };
+    const rules: string[] = [];
+    const inline: string[] = [];
+
+    for (let index = 0; index < 10_000; index++) {
+        rules.push(
+            `.r${index} { color: ${hex(index % 300)}; border: 1px solid ${hex(index % 7)} }\n`,
+        );
+        inline.push(`<p data-pid="p${index}" style="color: ${hex(index % 300)}">x</p>\n`);
+    }
+
+    const content = `<style>${rules.join("")}</style>${inline.join("")}`;
+    const findings = Array.from({ length: 300 }, (_, index) =>
+        color(hex(index), `color.c${index}`, ["color"], {
+            id: `f${index}`,
+            selector: `.r${index}`,
+        }),
+    );
+    const start = performance.now();
+    const result = applyExactFixes(content, findings, many);
+
+    assert.equal(result.skipped.length, 0);
+    assert.equal(result.applied, 300);
+    assert.ok(performance.now() - start < 1500, `took ${performance.now() - start} ms`);
 });
 
 test("a fix is idempotent: the second call finds nothing to do", () => {
@@ -364,7 +390,7 @@ test(
             ".note{margin:0;padding:16px;color:#5a5f73;background:#ffffff;border-radius:8px;font-family:system-ui,sans-serif}",
             `<p class="note" data-pid="note">Quiet</p><p data-pid="loud" style="margin:0;color:#7ba3f8;padding:16px">Loud</p>`,
         );
-        const before = await check(content);
+        const before = await check(content, {}, system);
         const fixable = before.findings.filter((item) => item.fix !== undefined);
 
         assert.deepEqual(fixable.map((item) => `${item.rule}:${item.fix!.token}`).sort(), [
@@ -372,7 +398,6 @@ test(
             "off-system-color:color.text.muted",
             "off-system-font:font.body",
             "off-system-size:radius.md",
-            // The same literal on two elements is one finding that lists both.
             "off-system-size:space.4",
         ]);
         assert.equal(fixable.find((item) => item.fix!.token === "space.4")!.elements?.length, 2);
@@ -381,12 +406,12 @@ test(
             ofRule(before, "off-system-color").find((item) => item.pid === "loud")?.fix,
             undefined,
         );
-        const result = applyExactFixes(content, before.findings, testSystem());
+        const result = applyExactFixes(content, before.findings, system);
 
         assert.ok(result.applied >= 6);
         const after = await checkDesign(
             bundleOf(result.content),
-            testSystem(),
+            system,
             { viewport: "mobile" },
             host,
         );
@@ -400,8 +425,31 @@ test(
             ofRule(after, "off-system-color").filter((item) => item.pid === "note").length,
             0,
         );
-        // What was not fixable is still reported, and the page still parses and renders the same.
         assert.ok(ofRule(after, "off-system-color").some((item) => item.pid === "loud"));
-        assert.equal(applyExactFixes(result.content, after.findings, testSystem()).applied, 0);
+        assert.equal(applyExactFixes(result.content, after.findings, system).applied, 0);
+    },
+);
+
+test(
+    "a fix puts in a token only when it has the literal in every mode",
+    { skip: findBrowser() === undefined, timeout: 120_000 },
+    async () => {
+        const content = page(
+            ".note{margin:0;color:#5a5f73}",
+            `<p class="note" data-pid="note">Quiet</p>`,
+        );
+        const fixOf = async (given: ReturnType<typeof testSystem>) =>
+            ofRule(await check(content, {}, given), "off-system-color").find(
+                (item) => item.pid === "note",
+            )?.fix?.token;
+        const steady = testSystem();
+
+        steady.tokens.push(token("color.gray.600", "color", "#5a5f73", "#5a5f73", "primitive"));
+        assert.equal(
+            await fixOf(testSystem()),
+            undefined,
+            "color.text.muted is another color in dark",
+        );
+        assert.equal(await fixOf(steady), "color.gray.600");
     },
 );

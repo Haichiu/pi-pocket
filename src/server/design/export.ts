@@ -24,15 +24,13 @@ export const EXPORT_TYPES = {
     html: { extension: "zip", mime: "application/zip" },
 } as const;
 
-export type SaveDesignOptions = {
+type SaveDesignOptions = {
     id: string;
     format: ExportFormat;
     cwd: string;
     viewport?: string | DesignViewport;
     path?: string;
-    /** Tweak values to apply before the export (as the Design canvas sets them). */
     tweaks?: TweakValues;
-    /** The color scheme and the `data-theme` of a design system's mode to draw the export in (see `modeFor`). */
     colorScheme?: "light" | "dark";
     theme?: string;
     /** For a deck's PNG: the slide (from 1, default 1), or `all` for a zip with a PNG of every slide. */
@@ -40,8 +38,7 @@ export type SaveDesignOptions = {
     signal?: AbortSignal;
 };
 
-/** What a slide option and tweaks add to an export. */
-export type ExportView = {
+type ExportView = {
     tweaks?: TweakValues;
     slide?: number | "all";
     colorScheme?: "light" | "dark";
@@ -49,7 +46,7 @@ export type ExportView = {
 };
 
 /** The pixel ratio of PPTX slide images: 2, but no side over 4096 pixels. */
-export function pptxScale(slide: DesignViewport): number {
+function pptxScale(slide: DesignViewport): number {
     return Math.max(1, Math.min(2, 4096 / Math.max(slide.width, slide.height)));
 }
 
@@ -174,7 +171,6 @@ export async function exportDesign(
         const slides: { image: Buffer; text: string }[] = [];
         let total = 0;
 
-        // Slide images are taken at twice the pixels, so a slide stays sharp when it is shown large.
         await page.setScale(size, pptxScale(slideSize));
 
         for (const [index, text] of texts.entries()) {

@@ -1,9 +1,5 @@
-/**
- * Reads and writes the files of `.pi/design/` (stream T): bounded, and safe against links. A read never follows a
- * symlink (a folder or a file) and reads at most a limit's worth of bytes of each file. A write puts each file in
- * place with a rename of a temporary file next to it, so a reader sees an old file or a new one, never half of one,
- * and a link at the target is replaced, not followed.
- */
+// A read never follows a symlink and reads at most a limit's worth of bytes of each file.
+// A write renames a temporary file next to the target, so a reader never sees half a file, and a link at the target is replaced, not followed.
 import { randomUUID } from "node:crypto";
 import {
     closeSync,
@@ -22,18 +18,17 @@ import {
 import { basename, join } from "node:path";
 import type { SystemProblem } from "./system-types.ts";
 import { LIMITS, boundedText, type RawSystem } from "./tokens-base.ts";
+import { forgetSystem } from "./tokens-cache.ts";
 
-/** The design system folder, in the session's working directory. */
 export const DESIGN_DIR = join(".pi", "design");
 
-/** The system as it is on disk, with the files that could not be parsed (a write must not replace them by accident). */
+/** The system as it is on disk, with the files that could not be parsed: a write must not replace them by accident. */
 export interface Folder {
     raw: RawSystem;
-    /** File names (relative to the folder) that exist but could not be read or parsed. */
     broken: Set<string>;
 }
 
-/** What a folder entry is, or undefined when it does not exist. A link is an error: nothing here follows one. */
+// A link is an error: nothing here follows one.
 function kindOf(path: string, label: string): "file" | "directory" | undefined {
     let info;
 
@@ -56,7 +51,6 @@ function kindOf(path: string, label: string): "file" | "directory" | undefined {
     return info.isDirectory() ? "directory" : info.isFile() ? "file" : undefined;
 }
 
-/** The entry's own status (a link is not followed), or undefined when there is none. */
 function lstatOf(path: string): ReturnType<typeof lstatSync> | undefined {
     try {
         return lstatSync(path);
@@ -69,8 +63,7 @@ function lstatOf(path: string): ReturnType<typeof lstatSync> | undefined {
     }
 }
 
-/** True when `<cwd>/.pi/design` is a real folder. Throws for a link where a folder should be. */
-export function hasDesignFolder(cwd: string): boolean {
+function hasDesignFolder(cwd: string): boolean {
     const pi = kindOf(join(cwd, ".pi"), "The project's .pi folder");
 
     if (pi === undefined) {
@@ -94,7 +87,6 @@ export function hasDesignFolder(cwd: string): boolean {
     return true;
 }
 
-/** The first `max` bytes of a file, and whether there was more. Never follows a link. */
 function readHead(path: string, max: number): { bytes: Buffer; more: boolean } {
     const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
 
@@ -124,10 +116,6 @@ function readHead(path: string, max: number): { bytes: Buffer; more: boolean } {
 
 const kb = (bytes: number) => `${Math.round(bytes / 1024)} KB`;
 
-/**
- * Reads the design system folder, or returns undefined when the project has none. A file that is a link, too large, or
- * not valid JSON becomes a problem and is left out; the rest of the folder still loads.
- */
 export function readFolder(cwd: string): Folder | undefined {
     if (!hasDesignFolder(cwd)) {
         return undefined;
@@ -145,7 +133,6 @@ export function readFolder(cwd: string): Folder | undefined {
         problems,
     };
 
-    /** The text of a file in the folder, or undefined with a problem. */
     const text = (name: string, max: number, whole = true): string | undefined => {
         const path = join(root, name);
 
@@ -216,10 +203,22 @@ export function readFolder(cwd: string): Folder | undefined {
         throw new Error(`.pi/design could not be read: ${(error as Error).message}`);
     }
 
+    let modeFiles = 0;
+
     for (const entry of entries) {
         const match = /^tokens(?:\.(.+))?\.json$/.exec(entry.name);
 
         if (entry.name.startsWith(".") || match === null) {
+            continue;
+        }
+
+        if (match[1] !== undefined && ++modeFiles > LIMITS.modes * 2) {
+            broken.add(entry.name);
+            problems.push({
+                level: "error",
+                file: entry.name,
+                message: `${entry.name} is not read: a design system has at most ${LIMITS.modes} modes.`,
+            });
             continue;
         }
 
@@ -280,14 +279,10 @@ export function readFolder(cwd: string): Folder | undefined {
     return { raw, broken };
 }
 
-/** The files that `design_system read` may show: the sources and the compiled output, by relative name. */
 const READABLE =
     /^(?:tokens(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)?\.json|guidelines\.md|components\/[a-z0-9]+(?:-[a-z0-9]+)*\.html|dist\/(?:tokens\.css|tailwind\.css|tokens\.resolved\.json|tokens\.studio\.json|names\.md|tokens\.[a-z0-9]+(?:-[a-z0-9]+)*\.resolved\.json|components\.css))$/;
 
-/**
- * The text of one file of the design system folder (at most `max` bytes), or undefined when it is not there. The name
- * must be one of the folder's own files; a link or a name with a path is refused.
- */
+// The name must be one of the folder's own files; a link or a name with a path is refused.
 export function readDesignFile(
     cwd: string,
     name: string,
@@ -303,7 +298,13 @@ export function readDesignFile(
         return undefined;
     }
 
-    const path = join(cwd, DESIGN_DIR, ...name.split("/"));
+    const parts = name.split("/");
+
+    if (parts.length === 2 && kindOf(join(cwd, DESIGN_DIR, parts[0]!), parts[0]!) !== "directory") {
+        return undefined;
+    }
+
+    const path = join(cwd, DESIGN_DIR, ...parts);
 
     if (kindOf(path, name) !== "file") {
         return undefined;
@@ -315,7 +316,6 @@ export function readDesignFile(
     return { text: text.replace(/^\uFEFF/, ""), truncated: more };
 }
 
-/** An empty folder state, for a project that has no design system yet. */
 export function emptyFolder(cwd: string): Folder {
     return {
         raw: {
@@ -330,7 +330,6 @@ export function emptyFolder(cwd: string): Folder {
     };
 }
 
-/** Makes `path` a real folder if it is missing; throws for a link or a file. */
 function ensureFolder(path: string, label: string): void {
     const kind = kindOf(path, label);
 
@@ -341,19 +340,15 @@ function ensureFolder(path: string, label: string): void {
     }
 }
 
-/** What a write did. */
-export interface WriteResult {
+interface WriteResult {
     written: string[];
     removed: string[];
 }
 
-/**
- * Writes files under `.pi/design/` (a text puts the file, `null` removes it). A file with the same bytes is left alone,
- * so its modification time stays. Names are relative to the folder, with `/`.
- */
 export function writeFiles(cwd: string, files: Map<string, string | null>): WriteResult {
     const result: WriteResult = { written: [], removed: [] };
 
+    forgetSystem(cwd);
     ensureFolder(join(cwd, ".pi"), "The project's .pi folder");
     ensureFolder(join(cwd, DESIGN_DIR), ".pi/design");
 
@@ -373,6 +368,23 @@ export function writeFiles(cwd: string, files: Map<string, string | null>): Writ
             throw new Error(`Refusing to write ${name}.`);
         }
 
+        // Check the parent for removals too: O_NOFOLLOW on the final name cannot protect it.
+        if (parts.length === 2) {
+            if (content === null) {
+                const kind = kindOf(dir, parts[0]!);
+
+                if (kind === undefined) {
+                    continue;
+                }
+
+                if (kind !== "directory") {
+                    throw new Error(`${parts[0]!} must be a folder.`);
+                }
+            } else {
+                ensureFolder(dir, parts[0]!);
+            }
+        }
+
         // A link at the file itself is replaced or removed as a link; nothing writes through it.
         const present = lstatOf(path);
 
@@ -385,15 +397,15 @@ export function writeFiles(cwd: string, files: Map<string, string | null>): Writ
             continue;
         }
 
-        if (parts.length === 2) {
-            ensureFolder(dir, parts[0]!);
-        }
-
         const bytes = Buffer.from(content, "utf8");
 
         // The same bytes again: leave the file (and its time) alone.
         try {
-            if (present?.isFile() === true && readFileSync(path).equals(bytes)) {
+            if (
+                present?.isFile() === true &&
+                present.size === bytes.length &&
+                readFileSync(path).equals(bytes)
+            ) {
                 continue;
             }
         } catch {

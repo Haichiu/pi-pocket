@@ -1,5 +1,3 @@
-// Select words in one of Pi's replies and reply to just those: a small Reply button appears by the selection (below it
-// on a touch screen, where the system's own menu sits above), and the passage waits above the message box as a quote.
 import { useEffect, useState } from "preact/hooks";
 import { quoteReply } from "./store.js";
 import { html, Icon } from "./ui.js";
@@ -8,7 +6,6 @@ const coarse = matchMedia("(pointer: coarse)").matches;
 const WIDTH = 92;
 const HEIGHT = 36;
 
-/** The selected passage and where to put the button, when the selection lies within one reply of Pi's. */
 function selected() {
     const selection = getSelection();
 
@@ -50,7 +47,6 @@ function selected() {
     const anchor = below ? last.right : first.left;
     const left = Math.max(8, Math.min(anchor - (below ? WIDTH : 0), innerWidth - WIDTH - 8));
 
-    // A button that would fall off the screen (the selection runs past it) is not shown.
     if (top < 0 || top > (visualViewport?.height ?? innerHeight) - HEIGHT) {
         return null;
     }

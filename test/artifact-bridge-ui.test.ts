@@ -151,7 +151,6 @@ let calls = 0;
 let elsewhere: Server;
 let elsewhereBase = "";
 let heard: string[] = [];
-/** How many clicks the calculator's page has reported (`tapPage`). */
 let taps = 0;
 let slow: { end: () => void }[] = [];
 /** What a busy machine (the whole suite at once) may take to open a viewer and load its page. */
@@ -237,10 +236,8 @@ async function tapFrame(selector: string) {
 }
 
 /**
- * Tap the calculator's page, and tap again until the page itself reports a click. Chromium sends a pointer to a frame
- * that has just opened (a viewer, an out-of-process frame) by hit-test data that reaches it a little after the frame
- * is drawn, and on a busy machine the first tap can go to nothing: the page sees no press, or a press without its
- * click. A person taps again; so does this. A tap the page saw is never repeated, so one follow-up is made.
+ * Chromium routes a pointer to a just-opened frame by hit-test data that arrives after the frame is drawn, so on a busy
+ * machine the first tap can go to nothing: tap again until the page reports a click.
  */
 async function tapPage(selector: string) {
     for (let attempt = 0; attempt < 8; attempt += 1) {

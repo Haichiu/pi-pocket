@@ -677,6 +677,8 @@ export function Composer() {
         if (command.args || command.template) {
             update(`/${command.name} `);
             focusEnd();
+        } else if (store.state.replyQuote) {
+            notify("info", "A quote cannot go with a command. Remove the quote to run it.");
         } else {
             runCommand({ command, arg: "" }, `/${command.name}`);
         }
@@ -746,6 +748,14 @@ export function Composer() {
             return;
         }
 
+        // A command runs or expands only when it starts the message: a quote in front would stop that.
+        if (
+            store.state.replyQuote &&
+            (parsed || shell || template || text.trimStart().startsWith("/skill:"))
+        ) {
+            return notify("info", "A quote cannot go with a command. Remove the quote to run it.");
+        }
+
         // What shows is what goes: words still coming would land in the emptied box.
         dictation.stop(true);
         const full = expandPastes(text, pastes);
@@ -794,10 +804,6 @@ export function Composer() {
         }
     };
 
-    /**
-     * Take one's own queued message back to change it: its words go above what the box holds, on a line of their own,
-     * and its files join the ones attached.
-     */
     const editQueued = async (item) => {
         const back = await attempt(() => actions.editQueued(item.id));
 

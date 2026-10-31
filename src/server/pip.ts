@@ -108,7 +108,6 @@ export const SESSION_OPEN = "<session-output>";
 export const SESSION_CLOSE = "</session-output>";
 /** Follows waiting at once, at most. */
 const MAX_FOLLOWS = 50;
-/** How much of a session's last answer a report and a read carry at most; `session_read` gives the rest in parts. */
 const ANSWER_CHARS = 12_000;
 const LINE_CHARS = 600;
 
@@ -151,10 +150,7 @@ function requestKey(key: string): string {
     return createHash("sha256").update(key).digest("base64url").slice(0, 40);
 }
 
-/**
- * A part of an answer, at most `ANSWER_CHARS` characters from `from`, and the note that says how much is left and how
- * to read it (absent when nothing is). The note is ours, so it goes outside the fence.
- */
+// The note is ours, so it goes outside the fence.
 function answerPart(
     text: string,
     from: number,
@@ -889,10 +885,6 @@ export class Pip {
         };
     }
 
-    /**
-     * The newest part of a session, as text for PiP: its state, what waits there, and its last messages. A last answer
-     * longer than `ANSWER_CHARS` is cut, with a note; `answerFrom` (a character) reads that answer from there on, alone.
-     */
     async read(pipId: ConversationId, sessionId: number, entries = 40, from = 0): Promise<string> {
         const answerFrom = Number.isFinite(from) ? Math.max(0, Math.floor(from)) : 0;
         const app = this.#app;
@@ -944,7 +936,6 @@ export class Pip {
             } else if (entry.kind === "assistant") {
                 for (const block of entry.blocks) {
                     if (block.type === "text" && block.text.trim() !== "") {
-                        // The last answer is one piece (all its text blocks), where its first block stands.
                         if (entry.id !== lastAnswer) {
                             lines.push(`Pi: ${clip(block.text, LINE_CHARS)}`);
                         } else if (!shown) {
@@ -1002,7 +993,6 @@ export class Pip {
         ];
 
         this.#looked(pipId, id);
-        // Past the start of the last answer, only the rest of that answer: the rest of the session was in the first read.
         const body = answerFrom > 0 ? [`Pi: ${part.text}`] : [...pending, ...lines];
         const head = [
             `#${String(sessionId)} ${quoted(meta.title ?? "New session")} · ${state}${meta.archived === true ? " · archived" : ""}`,

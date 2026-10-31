@@ -45,7 +45,6 @@ export const ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2];
  * 100%) or a number. `gap` is the margin kept around the frame when it fits.
  */
 export function scaleOf(zoom, size, room, gap = 16) {
-    // The width of the room: a tall page (a phone's) is read at its width, and the room scrolls for the rest.
     if (zoom === "width") {
         if (!(room.w > 0)) {
             return 1;
@@ -67,16 +66,12 @@ export function scaleOf(zoom, size, room, gap = 16) {
     return Math.max(0.1, Math.floor(fit * 100) / 100);
 }
 
-/**
- * What `auto`, the zoom that nobody chose, comes to: the width of the room on a narrow panel (a phone), where the text of a
- * page is to be read and the room scrolls, and the whole page in the room elsewhere.
- */
+/** `auto` is the room's width on a narrow panel (read the text, scroll), the whole page elsewhere. */
 export const zoomOf = (zoom, narrow) => (zoom === "auto" ? (narrow ? "width" : "fit") : zoom);
 
-/** The word for a zoom that follows the room, in front of its percent: `Width 95%`, `Fit 44%`. A number has none. */
+/** The label before the percent of a zoom that follows the room: `Width 95%`, `Fit 44%`. */
 export const zoomWord = (zoom) => (zoom === "width" ? "Width " : zoom === "fit" ? "Fit " : "");
 
-/** What a tap on the zoom value goes to: on a narrow panel width, whole page, 100%; elsewhere whole page and 100%. */
 export function nextZoom(zoom, narrow) {
     const steps = narrow ? ["width", "fit", 1] : ["fit", 1];
     const at = steps.indexOf(zoom);

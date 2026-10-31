@@ -1,4 +1,3 @@
-// Loading and writing .pi/design/: bounded and safe reads, atomic writes, the checks before a write, and the compiled output.
 import assert from "node:assert/strict";
 import {
     chmodSync,
@@ -23,6 +22,7 @@ import {
     systemSummary,
     writeDesignSystem,
 } from "../src/server/design/tokens.ts";
+import { readDesignFile } from "../src/server/design/tokens-io.ts";
 
 const dirs: string[] = [];
 
@@ -186,7 +186,6 @@ test("a write leaves files with the same bytes alone, and changes only the files
     for (const name of files(dir)) {
         const changed = statSync(design(dir, name)).mtimeMs !== 1_000_000;
 
-        // `names.md` has names and no values: a change of a value leaves it as it is.
         assert.equal(
             changed,
             [
@@ -358,7 +357,6 @@ test("a change that adds an error writes nothing; errors that were already there
         "no file changed, and no temporary file is left",
     );
 
-    // A system that already has an error can still be changed elsewhere, and repaired.
     writeFileSync(
         design(dir, "tokens.json"),
         JSON.stringify({ ...tokens(), broken: { $type: "color", x: { $value: "{nope}" } } }),
@@ -407,7 +405,6 @@ test("a file that cannot be parsed is reported, and a single-token change will n
     );
     assert.equal(read(dir, "tokens.dark.json"), "{ not json", "the broken file is untouched");
 
-    // Replacing it whole is allowed, and fixes it.
     const fixed = writeDesignSystem(dir, { modes: { dark: dark() } });
 
     assert.deepEqual(fixed.modes, ["light", "dark"]);
@@ -464,7 +461,6 @@ test("links: a symlinked .pi or .pi/design throws; a symlinked file is a problem
         "the target is untouched",
     );
 
-    // A linked dist folder is refused on write.
     rmSync(design(dir, "dist"), { recursive: true, force: true });
     symlinkSync(outside, design(dir, "dist"));
     assert.throws(() => writeDesignSystem(dir, {}), /symlink/);
@@ -473,6 +469,22 @@ test("links: a symlinked .pi or .pi/design throws; a symlinked file is a problem
         ["secret.json"],
         "nothing was written through the link",
     );
+});
+
+test("a link at components/ or dist/ is refused for a read, a write, and a drop", () => {
+    const dir = project();
+    const outside = project();
+
+    writeDesignSystem(dir, { tokens: tokens() });
+    writeFileSync(join(outside, "button.html"), "x");
+    writeFileSync(join(outside, "tokens.css"), "x");
+    symlinkSync(outside, design(dir, "components"));
+    assert.throws(() => writeDesignSystem(dir, { components: { button: null } }), /symlink/);
+    assert.throws(() => readDesignFile(dir, "components/button.html"), /symlink/);
+    rmSync(design(dir, "dist"), { recursive: true });
+    symlinkSync(outside, design(dir, "dist"));
+    assert.throws(() => readDesignFile(dir, "dist/tokens.css"), /symlink/);
+    assert.deepEqual(readdirSync(outside).sort(), ["button.html", "tokens.css"]);
 });
 
 test(
@@ -637,7 +649,6 @@ test("tailwind.css: a v4 theme with one variable for each token, mode blocks, an
     assert.match(css, /\[data-theme="dark"\] \{[\s\S]*--color-text: #f1f2f8;/);
     assert.match(css, /@media \(prefers-color-scheme: dark\)/);
 
-    // No variable is declared twice in the base block, and no variable points at itself or at a missing one.
     const theme = css.slice(
         css.indexOf("@theme static {"),
         css.indexOf("\n}\n", css.indexOf("@theme static {")),
@@ -791,7 +802,6 @@ test("tokens.resolved.json is compact, and tokens.<mode>.resolved.json is DTCG w
         `${compiled.json.length} bytes: no value, css, literal, and hex for each mode`,
     );
 
-    // The DTCG file of a mode.
     assert.deepEqual(Object.keys(compiled.modes!), ["light", "dark"]);
 
     const dtcg = JSON.parse(compiled.modes!.dark!);
@@ -805,7 +815,6 @@ test("tokens.resolved.json is compact, and tokens.<mode>.resolved.json is DTCG w
     ]);
     assert.equal(JSON.parse(compiled.modes!.light!).color.text.primary.$value, "#1a1b26");
 
-    // Every leaf is a token with $type and $value; nothing else is a token.
     const leaves = (node: Record<string, unknown>, path: string[] = []): string[] =>
         Object.entries(node).flatMap(([key, child]) =>
             key.startsWith("$")

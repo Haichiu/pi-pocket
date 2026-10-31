@@ -1,7 +1,6 @@
-// The page that shows a component's states: a document for a frame that has no scripts and no network, made from a
-// component's markup and CSS (untrusted: they come from the project's files) and the tokens of one mode.
+// The page that shows a component's states, for a frame with no scripts and no network. The component's markup and CSS come
+// from the project's files: untrusted.
 
-/** `text` as HTML text: nothing in it is markup. */
 export const escapeHtml = (text) =>
     String(text).replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 
@@ -9,17 +8,16 @@ export const escapeHtml = (text) =>
 const UNSAFE_TAGS =
     /<\s*\/?\s*(?:meta|base|link|script|iframe|frame|frameset|object|embed|form|template|noscript)\b[^>]*>/gi;
 
-/** A component's markup without the tags that load, run, or move a page. */
-export const cleanMarkup = (markup) => String(markup).replace(UNSAFE_TAGS, "").slice(0, 20_000);
+const cleanMarkup = (markup) => String(markup).replace(UNSAFE_TAGS, "").slice(0, 20_000);
 
 /** A component's CSS that cannot end its own `<style>` element. */
-export const cleanStyles = (css) =>
+const cleanStyles = (css) =>
     String(css)
         .replace(/<\/(style)/gi, "<\\/$1")
         .slice(0, 40_000);
 
 /** What a frame may do: nothing but draw what is in it (a `data:` image or font, inline styles). */
-export const SPECIMEN_CSP =
+const SPECIMEN_CSP =
     "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'";
 
 /**

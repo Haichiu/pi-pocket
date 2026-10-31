@@ -16,9 +16,7 @@ export const ALLOW = "fullscreen; clipboard-write; accelerometer; gyroscope";
 export const frameUrl = (conversation, id, version) =>
     `/a/${conversation}/${encodeURIComponent(id)}/${version}`;
 
-/** The least a cropped frame shows, in the frame's pixels. */
 const MIN_CROP = 160;
-/** What a cropped frame keeps below its content, in the frame's pixels. */
 const CROP_PAD = 24;
 
 /** The height of a frame of `size` that shows no more than the page's content (`crop`: 0 when it is not known). */
@@ -123,7 +121,6 @@ export function createCanvas(env) {
         const roomSize = useSize(room);
         const [ready, setReady] = useState(0);
         const [loaded, setLoaded] = useState(false);
-        // The height of the page's content (0: not known), from the frame.
         const [content, setContent] = useState(0);
         const sent = useRef({ at: "", values: {} });
         // The slide to go back to once a page that loads again says it is a deck (`pocket-deck`).
@@ -131,7 +128,6 @@ export function createCanvas(env) {
         // The zoom bar floats over the bottom of the room: the page fits above it.
         const zoom = zoomOf(s.zoom, env.sizeClass(s) === "narrow");
         const checking = s.dock === "check";
-        // A check shows no more of the frame than its page fills (a short page is not a phone's worth of empty).
         const crop = checking && content > 0 ? content + CROP_PAD : 0;
         const scale = scaleOf(
             zoom,
@@ -144,10 +140,9 @@ export function createCanvas(env) {
         const comments = notes?.comments ?? [];
         const check = checkOptions(s, env.canvasDark(s));
         const pins = s.mode === "comment" || s.dock === "comments" ? pinsOf(comments, version) : [];
-        // The pins of a page check are its findings'; those of comments, the open comments'.
         const targets = checking
             ? pinsOfReport(
-                  s.checks[checkKey(design.id, version, check.scheme, check.size)]?.report,
+                  s.checks[checkKey(design.id, version, check.mode, check.size)]?.report,
                   s.checkFocus,
               )
             : pins.map((comment, index) => ({
@@ -198,7 +193,6 @@ export function createCanvas(env) {
                 setContent(message.height);
             } else if (message.type === "pocket-pin") {
                 if (message.tap === true) {
-                    // A tap on a pin of the check: its finding, and the sheet opens (on a phone it started shut).
                     const number = Number(message.label);
 
                     if (state.dock === "check" && Number.isInteger(number)) {
@@ -208,8 +202,7 @@ export function createCanvas(env) {
                         });
                     }
                 } else if (message.rect) {
-                    // Where the page brought the element of a pin to, in the frame: the room, which may be smaller than the
-                    // frame, goes there too.
+                    // The room can be smaller than the frame: scroll it to the pin too.
                     const box = room.current?.querySelector(".dsn-scroll");
                     const stage = box?.querySelector(".dsn-stage");
 
@@ -336,8 +329,7 @@ export function createCanvas(env) {
             }
         }, [key, ready, knobs, values]);
 
-        // The design system's edits and mode, as custom properties: only what differs from what was last sent (a new page has been
-        // sent none). A property that is no longer needed is removed again with null.
+        // Send only what differs from the last send; null removes a property.
         const sentVars = useRef({ at: "", vars: {} });
         const wanted = s.previewVars;
 

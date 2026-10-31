@@ -122,12 +122,31 @@ export type AskForm = { title: string; text?: string; fields: AskField[]; submit
 /** The answer to an approval; an ask's also carries what the person typed, which no one else sees. */
 export type ApprovalAnswer = { allow: boolean; by: string; values?: Record<string, string> };
 
+/** An answer to pick on an ask's card (`AskField.choices`): a button with its label, and a line under it. */
+export interface AskChoice {
+    /** Up to 60 characters, one line: the value when it is chosen. */
+    label: string;
+    /** Up to 160 characters, one line. */
+    description?: string;
+}
+
 /** One field of an ask's card. */
 export interface AskField {
     /** The value's key in the answer: letters, digits, and _, starting with a letter. */
     name: string;
-    /** What the card says above the field. */
+    /** What the card says above the field: up to 80 characters, or 300 for a field with `choices` (its question). */
     label: string;
+    /** A short tag over the field, such as "Database": up to 12 characters. Since 0.27.0. */
+    header?: string;
+    /**
+     * 2 to 4 answers to pick, with different labels, shown as buttons; the value is the label chosen. Since 0.27.0.
+     * `secret` and `autocomplete` do not apply to such a field; `placeholder` is for its `other` text.
+     */
+    choices?: AskChoice[];
+    /** With `choices`: one or more can be chosen, and the value is their labels, one per line. Since 0.27.0. */
+    multiple?: boolean;
+    /** With `choices`: the person can type an answer of their own instead, which is then the value. Since 0.27.0. */
+    other?: boolean;
     /** A hidden input, as for a password. */
     secret?: boolean;
     /** What the field shows while empty. */

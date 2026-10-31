@@ -1,5 +1,3 @@
-// The CSS cleaner of the documentation page's sanitizer (docsite-sanitize.ts): its output for the inputs that a regex
-// denylist misses (escapes, functions that fetch, at-rules) and for what it must leave alone.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SANITIZER_JS } from "../src/server/design/docsite-sanitize.ts";
@@ -50,7 +48,6 @@ test("a CSS escape does not hide a bad word: the declaration is checked after it
         assert.equal(cleanCss(`.a{${bad};color:red}`), ".a{color:red;}", bad);
     }
 
-    // An at-rule written with an escape is the at-rule it spells, and goes.
     assert.equal(
         cleanCss('@\\69mport "https://evil.example/c.css";.a{color:red}'),
         ".a{color:red;}",
@@ -59,7 +56,6 @@ test("a CSS escape does not hide a bad word: the declaration is checked after it
         cleanCss("@\\66ont-face{src:url(https://evil.example/f)}.a{color:red}"),
         ".a{color:red;}",
     );
-    // A harmless escape stays: a glyph, an escaped class name.
     assert.equal(
         cleanCss('.a::before{content:"\\2713";color:red}'),
         '.a::before{content:"\\2713";color:red;}',
@@ -130,15 +126,12 @@ test("comments, strings, and broken text cannot hide or break it", () => {
         cleanCss(".a{background:ur/**/l(https://evil.example/x);color:red}"),
         ".a{color:red;}",
     );
-    // A brace or a semicolon in a string does not end the declaration.
     assert.equal(cleanCss('.a{content:"}{;";color:red}'), '.a{content:"}{;";color:red;}');
-    // A semicolon in a small image's text is not a delimiter.
     assert.equal(
         cleanCss(".a{background:url(data:image/png;base64,AAAA);color:red}"),
         ".a{background:url(data:image/png;base64,AAAA);color:red;}",
     );
 
-    // Unterminated input never throws, and keeps no unclosed bad text.
     for (const text of [
         ".a{background:url(https://evil.example/x",
         ".a{color:red",
@@ -152,12 +145,10 @@ test("comments, strings, and broken text cannot hide or break it", () => {
         assert.doesNotMatch(cleanCss(text), /evil|url\(https/);
     }
 
-    // Nesting is bounded: a rule 20 levels down is not kept, and the output is not deeper than the bound.
     const deep = cleanCss(`${"@media (x){".repeat(20)}.a{color:red}${"}".repeat(20)}`);
 
     assert.doesNotMatch(deep, /\.a/);
     assert.ok((deep.match(/@media/g) ?? []).length <= 9);
-    // Declarations of a style attribute: the same rules, with no rule around them.
     assert.equal(
         cleanDeclarations("width:80px;background:url(https://evil.example/x.png);color:red"),
         "width:80px;color:red;",

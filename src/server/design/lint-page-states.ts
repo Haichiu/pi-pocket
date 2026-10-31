@@ -1,9 +1,5 @@
-/**
- * A part of the script that `lint.ts` runs inside a rendered design (see `lint-page.ts`): the first pass of the walk: the backdrop behind each element, and what can paint over text. The parts are one
- * function body, in this order: setup, values, literals, states, elements, checks, focus. Plain JavaScript in a string.
- */
-export const PAGE_STATES = String.raw`// ---------------------------------------------------------------------------------------------------------------------
-// The walk.
+// Plain JavaScript in a string: one part of the page script of `lint-page.ts`. The parts form one function body, so they share its locals.
+export const PAGE_STATES = String.raw`
 
 const SKIP = new Set(['HEAD', 'SCRIPT', 'STYLE', 'META', 'LINK', 'TITLE', 'NOSCRIPT', 'TEMPLATE', 'BASE', 'OPTION', 'OPTGROUP']);
 const MEDIA = new Set(['IMG', 'VIDEO', 'CANVAS', 'SVG', 'PICTURE', 'IFRAME', 'OBJECT', 'EMBED']);
@@ -25,8 +21,6 @@ const rectOf = (el) => {
 };
 const intersects = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
-// First pass: the resolved background behind each element (every ancestor's color, with opacity), whether it can be
-// known at all, and the elements that paint over others (media, images, positioned fills).
 for (const el of nodes) {
     if (SKIP.has(el.tagName.toUpperCase()) || el.namespaceURI !== XHTML) {
         if (el.localName === 'svg' && el.namespaceURI !== XHTML) {
@@ -105,7 +99,6 @@ const familyOf = (list) => {
     return first.toLowerCase();
 };
 const pxOf = (value) => parseFloat(value);
-// What a pointer or finger can hit; the keyboard also reaches anything with a tabindex.
 const pointed = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[role=switch]';
 const interactive = pointed + ',[tabindex]:not([tabindex="-1"])';
 const OS_BLACK = 'rgba(0, 0, 0, 1)';
