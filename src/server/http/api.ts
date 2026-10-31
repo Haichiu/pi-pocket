@@ -28,6 +28,7 @@ import { browserRoutes } from "./browser-routes.ts";
 import { conversationRoutes } from "./conversation-routes.ts";
 import { createEventStreams, keptPart } from "./events.ts";
 import { extensionRoute } from "./extension-routes.ts";
+import { isIconColors, storeIconColors } from "../icon-store.ts";
 import { type ApiRequest, conversationId, type HttpOptions, json, readJson } from "./io.ts";
 import { pushRoutes } from "./push-routes.ts";
 
@@ -383,6 +384,21 @@ export function createApi(options: HttpOptions, auth: Auth) {
 
         // Theme folders (`themes.ts`): everyone signed in lists them, as everyone chooses one for their own browsers;
         // only the owner adds, edits, and removes them.
+        // The app icon's colors, which the owner's browser reports for the requests that carry no cookie (`icon-store.ts`).
+        if (first === "app-icon" && second === undefined && method === "PUT") {
+            requireOwner(user);
+
+            const { colors } = await readJson<{ colors?: unknown }>(request);
+
+            if (!isIconColors(colors)) {
+                throw new HttpError(400, "Colors are five hex colors joined by dots");
+            }
+
+            storeIconColors(colors);
+
+            return json(response, 200, { ok: true });
+        }
+
         if (first === "themes" && second === undefined && method === "GET") {
             return json(response, 200, { themes: app.themes.list(user.role === "owner") });
         }
