@@ -37,8 +37,23 @@ const svgUrl = (svg) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
  * The home-screen icon's address: the server draws the PNG (`src/server/icon-render.ts`). A phone fetches it when the
  * icon is added, and does not take a `data:` or `blob:` address for it.
  */
+/**
+ * A palette color as the server takes it: hex with no `#`, 3 or 6 digits. Its alpha is dropped (an icon is opaque), and a
+ * color in another form is the app's own.
+ */
+const hex = (vars, name) => {
+    const value = (vars[name] ?? "").trim().replace("#", "").toLowerCase();
+    const opaque = /^[0-9a-f]{8}$/.test(value)
+        ? value.slice(0, 6)
+        : /^[0-9a-f]{4}$/.test(value)
+          ? value.slice(0, 3)
+          : value;
+
+    return /^(?:[0-9a-f]{3}|[0-9a-f]{6})$/.test(opaque) ? opaque : DEFAULTS[name].replace("#", "");
+};
+
 const homeIconUrl = (vars) => {
-    const color = (name) => (vars[name] ?? DEFAULTS[name]).replace("#", "");
+    const color = (name) => hex(vars, name);
     const query = new URLSearchParams({
         frame: color("--o-bg-darker"),
         card: color("--o-bg"),
@@ -58,7 +73,7 @@ const homeIconUrl = (vars) => {
 const COOKIE = "pocket_icon";
 const cookieValue = (vars) =>
     ["--o-bg-darker", "--o-bg", "--o-cyan", "--o-green", "--o-orange"]
-        .map((name) => (vars[name] ?? DEFAULTS[name]).replace("#", ""))
+        .map((name) => hex(vars, name))
         .join(".");
 
 function setLink(rel, href, type) {
