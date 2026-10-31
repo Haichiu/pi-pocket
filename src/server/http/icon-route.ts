@@ -7,10 +7,16 @@ import { APP_ICON, type IconColors, MIN_ICON, renderIcon } from "../icon-render.
 /** The largest icon the route draws: no sign-in is needed, and the drawing runs on the main thread. */
 const MAX_SIZE = 192;
 const CACHE = 32;
+/** New drawings a second, for the whole server: a client that changes a color in each request never finds one kept. */
+const DRAWS_PER_SECOND = 8;
 const drawn = new Map<string, Buffer>();
+const budget = { second: 0, draws: 0 };
 
-/** `renderIcon` with the size capped, and the last icons drawn kept (the least recently used goes first). */
-function draw(colors: IconColors, size: number, maskable = false): Buffer | null {
+/**
+ * `renderIcon` with the size capped, and the last icons drawn kept (the least recently used goes first). Null for colors
+ * that are not hex; "busy" when this second's drawings are used up.
+ */
+function draw(colors: IconColors, size: number, maskable = false): Buffer | null | "busy" {
     const n = Math.min(MAX_SIZE, Math.max(MIN_ICON, Math.round(size)));
     const key = `${Object.values(colors).join(".").toLowerCase()}/${n}/${maskable}`;
     const kept = drawn.get(key);
@@ -22,9 +28,21 @@ function draw(colors: IconColors, size: number, maskable = false): Buffer | null
         return kept;
     }
 
+    const second = Math.floor(Date.now() / 1000);
+
+    if (budget.second !== second) {
+        budget.second = second;
+        budget.draws = 0;
+    }
+
+    if (budget.draws >= DRAWS_PER_SECOND) {
+        return "busy";
+    }
+
     const png = renderIcon(colors, n, maskable);
 
     if (png !== null) {
+        budget.draws++;
         drawn.set(key, png);
 
         if (drawn.size > CACHE) {
@@ -57,6 +75,13 @@ export function iconRoute(request: IncomingMessage, response: ServerResponse, ur
     }
 
     const png = draw(colors, size, url.searchParams.get("maskable") === "1");
+
+    if (png === "busy") {
+        response.writeHead(503, { "retry-after": "1", "cache-control": "no-store" });
+        response.end();
+
+        return;
+    }
 
     if (png === null) {
         throw new HttpError(400, "Colors are 3 or 6 hex digits");
@@ -99,7 +124,8 @@ export function appleTouchIcon(request: IncomingMessage, response: ServerRespons
         180,
     );
 
-    if (png === null) {
+    // Too many drawings this second: the app's own icon file goes instead.
+    if (png === null || png === "busy") {
         return false;
     }
 

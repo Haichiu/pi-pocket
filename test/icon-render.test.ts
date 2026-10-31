@@ -224,3 +224,18 @@ test("the icon route draws no more than 192 pixels, and a size that is not a num
     assert.throws(() => get("size=abc"), { status: 400 });
     assert.throws(() => get("size=Infinity"), { status: 400 });
 });
+
+test("a client that changes the colors in each request cannot keep the server drawing", async () => {
+    const { iconRoute } = await import("../src/server/http/icon-route.ts");
+    const statuses: number[] = [];
+
+    for (let index = 0; index < 20; index++) {
+        const response = { writeHead: (status: number) => statuses.push(status), end() {} };
+        const card = (0x100 + index).toString(16).padStart(6, "0");
+
+        iconRoute({ method: "GET" } as never, response as never, new URL(`http://x/?card=${card}`));
+    }
+
+    // 20 drawings take less than 2 seconds, which allow 16 at most.
+    assert.ok(statuses.filter((status) => status === 503).length >= 4, String(statuses));
+});
