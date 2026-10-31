@@ -49,8 +49,7 @@ function useLines(file, path) {
 /**
  * A file of the session, read-only: text with line numbers and colors (Markdown shows rendered too), an image, or a
  * folder to browse, under a bar with its path and the viewer's buttons (copy, mention, preview). `line` scrolls to and
- * marks that line. `onOpen` opens an entry of a folder. `refresh` changes each time the same file is asked for again:
- * the file is then read again, and the text on screen stays until the new text arrives.
+ * marks that line. `onOpen` opens an entry of a folder. `refresh` changes when the same file is asked for again.
  */
 export function FileView({ path, line, refresh, onOpen = openFile, onLoad }) {
     const [file, setFile] = useState(null);

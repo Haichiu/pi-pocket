@@ -2,10 +2,8 @@
 // places, the launcher, and the artifact viewer's "Open in Design" button open it), and keeps the workspace's state in one
 // store made here, so going back to the chat on a phone and coming again leaves the canvas as it was.
 //
-// This file is all that the app loads when it starts, on every phone and for everyone, whether Design is ever opened: the
-// store, what registers the panel, the rail button, the launcher and the command, and a short loading state. The workspace
-// (`app.js`) loads when the panel first opens; the docks, the compare and variation views, and the System view load again
-// when a person first needs them (`workspace.js`). `test/design-system-ui.test.ts` holds the budget.
+// This file loads at startup for everyone, so it stays small (`test/design-system-ui.test.ts` holds the budget): the
+// workspace (`app.js`) loads when the panel first opens, and its docks and views (`workspace.js`) when first needed.
 import { DESIGN_PATH } from "./paths.js";
 import { createStore, initialState, loadPick, savePrefs, sessionState } from "./state.js";
 
@@ -22,7 +20,6 @@ export default function setup(pocket) {
         appDark: document.documentElement.dataset.mode !== "light",
     });
 
-    // The app's theme changes the page in the canvas (it follows it): the store says so.
     const watchTheme = new MutationObserver(() => {
         const appDark = document.documentElement.dataset.mode !== "light";
 
@@ -36,7 +33,6 @@ export default function setup(pocket) {
         attributeFilter: ["data-mode"],
     });
 
-    /** A stylesheet of the module, loaded when it is first needed: it resolves once the rules apply (or after a moment). */
     const styled = new Map();
 
     const style = (name) => {
@@ -73,7 +69,6 @@ export default function setup(pocket) {
         return styled.get(name);
     };
 
-    // The workspace, once the panel has been opened: a promise of `{ Workspace, data, systemData, stop }`.
     let loading = null;
     let ready = null;
 
@@ -81,7 +76,6 @@ export default function setup(pocket) {
         loading ??= Promise.all([import("./app.js"), style("style.css")]).then(([module]) => {
             ready = module.createApp(pocket, store, { style });
 
-            // The session that the tab shows: its designs.
             if (store.get().conversation !== null) {
                 void ready.data.list();
             }
@@ -131,7 +125,6 @@ export default function setup(pocket) {
             : html`<${pocket.Loader} label="Opening Design" />`;
     }
 
-    // Focus mode is a mark on the page that the module's stylesheet reads: the conversation goes, the panel grows.
     let focused = false;
     const stopFocus = store.subscribe((s) => {
         if (s.focus !== focused) {
@@ -167,7 +160,6 @@ export default function setup(pocket) {
             version: pick?.version ?? null,
         });
 
-        // (until the panel has been opened, nobody asks for the designs)
         if (id !== null && ready !== null) {
             void ready.data.list();
         }
@@ -193,7 +185,6 @@ export default function setup(pocket) {
         pocket.openPanel("design");
     };
 
-    // `/design-open [artifact | system]`, run on the server, asks this tab to open the panel; `system` is the design system.
     const stopOpen = pocket.on("open", (event) => {
         if (event?.conversation === store.get().conversation) {
             const word = String(event.artifact ?? "")
@@ -204,7 +195,6 @@ export default function setup(pocket) {
         }
     });
 
-    // Someone saved the design system (or Pi did, through a route): read it again if this tab has it.
     const stopSystem = pocket.on("system", (event) => {
         const s = store.get();
 

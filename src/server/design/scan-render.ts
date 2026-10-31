@@ -1,12 +1,4 @@
-/**
- * The rendered scan (stream T): a project's HTML pages (or its built output) shown in the private Chromium of `render.ts`,
- * offline, and read as the browser computed them, once as the page is and once in its dark mode (the browser's
- * `prefers-color-scheme: dark`, then a class or an attribute that the stylesheets and scripts name for a dark mode:
- * `.dark`, `[data-theme=dark]`, `[data-bs-theme=dark]`, `[data-mantine-color-scheme=dark]`...). What the browser computed
- * becomes declarations, as if the project had written them in a stylesheet, and the static scan reads them after its own
- * files: the static scan wins where it is sure (a variable of the same name, a role that a name states), and the rendered
- * values fill what it could not find. A format the scan has never met still gives the colors that a page shows.
- */
+// The static scan wins where it is sure; the rendered values fill what it could not find.
 import { parseColor, toHex } from "./color.ts";
 import type { PocketHost } from "../host.ts";
 import type { DesignBundle } from "./bundle.ts";
@@ -14,34 +6,29 @@ import { VIEWPORTS, withRender, type DesignPage } from "./render.ts";
 import { type Decl, type Scope } from "./scan-parse.ts";
 import type { Facts } from "./scan-facts.ts";
 import { type DarkToggle, planRender, type RenderPlan } from "./scan-render-pages.ts";
-import { PROBE_SOURCE, type ProbeInput, type Reading } from "./scan-render-probe.ts";
+import { PROBE_SOURCE, type ProbeInput, type Reading, type Weights } from "./scan-render-probe.ts";
 
-/** What one page showed. */
-export interface PageEvidence {
+interface PageEvidence {
     page: string;
     light: Reading;
     dark?: Reading;
-    /** How the dark mode was switched: `prefers-color-scheme`, or the class or attribute. */
     how?: string;
 }
 
-/** What the render found. */
 export interface RenderedEvidence {
     pages: PageEvidence[];
     notes: string[];
 }
 
-/** The most time the whole render may take. */
 const BUDGET_MS = 40_000;
 
-/** The pages are shown offline: nothing outside the project loads. */
 const OFFLINE = {
     fetchPublic: async () => {
         throw new Error("The scan shows pages offline.");
     },
 } as unknown as PocketHost;
 
-/** A browser that denies storage to a page in a sandbox: a page that reads its theme from it must not fail on that. */
+// The sandbox denies storage, and a page that reads its theme from it must not fail on that.
 const STORAGE_SHIM = `(() => {
     const make = () => {
         const data = new Map();
@@ -65,24 +52,18 @@ const SETTLE_STYLE = `(() => {
     document.head.append(style);
 })()`;
 
-/** Whether two readings differ as a light and a dark mode do. */
 function differs(a: Reading, b: Reading): boolean {
     if (a.page.bg !== b.page.bg || a.page.text !== b.page.text) {
         return true;
     }
 
-    let changed = 0;
+    const changed = Object.entries(a.vars).filter(
+        ([name, value]) => b.vars[name] !== undefined && b.vars[name] !== value,
+    );
 
-    for (const [name, value] of Object.entries(a.vars)) {
-        if (b.vars[name] !== undefined && b.vars[name] !== value) {
-            changed += 1;
-        }
-    }
-
-    return changed >= 2;
+    return changed.length >= 2;
 }
 
-/** Puts a toggle on the root and the body; returns the function that takes it off. */
 async function apply(page: DesignPage, toggle: DarkToggle): Promise<() => Promise<void>> {
     const spec = JSON.stringify(toggle);
 
@@ -112,11 +93,9 @@ async function read(page: DesignPage, input: ProbeInput): Promise<Reading> {
     )) as unknown as Reading;
 }
 
-/** Shows the pages of a plan and reads them. */
-export async function renderEvidence(
-    plan: RenderPlan,
-    signal?: AbortSignal,
-): Promise<RenderedEvidence> {
+async function renderEvidence(plan: RenderPlan, signal?: AbortSignal): Promise<RenderedEvidence> {
+    signal?.throwIfAborted();
+
     const bundle = {
         meta: {},
         version: 1,
@@ -159,33 +138,30 @@ export async function renderEvidence(
 }
 
 async function readPage(page: DesignPage, rel: string, plan: RenderPlan): Promise<PageEvidence> {
-    const viewport = VIEWPORTS.desktop;
     const input: ProbeInput = { vars: plan.vars, bare: true };
 
-    await page.applyView({ colorScheme: "light" });
-    await page.load(viewport, { page: rel });
-    await page.evaluate(SETTLE_STYLE);
+    const loadAs = async (colorScheme: "light" | "dark") => {
+        await page.applyView({ colorScheme });
+        await page.load(VIEWPORTS.desktop, { page: rel });
+        await page.evaluate(SETTLE_STYLE);
 
-    const light = await read(page, input);
+        return read(page, input);
+    };
+
+    const light = await loadAs("light");
     const evidence: PageEvidence = { page: rel, light };
 
-    // A page that is empty (a bundler's shell with no script that runs) has nothing to show.
     if (light.count < 3) {
         return evidence;
     }
 
-    // The browser's own dark: a new load, so that a script that reads the preference at start sees it.
-    await page.applyView({ colorScheme: "dark" });
-    await page.load(viewport, { page: rel });
-    await page.evaluate(SETTLE_STYLE);
-
-    const media = await read(page, input);
+    // A new load, so that a script that reads the preference at start sees it.
+    const media = await loadAs("dark");
 
     if (differs(light, media)) {
         return { ...evidence, dark: media, how: "prefers-color-scheme" };
     }
 
-    // A class or an attribute that the page's styles name for a dark mode.
     await page.applyView({ colorScheme: "light" });
 
     for (const toggle of plan.toggles) {
@@ -209,8 +185,6 @@ async function readPage(page: DesignPage, rel: string, plan: RenderPlan): Promis
     return evidence;
 }
 
-// --- Declarations ---------------------------------------------------------------------------------------------------------
-
 const decl = (selector: string, prop: string, value: string, scope: Scope): Decl => ({
     prop,
     value,
@@ -221,19 +195,16 @@ const decl = (selector: string, prop: string, value: string, scope: Scope): Decl
     inline: false,
 });
 
-/** A computed color as `#rrggbb` (or with alpha), undefined when it is not one. */
 function hexOf(css: string): string | undefined {
     const color = parseColor(css);
 
     return color === undefined ? undefined : toHex(color);
 }
 
-/** How many times a value is written: a heavier one more often, up to eight. */
 const copies = (weight: number, scale: number) =>
     Math.max(1, Math.min(8, 1 + Math.floor(Math.log2(1 + weight / scale))));
 
 const BG_SELECTOR: Record<string, string> = {
-    page: "body",
     card: ".card",
     button: ".btn",
     input: ".input",
@@ -244,7 +215,6 @@ const BG_SELECTOR: Record<string, string> = {
     table: "table",
     code: "pre",
     block: ".section",
-    other: ".element",
 };
 
 const TEXT_SELECTOR: Record<string, string> = {
@@ -256,9 +226,7 @@ const TEXT_SELECTOR: Record<string, string> = {
     code: "code",
 };
 
-/** What the files already say: the colors they hold, the custom properties they set, and the scales they have. */
-export interface Known {
-    /** Colors as `#rrggbb` (alpha dropped). */
+interface Known {
     colors: string[];
     vars: Set<string>;
     fonts: boolean;
@@ -268,7 +236,6 @@ export interface Known {
     shadows: boolean;
 }
 
-/** Whether a color is, within a step of rounding, one that the files hold. */
 function isKnown(hex: string, known: Known): boolean {
     const channels = (text: string) =>
         [1, 3, 5].map((at) => Number.parseInt(text.slice(at, at + 2), 16));
@@ -281,19 +248,54 @@ function isKnown(hex: string, known: Known): boolean {
     });
 }
 
-/** The declarations that a reading stands for, in one scope. Only values that differ from `against` are written for dark. */
+const STATUS_PART = {
+    bg: { selector: ".alert-", prop: "background-color", scale: 60 },
+    text: { selector: ".text-", prop: "color", scale: 3 },
+    border: { selector: ".border-", prop: "border-color", scale: 3 },
+};
+
+// Only values that differ from `against` are written for dark.
 function declsOf(reading: Reading, scope: Scope, known: Known, against?: Reading): Decl[] {
     const out: Decl[] = [];
     const dark = scope === "dark";
-    const same = (a: Record<string, number> | undefined, key: string) =>
-        a !== undefined && key in a;
 
-    // A color the files hold is already counted by them; a new one is the page's own.
     const fresh = (css: string) => {
         const hex = hexOf(css);
 
         return hex !== undefined && !isKnown(hex, known) ? hex : undefined;
     };
+
+    const repeat = (
+        weights: Weights,
+        selector: string,
+        prop: string,
+        scale: number,
+        valueOf: (key: string) => string | undefined,
+    ) => {
+        for (const [key, weight] of Object.entries(weights)) {
+            const value = valueOf(key);
+
+            if (value === undefined) {
+                continue;
+            }
+
+            for (let at = 0; at < copies(weight, scale); at++) {
+                out.push(decl(selector, prop, value, scope));
+            }
+        }
+    };
+
+    // A color the files hold is already counted by them; a new one is the page's own.
+    const colors = (
+        weights: Weights,
+        before: Weights | undefined,
+        selector: string,
+        prop: string,
+        scale: number,
+    ) =>
+        repeat(weights, selector, prop, scale, (css) =>
+            dark && before !== undefined && css in before ? undefined : fresh(css),
+        );
 
     for (const [name, value] of Object.entries(reading.vars)) {
         if (
@@ -306,163 +308,92 @@ function declsOf(reading: Reading, scope: Scope, known: Known, against?: Reading
     }
 
     // The page's own colors are always said: they tell the page and the text from the rest.
-    const page = hexOf(reading.page.bg);
-    const text = hexOf(reading.page.text);
+    for (const [key, prop, authored] of [
+        ["bg", "background-color", reading.page.bgAuthored],
+        ["text", "color", reading.page.textAuthored],
+    ] as const) {
+        const hex = hexOf(reading.page[key]);
+        const said = dark ? against === undefined || hexOf(against.page[key]) !== hex : authored;
 
-    if (
-        page !== undefined &&
-        (dark ? against === undefined || hexOf(against.page.bg) !== page : reading.page.bgAuthored)
-    ) {
-        out.push(decl("body", "background-color", page, scope));
-    }
-
-    if (
-        text !== undefined &&
-        (dark
-            ? against === undefined || hexOf(against.page.text) !== text
-            : reading.page.textAuthored)
-    ) {
-        out.push(decl("body", "color", text, scope));
-    }
-
-    const repeat = (
-        selector: string,
-        prop: string,
-        value: string,
-        weight: number,
-        scale: number,
-    ) => {
-        for (let at = 0; at < copies(weight, scale); at++) {
-            out.push(decl(selector, prop, value, scope));
+        if (hex !== undefined && said) {
+            out.push(decl("body", prop, hex, scope));
         }
-    };
+    }
 
     for (const [kind, weights] of Object.entries(reading.bg)) {
-        for (const [css, weight] of Object.entries(weights)) {
-            const hex = fresh(css);
+        if (kind !== "page") {
+            const selector = BG_SELECTOR[kind] ?? ".element";
 
-            if (hex !== undefined && kind !== "page" && !(dark && same(against?.bg[kind], css))) {
-                repeat(BG_SELECTOR[kind] ?? ".element", "background-color", hex, weight, 40);
-            }
+            colors(weights, against?.bg[kind], selector, "background-color", 40);
         }
     }
 
     for (const [kind, weights] of Object.entries(reading.text)) {
-        for (const [css, weight] of Object.entries(weights)) {
-            const hex = fresh(css);
-
-            if (hex !== undefined && !(dark && same(against?.text[kind], css))) {
-                repeat(TEXT_SELECTOR[kind] ?? "p", "color", hex, weight, 30);
-            }
-        }
+        colors(weights, against?.text[kind], TEXT_SELECTOR[kind] ?? "p", "color", 30);
     }
 
-    for (const [css, weight] of Object.entries(reading.border)) {
-        const hex = fresh(css);
-
-        if (hex !== undefined && !(dark && same(against?.border, css))) {
-            repeat(".card", "border-color", hex, weight, 2);
-        }
-    }
+    colors(reading.border, against?.border, ".card", "border-color", 2);
 
     for (const [status, groups] of Object.entries(reading.status)) {
         for (const [part, weights] of Object.entries(groups)) {
-            for (const [css, weight] of Object.entries(weights)) {
-                const hex = fresh(css);
+            const { selector, prop, scale } = STATUS_PART[part as keyof typeof STATUS_PART];
+            const before = against?.status[status]?.[part as "bg"];
 
-                if (
-                    hex !== undefined &&
-                    !(dark && same(against?.status[status]?.[part as "bg"], css))
-                ) {
-                    repeat(
-                        part === "bg"
-                            ? `.alert-${status}`
-                            : part === "text"
-                              ? `.text-${status}`
-                              : `.border-${status}`,
-                        part === "bg"
-                            ? "background-color"
-                            : part === "text"
-                              ? "color"
-                              : "border-color",
-                        hex,
-                        weight,
-                        part === "bg" ? 60 : 3,
-                    );
-                }
-            }
+            colors(weights, before, selector + status, prop, scale);
         }
     }
 
-    // Buttons: the first with a primary word is the primary one, else the first with a color of its own.
     const primary =
         reading.buttons.find((button) => button.primary && hexOf(button.bg) !== undefined) ??
         reading.buttons[0];
 
-    reading.buttons.forEach((button) => {
+    for (const button of reading.buttons) {
         const bg = fresh(button.bg);
         const color = fresh(button.color);
         const selector = button === primary ? ".btn-primary" : ".btn";
 
         if (bg !== undefined) {
             out.push(decl(selector, "background-color", bg, scope));
-        }
 
-        if (color !== undefined && bg !== undefined) {
-            out.push(decl(selector, "color", color, scope));
+            if (color !== undefined) {
+                out.push(decl(selector, "color", color, scope));
+            }
         }
-    });
+    }
 
-    if (!dark) {
+    if (dark) {
+        return out;
+    }
+
+    if (!known.fonts) {
         for (const [kind, weights] of Object.entries(reading.font)) {
-            for (const [family, weight] of Object.entries(weights)) {
-                if (!known.fonts) {
-                    repeat(
-                        kind === "heading" ? "h1" : kind === "code" ? "code" : "body",
-                        "font-family",
-                        family,
-                        weight,
-                        40,
-                    );
-                }
-            }
-        }
+            const selector = kind === "heading" ? "h1" : kind === "code" ? "code" : "body";
 
+            repeat(weights, selector, "font-family", 40, String);
+        }
+    }
+
+    if (!known.sizes) {
         for (const [kind, weights] of Object.entries(reading.size)) {
-            for (const [size, weight] of Object.entries(weights)) {
-                if (!known.sizes) {
-                    repeat(kind === "heading" ? "h2" : "p", "font-size", size, weight, 40);
-                }
-            }
+            repeat(weights, kind === "heading" ? "h2" : "p", "font-size", 40, String);
         }
+    }
 
-        for (const [css, weight] of Object.entries(reading.radius)) {
-            if (!known.radii) {
-                repeat(".card", "border-radius", css, weight, 2);
-            }
-        }
+    if (!known.radii) {
+        repeat(reading.radius, ".card", "border-radius", 2, String);
+    }
 
-        for (const [css, weight] of Object.entries(reading.shadow)) {
-            if (!known.shadows) {
-                repeat(".card", "box-shadow", css, weight, 2);
-            }
-        }
+    if (!known.shadows) {
+        repeat(reading.shadow, ".card", "box-shadow", 2, String);
+    }
 
-        for (const [size, weight] of Object.entries(reading.space)) {
-            if (!known.space) {
-                repeat(".element", "padding", `${size}px`, weight, 2);
-            }
-        }
-
-        for (const [value, weight] of Object.entries(reading.weight)) {
-            repeat("p", "font-weight", value, weight, 60);
-        }
+    if (!known.space) {
+        repeat(reading.space, ".element", "padding", 2, (size) => `${size}px`);
     }
 
     return out;
 }
 
-/** The declarations of every page: the page as it is, and what its dark mode changes. */
 export function renderedDecls(
     evidence: RenderedEvidence,
     known: Known,
@@ -476,7 +407,6 @@ export function renderedDecls(
     }));
 }
 
-/** Finds the pages of a project and shows them; undefined when there is no page, or no browser. */
 export async function renderProject(
     root: string,
     signal?: AbortSignal,
@@ -497,16 +427,11 @@ export async function renderProject(
     }
 }
 
-/** The scales the static scan found, from its result: a scale it has is not filled from the page. */
 export type Have = Pick<Known, "fonts" | "sizes" | "space" | "radii" | "shadows">;
 
-/** What the files read so far already say, for the rendered values to fill around. */
 export function knownOf(facts: Facts, have: Have): Known {
-    const colors = new Set<string>();
-
-    for (const hex of [...facts.colors.keys(), ...facts.darkColors.keys()]) {
-        colors.add(hex.slice(0, 7));
-    }
+    const hexes = [...facts.colors.keys(), ...facts.darkColors.keys()];
+    const colors = new Set(hexes.map((hex) => hex.slice(0, 7)));
 
     for (const variable of facts.vars) {
         const color = parseColor(variable.value);

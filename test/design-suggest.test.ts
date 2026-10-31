@@ -1,6 +1,3 @@
-// Which token a check suggests for a color: an exact match wins (a role token, then an accent, then a palette step, a token
-// of another role, a component's last); a color that no token equals gets a token of its role in its hue family and never a
-// component's; a failing contrast gets a passing token in the hue family; and a message says "the same color" only when it is.
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -25,7 +22,6 @@ const rgb = (hex: string, alpha = 1): RgbaTuple => [
     alpha,
 ];
 
-/** A token set of colors: `name hex tier`. */
 function set(...entries: [string, string, "semantic" | "primitive" | "component"][]): TokenSet {
     return {
         mode: "light",
@@ -62,7 +58,6 @@ test("an exact match wins, and among exact matches a role token beats a palette 
     );
     assert.equal(nearestColor(colors, rgb("#7aa2f7"), "text")!.token.name, "color.text.link");
     assert.equal(nearestColor(colors, rgb("#7aa2f7"), "text")!.exact, true);
-    // Without the others: the palette step, then the component's token (the same color is still the same color).
     const palette = set(
         ["color.blue.400", "#7aa2f7", "primitive"],
         ["switch.track.off", "#7aa2f7", "component"],
@@ -75,7 +70,6 @@ test("an exact match wins, and among exact matches a role token beats a palette 
             .token.name,
         "switch.track.off",
     );
-    // A color 1 step off is not the same color: nothing says "equals" for it.
     assert.equal(nearestColor(palette, rgb("#7aa2f8"), "text")!.exact, false);
     assert.equal(sameBytes(rgb("#7aa2f7"), rgb("#7aa2f8")), false);
     assert.equal(sameBytes(rgb("#7aa2f7"), rgb("#7aa2f7")), true);
@@ -93,7 +87,6 @@ test("the same color in a token of another role is not offered when a token that
         "color.bg.inverse",
     );
     assert.equal(nearestColor(colors, rgb("#1c1e26"), "text")!.token.name, "color.text.primary");
-    // With no background token in reach, the text token is the last resort, and it is still exactly that color.
     const only = set(["color.text.primary", "#1c1e26", "semantic"]);
 
     assert.equal(
@@ -128,7 +121,6 @@ test("a suggestion stays in the hue family: a blue is not given a yellow, a grey
 
     assert.notEqual(border.token.name, "color.info.line");
     assert.match(border.token.name, /^color\.(neutral\.200|border\.default)$/);
-    // A blue with only a yellow and a teal to take: nothing.
     assert.equal(
         nearestColor(
             set(
@@ -178,7 +170,6 @@ test("a failing contrast gets a passing token of its hue; with none, a text toke
         "the blue that passes, not the magenta, the yellow, or a component's",
     );
     assert.equal(blue.sameHue, true);
-    // White text on a light blue: no blue passes, so a neutral text token, with the hue changed.
     const onBlue = nearestPassing(
         set(
             ["color.yellow.900", "#5c4400", "primitive"],
@@ -192,7 +183,6 @@ test("a failing contrast gets a passing token of its hue; with none, a text toke
     )!;
 
     assert.equal(onBlue.token.name, "color.text.primary");
-    // Nothing that passes in the family and no text token: nothing at all.
     assert.equal(
         nearestPassing(
             set(["color.yellow.900", "#5c4400", "primitive"]),
@@ -219,7 +209,7 @@ test(
     browser,
     async () => {
         const system = loadDesignSystem(
-            join(import.meta.dirname, "fixtures", "design-system", "flagship"),
+            join(import.meta.dirname, "..", "docs", "examples", "design-system", "pocket"),
         )!;
         const assets = [
             { name: "ds/tokens.css", type: "text/css", bytes: Buffer.from(system.compiled.css) },
@@ -244,25 +234,21 @@ test(
                     (value === undefined || item.value === value),
             )!;
 
-        // White text on a light blue fails; the suggestion is a text token (a neutral), never a palette color of another hue.
         const white = find("contrast", "white");
 
         assert.match(white.suggestion!, /^var\(--color-(text-|neutral-)/);
         assert.doesNotMatch(white.suggestion!, /yellow|magenta|info|warning|danger|success/);
-        // A grey border: a token of its family (a border or a neutral), not the cyan one.
         const gray = find("off-system-color", "gray", "#cccccc");
 
         assert.doesNotMatch(
             gray.suggestion ?? "",
             /info|cyan|teal|yellow|magenta|danger|warning|success/,
         );
-        // The exact color: color.blue.400, and the message says that it is the same color.
         const exact = find("off-system-color", "blue", "#7aa2f7");
 
         assert.equal(exact.suggestion, "var(--color-blue-400)");
         assert.match(exact.message, /\(#7aa2f7, the same color\)/);
         assert.equal(exact.fix?.token, "color.blue.400");
-        // One step off: it is the closest token, and nothing calls it the same color or offers a fix.
         const near = find("off-system-color", "near", "#7aa2f8");
 
         assert.doesNotMatch(near.message, /the same color/);

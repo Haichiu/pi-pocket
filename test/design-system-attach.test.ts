@@ -1,4 +1,3 @@
-// A page that links ds/tokens.css, ds/tailwind.css, or ds/components.css gets the compiled design system as assets.
 import { cleanUp, context, newSession, openApp, scriptedModel, work } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
@@ -175,7 +174,6 @@ test("a new version refreshes the snapshot; a version that no longer links keeps
         "version 1 keeps its own",
     );
 
-    // A version whose page does not link the system keeps the assets of the version before, as bundles always do.
     await publish(artifact, { id: "refresh", title: "Refresh", content: page("") });
     assert.deepEqual(await names("refresh", 3), ["ds/tokens.css"]);
 });
@@ -199,7 +197,6 @@ test("artifact_inline attaches too, and a replayed call finds the version it mad
 test("a design system with errors is attached, and the note says to validate", async () => {
     writeDesignSystem(work, {});
     rmSync(join(work, ".pi", "design", "tokens.json"));
-    // A tokens file that is not JSON: the system loads with an error.
     const { writeFileSync } = await import("node:fs");
 
     writeFileSync(join(work, ".pi", "design", "tokens.json"), "{ nope");

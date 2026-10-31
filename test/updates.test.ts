@@ -140,7 +140,6 @@ function updater(
     return { updates, restarts };
 }
 
-/** Updates that read the tags of the upstream, as an install with no GitHub does, rather than a stand-in source. */
 function tagged(app: string, upstream: string, overrides: Partial<UpdatesOptions> = {}) {
     const restarts: number[] = [];
     const updates = new Updates({
@@ -1100,7 +1099,6 @@ test("the beta channel reads GitHub's list, version tags, and npm's dist-tags", 
 });
 
 test("the beta channel offers pre-releases only when it is on, and a beta still gets the next stable release", async () => {
-    // Off by default: a beta tag is not offered, so the checkout and the tags give 1.0.0, the version it runs.
     const { upstream, app } = setUp();
     const beta = release(upstream, "1.1.0-beta.1");
     const off = tagged(app, upstream);
@@ -1110,7 +1108,6 @@ test("the beta channel offers pre-releases only when it is on, and a beta still 
     assert.equal(stable.latest?.tag, "v1.0.0");
     assert.equal(stable.available, false);
 
-    // Turned on, it offers the beta, marked as one, and warns that it is.
     off.updates.setBeta(true);
     const on = await off.updates.check();
 
@@ -1121,13 +1118,11 @@ test("the beta channel offers pre-releases only when it is on, and a beta still 
     assert.deepEqual(on.blockers, []);
     assert.match(on.cautions.join("\n"), /This is a beta version/);
 
-    // Turned off again, it drops the beta at once, and the next look offers nothing newer than 1.0.0.
     off.updates.setBeta(false);
     assert.equal((await off.updates.status()).available, false);
     assert.equal((await off.updates.status()).latest, undefined);
     assert.equal((await off.updates.check()).latest?.tag, "v1.0.0");
 
-    // The update to a beta moves the checkout like any other.
     const going = tagged(app, upstream, { beta: true });
 
     await going.updates.check();
@@ -1135,7 +1130,6 @@ test("the beta channel offers pre-releases only when it is on, and a beta still 
     assert.equal(run(app, ["rev-parse", "HEAD"]), beta);
     await waitFor(() => going.restarts.length === 1, "the server restarts");
 
-    // A beta with the channel off gets the next stable release, and is never offered the older one.
     release(upstream, "1.1.0");
     release(upstream, "1.0.1", undefined, true);
     const running = tagged(app, upstream, { version: "1.1.0-beta.1" });

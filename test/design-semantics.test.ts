@@ -1,5 +1,3 @@
-// Round 5 of the checks: only what the author set is judged (never the browser's own defaults), suggestions that prefer
-// the role's tokens and say when they change the value, page semantics (language, labels, names, main), input zoom.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { findBrowser } from "../src/server/browser/discovery.ts";
@@ -25,7 +23,6 @@ test(
             );
         }
 
-        // The same without a system: nothing that is a default is judged either.
         const none = await check(plain, { viewport: "desktop" }, null);
 
         assert.deepEqual(none.findings, []);
@@ -124,8 +121,6 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
         .replace('<main data-pid="page">', "<div>")
         .replace("</main>", "</div>");
     const report = await check(bare, { viewport: "desktop" }, null);
-    // `form-label` for a field (or a widget that stands in for one), `accessible-name` for a link, a button, a tab, or a
-    // switch. A placeholder is not a name: n2 has only that.
     const fields = ofRule(report, "form-label");
     const names = ofRule(report, "accessible-name");
     const pidsOf = (list: { pid?: string }[]) => list.map((item) => item.pid).sort();
@@ -156,7 +151,6 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
     assert.match(lang[0]!.message, /Set `<html lang="en">`/);
     assert.equal(ofRule(report, "missing-main").length, 1);
     assert.equal(ofRule(report, "missing-main")[0]!.level, "warning");
-    // An empty lang is no lang.
     const empty = await check(
         page("", body).replace('<html lang="en">', '<html lang=" ">'),
         { viewport: "desktop" },
@@ -164,13 +158,11 @@ test("page semantics: language, labels, names, and a main landmark", browser, as
     );
 
     assert.equal(ofRule(empty, "missing-lang").length, 1);
-    // With a lang and a main, those two are gone; the labels and names stay.
     const fine = await check(page("", body), { viewport: "desktop" }, null);
 
     assert.equal(ofRule(fine, "missing-lang").length, 0);
     assert.equal(ofRule(fine, "missing-main").length, 0);
     assert.equal(ofRule(fine, "form-label").length + ofRule(fine, "accessible-name").length, 11);
-    // `role=main` counts, and a deck needs no main.
     const role = await check(
         bare.replace("<div>", '<div role="main">'),
         { viewport: "desktop" },
@@ -199,14 +191,19 @@ test("a field under 16px is a warning on a phone, with the token to use", browse
     const phone = await check(page("", body), { viewport: "mobile" });
     const zoom = ofRule(phone, "input-zoom");
 
-    // An unstyled input has the size of the browser, not of the page: it is not judged.\n    assert.deepEqual(zoom.map((item) => item.pid).sort(), ["area", "inherit", "sel", "small"]);
+    // An unstyled input has the size of the browser, not of the page: it is not judged.
+    assert.deepEqual(zoom.map((item) => item.pid).sort(), ["area", "sel", "small"]);
+    assert.deepEqual(
+        onPid(phone, "input-zoom", "small")!.elements!.map((item) => item.pid),
+        ["small", "inherit"],
+        "a field with font: inherit is judged: it is in the finding of the other 14px field",
+    );
     assert.equal(zoom[0]!.level, "warning");
     assert.match(
         onPid(phone, "input-zoom", "small")!.message,
         /iOS Safari zooms the page in when a field under 16px gets the focus\. Set `font-size: var\(--font-size-md\)` \(16px\)\./,
     );
     assert.equal(onPid(phone, "input-zoom", "small")!.value, "14px");
-    // Not on a desktop viewport, and the plain text without a system names 16px.
     assert.equal(
         ofRule(await check(page("", body), { viewport: "desktop" }), "input-zoom").length,
         0,
@@ -300,18 +297,15 @@ test(
             // The paragraph's own margin below (1em of 14px = 14px) is not judged when only margin-top is set.
             `<p data-pid="p1" style="font-size:var(--font-size-sm);margin-top:0">x</p>` +
             `<p data-pid="p2" class="q">x</p><p data-pid="p3" style="font-size:var(--font-size-sm);margin-block-start:0">x</p>` +
-            // Set by the author: only that side is judged.
             `<div data-pid="pad" style="padding-top:10px">x</div>` +
             `<div data-pid="gap" style="display:flex;row-gap:10px"><span>a</span><span>b</span></div>` +
             `<div data-pid="border" style="border-top:1px solid var(--color-text-muted);border-bottom-width:3px;border-bottom-style:solid;border-bottom-color:var(--color-text-muted)">x</div>` +
             `<div data-pid="corner" style="height:40px;border-top-left-radius:6px">x</div>` +
-            // The shorthand sets all four: the bottom one too.
             `<p data-pid="all" style="font-size:var(--font-size-sm);margin:0 0 14px">x</p>` +
             `<p data-pid="logical" style="font-size:var(--font-size-sm);margin-block:0;padding-inline:10px">x</p>`;
         const report = await check(page(".q{font-size:var(--font-size-sm);margin-top:0}", body), {
             viewport: "desktop",
         });
-        // A finding that stands for several elements lists them all (`elements`).
         const values = (pid: string) =>
             report.findings
                 .filter(

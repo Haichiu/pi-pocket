@@ -1,6 +1,3 @@
-// The System view's plain parts (`extensions/design/color.js` and `system.js`), which touch no page: reading and measuring
-// colors, which section a token is in, the value a token has once unsaved edits lie over it, contrast, the history of
-// edits, and the change a save sends. The system is the fixture's, read by the engine.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,39 +21,35 @@ const system = loadDesignSystem(folder)!;
 after(() => rmSync(folder, { recursive: true, force: true }));
 
 test("colors are read in every form a token file has", () => {
-    const rgb = (r: number, g: number, b: number, a = 1) => ({ r, g, b, a });
+    const hex = (value: unknown) => {
+        const read = color.parseColor(value);
 
-    assert.deepEqual(color.parseColor("#3b6cf6"), rgb(59, 108, 246));
-    assert.deepEqual(color.parseColor("#FFF"), rgb(255, 255, 255));
-    assert.deepEqual(color.parseColor("#0008"), rgb(0, 0, 0, 0x88 / 255));
-    assert.deepEqual(color.parseColor("rgb(59, 108, 246)"), rgb(59, 108, 246));
-    assert.deepEqual(color.parseColor("rgb(59 108 246 / 50%)"), rgb(59, 108, 246, 0.5));
-    assert.deepEqual(color.parseColor("rgba(0,0,0,.25)"), rgb(0, 0, 0, 0.25));
-    assert.deepEqual(color.parseColor("hsl(0 100% 50%)"), rgb(255, 0, 0));
-    assert.deepEqual(color.parseColor("hsl(120deg 100% 25%)"), rgb(0, 128, 0));
-    assert.deepEqual(color.parseColor("oklch(0.628 0.2577 29.23)"), rgb(255, 0, 0));
-    assert.deepEqual(color.parseColor("oklch(1 0 0)"), rgb(255, 255, 255));
-    assert.deepEqual(color.parseColor("color(srgb 1 0.5 0 / 0.4)"), rgb(255, 128, 0, 0.4));
-    assert.deepEqual(color.parseColor("transparent"), rgb(0, 0, 0, 0));
-    // The 2025.10 object form: a hex wins, and the alpha is the object's.
-    assert.deepEqual(
-        color.parseColor({ colorSpace: "srgb", components: [0, 0, 0], alpha: 0.4 }),
-        rgb(0, 0, 0, 0.4),
-    );
-    assert.deepEqual(
-        color.parseColor({ colorSpace: "srgb", components: [1, 0, 0], hex: "#ff0000" }),
-        rgb(255, 0, 0),
-    );
-    assert.deepEqual(
-        color.parseColor({ colorSpace: "hsl", components: [240, 100, 50] }),
-        rgb(0, 0, 255),
-    );
-    assert.deepEqual(
-        color.parseColor({ colorSpace: "oklch", components: [1, 0, 0] }),
-        rgb(255, 255, 255),
-    );
+        return read === undefined ? undefined : color.toHex(read);
+    };
 
-    // What it cannot read is null, never a throw.
+    assert.deepEqual(color.parseColor("#3b6cf6"), {
+        r: 59 / 255,
+        g: 108 / 255,
+        b: 246 / 255,
+        a: 1,
+    });
+    assert.equal(hex("#FFF"), "#ffffff");
+    assert.equal(hex("#0008"), "#00000088");
+    assert.equal(hex("rgb(59, 108, 246)"), "#3b6cf6");
+    assert.equal(hex("rgb(59 108 246 / 50%)"), "#3b6cf680");
+    assert.equal(hex("rgba(0,0,0,.25)"), "#00000040");
+    assert.equal(hex("hsl(0 100% 50%)"), "#ff0000");
+    assert.equal(hex("hsl(120deg 100% 25%)"), "#008000");
+    assert.equal(hex("oklch(0.628 0.2577 29.23)"), "#ff0000");
+    assert.equal(hex("oklch(1 0 0)"), "#ffffff");
+    assert.equal(hex("color(srgb 1 0.5 0 / 0.4)"), "#ff800066");
+    assert.equal(hex("transparent"), "#00000000");
+    assert.equal(hex({ colorSpace: "srgb", components: [0, 0, 0], alpha: 0.4 }), "#00000066");
+    assert.equal(hex({ colorSpace: "srgb", components: [1, 0, 0], hex: "#ff0000" }), "#ff0000");
+    assert.equal(hex({ colorSpace: "hsl", components: [240, 100, 50] }), "#0000ff");
+    assert.equal(hex({ colorSpace: "oklch", components: [1, 0, 0] }), "#ffffff");
+    assert.equal(hex({ colorSpace: "lab", components: [1, 2, 3] }), "#0b0200");
+
     for (const bad of [
         "",
         "blue-ish",
@@ -67,21 +60,21 @@ test("colors are read in every form a token file has", () => {
         4,
         null,
         [],
-        { colorSpace: "lab", components: [1, 2, 3] },
+        { colorSpace: "cmyk", components: [1, 2, 3] },
         { components: [1] },
     ]) {
-        assert.equal(color.parseColor(bad), null, String(bad).slice(0, 20));
+        assert.equal(color.parseColor(bad), undefined, String(bad).slice(0, 20));
     }
 });
 
 test("a color is written back as hex, in the dialect of the value it replaces", () => {
-    assert.equal(color.toHex({ r: 59, g: 108, b: 246, a: 1 }), "#3b6cf6");
+    assert.equal(color.toHex({ r: 59 / 255, g: 108 / 255, b: 246 / 255, a: 1 }), "#3b6cf6");
     assert.equal(color.toHex({ r: 0, g: 0, b: 0, a: 0.5 }), "#00000080");
-    assert.equal(color.toOklchText({ r: 255, g: 255, b: 255, a: 1 }), "oklch(1 0 0)");
-    assert.equal(color.writeColor({ r: 255, g: 0, b: 0, a: 1 }, "#000000"), "#ff0000");
+    assert.equal(color.toOklchText({ r: 1, g: 1, b: 1, a: 1 }), "oklch(1 0 0)");
+    assert.equal(color.writeColor({ r: 1, g: 0, b: 0, a: 1 }, "#000000"), "#ff0000");
     assert.deepEqual(
         color.writeColor(
-            { r: 255, g: 0, b: 0, a: 0.5 },
+            { r: 1, g: 0, b: 0, a: 0.5 },
             { colorSpace: "srgb", components: [0, 0, 0] },
         ),
         {
@@ -95,20 +88,19 @@ test("a color is written back as hex, in the dialect of the value it replaces", 
 
 test("contrast follows WCAG 2.2, and a see-through color is laid over its ground first", () => {
     const black = { r: 0, g: 0, b: 0, a: 1 };
-    const white = { r: 255, g: 255, b: 255, a: 1 };
+    const white = { r: 1, g: 1, b: 1, a: 1 };
 
-    assert.equal(Math.round(color.contrast(black, white) * 10) / 10, 21);
-    assert.equal(color.contrast(white, white), 1);
+    assert.equal(Math.round(color.contrastRatio(black, white) * 10) / 10, 21);
+    assert.equal(color.contrastRatio(white, white), 1);
     // #777 on white is 4.48:1, the classic miss of AA.
-    const gray = color.contrast(color.parseColor("#777777"), white);
+    const gray = color.contrastRatio(color.parseColor("#777777"), white);
 
     assert.ok(gray > 4.4 && gray < 4.5);
     assert.equal(color.grade(gray, 4.5).pass, false);
     assert.equal(color.grade(gray, 4.5).level, "AA large");
     assert.equal(color.grade(10).level, "AAA");
     assert.equal(color.ratioText(4.4999), "4.4:1");
-    // Half-transparent black on white reads as mid gray, not as black.
-    assert.ok(color.contrast({ ...black, a: 0.5 }, white) < 5);
+    assert.ok(color.contrastRatio({ ...black, a: 0.5 }, white) < 5);
 });
 
 test("a token belongs to the section its type, or the words of its name, say", () => {
@@ -138,7 +130,6 @@ test("the fixture's tokens group into roles first and a palette after, and the r
     assert.equal(group("colors:primitive:gray").kind, "palette");
     assert.equal(group("colors:semantic:bg").kind, "roles");
     assert.equal(group("colors:primitive:color").title, "Base");
-    // What a person edits first is open; the raw colors are folded.
     assert.equal(group("colors:semantic:bg").fold, false);
     assert.equal(group("colors:primitive:gray").fold, true);
     assert.deepEqual(
@@ -163,7 +154,6 @@ test("a tab counts what its section shows open, folded groups carry their own co
         0,
     );
 
-    // Colors: the roles are what a tab says; the palette and the component colors are in folded groups.
     const colors = system.tokens.filter((each: { type: string }) => each.type === "color");
     const roles = colors.filter((each: { tier: string }) => each.tier === "semantic");
 
@@ -171,10 +161,8 @@ test("a tab counts what its section shows open, folded groups carry their own co
     assert.equal(counts.colors.total, colors.length);
     assert.equal(counts.colors.open + counts.colors.folded, colors.length);
     assert.ok(counts.colors.folded > 0, "the palette is folded");
-    // Each token is in one section, so the sections add up to the system.
     assert.equal(total, system.tokens.length);
 
-    // A section lists what it counts: its groups hold every token, and the open ones are the open count.
     for (const id of Object.keys(counts)) {
         const groups = sys.groupsOf(system.tokens, id);
         const sum = (list: { tokens: unknown[] }[]) =>
@@ -227,16 +215,13 @@ test("an edit to a color flows through the aliases that lead to it, and only the
 
     assert.equal(model.value("color.blue.600", "light").value, "#ff0000");
     assert.equal(model.value("color.blue.600", "light").edited, true);
-    // The token that refers to it keeps its alias and its CSS, and takes the new value.
     assert.equal(model.value("color.accent.default", "light").value, "#ff0000");
     assert.equal(model.value("color.accent.default", "light").alias, "color.blue.600");
     assert.equal(model.value("color.accent.default", "light").css, "var(--color-blue-600)");
-    // Dark does not use blue.600 for its accent: nothing changes there.
     assert.equal(
         model.value("color.accent.default", "dark").value,
         saved.value("color.accent.default", "dark").value,
     );
-    // Unrelated tokens are the saved ones, by identity: nothing is copied for them.
     assert.equal(model.value("color.gray.50", "light"), saved.value("color.gray.50", "light"));
     assert.deepEqual(model.dependents("color.blue.600"), ["color.accent.default"]);
 });
@@ -259,11 +244,9 @@ test("a token can be pointed at another, and pointing at one that leads back is 
 
     // `bg.canvas` points at `gray.50`: pointing `gray.50` at `bg.canvas` would loop.
     assert.ok(
-        system.tokens.every((token) =>
-            model
-                .targets("color.gray.50")
-                .every((each: { name: string }) => each.name !== "color.bg.canvas"),
-        ),
+        model
+            .targets("color.gray.50")
+            .every((each: { name: string }) => each.name !== "color.bg.canvas"),
     );
     assert.ok(
         model.targets("color.bg.canvas").every((each: { type: string }) => each.type === "color"),
@@ -286,7 +269,6 @@ test("a token can be pointed at another, and pointing at one that leads back is 
 });
 
 test("a mode that takes the default's value follows an edit of the default", () => {
-    // `border.focus` has no dark value of its own, so dark follows light.
     const edits = sys.tokenEdits(
         sys.push(
             sys.emptyHistory(),
@@ -296,7 +278,6 @@ test("a mode that takes the default's value follows an edit of the default", () 
     const model = sys.createModel(system, edits);
 
     assert.equal(model.value("color.border.focus", "dark").alias, "color.red.600");
-    // `accent.default` has its own dark value: an edit of light leaves it.
     const own = sys.createModel(
         system,
         sys.tokenEdits(
@@ -319,11 +300,9 @@ test("contrast comes from the token's pair, or is worked out for text, and it mo
     assert.equal(primary.auto, false);
     assert.equal(primary.pass, true);
     assert.equal(primary.level, "AAA");
-    // A quieter pair (3:1) that it reaches: for large text and parts of a control.
     assert.equal(model.contrastOf("color.text.disabled", "light").min, 3);
     assert.equal(model.contrastOf("color.text.disabled", "light").pass, true);
     assert.equal(model.contrastOf("color.text.disabled", "light").level, "AA large");
-    // A pair written as a reference reads the same.
     const braced = {
         ...system,
         tokens: system.tokens.map((token) =>
@@ -337,7 +316,6 @@ test("contrast comes from the token's pair, or is worked out for text, and it mo
         sys.createModel(braced).contrastOf("color.text.primary", "light").on,
         "color.bg.surface",
     );
-    // A color that is not text, and has no pair, has no badge.
     assert.equal(model.contrastOf("color.bg.surface", "light"), null);
     assert.equal(model.contrastOf("color.accent.default", "light"), null);
     assert.equal(model.contrastOf("space.4", "light"), null);
@@ -376,7 +354,6 @@ test("what a person types becomes a value of the token's type, in its dialect, o
     assert.deepEqual(sys.readInput("dimension", "1.5rem", { value: 1, unit: "px" }), {
         value: { value: 1.5, unit: "rem" },
     });
-    // A bare number takes the unit it had; text stays text.
     assert.deepEqual(sys.readInput("dimension", "20", { value: 1, unit: "rem" }), {
         value: { value: 20, unit: "rem" },
     });
@@ -411,10 +388,8 @@ test("undo and redo walk the edits, a repeat of one edit is one step, and an edi
 
     history = sys.push(history, edit("#111111"), 1000);
     history = sys.push(history, edit("#222222"), 1300);
-    // The same thing, soon after: one step, with the latest value.
     assert.equal(history.past.length, 1);
     assert.equal(history.past[0].raw.value, "#222222");
-    // A moment later is a new step.
     history = sys.push(history, edit("#333333"), 5000);
     history = sys.push(
         history,
@@ -432,7 +407,6 @@ test("undo and redo walk the edits, a repeat of one edit is one step, and an edi
     history = sys.undo(sys.undo(history));
     history = sys.push(history, edit("#555555"), 99_000);
     assert.equal(history.future.length, 0, "a new edit ends the redo");
-    // A step that is asked for as a step of its own is never merged, however soon it comes.
     const own = sys.push(
         sys.push(sys.emptyHistory(), edit("#111111"), 1000),
         edit("#222222"),
@@ -441,7 +415,6 @@ test("undo and redo walk the edits, a repeat of one edit is one step, and an edi
     );
 
     assert.equal(own.past.length, 2);
-    // A long history keeps the newest steps, and drops first the ones that a later step makes no difference to.
     let long = sys.emptyHistory();
 
     for (let at = 0; at < 600; at += 1) {
@@ -455,10 +428,8 @@ test("undo and redo walk the edits, a repeat of one edit is one step, and an edi
     assert.equal(long.past.length, 500);
     assert.equal(long.past.at(-1).raw.value, "599");
     assert.equal(sys.editsOf(long).size, 40, "every thing that was edited is still edited");
-    // Nothing to undo or redo leaves the history as it is.
     assert.equal(sys.undo(sys.emptyHistory()).past.length, 0);
     assert.equal(sys.redo(sys.emptyHistory()).future.length, 0);
-    // The edits in force are the last for each thing.
     assert.equal(sys.editsOf(history).size, 1);
 });
 
@@ -484,7 +455,6 @@ test("a save is what differs from the saved values: a revert changes nothing, an
 
     const change = sys.changeOf(system, history);
 
-    // `blue.600` is already #3b6cf6: it is no change.
     assert.deepEqual(change.set, [
         { mode: "light", token: "color.accent.default", value: "{color.blue.500}" },
         { mode: "dark", token: "color.bg.canvas", value: "#000000" },
@@ -507,7 +477,6 @@ test("the CSS a design is told is the mode in view where the modes differ, and w
     // A page that follows the system's dark setting by itself still shows the mode in view: the tokens that vary are set.
     assert.equal(light["--color-bg-canvas"], "var(--color-gray-50)");
     assert.equal(dark["--color-bg-canvas"], "var(--color-gray-950)");
-    // A primitive that is the same in every mode is left to the page.
     assert.equal(light["--color-gray-50"], undefined);
     assert.equal(dark["--color-gray-50"], undefined);
     assert.ok(Object.keys(dark).length > 5);
@@ -604,7 +573,6 @@ test("a component's page is made of its markup and CSS with nothing that loads, 
     assert.equal((page.match(/<\/style/g) ?? []).length, 3);
     assert.ok(!page.includes('onload="alert'));
     assert.match(page, /&#34; onload=&#34;alert\(1\)/);
-    // A state with no markup is not drawn, and every figure has its name.
     assert.equal((page.match(/<figure>/g) ?? []).length, 2);
     assert.equal(specimen.escapeHtml(`<a href="x">&'`), "&#60;a href=&#34;x&#34;&#62;&#38;&#39;");
 });
@@ -660,7 +628,6 @@ test("a font family the app has shows in it, and a typography value becomes safe
 test("a typography style is drawn from the tokens its parts link to, so an edit to one moves it", () => {
     const body = system.tokens.find((token) => token.name === "type.body")!;
 
-    // The engine says which token each part comes from.
     assert.equal(body.modes.light!.parts!["font-size"], "var(--font-size-base)");
 
     const saved = sys.createModel(system);
@@ -682,14 +649,12 @@ test("a typography style is drawn from the tokens its parts link to, so an edit 
         /font-size:var\(--font-size-base\)/,
     );
     assert.match(sys.typographyStyleOf(edited, "light", now(edited)), /--font-size-base:20px/);
-    // The family of the app's own shows in its font, and the properties of a type are the style's alone.
     assert.match(
         sys.typographyStyleOf(saved, "light", now(saved)),
         /--font-family-sans:"Pocket Sans", Geist/,
     );
     assert.equal(sys.typographyMeta(saved, "light", now(saved)), "16px / 1.5 · 400 · Geist");
     assert.equal(sys.typographyMeta(edited, "light", now(edited)), "20px / 1.5 · 400 · Geist");
-    // A value that is not a style gives nothing, and one with no parts is drawn from its value.
     assert.equal(sys.typographyStyleOf(saved, "light", { value: "x" }), "");
     assert.match(
         sys.typographyStyleOf(saved, "light", { value: { fontSize: "12px" } }),
@@ -700,7 +665,6 @@ test("a typography style is drawn from the tokens its parts link to, so an edit 
 });
 
 test("a text color with no pair is checked against the page only when it is plain text, and the engine's declared pairs are the rest", () => {
-    // Without its declared pair, `text.secondary` is plain text on the page: worked out, and marked as such.
     const bare = {
         ...system,
         tokens: system.tokens.map((token) => {
@@ -730,16 +694,14 @@ test("a text color with no pair is checked against the page only when it is plai
 test("a mode's token is its own or the default's: the engine says which, an edit can give it back, and a save removes it", () => {
     const model = sys.createModel(system);
 
-    // The default mode sets every token. Dark's file sets some (`overrides`) and takes the rest.
     assert.equal(model.overridden("color.bg.canvas", "light"), true);
     assert.equal(model.overridden("color.bg.canvas", "dark"), true);
     assert.equal(model.overridden("color.border.focus", "dark"), false, "the file does not set it");
     assert.equal(model.savedOverride("color.border.focus", "dark"), false);
 
-    // Giving back what the file sets: the value is the default's, and a save removes the token from the file.
     const history = sys.push(
         sys.emptyHistory(),
-        sys.inheritEdit("dark", "color.bg.canvas"),
+        sys.tokenEdit("dark", "color.bg.canvas", { inherit: true }),
         1,
         false,
     );
@@ -757,7 +719,6 @@ test("a mode's token is its own or the default's: the engine says which, an edit
         count: 1,
     });
 
-    // Giving back what the file does not set, or in the default mode, changes nothing.
     for (const [mode, token] of [
         ["dark", "color.border.focus"],
         ["light", "color.bg.canvas"],
@@ -765,14 +726,18 @@ test("a mode's token is its own or the default's: the engine says which, an edit
         assert.equal(
             sys.changeOf(
                 system,
-                sys.push(sys.emptyHistory(), sys.inheritEdit(mode, token), 1, false),
+                sys.push(
+                    sys.emptyHistory(),
+                    sys.tokenEdit(mode, token, { inherit: true }),
+                    1,
+                    false,
+                ),
             ).count,
             0,
             `${mode} ${token}`,
         );
     }
 
-    // A token that dark takes from light follows an edit of light's; one that dark sets itself does not.
     const edited = sys.createModel(
         system,
         sys.tokenEdits(
@@ -793,7 +758,6 @@ test("a mode's token is its own or the default's: the engine says which, an edit
     assert.equal(edited.value("color.border.focus", "dark").value, "#ff0000");
     assert.notEqual(edited.value("color.bg.canvas", "dark").value, "#00ff00");
 
-    // An edit that sets a value of its own makes the token the mode's own.
     const own = sys.createModel(
         system,
         sys.tokenEdits(
@@ -813,7 +777,6 @@ test("a shadow is read as parts that keep their links, and an edit to one part i
     const model = sys.createModel(system);
     const { layers } = model.shadowRaw("shadow.lg", "light");
 
-    // The file's `{space.4}` and `{color.scrim.40}` are there as links; a value of its own stays a value.
     assert.equal(layers.length, 1);
     assert.equal(layers[0].offsetY, "{space.4}");
     assert.equal(layers[0].blur, "{space.12}");
@@ -822,7 +785,6 @@ test("a shadow is read as parts that keep their links, and an edit to one part i
     assert.equal(sys.linkOf(layers[0].offsetX), null);
     assert.equal(sys.amountOf(layers[0].spread)?.n, -12);
 
-    // A link to another size, and a color of its own: the value follows the token, the CSS keeps `var()`.
     const next = sys.withPart(sys.withPart(layers, 0, "blur", "{space.8}"), 0, "color", "#112233");
     const history = sys.push(
         sys.emptyHistory(),
@@ -838,7 +800,6 @@ test("a shadow is read as parts that keep their links, and an edit to one part i
     assert.equal(now.value[0].color, "#112233");
     assert.match(now.css, /^0px var\(--space-4\) var\(--space-8\) -12px /);
     assert.match(sys.shadowOf(now.value), /^0px 16px 32px -12px /);
-    // The edit reads back as the same parts, and a save sends the DTCG value with its links.
     assert.equal(edited.shadowRaw("shadow.lg", "light").layers[0].blur, "{space.8}");
     assert.deepEqual(sys.changeOf(system, history).set, [
         {
@@ -847,10 +808,8 @@ test("a shadow is read as parts that keep their links, and an edit to one part i
             value: { ...layers[0], blur: "{space.8}", color: "#112233" },
         },
     ]);
-    // Dark takes the shadow from light (its file does not set it): it follows.
     assert.match(edited.value("shadow.lg", "dark").css, /var\(--space-8\)/);
 
-    // A layer more or less is a list; one layer is the object. A part can be inset.
     const two = sys.shadowValue([layers[0], { ...layers[0], inset: true }]);
 
     assert.equal(Array.isArray(two), true);
@@ -882,48 +841,11 @@ test("a color lists all its contrast pairs, and a pair that is exempt is a note 
     assert.equal(hint.length, 1);
     assert.equal(hint[0].pass, false);
     assert.equal(hint[0].exempt, "decorative");
-    // The system says so too: a note that needs no action, and no warning.
     assert.ok(system.notes?.some((each) => each.token === "color.text.placeholder"));
     assert.equal(
         system.problems.some((each) => each.token === "color.text.placeholder"),
         false,
     );
-});
-
-test("a shadow is told in words for its tile: y, blur, alpha, and x and spread only when they are not 0", () => {
-    const model = sys.createModel(system);
-    const of = (name: string) => sys.shadowSummary(model.value(name, "light").value);
-
-    assert.equal(of("shadow.sm"), "y 1 · blur 2 · 12%");
-    assert.equal(of("shadow.md"), "y 6 · blur 16 · spread -4 · 16%");
-    assert.equal(of("shadow.lg"), "y 16 · blur 48 · spread -12 · 40%");
-    // x shows when it is not 0; a color with no alpha has none; layers after the first are said in full; an inset says so.
-    assert.equal(
-        sys.shadowSummary([
-            { color: "#112233", offsetX: "2px", offsetY: "2px", blur: "4px", spread: "0px" },
-            { color: "#00000040", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "1px" },
-            { color: "#00000040", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "2px" },
-        ]),
-        "x 2 · y 2 · blur 4 · +2 layers",
-    );
-    assert.equal(
-        sys.shadowSummary([
-            { color: "#112233", offsetX: "0px", offsetY: "2px", blur: "4px" },
-            { color: "#00000040", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "1px" },
-        ]),
-        "y 2 · blur 4 · +1 layer",
-    );
-    assert.equal(
-        sys.shadowSummary({
-            color: "#00000080",
-            offsetX: "0px",
-            offsetY: "1px",
-            blur: "2px",
-            inset: true,
-        }),
-        "inset y 1 · blur 2 · 50%",
-    );
-    assert.equal(sys.shadowSummary(null), "");
 });
 
 test("the Ferry page's image has a real source (a small picture, not a broken icon) and still has no alt text, which the check needs", () => {
@@ -971,7 +893,6 @@ test("spacing is grouped as the documentation page groups it: steps, roles, size
         "every token of the section is in a group",
     );
 
-    // The page has the same three groups, with the same tokens in each.
     const page = renderSystemDoc(flagship).html;
 
     const part = (id: string) => {
@@ -1011,7 +932,6 @@ test("radii: the scale first, then the roles that point at it, then a component'
         ],
     );
     assert.ok(groups[1].tokens.some((each: { name: string }) => each.name === "radius.card"));
-    // The tab counts the roles: the scale and the component tokens have counts of their own.
     assert.equal(sys.sectionCounts(flagship.tokens).radii.open, groups[1].tokens.length);
 });
 
@@ -1033,11 +953,4 @@ test("every layer of a shadow is told with its color, and the one-line summary n
         { words: "inset y 0 · blur 0 · spread 1 · 17%", color: "#ffffff2b" },
     ]);
     assert.deepEqual(sys.shadowLines(null), []);
-    assert.equal(
-        sys.shadowSummary([
-            { color: "#00000024", offsetX: "0px", offsetY: "24px", blur: "60px", spread: "-16px" },
-            { color: "#ffffff2b", offsetX: "0px", offsetY: "0px", blur: "0px", spread: "1px" },
-        ]),
-        "y 24 · blur 60 · spread -16 · 14% · +1 layer",
-    );
 });

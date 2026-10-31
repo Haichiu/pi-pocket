@@ -1,32 +1,30 @@
-/**
- * The palette and the role tokens of the scan (stream T): the scales that the project names, then the role colors, then
- * the colors it uses most, with each mode's values.
- */
 import { contrastRatio, parseColor } from "./color.ts";
 import {
     type ColorEntry,
     distance,
     entryOf,
+    hexOf,
+    kebab,
     nearColors,
+    normalizeColor,
     paletteName,
     ROLE_PATHS,
-    type RoleChoice,
     type RoleName,
+    slug,
+    vkey,
+    w,
 } from "./scan-colors.ts";
 import { type Classified } from "./scan-prepare.ts";
 import { topBy } from "./scan-scales.ts";
-import { hexOf, kebab, normalizeColor, type Obj, slug, vkey, w } from "./scan-util.ts";
 import { type Variable } from "./scan-variables.ts";
 import { pathOf } from "./scan-tree.ts";
-import { type ColorRoles, type InferContext } from "./scan-roles.ts";
+import { type ColorRoles, type InferContext, type RoleChoice } from "./scan-roles.ts";
 
-/** Adds the color tokens (palette steps, roles, the project's own color variables) to the draft. */
 export function paletteTokens(context: InferContext, roles: ColorRoles): void {
     const { facts, classified, alt, result, book, aliasOf, uses } = context;
     const { lightColors, darkColors, lightRoles, darkRoles } = roles;
     const colorVars = classified.filter((entry) => entry.category === "color");
 
-    // 3. The palette: scales the project names, then the role colors, then the colors it uses most.
     const scales = new Map<string, Classified[]>();
 
     for (const entry of colorVars) {
@@ -80,60 +78,8 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
     };
 
     const scaleVars = new Set<Classified>();
-    // The colors of each family by step. A family that holds the same colors as another (`brand-ramp`, which a loop turns into
-    // `--brand-50` … `--brand-900`) is the same scale twice: the one with the shorter name is kept.
-    const stepsOf = (list: Classified[]) =>
-        new Map(
-            list.map((entry) => [
-                /(\d{1,3})$/.exec(entry.variable.name)![1]!,
-                hexOf(entry.lightColor ?? entry.darkColor),
-            ]),
-        );
-
-    // Of two such families the better named one stays: one made of custom properties over one made of Sass variables, one
-    // whose name is not a container (`ramp`, `scale`, `palette`, `shades`), then the shorter.
-    const rankOf = (family: string, list: Classified[]) =>
-        (list.some(
-            (entry) => entry.variable.light?.kind === "css" || entry.variable.dark?.kind === "css",
-        )
-            ? 0
-            : 4) +
-        (/(?:^|-)(?:ramp|scale|palette|shades?|steps?|map|colors?|list)(?:-|$)/.test(family)
-            ? 2
-            : 0) +
-        family.length / 100;
-
-    const twin = (family: string, list: Classified[]) => {
-        const mine = stepsOf(list);
-
-        return (
-            mine.size >= 3 &&
-            [...scales].some(([other, otherList]) => {
-                const [theirRank, myRank] = [rankOf(other, otherList), rankOf(family, list)];
-
-                if (
-                    other === family ||
-                    theirRank > myRank ||
-                    (theirRank === myRank && other > family)
-                ) {
-                    return false;
-                }
-
-                const theirs = stepsOf(otherList);
-
-                return (
-                    theirs.size === mine.size &&
-                    [...mine].every(([step, hex]) => hex !== undefined && theirs.get(step) === hex)
-                );
-            })
-        );
-    };
 
     for (const [family, list] of scales) {
-        if (twin(family, list)) {
-            continue;
-        }
-
         if (
             list.length < 2 &&
             !w(
@@ -168,7 +114,6 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
         }
     }
 
-    // Roles.
     const roleVars = new Set<string>();
     const pendingDark: { path: string[]; hex: string }[] = [];
     // The light color each color token holds, so that two files that name one token agree on which color it is.
@@ -197,69 +142,57 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
             changing.add(light.hex);
         }
 
-        const node: Obj = { $value: lightAlias(light.hex), $type: "color" };
-
         const source = colorVars.find((entry) => entry.variable.name === light.source);
 
         if (light.basis === "name") {
             roleVars.add(light.source);
         }
 
-        book.add(path, node);
+        book.add(path, { $value: lightAlias(light.hex), $type: "color" });
         lightHexOf.set(path.join("."), light.hex);
 
         if (source !== undefined) {
             aliasOf.set(vkey(source.variable), path);
         }
 
-        if (dark !== undefined && dark.hex !== light.hex) {
+        if (changes) {
             pendingDark.push({ path, hex: dark.hex });
         }
 
         const fact = source?.variable.light;
         const at =
-            light.basis === "name"
-                ? fact === undefined
-                    ? undefined
-                    : `${fact.file}${fact.line === undefined ? "" : `:${fact.line}`}`
-                : lightColors.get(light.hex)?.fact?.at;
+            light.basis === "use"
+                ? lightColors.get(light.hex)?.fact?.at
+                : fact === undefined
+                  ? undefined
+                  : `${fact.file}${fact.line === undefined ? "" : `:${fact.line}`}`;
+        // A name that says the role is sure; the way a color is used is a guess, the less so the weaker the sign.
+        const sure = light.score >= (light.basis === "name" ? 85 : 40);
 
         result.roles[role] = {
             token: path.join("."),
             value: light.hex,
-            ...(dark !== undefined && dark.hex !== light.hex ? { dark: dark.hex } : {}),
+            ...(changes ? { dark: dark.hex } : {}),
             basis: light.basis,
             source: light.source,
-            // A name that says the role is sure; the way a color is used is a guess, the less so the weaker the sign.
             confidence:
-                light.basis === "name"
-                    ? light.score >= 85
-                        ? "high"
-                        : "medium"
-                    : light.score >= 40
-                      ? "medium"
-                      : "low",
+                light.basis === "name" ? (sure ? "high" : "medium") : sure ? "medium" : "low",
             ...(at === undefined ? {} : { at }),
         };
     }
 
-    // Text on the accent color: whichever of the page, the text, white, and black reads best.
-    const accent =
-        lightRoles.accent === undefined ? undefined : lightColors.get(lightRoles.accent.hex);
-
-    if (accent !== undefined) {
-        // Text on the accent is a color the project already has: its page, its text, white, or black.
-        const poolOf = (
-            roles: Partial<Record<RoleName, RoleChoice>>,
-            entries: Map<string, ColorEntry>,
-        ) => {
-            const given = new Set(
-                Object.values(roles)
-                    .map((role) => role?.hex)
-                    .filter((hex): hex is string => hex !== undefined),
-            );
-            // A gray that the mode uses only as text (a dark label on a light button) is a color the project has too.
-            const labels = [...entries.values()]
+    const onAccent = (
+        accent: ColorEntry,
+        entries: Map<string, ColorEntry>,
+        roles: Partial<Record<RoleName, RoleChoice>>,
+        preferWhite: boolean,
+    ) => {
+        const given = new Set(Object.values(roles).map((role) => role?.hex));
+        const pool = [
+            ...[roles.background?.hex, roles.text?.hex, "#ffffff", "#000000"].filter(
+                (hex): hex is string => hex !== undefined && entries.has(hex),
+            ),
+            ...[...entries.values()]
                 .filter(
                     (each) =>
                         !given.has(each.hex) &&
@@ -269,65 +202,37 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
                         (each.fact?.bg ?? 0) === 0 &&
                         (each.fact?.border ?? 0) === 0,
                 )
-                .map((each) => each.hex);
+                .map((each) => each.hex),
+        ];
 
-            return [
-                ...[roles.background?.hex, roles.text?.hex, "#ffffff", "#000000"].filter(
-                    (hex): hex is string => hex !== undefined && entries.has(hex),
-                ),
-                ...labels,
-            ];
-        };
+        return preferWhite && contrastRatio(parseColor("#ffffff")!, accent.rgba) >= 3
+            ? "#ffffff"
+            : topBy(pool, (hex) => contrastRatio(entries.get(hex)!.rgba, accent.rgba), 1)[0];
+    };
 
-        // White is what a project already puts on its accent when it uses white as a text color and it reads well enough.
-        const whiteText =
-            (facts.colors.get("#ffffff")?.text ?? 0) > 0 && lightColors.has("#ffffff");
+    const accent =
+        lightRoles.accent === undefined ? undefined : lightColors.get(lightRoles.accent.hex);
+    // White is what a project already puts on its accent when it uses white as a text color.
+    const whiteText = (facts.colors.get("#ffffff")?.text ?? 0) > 0 && lightColors.has("#ffffff");
+    const onLight =
+        accent === undefined ? undefined : onAccent(accent, lightColors, lightRoles, whiteText);
 
-        const pick = (
-            accentColor: ColorEntry,
-            entries: Map<string, ColorEntry>,
-            roles: Partial<Record<RoleName, RoleChoice>>,
-            preferWhite: boolean,
-        ) => {
-            const pool = poolOf(roles, entries);
-            const best = topBy(
-                pool,
-                (hex) => {
-                    const color = entries.get(hex)?.rgba;
-
-                    return color === undefined ? 0 : contrastRatio(color, accentColor.rgba);
-                },
-                1,
-            )[0];
-
-            return preferWhite && contrastRatio(parseColor("#ffffff")!, accentColor.rgba) >= 3
-                ? "#ffffff"
-                : best;
-        };
-
-        const onLight = pick(accent, lightColors, lightRoles, whiteText);
+    if (onLight !== undefined) {
         const path = ["color", "text", "on-accent"];
-
-        if (onLight !== undefined) {
-            book.add(path, {
-                $value: lightAlias(onLight),
-                $type: "color",
-            });
-        }
-
         const darkAccent =
             darkRoles.accent === undefined ? undefined : darkColors.get(darkRoles.accent.hex);
+        const onDark =
+            darkAccent === undefined
+                ? undefined
+                : onAccent(darkAccent, darkColors, darkRoles, false);
 
-        if (darkAccent !== undefined) {
-            const onDark = pick(darkAccent, darkColors, darkRoles, false);
+        book.add(path, { $value: lightAlias(onLight), $type: "color" });
 
-            if (onLight !== undefined && onDark !== undefined && onDark !== onLight) {
-                pendingDark.push({ path, hex: onDark });
-            }
+        if (onDark !== undefined && onDark !== onLight) {
+            pendingDark.push({ path, hex: onDark });
         }
     }
 
-    // The colors the project uses most that no variable or role holds yet.
     const known = [...hexPath.keys()].map((hex) => lightColors.get(hex) ?? entryOf(hex)!);
     const candidates = [...lightColors.values()].filter(
         (entry) =>
@@ -361,7 +266,6 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
         palette(entry.hex, asValue(entry.hex, lightColors));
     }
 
-    // The rest of the project's own color variables, under their own names, as aliases of the palette.
     const roleNames = new Set([...roleVars].map(kebab));
     // A Sass variable that a custom property is set from (`--bg: #{$dark-bg}`) is that property: one token, not two.
     const sources = new Set(
@@ -384,7 +288,6 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
             !scaleVars.has(entry) &&
             !sources.has(vkey(entry.variable)) &&
             !roleVars.has(entry.variable.name) &&
-            // The same variable from another file (`inkSubtle` in a theme, `--ink-subtle` in a stylesheet).
             !roleNames.has(kebab(entry.variable.name)),
     );
 
@@ -415,8 +318,6 @@ export function paletteTokens(context: InferContext, roles: ColorRoles): void {
         const target = entry.via === undefined ? undefined : aliasOf.get(vkey(entry.via));
         const darkHex = hexOf(entry.darkColor);
 
-        // A dark-first project keeps the colors that change as they are in the default mode, as the roles are (the light
-        // mode's file changes them), so its palette has no dark-only primitive.
         if (alt === "light" && target === undefined && darkHex !== undefined && darkHex !== hex) {
             changing.add(hex);
             book.add(path, { $value: asValue(hex, lightColors), $type: "color" });

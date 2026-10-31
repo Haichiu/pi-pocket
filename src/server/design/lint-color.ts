@@ -1,63 +1,58 @@
-/**
- * What the design checks (`lint.ts`) need besides `color.ts`: perceptual distance in OKLab, and the values of a design
- * system's tokens in one mode, ready to compare with what a page uses. Parsing, luminance, contrast, and the CSS of a
- * DTCG color are `color.ts`'s.
- */
-import { colorObjectCss, contrastRatio, toHex } from "./color.ts";
+import { colorObjectCss, luminance, oklabOf, toHex } from "./color.ts";
+import { sameInEveryMode } from "./fix.ts";
 import type { DesignSystem, ModeValue, ResolvedToken } from "./system-types.ts";
 
-/** Red, green, blue (0 to 255) and alpha (0 to 1), as the browser resolves a color. */
 export type RgbaTuple = [number, number, number, number];
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
-/** sRGB (0 to 255) to OKLab, by Björn Ottosson's matrices. */
-export function toOklab(red: number, green: number, blue: number): [number, number, number] {
-    const linear = (channel: number) => {
-        const value = channel / 255;
+/** sRGB channels from 0 to 255 to OKLab. */
+export const toOklab = (red: number, green: number, blue: number): [number, number, number] =>
+    oklabOf({ r: red / 255, g: green / 255, b: blue / 255, a: 1 });
 
-        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-    };
+// A Check compares each page color with every token: the conversions are kept by array, and no color array is changed in place.
+const labs = new WeakMap<readonly number[], [number, number, number]>();
+const lights = new WeakMap<readonly number[], number>();
 
-    const r = linear(red);
-    const g = linear(green);
-    const b = linear(blue);
-    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
-    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
-    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+export function labOf(color: readonly number[]): [number, number, number] {
+    let lab = labs.get(color);
 
-    return [
-        0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
-        1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
-        0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
-    ];
+    if (lab === undefined) {
+        lab = toOklab(color[0]!, color[1]!, color[2]!);
+        labs.set(color, lab);
+    }
+
+    return lab;
 }
 
-/**
- * How far apart two colors look: the OKLab distance times 100 (about 1 for the smallest step a person sees, 0.4 for
- * one 8-bit step), plus the alpha difference in percent.
- */
+function lightOf(color: readonly number[]): number {
+    let light = lights.get(color);
+
+    if (light === undefined) {
+        light = luminance({ r: color[0]! / 255, g: color[1]! / 255, b: color[2]! / 255, a: 1 });
+        lights.set(color, light);
+    }
+
+    return light;
+}
+
+// The OKLab distance times 100: about 1 is the smallest step a person sees, 0.4 is one 8-bit step. The alpha difference in percent is added.
 export function colorDistance(a: RgbaTuple, b: RgbaTuple): number {
-    const [l1, a1, b1] = toOklab(a[0], a[1], a[2]);
-    const [l2, a2, b2] = toOklab(b[0], b[1], b[2]);
+    const [l1, a1, b1] = labOf(a);
+    const [l2, a2, b2] = labOf(b);
     const lab = Math.hypot(l1 - l2, a1 - a2, b1 - b2) * 100;
 
     return lab + Math.abs(a[3] - b[3]) * 100;
 }
 
-/** WCAG contrast ratio (1 to 21) of two opaque colors given as 0 to 255 channels. */
+// `contrastRatio` of two opaque colors.
 export function contrastOf(a: readonly number[], b: readonly number[]): number {
-    const color = (value: readonly number[]) => ({
-        r: value[0]! / 255,
-        g: value[1]! / 255,
-        b: value[2]! / 255,
-        a: 1,
-    });
+    const one = lightOf(a);
+    const two = lightOf(b);
 
-    return contrastRatio(color(a), color(b));
+    return (Math.max(one, two) + 0.05) / (Math.min(one, two) + 0.05);
 }
 
-/** `#7aa2f7`, or `rgb(255 255 255 / 0.1)` when the color is not opaque. */
 export function formatColor(color: readonly number[]): string {
     const alpha = color[3] ?? 1;
     const channels = [color[0]!, color[1]!, color[2]!].map((value) =>
@@ -71,7 +66,6 @@ export function formatColor(color: readonly number[]): string {
     return `rgb(${channels.join(" ")} / ${Math.round(alpha * 100) / 100})`;
 }
 
-/** The text of a DTCG color value as CSS, for the browser to resolve. `undefined` when the value is not a color. */
 export function colorCss(value: unknown): string | undefined {
     if (typeof value === "string") {
         return value.startsWith("{") || value.length > 200 ? undefined : value;
@@ -88,28 +82,34 @@ export function colorCss(value: unknown): string | undefined {
     return typeof hex === "string" ? hex : undefined;
 }
 
-/** The CSS length of a DTCG dimension: `16px`, `1rem`, `{ value: 16, unit: "px" }`, or a bare number (pixels). */
-export function dimensionCss(value: unknown): string | undefined {
-    if (typeof value === "number" && Number.isFinite(value)) {
-        return `${value}px`;
+export function dimensionParts(value: unknown): { amount: number; unit: string } | undefined {
+    if (typeof value === "number") {
+        return { amount: value, unit: "px" };
     }
 
-    if (typeof value === "string") {
-        return /^[-+0-9.a-z%(), *\/]+$/i.test(value) && value.length <= 120 ? value : undefined;
-    }
-
-    if (typeof value === "object" && value !== null) {
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
         const { value: amount, unit } = value as { value?: unknown; unit?: unknown };
 
-        if (typeof amount === "number" && Number.isFinite(amount) && typeof unit === "string") {
-            return /^[a-z%]{1,5}$/i.test(unit) ? `${amount}${unit}` : undefined;
+        if (typeof amount === "number" && typeof unit === "string") {
+            return { amount, unit };
         }
     }
 
     return undefined;
 }
 
-/** A font family list as names: lower case, with no quotes. */
+export function dimensionCss(value: unknown): string | undefined {
+    if (typeof value === "string") {
+        return /^[-+0-9.a-z%(), *\/]+$/i.test(value) && value.length <= 120 ? value : undefined;
+    }
+
+    const parts = dimensionParts(value);
+
+    return parts !== undefined && Number.isFinite(parts.amount) && /^[a-z%]{1,5}$/i.test(parts.unit)
+        ? `${parts.amount}${parts.unit}`
+        : undefined;
+}
+
 export function familyList(value: string): string[] {
     const names: string[] = [];
     let current = "";
@@ -153,39 +153,37 @@ const GENERIC_FAMILIES = new Set([
     "fangsong",
 ]);
 
-/** True for a generic family (`sans-serif`, `system-ui`). */
 export function isGenericFamily(name: string): boolean {
     return GENERIC_FAMILIES.has(name);
 }
 
 export type LengthKind = "font-size" | "space" | "radius";
 
-export interface TokenColor {
+interface TokenColor {
     name: string;
     cssVar: string;
     tier: ResolvedToken["tier"];
     css: string;
-    /** Filled in after the browser resolves `css`. */
     rgba?: RgbaTuple;
+    steady?: boolean;
 }
 
-export interface TokenFont {
+interface TokenFont {
     name: string;
     cssVar: string;
-    /** Lower-case family names, in order. */
     families: string[];
+    steady?: boolean;
 }
 
-export interface TokenLength {
+interface TokenLength {
     kind: LengthKind;
     name: string;
     cssVar: string;
     css: string;
-    /** Filled in after the browser resolves `css`. */
     px?: number;
+    steady?: boolean;
 }
 
-/** What a design system holds in one mode, in the forms the checks compare with. */
 export interface TokenSet {
     mode: string;
     colors: TokenColor[];
@@ -198,7 +196,6 @@ const RADIUS_GROUP = /^(radius|radii|rounded|corner|corners|round)$/i;
 const FONT_GROUPS = /^(font|fonts|text|type|typography|fontsize|fontsizes|font-size|font-sizes)$/i;
 const SIZE_NAME = /^(size|sizes|fontsize|font-size|fontsizes|font-sizes|fs)$/i;
 
-/** Which scale a dimension token belongs to, by the names in its path. */
 export function lengthKind(path: string[]): LengthKind | undefined {
     const names = path.slice(0, -1).concat(path.at(-1) ?? "");
 
@@ -228,7 +225,6 @@ const isNonSize = (name: string) =>
 const valueIn = (token: ResolvedToken, mode: string): ModeValue | undefined =>
     token.modes[mode] ?? Object.values(token.modes)[0];
 
-/** The font families of a token value (a string, or a list of strings). */
 function fontFamilies(value: unknown): string[] {
     if (typeof value === "string") {
         return familyList(value);
@@ -241,17 +237,23 @@ function fontFamilies(value: unknown): string[] {
     return [];
 }
 
-/** The tokens of `system` in `mode`: its colors, font families, and font-size, spacing, and radius lengths. */
 export function tokenSet(system: DesignSystem, mode: string): TokenSet {
     const set: TokenSet = { mode, colors: [], fonts: [], lengths: [] };
     const seen = new Set<string>();
+    const steady = (token: ResolvedToken) => sameInEveryMode(token, system.modes);
 
     const addLength = (token: ResolvedToken, kind: LengthKind, value: unknown, suffix = "") => {
         const css = dimensionCss(value);
 
         if (css !== undefined && !seen.has(`${token.name}${suffix}`)) {
             seen.add(`${token.name}${suffix}`);
-            set.lengths.push({ kind, name: token.name, cssVar: token.cssVar, css });
+            set.lengths.push({
+                kind,
+                name: token.name,
+                cssVar: token.cssVar,
+                css,
+                steady: steady(token),
+            });
         }
     };
 
@@ -266,13 +268,24 @@ export function tokenSet(system: DesignSystem, mode: string): TokenSet {
             const css = entry.css.startsWith("var(") ? colorCss(entry.value) : entry.css;
 
             if (css !== undefined) {
-                set.colors.push({ name: token.name, cssVar: token.cssVar, tier: token.tier, css });
+                set.colors.push({
+                    name: token.name,
+                    cssVar: token.cssVar,
+                    tier: token.tier,
+                    css,
+                    steady: steady(token),
+                });
             }
         } else if (token.type === "fontFamily") {
             const families = fontFamilies(entry.value);
 
             if (families.length > 0) {
-                set.fonts.push({ name: token.name, cssVar: token.cssVar, families });
+                set.fonts.push({
+                    name: token.name,
+                    cssVar: token.cssVar,
+                    families,
+                    steady: steady(token),
+                });
             }
         } else if (token.type === "dimension" && token.tier !== "component") {
             const kind = lengthKind(token.path);

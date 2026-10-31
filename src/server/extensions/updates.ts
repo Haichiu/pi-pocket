@@ -1,8 +1,7 @@
 /**
  * Updates of Pi Pocket itself: it looks for a new release every 6 hours, tells the owner, shows its notes, and updates
  * the git checkout or the global npm install to it with one tap, then restarts; it can also install new releases by itself while no session is
- * working. The owner can opt in to beta releases (pre-releases such as `0.27.0-beta.1`). Its routes and screens are
- * the owner's alone (`updates.ts` does the work).
+ * working. Its routes and screens are the owner's alone (`updates.ts` does the work).
  */
 import { defineExtension } from "@earendil-works/pi-durable";
 import type { ExtensionWeb, PocketHost, WebHandler, WebRequest } from "../host.ts";
@@ -162,7 +161,6 @@ export default function createUpdates(host: PocketHost, web: ExtensionWeb) {
         void updates.check().then(autoInstall, () => {});
     };
 
-    // The channel is core's: a server from before the beta channel has no `setBeta`, and the next restart has it.
     const channel = () => {
         if (
             typeof updates.setBeta !== "function" ||

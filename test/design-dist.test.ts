@@ -1,16 +1,25 @@
-// The flagship's dist/ is committed, and it is what the compiler makes now. A change to the compiler changes these
-// files, so it shows up as a diff in review. To accept a change on purpose: `PI_UPDATE_DIST=1 node --test test/design-dist.test.ts`.
+// The flagship's generated files are not committed: the app compiles them in memory. This test compiles the example
+// and keeps a short hash of each file, so a compiler change shows up as a diff of this file in review.
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadDesignSystem } from "../src/server/design/tokens.ts";
 
 const FLAGSHIP = fileURLToPath(new URL("../docs/examples/design-system/pocket", import.meta.url));
-const DIST = join(FLAGSHIP, ".pi", "design", "dist");
 
-/** The files that the compiler makes for the flagship, by name in dist/. */
+const EXPECTED: Record<string, string> = {
+    "components.css": "1aec96edfeb4",
+    "names.md": "f5ee03e212e9",
+    "tailwind.css": "a15dabbbf167",
+    "tokens.css": "aa3272aea1ad",
+    "tokens.dark.resolved.json": "91a1fb8cf843",
+    "tokens.high-contrast.resolved.json": "fe19fd48ea32",
+    "tokens.light.resolved.json": "9caed47a5633",
+    "tokens.resolved.json": "4b1a8630fac9",
+    "tokens.studio.json": "4c5ff7fdc191",
+};
+
 function compiled(): Map<string, string> {
     const system = loadDesignSystem(FLAGSHIP)!;
     const files = new Map<string, string>([
@@ -29,35 +38,27 @@ function compiled(): Map<string, string> {
     return files;
 }
 
-test("the flagship's dist/ is committed, and equal to what the compiler makes from its sources", () => {
+const short = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 12);
+
+test("the compiler makes the same files from the flagship's sources as before", () => {
     const made = compiled();
-
-    if (process.env.PI_UPDATE_DIST === "1") {
-        rmSync(DIST, { recursive: true, force: true });
-        mkdirSync(DIST, { recursive: true });
-        made.forEach((text, name) => writeFileSync(join(DIST, name), text));
-    }
-
-    const hint =
-        "The compiler or the flagship's tokens changed, and dist/ did not. If that is meant, run PI_UPDATE_DIST=1 node --test test/design-dist.test.ts and commit dist/.";
+    const hashes = Object.fromEntries([...made].map(([name, text]) => [name, short(text)]));
+    const hint = `If the compiler or the flagship's tokens changed on purpose, put these in EXPECTED in test/design-dist.test.ts:\n${JSON.stringify(hashes, null, 4)}`;
 
     assert.deepEqual(
-        readdirSync(DIST).sort(),
         [...made.keys()].sort(),
-        `the files in dist/. ${hint}`,
+        Object.keys(EXPECTED).sort(),
+        `the file set. ${hint}`,
     );
 
-    for (const [name, text] of made) {
-        assert.equal(
-            readFileSync(join(DIST, name), "utf8") === text,
-            true,
-            `dist/${name} differs. ${hint}`,
-        );
+    for (const [name, hash] of Object.entries(hashes)) {
+        assert.equal(hash, EXPECTED[name], `${name} differs. ${hint}`);
     }
 });
 
-test("the committed dist/ is what a person gets: tokens.css has the modes, tailwind.css the namespaces, the JSON parses", () => {
-    const read = (name: string) => readFileSync(join(DIST, name), "utf8");
+test("the compiled files are what a person gets: tokens.css has the modes, tailwind.css the namespaces, the JSON parses", () => {
+    const made = compiled();
+    const read = (name: string) => made.get(name)!;
 
     assert.match(read("tokens.css"), /:root,\n\[data-theme="light"\] \{/);
     assert.match(read("tokens.css"), /\[data-theme="dark"\] \{/);
@@ -67,7 +68,7 @@ test("the committed dist/ is what a person gets: tokens.css has the modes, tailw
         /--font-leading/,
     );
 
-    for (const name of readdirSync(DIST).filter((file) => file.endsWith(".json"))) {
+    for (const name of [...made.keys()].filter((file) => file.endsWith(".json"))) {
         assert.doesNotThrow(() => JSON.parse(read(name)), name);
     }
 

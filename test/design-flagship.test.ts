@@ -1,16 +1,11 @@
-// The flagship design system (Pi Pocket's own, docs/examples/design-system/pocket): it loads, every reference and
-// component token exists, it passes WCAG AA in every mode, and the bench's copy is the same.
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { contrastRatio, parseColor } from "../src/server/design/docsite-color.ts";
+import { contrastRatio, parseColor } from "../src/server/design/color.ts";
 import type { DesignSystem, ResolvedToken } from "../src/server/design/system-types.ts";
 import { loadSystem } from "./design-system-loader.ts";
 
 const EXAMPLE = fileURLToPath(new URL("../docs/examples/design-system/pocket", import.meta.url));
-const FIXTURE = fileURLToPath(new URL("./fixtures/design-system/flagship", import.meta.url));
 
 const system = (): DesignSystem => {
     const loaded = loadSystem(EXAMPLE);
@@ -29,7 +24,6 @@ test("the flagship has what a complete system has: tiers, modes, scales, compone
     assert.deepEqual(loaded.modes, ["light", "dark", "high-contrast"]);
     assert.deepEqual(loaded.problems, [], "no validation error and no warning");
 
-    // Every kind of token the plan names.
     const types = new Set(loaded.tokens.map((token) => token.type));
 
     for (const type of [
@@ -51,7 +45,6 @@ test("the flagship has what a complete system has: tiers, modes, scales, compone
 
     assert.deepEqual([...tiers].sort(), ["component", "primitive", "semantic"]);
 
-    // Every group of the plan: color, type, space, radius, shadow, motion, breakpoints, z-index.
     const roots = new Set(loaded.tokens.map((token) => token.path[0]));
 
     for (const group of [
@@ -71,7 +64,6 @@ test("the flagship has what a complete system has: tiers, modes, scales, compone
     assert.ok(loaded.components.length >= 8, `${loaded.components.length} components`);
     assert.ok(loaded.guidelines.length > 1000 && Buffer.byteLength(loaded.guidelines) <= 16_384);
 
-    // Every mode's value of every token is a resolved value, and a mode changes at least the semantic colors.
     for (const token of loaded.tokens) {
         for (const mode of loaded.modes) {
             assert.ok(token.modes[mode] !== undefined, `${token.name} has a value in ${mode}`);
@@ -107,7 +99,6 @@ test("every component has a template for each state, uses only tokens, and names
                 (spec.usage?.dont.length ?? 0) > 0,
         );
 
-        // The CSS reads tokens (or custom properties of its own) and holds no color or pixel size of its own.
         const own = new Set([...spec.css.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((match) => match[1]));
         const used = [...spec.css.matchAll(/var\((--[a-z0-9-]+)/g)].map((match) => match[1]!);
 
@@ -126,7 +117,6 @@ test("every component has a template for each state, uses only tokens, and names
             `${spec.slug}: no literal size`,
         );
 
-        // The `tokens` list is exactly the tokens its CSS reads.
         const expected = [...new Set(used.filter((name) => !own.has(name)))]
             .map((name) => vars.get(name)!.name)
             .sort();
@@ -137,7 +127,6 @@ test("every component has a template for each state, uses only tokens, and names
             assert.ok(tokens.has(name), `${spec.slug}: ${name} exists`);
         }
 
-        // Every state has markup to show.
         for (const state of spec.states) {
             assert.ok(spec.markup[state]!.trim().length > 10, `${spec.slug}/${state} has markup`);
         }
@@ -149,8 +138,8 @@ test("every contrast pair passes in every mode, and text roles pass on every gro
     const tokens = byName(loaded.tokens);
     const ratio = (fg: string, bg: string, mode: string) =>
         contrastRatio(
-            parseColor(tokens.get(fg)!.modes[mode]!.value)!,
-            parseColor(tokens.get(bg)!.modes[mode]!.value)!,
+            parseColor(String(tokens.get(fg)!.modes[mode]!.value))!,
+            parseColor(String(tokens.get(bg)!.modes[mode]!.value))!,
         );
 
     // Disabled text is exempt from contrast (WCAG): its pair is declared, and the engine notes it instead of failing it.
@@ -206,7 +195,6 @@ test("every contrast pair passes in every mode, and text roles pass on every gro
             );
         }
 
-        // Edges that a person must find, and the focus ring, reach 3:1 on the grounds.
         for (const bg of ["color.bg.base", "color.bg.surface", "color.bg.raised"]) {
             assert.ok(
                 ratio("color.border.strong", bg, mode) >= 3,
@@ -220,41 +208,11 @@ test("every contrast pair passes in every mode, and text roles pass on every gro
     }
 });
 
-/** Every file under a folder, relative, sorted. `dist/` is generated (test/design-dist.test.ts checks it), not a source. */
-function files(root: string, at = root): string[] {
-    return readdirSync(at, { withFileTypes: true })
-        .filter((entry) => entry.name !== "dist")
-        .flatMap((entry) =>
-            entry.isDirectory()
-                ? files(root, join(at, entry.name))
-                : [relative(root, join(at, entry.name))],
-        )
-        .sort();
-}
-
-test("the bench's copy of the flagship is the same files as the example", () => {
-    const names = files(EXAMPLE);
-
-    assert.ok(names.length >= 14, names.join(", "));
-    assert.deepEqual(files(FIXTURE), names);
-
-    for (const name of names) {
-        assert.equal(
-            readFileSync(join(FIXTURE, name), "utf8"),
-            readFileSync(join(EXAMPLE, name), "utf8"),
-            name,
-        );
-    }
-});
-
-/** OKLab lightness of a color, 0 (black) to 1 (white). */
 function lightness(hex: unknown): number {
-    const color = parseColor(hex)!;
-    const lin = [color.r, color.g, color.b].map((value) => {
-        const unit = value / 255;
-
-        return unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
-    });
+    const color = parseColor(String(hex))!;
+    const lin = [color.r, color.g, color.b].map((unit) =>
+        unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4,
+    );
     const l = Math.cbrt(0.4122214708 * lin[0]! + 0.5363325363 * lin[1]! + 0.0514459929 * lin[2]!);
     const m = Math.cbrt(0.2119034982 * lin[0]! + 0.6806995451 * lin[1]! + 0.1073969566 * lin[2]!);
     const s = Math.cbrt(0.0883024619 * lin[0]! + 0.2817188376 * lin[1]! + 0.6299787005 * lin[2]!);
@@ -303,7 +261,6 @@ test("every numbered color ramp falls in lightness at each step, with regular st
         const numbers = sorted.map((token) => Number(token.path[2]));
 
         if (group === "neutral") {
-            // Steps of 100 up to 700 and of 50 after, plus half steps that a role needs, each with its reason.
             const halves = numbers.filter(
                 (n) => n % 100 !== 0 && !(n >= 700 && n % 50 === 0) && n !== 50,
             );
@@ -330,7 +287,6 @@ test("every numbered color ramp falls in lightness at each step, with regular st
         }
     }
 
-    // The app's own accent sits at its step: 400.
     const tokyo = {
         blue: "#7aa2f7",
         red: "#f7768e",
@@ -356,9 +312,7 @@ test("space is the scale, size holds sizes, and the corners are one scale with r
             .filter((token) => token.path[0] === root)
             .map((token) => token.path.slice(1).join("."));
 
-    // space.*: the 4 px scale and nothing else.
     assert.deepEqual(names("space"), ["0", "1", "2", "3", "4", "5", "6", "8", "10", "12", "16"]);
-    // size.*: heights, targets, icons, and the avatar; a component's own sizes are its tokens.
     assert.deepEqual(names("size"), [
         "control.sm",
         "control.md",
@@ -373,7 +327,6 @@ test("space is the scale, size holds sizes, and the corners are one scale with r
     assert.ok(loaded.tokens.find((token) => token.name === "switch.width")!.tier === "component");
     assert.ok(loaded.tokens.find((token) => token.name === "badge.dot")!.tier === "component");
 
-    // Corners: about five steps and round, every role an alias of a step.
     const scale = loaded.tokens.filter(
         (token) => token.path[0] === "radius" && token.path[1] === "scale",
     );
@@ -404,7 +357,6 @@ test("space is the scale, size holds sizes, and the corners are one scale with r
         assert.equal(role.tier, "semantic");
     }
 
-    // A role that moved from the app's own corner says so.
     for (const [role, note] of [
         ["seg", /app uses 5 px/],
         ["control", /app uses 7 px/],
@@ -436,13 +388,12 @@ test("the grounds are different colors in light and dark; where two share a valu
         }
     }
 
-    // A sunken well is darker than the canvas, and a selected row has a blue tint.
     assert.ok(lightness(value("sunken", "light")) < lightness(value("canvas", "light")));
     assert.ok(
-        parseColor(value("selected", "light"))!.b > parseColor(value("selected", "light"))!.r,
+        parseColor(String(value("selected", "light")))!.b >
+            parseColor(String(value("selected", "light")))!.r,
     );
 
-    // The two flat cases are named in the descriptions.
     assert.match(tokens.get("color.bg.raised")!.description ?? "", /same white as surface/);
     assert.match(tokens.get("color.bg.canvas")!.description ?? "", /high contrast/);
 });

@@ -1,8 +1,5 @@
-// The checks on pages of many styles, to keep false findings out. `test/fixtures/design-lint-pages/` holds 25 pages
-// (utility classes, Bootstrap-like markup, a long document, a dashboard, forms, marketing pages in light and dark, a blog
-// with an overlay, tabs, tables, overlapping avatars, a theme set by attribute, `light-dark()`, CSS nesting, RTL...). Each
-// was read by hand: `expected.json` lists what the checks may report, and every entry is a true finding (a link 21 px
-// tall, a heading level skipped, a page 415 px wide in 390, a font that is not loaded). Anything else is a false finding.
+// `test/fixtures/design-lint-pages/` holds 25 pages, each read by hand: `expected.json` lists what the checks may report,
+// and every entry is a true finding. Anything else is a false finding.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -55,7 +52,7 @@ test(
     browser,
     async () => {
         const system = loadDesignSystem(
-            join(import.meta.dirname, "fixtures", "design-system", "flagship"),
+            join(import.meta.dirname, "..", "docs", "examples", "design-system", "pocket"),
         )!;
         const assets = [
             { name: "ds/tokens.css", type: "text/css", bytes: Buffer.from(system.compiled.css) },
@@ -93,12 +90,8 @@ test(
             assert.equal(rules.has("focus-visible"), false, colorScheme);
             assert.equal(rules.has("overflow"), false, colorScheme);
             assert.equal(rules.has("image-alt"), false, colorScheme);
-            // The specimens name their controls (a switch inside its label, a field with its label).
             assert.equal(rules.has("accessible-name"), false, colorScheme);
             assert.equal(rules.has("form-label"), false, colorScheme);
-            // The two real findings that this page once had are fixed in the flagship: the code block's inner `<pre>`
-            // took the browser's monospace, and the hint of a hovered menu row (in dark) was 4.48:1.
-            // (The page's own headings have no font of their own; that is the test page's, not the flagship's.)
             assert.equal(
                 report.findings.some(
                     (item) => item.rule === "off-system-font" && item.value === "monospace",

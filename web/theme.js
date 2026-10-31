@@ -273,7 +273,6 @@ export function togglePin(id) {
     store.set({ pinned });
 }
 
-/** Move a pinned session to the top of the pins (`last` false) or to their bottom (`last` true). */
 export function movePin(id, last) {
     if (!isPinned(id)) {
         return;

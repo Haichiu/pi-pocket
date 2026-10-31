@@ -1,12 +1,5 @@
-// What a report says besides its findings: findings of one defect grouped with their elements, findings that a person
-// accepted on purpose (reported apart), and what was not judged (so that silence can be trusted).
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { after, test } from "node:test";
-import { promisify } from "node:util";
+import { test } from "node:test";
 import { findBrowser } from "../src/server/browser/discovery.ts";
 import { checkText } from "../src/server/design/index.ts";
 import {
@@ -20,9 +13,6 @@ import { cleanReport } from "../src/server/extensions/design/system-routes.ts";
 import { check, ofRule, page, testSystem } from "./design-lint-fixtures.ts";
 
 const browser = { skip: findBrowser() === undefined, timeout: 120_000 };
-const folder = mkdtempSync(join(tmpdir(), "pocket-report-"));
-
-after(() => rmSync(folder, { recursive: true, force: true }));
 
 const serif = (id: string) =>
     `<h1 data-pid="${id}" style="font-family:'Times New Roman';margin:0">Title ${id}</h1>`;
@@ -31,7 +21,6 @@ test(
     "one defect on several elements is one finding that lists them, with a pin for each",
     browser,
     async () => {
-        // The judge's case: the title and the subtitle in the same wrong font showed as two rows.
         const report = await check(page("", `${serif("title")}${serif("sub")}${serif("third")}`));
         const fonts = ofRule(report, "off-system-font");
 
@@ -46,13 +35,11 @@ test(
         );
         assert.match(fonts[0]!.message, /The same in 2 more places: sub, third\.$/);
         assert.equal(report.summary.byRule["off-system-font"], 1);
-        // The id depends on the set of elements, not on their order; another set is another id.
         const swapped = await check(page("", `${serif("third")}${serif("title")}${serif("sub")}`));
         const fewer = await check(page("", `${serif("title")}${serif("sub")}`));
 
         assert.equal(ofRule(swapped, "off-system-font")[0]!.id, fonts[0]!.id);
         assert.notEqual(ofRule(fewer, "off-system-font")[0]!.id, fonts[0]!.id);
-        // A different value is a different finding.
         const mixed = await check(
             page("", `${serif("a")}<p data-pid="b" style="font-family:Georgia;margin:0">B</p>`),
         );
@@ -117,7 +104,6 @@ test(
             accepted: [blue.id!, "off-system-size-0000000000"],
         });
 
-        // The finding leaves the lists and the counts; an id that nothing has is ignored.
         assert.equal(
             accepted.findings.some((item) => item.id === blue.id),
             false,
@@ -134,21 +120,18 @@ test(
             (first.summary.byRule["off-system-color"] ?? 0) - 1,
         );
         assert.equal(accepted.findings.length, first.findings.length - 1);
-        // The same on the next check, and in the other scheme.
         const again = await check(content, { accepted: [blue.id!], colorScheme: "dark" });
 
         assert.deepEqual(
             again.accepted!.map((item) => item.id),
             [blue.id],
         );
-        // The color changes: it is another finding, and it comes back.
         const changed = await check(content.replace("#7ba3f8", "#7ba3fa"), {
             accepted: [blue.id!],
         });
 
         assert.equal(changed.accepted, undefined);
         assert.ok(ofRule(changed, "off-system-color").some((item) => item.value === "#7ba3fa"));
-        // Pure: a report with nothing accepted is the same report.
         assert.equal(acceptFindings(first, undefined), first);
         assert.equal(acceptFindings(first, ["nothing-0000000000"]), first);
     },
@@ -178,7 +161,6 @@ test(
             notJudgedText(report)!,
             /^Contrast not judged on 3 elements \(what is behind the text is not certain: a gradient, an image, an overlay, a filter, or a faded parent\): .*\[data-pid="grad"\]/,
         );
-        // The preview text says it too, once.
         const text = checkText([{ view: "desktop", report }], undefined, undefined, []);
 
         assert.equal(
@@ -186,7 +168,6 @@ test(
                 .length,
             1,
         );
-        // Nothing unjudged: no field, no sentence.
         const clean = await check(
             page("", `<p data-pid="a" style="margin:0;color:#1c1e26;background:#fff">Fine</p>`),
             {},
@@ -256,7 +237,6 @@ test("the route cleans what a report adds: elements, accepted findings, and what
     assert.equal(cleaned.summary.notJudged!.contrast.count, 3);
     assert.equal(cleaned.summary.notJudged!.contrast.elements.length, 8);
     assert.ok(cleaned.summary.notJudged!.contrast.elements.every((each) => each.length <= 500));
-    // Nothing accepted, nothing unjudged: an empty accepted list (the app always reads one), and no summary fields.
     const bare = cleanReport({
         ...report,
         accepted: [],
@@ -268,46 +248,3 @@ test("the route cleans what a report adds: elements, accepted findings, and what
     assert.equal(bare.summary.notJudged, undefined);
     void testSystem;
 });
-
-test(
-    "the CLI prints finding ids, takes --accept, and says what it did not judge",
-    browser,
-    async () => {
-        mkdirSync(folder, { recursive: true });
-        const content = page(
-            "",
-            `<p data-pid="blue" style="margin:0;color:#7ba3f8">Blue</p><div style="background:linear-gradient(#fff,#eee)"><p data-pid="grad" style="margin:0;color:#ccc">Over a gradient</p></div>`,
-        );
-
-        writeFileSync(join(folder, "page.html"), content);
-        const cli = join(import.meta.dirname, "..", "src", "server", "design", "check-cli.ts");
-        const run = promisify(execFile);
-
-        const exec = async (args: string[]) => {
-            try {
-                return {
-                    code: 0,
-                    ...(await run("node", [cli, join(folder, "page.html"), ...args], {
-                        timeout: 100_000,
-                    })),
-                };
-            } catch (error) {
-                return error as { code: number; stdout: string; stderr: string };
-            }
-        };
-
-        const first = await exec(["--json"]);
-        const report = JSON.parse(first.stdout) as CheckReport;
-        const id = report.findings.find((item) => item.rule === "contrast")!.id!;
-        const plain = await exec([]);
-
-        assert.match(plain.stdout, new RegExp(`\\[${id}\\]`));
-        assert.match(plain.stdout, /Contrast not judged on 1 element \(/);
-        assert.equal(plain.code, 1);
-        const accepted = await exec(["--accept", id, "--accept", "nothing-0123456789"]);
-
-        assert.match(accepted.stdout, new RegExp(`accepted contrast  .*\\[${id}\\]`));
-        assert.match(accepted.stdout, /, 1 accepted \(/);
-        assert.doesNotMatch(accepted.stdout, new RegExp(`error\\s+contrast.*\\[${id}\\]`));
-    },
-);

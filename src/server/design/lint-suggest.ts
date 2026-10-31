@@ -1,40 +1,25 @@
-/**
- * Which token a check suggests for a color (`lint.ts`): what a token is for (from its name), how a page uses a color,
- * and the rules that make a suggestion one that a person can follow.
- *
- * 1. A token that is the same color, to the last digit, wins. Among those: a token of the role that the use has (text for
- *    text, a ground for a background, a border for a border), then a semantic token with no role (an accent), then a palette
- *    step, then a token of another role, and a component's own token last.
- * 2. A color that no token equals gets the nearest token of the use's role, or a roleless token (never a component's token,
- *    which belongs to one component), that stays in its hue family: a neutral gets a neutral, a chromatic color gets a color
- *    within a limit of hue. A token of another role is the last resort, in the same hue family, and the message says so.
- * 3. A color that fails a contrast gets a passing token by the same rules; if none of its hue passes, a token of the text
- *    (or border) role, and the message says that the hue changes.
- */
-import { colorDistance, type RgbaTuple, toOklab, type TokenSet } from "./lint-color.ts";
+// Suggestion rules: a token of the same color to the last digit wins, by role (text for text, a ground for a background, a border for a border), then an accent, a palette step, another role, and a component's own token last.
+// Otherwise the nearest token of the use's role (or with no role, never a component's) that stays in the hue family: a neutral gets a neutral, a chromatic color a near hue.
+// A color that fails contrast gets a passing token by the same rules; if none of its hue passes, a text or border token, and the message says that the hue changes.
+import { colorDistance, labOf, type RgbaTuple, toOklab, type TokenSet } from "./lint-color.ts";
 
 /** Two colors this close (see `colorDistance`) are the same: a little over 2 steps of 8 bits. */
 export const SAME_COLOR = 1;
-/** A nearest token farther than this is no help as a suggestion. */
 export const FAR_COLOR = 20;
 
-/** The same color to the last digit: the same 8-bit channels and (within a rounding) the same alpha. */
 export const sameBytes = (a: readonly number[], b: readonly number[]) =>
     Math.round(a[0]!) === Math.round(b[0]!) &&
     Math.round(a[1]!) === Math.round(b[1]!) &&
     Math.round(a[2]!) === Math.round(b[2]!) &&
     Math.abs((a[3] ?? 1) - (b[3] ?? 1)) <= 0.005;
-/** Chroma (OKLCH) under which a color is a neutral, and the most chroma that a token may have to stand in for one. */
 const NEUTRAL = 0.04;
 const NEUTRAL_TOKEN = 0.07;
-/** The most that the hue (degrees, OKLCH) may differ for a chromatic color. */
 const HUE_LIMIT = 25;
 
 export type Token = TokenSet["colors"][number];
-export type Nearest = { token: Token; distance: number; exact: boolean };
+type Nearest = { token: Token; distance: number; exact: boolean };
 
-/** What a color token is for, by the words of its path: a border, text on a ground, or a ground. None for a palette step. */
-export type ColorRole = "text" | "background" | "border";
+type ColorRole = "text" | "background" | "border";
 
 const ROLE_WORDS: [ColorRole, RegExp][] = [
     ["border", /^(border|borders|line|lines|divider|dividers|stroke|outline|ring|rule|separator)$/],
@@ -42,17 +27,36 @@ const ROLE_WORDS: [ColorRole, RegExp][] = [
     ["background", /^(bg|background|surface|fill|canvas|base|ground|wash|soft|scrim|overlay)$/],
 ];
 
-/** The role a token's name gives it (the first of border, text, background whose words it holds), if any. */
-export function colorRoleOf(name: string): ColorRole | undefined {
-    const words = name
-        .replace(/([a-z])([A-Z])/g, "$1 $2")
-        .toLowerCase()
-        .split(/[^a-z0-9]+/);
+const names = new Map<string, { words: string[]; role: ColorRole | undefined }>();
 
-    return ROLE_WORDS.find(([, pattern]) => words.some((word) => pattern.test(word)))?.[0];
+function wordsOf(name: string): { words: string[]; role: ColorRole | undefined } {
+    let found = names.get(name);
+
+    if (found === undefined) {
+        const words = name
+            .replace(/([a-z])([A-Z])/g, "$1 $2")
+            .toLowerCase()
+            .split(/[^a-z0-9]+/);
+
+        found = {
+            words,
+            role: ROLE_WORDS.find(([, pattern]) => words.some((word) => pattern.test(word)))?.[0],
+        };
+
+        if (names.size >= 20_000) {
+            names.clear();
+        }
+
+        names.set(name, found);
+    }
+
+    return found;
 }
 
-/** How a page uses a color (`useColor` in the page script) as a token role. */
+export function colorRoleOf(name: string): ColorRole | undefined {
+    return wordsOf(name).role;
+}
+
 export const USE_ROLE: Record<string, ColorRole> = {
     text: "text",
     background: "background",
@@ -60,7 +64,6 @@ export const USE_ROLE: Record<string, ColorRole> = {
     outline: "border",
 };
 
-/** The CSS property that a use of a color sets, for the edit that a message names. */
 export const USE_PROPERTY: Record<string, string> = {
     text: "color",
     background: "background-color",
@@ -68,7 +71,6 @@ export const USE_PROPERTY: Record<string, string> = {
     outline: "outline-color",
 };
 
-/** The properties that can hold a color of each use, longhands and the shorthands that carry one (`fix.properties`). */
 export const USE_PROPERTIES: Record<string, string[]> = {
     text: ["color", "-webkit-text-fill-color"],
     background: ["background-color", "background"],
@@ -87,20 +89,25 @@ export const USE_PROPERTIES: Record<string, string[]> = {
     outline: ["outline-color", "outline"],
 };
 
-/** Chroma and hue (degrees) of a color in OKLCH. */
-function lch(color: readonly number[]): { c: number; h: number } {
-    const [, a, b] = toOklab(color[0]!, color[1]!, color[2]!);
+const lchs = new WeakMap<readonly number[], { c: number; h: number }>();
 
-    return { c: Math.hypot(a, b), h: ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360 };
+function lch(color: readonly number[]): { c: number; h: number } {
+    let found = lchs.get(color);
+
+    if (found === undefined) {
+        const [, a, b] = labOf(color);
+
+        found = { c: Math.hypot(a, b), h: ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360 };
+        lchs.set(color, found);
+    }
+
+    return found;
 }
 
 const hueGap = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
 
-/**
- * The hue of the system's own neutrals: the most common hue (in 30 degree bins) among its tokens with a little chroma, as a
- * grey with a tint is (Tokyo Night's blue-greys). A neutral color may take a tinted token only of that hue, so that a grey
- * border does not become a teal one.
- */
+// The hue of the system's own neutrals: the most common hue (30 degree bins) among tokens with a little chroma, as a grey with a tint is.
+// A neutral color may take a tinted token only of that hue, so that a grey border does not become a teal one.
 const neutralHues = new WeakMap<TokenSet, number | undefined>();
 
 function neutralHue(set: TokenSet): number | undefined {
@@ -127,7 +134,6 @@ function neutralHue(set: TokenSet): number | undefined {
     return neutralHues.get(set);
 }
 
-/** Whether a token stays in the color's hue family: a neutral for a neutral, a near hue for a chromatic color. */
 export function sameFamily(
     color: readonly number[],
     token: readonly number[],
@@ -171,29 +177,21 @@ function rank(token: Token, role: ColorRole | undefined): number {
     return role === undefined ? 1 : 3;
 }
 
-/** Among tokens of one rank: a token whose path names the role itself (text, bg, border) before one that only implies it (on-fill). */
-function strength(token: Token, role: ColorRole | undefined): number {
-    const words = token.name
-        .replace(/([a-z])([A-Z])/g, "$1 $2")
-        .toLowerCase()
-        .split(/[^a-z0-9]+/);
-    const named = {
-        text: ["text"],
-        background: ["bg", "background", "surface"],
-        border: ["border"],
-    }[role ?? "text"];
+const STRONG: Record<ColorRole, string[]> = {
+    text: ["text"],
+    background: ["bg", "background", "surface"],
+    border: ["border"],
+};
 
-    return words.some((word) => named.includes(word)) ? 0 : 1;
+function strength(token: Token, role: ColorRole | undefined): number {
+    const named = STRONG[role ?? "text"];
+
+    return wordsOf(token.name).words.some((word) => named.includes(word)) ? 0 : 1;
 }
 
-/** The tokens that have a color of their own (not a reference left open). */
 const colored = (set: TokenSet) => set.colors.filter((token) => token.rgba !== undefined);
 
-/**
- * The token that a color equals to the last digit, by `rank` (a role token, an accent, a palette step, a token of another
- * role, a component's). `worst` is the highest rank that may answer (3 by default: a token of another role is still the
- * same color).
- */
+// `worst` is the highest rank that may answer (3 by default: a token of another role is still the same color).
 export function exactColorToken(
     set: TokenSet,
     color: RgbaTuple,
@@ -201,25 +199,37 @@ export function exactColorToken(
     worst = 4,
 ): Token | undefined {
     const role = use === undefined ? undefined : USE_ROLE[use];
+    let best: { token: Token; rank: number; strength: number } | undefined;
 
-    return colored(set)
-        .filter((token) => sameBytes(color, token.rgba!) && rank(token, role) <= worst)
-        .sort(
-            (a, b) =>
-                rank(a, role) - rank(b, role) ||
-                strength(a, role) - strength(b, role) ||
-                a.name.localeCompare(b.name),
-        )[0];
+    // The first of a stable sort by rank, strength, and name: each key is made once per token.
+    for (const token of colored(set)) {
+        if (!sameBytes(color, token.rgba!)) {
+            continue;
+        }
+
+        const level = rank(token, role);
+
+        if (level > worst) {
+            continue;
+        }
+
+        const next = { token, rank: level, strength: strength(token, role) };
+
+        if (
+            best === undefined ||
+            (next.rank - best.rank ||
+                next.strength - best.strength ||
+                token.name.localeCompare(best.token.name)) < 0
+        ) {
+            best = next;
+        }
+    }
+
+    return best?.token;
 }
 
-/**
- * The token to suggest for `color`, as a use (text, background, border, outline) sets it. An exact match first; else the
- * nearest token that fits the use and stays in the hue family; else a token of another role in the family, nearly the same
- * color. Never a component's token unless it is the same color. `undefined` when no token is close and in family.
- */
 export function nearestColor(set: TokenSet, color: RgbaTuple, use?: string): Nearest | undefined {
     const role = use === undefined ? undefined : USE_ROLE[use];
-    // The same color in a token that fits the use (a role token, an accent, a palette step) wins at once.
     const exact = exactColorToken(set, color, use, 2);
 
     if (exact !== undefined) {
@@ -269,10 +279,6 @@ export function nearestColor(set: TokenSet, color: RgbaTuple, use?: string): Nea
     return pick(colored(set).filter((token) => rank(token, role) === 3));
 }
 
-/**
- * How a token differs from the color that it replaces, in words: `slightly darker`, `lighter`, `much different in hue`.
- * Said when a suggestion changes the value, so that the edit is not a surprise.
- */
 export function difference(color: RgbaTuple, token: RgbaTuple): string {
     const [l1] = toOklab(color[0], color[1], color[2]);
     const [l2] = toOklab(token[0], token[1], token[2]);
@@ -288,11 +294,7 @@ export function difference(color: RgbaTuple, token: RgbaTuple): string {
 /** WCAG contrast, passed in so that this file stays about tokens. */
 export type Contrast = (a: readonly number[], b: readonly number[]) => number;
 
-/**
- * A token that reaches `needed` contrast on `back`, for a use: by the rules of `nearestColor` (role, hue family, no
- * component's token). When none in the color's hue family passes, the nearest token of the use's role that passes, with
- * `sameHue` false so that the message can say that the hue changes.
- */
+// When none in the color's hue family passes, the nearest token of the use's role that passes, with `sameHue` false so that the message can say that the hue changes.
 export function nearestPassing(
     set: TokenSet,
     fg: RgbaTuple,

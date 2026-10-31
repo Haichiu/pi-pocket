@@ -1,8 +1,0 @@
-{
-    "design": "clean-settings",
-    "clean": true,
-    "viewport": [1280, 800],
-    "colorSchemes": ["light", "dark"],
-    "findings": [],
-    "description": "A settings page that uses only tokens. Every color, size, space, radius and font is a var(); every target is 44 px; headings are in order; focus rings are visible. Checked in light and dark. Zero findings."
-}

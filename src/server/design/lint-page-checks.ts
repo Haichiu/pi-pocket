@@ -1,8 +1,5 @@
-/**
- * A part of the script that `lint.ts` runs inside a rendered design (see `lint-page.ts`): checks of the whole page: images, focusable elements, tap targets, overflow, headings, and fonts. The parts are one
- * function body, in this order: setup, values, literals, states, elements, checks, focus. Plain JavaScript in a string.
- */
-export const PAGE_CHECKS = String.raw`// Page semantics: the language, a name for every control, and a main landmark; and the input size that makes a phone zoom.
+// Plain JavaScript in a string: one part of the page script of `lint-page.ts`. The parts form one function body, so they share its locals.
+export const PAGE_CHECKS = String.raw`
 const shown = (el) => {
     const look = getComputedStyle(el);
     const box = el.getBoundingClientRect();
@@ -38,12 +35,9 @@ for (const el of [...doc.querySelectorAll('[role=textbox],[role=searchbox],[role
     group(groups.labels, fieldKind(el), () => ({ kind: fieldKind(el) }), el);
 }
 
-// A link, a button, a tab, a menu item, an option, or a switch needs a name: its text, an aria-label, an aria-labelledby,
-// a title, an image's alt, or an SVG title.
 for (const el of [...doc.querySelectorAll('a[href],button,summary,[role=button],[role=link],[role=switch],[role=tab],[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio],[role=option]')].slice(0, 400)) {
     if (/^(input|select|textarea)$/.test(el.localName)) continue;
 
-    // A button inside a label (or with one pointed at it) is named by the label.
     if (!shown(el) || named(el) || (el.textContent || '').trim() !== '' || [...(el.labels || [])].some((label) => (label.textContent || '').trim() !== '')) continue;
 
     const image = [...el.querySelectorAll('img')].some((img) => (img.getAttribute('alt') || '').trim() !== '');
@@ -75,7 +69,6 @@ const semantics = {
     body: infoOf(body),
 };
 
-// Images without a text alternative (an SVG with role=img counts too).
 for (const el of [...doc.querySelectorAll('img,input[type=image],[role=img]')].slice(0, 500)) {
     const tag = el.localName;
     const role = el.getAttribute('role');
@@ -115,7 +108,6 @@ for (const el of [...doc.querySelectorAll(interactive)].slice(0, 1000)) {
     focusCandidates.get(key).count++;
 }
 
-// ---------------------------------------------------------------------------------------------------------------------
 // Tap targets: under 24 px is an error, under 44 px a warning (WCAG 2.2 sets 24 px; 44 px is the common touch advice).
 
 for (const target of targets) {
@@ -131,8 +123,6 @@ for (const target of targets) {
     }
 }
 
-// ---------------------------------------------------------------------------------------------------------------------
-// Page-level checks.
 
 let overflow;
 
@@ -164,7 +154,6 @@ for (const { el, level } of headings) {
     previousLevel = level;
 }
 
-// Fonts: a face that failed to load, or a family that nothing here provides.
 const faces = [];
 
 if (doc.fonts && doc.fonts.forEach) {

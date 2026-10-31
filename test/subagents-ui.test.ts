@@ -271,7 +271,6 @@ test(
 
         const slow = (await app.harness.snapshot(SubagentsDoc, id, context))!.agents.slow!;
 
-        // The parent's top bar has no model tag: only a subagent's does.
         assert.equal(await textOf(".topbar .title-model"), null);
         await page.navigate(`${base}/s/${slow.conversationId}`);
         await see(
@@ -290,10 +289,10 @@ test(
             `const tag = document.querySelector(".topbar .title-model"); return JSON.stringify(tag !== null && tag.getBoundingClientRect().width > 0 && tag.textContent.trim() !== "")`,
             "the model tag in the top bar",
         );
-        // It fits in the line under the title, whatever the parent's title is.
+        // Its tap target reaches 8 px past it (::after), so the visible boxes are compared, not scrollWidth.
         assert.equal(
             await inPage<boolean>(
-                `const sub = document.querySelector(".topbar .title-sub"); const tag = document.querySelector(".topbar .title-model"); return JSON.stringify(sub.scrollWidth <= sub.clientWidth + 1 && tag.getBoundingClientRect().right <= sub.getBoundingClientRect().right + 1)`,
+                `const sub = document.querySelector(".topbar .title-sub").getBoundingClientRect(); const tag = document.querySelector(".topbar .title-model").getBoundingClientRect(); return JSON.stringify(tag.left >= sub.left - 1 && tag.right <= sub.right + 1 && sub.right <= innerWidth)`,
             ),
             true,
         );

@@ -1330,8 +1330,7 @@ kbd {
     color: var(--faint);
 }
 
-/* A subagent's line also names its model, as the composer hides it on a phone while Pi works. It keeps its room (up to a
- * share of the line); the parent's title gives way first. A tap opens the model sheet. */
+/* The composer hides the model on a phone while Pi works, so a subagent's line names it. */
 .title-sub > button.title-model {
     position: relative;
     z-index: 1;
@@ -2708,6 +2707,157 @@ pre.diff .del {
     color: var(--text);
     font: inherit;
     font-size: 15px;
+}
+
+.ask-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.ask-question {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    padding: 0;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+
+.ask-header {
+    flex: none;
+    padding: 1px 6px;
+    border-radius: var(--r-tag);
+    background: var(--card-2);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+.ask-hint {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--muted);
+}
+
+.ask-options {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+@media (min-width: 700px) {
+    .ask-options {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.ask-option {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-control);
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color var(--t-hover) var(--ease-out);
+}
+
+.ask-option-label {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.ask-option-text {
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+}
+
+.ask-option[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Chosen shows in a mark too, not by color alone. */
+.ask-option[aria-pressed="true"] .ask-option-label::after {
+    content: " ✓";
+    color: var(--accent);
+}
+
+.ask-option:focus-visible,
+.ask-other:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.ask-option:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+@media (hover: hover) {
+    .ask-option:not(:disabled):hover {
+        border-color: var(--accent-line);
+    }
+}
+
+.ask-other {
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-control);
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 15px;
+}
+
+.ask-answers {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--hair);
+    border-radius: var(--r-card);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.ask-answer dt {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+}
+
+.ask-answer dd {
+    margin: 2px 0 0;
+    color: var(--text);
+    font-weight: 500;
+    overflow-wrap: anywhere;
 }
 
 .approval-actions {
@@ -4639,13 +4789,11 @@ pre.diff .del {
     }
 }
 
-/* Priority, Recent, Folders, Archived: a segmented track, its raised segment sliding to the one chosen. */
 .session-tabs {
     position: relative;
     flex: none;
     margin-top: 10px;
     display: grid;
-    /* Priority has the most to say (its count), and Archived is just an icon. */
     grid-template-columns: 1.3fr 1fr 1fr minmax(34px, 0.55fr);
     padding: 3px;
     border-radius: var(--r-control);
@@ -4701,7 +4849,6 @@ pre.diff .del {
     padding: 0 4px 4px;
 }
 
-/* The list itself takes the focus only when no row is left to take it (after the last answer in Priority). */
 .session-items:focus-visible {
     outline-offset: -2px;
 }
@@ -5550,10 +5697,6 @@ button.session-chip {
     }
 }
 
-/*
- * Priority: sessions by what they ask of you. Needs you holds the rows whose call waits, whose run failed, or whose
- * subagents failed; each has one button at its right, and a call's Review opens it in the row.
- */
 .tab-count {
     min-width: 16px;
     padding: 0 4px;
@@ -5576,7 +5719,6 @@ button.session-chip {
     color: var(--bg);
 }
 
-/* A group's header with a button beside it: Dismiss N failed, Mark all read. */
 .group-bar {
     display: flex;
     align-items: center;
@@ -5618,7 +5760,6 @@ button.session-chip {
     }
 }
 
-/* The static head of Needs you is not a button: nothing folds it. */
 div.group-head {
     cursor: default;
 }
@@ -5649,7 +5790,6 @@ div.group-head {
     font-weight: 500;
 }
 
-/* The row keeps room on its right for the button that sits over it. */
 .session-row.needs-you .session {
     padding-right: 74px;
 }
@@ -5696,7 +5836,6 @@ div.group-head {
         color var(--t-hover) var(--ease-out);
 }
 
-/* A finger-sized tap area past the pill's edges. */
 .quick-pill::before {
     content: "";
     position: absolute;
@@ -5736,7 +5875,6 @@ div.group-head {
     }
 }
 
-/* The call, open in its row: it sits under the row's line, on a raised ground. */
 .session-row.asking {
     border-radius: var(--r-row);
     background: var(--card);
@@ -5793,6 +5931,7 @@ div.group-head {
     font-size: 12px;
     line-height: 1.35;
     color: var(--muted);
+    overflow-wrap: anywhere;
 }
 
 .need-foot {
@@ -5858,7 +5997,6 @@ div.group-head {
     }
 }
 
-/* More of Needs you than shows at once. */
 .more-needs {
     min-height: 32px;
     margin-top: 2px;
@@ -5881,7 +6019,6 @@ div.group-head {
     }
 }
 
-/* A row that just moved here after an answer: a short glow, so the eye follows it. */
 .session-row.glow > .session {
     animation: row-glow 1.2s var(--ease-out);
 }
@@ -6391,7 +6528,6 @@ div.group-head {
     animation: pop 0.25s var(--ease-out);
 }
 
-/* A session row's actions at the pointer, from a right-click (`web/sheets/session.js`): small rows in groups. */
 .session-menu {
     width: max-content;
     min-width: 200px;
@@ -10281,6 +10417,7 @@ textarea.notes {
 
 .font-menu {
     display: grid;
+    grid-template-rows: auto 1fr;
     gap: 4px;
     font-size: 12px;
     color: var(--muted);
@@ -10288,6 +10425,12 @@ textarea.notes {
 
 .font-menu .switch {
     justify-self: start;
+}
+
+.font-ligatures {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .font-menu strong {
@@ -16478,16 +16621,11 @@ textarea.notes {
 
 /* ─── Extension gallery ────────────────────────────────────── */
 
-/*
- * One calm place for extensions and themes: the tabs in the sheet's head, dense rows divided by hairlines with what each
- * one reaches, themes in their own colors, and an entry that says what it can reach in plain words.
- */
 .sheet.extension-hub {
     position: relative;
     max-width: 1180px;
 }
 
-/* Discover, Installed, Updates: a small segmented track beside the title. */
 .extension-hub .sheet-head h2 {
     flex: 0 0 auto;
 }
@@ -16537,7 +16675,6 @@ textarea.notes {
     font: 600 10.5px / 1 var(--mono);
 }
 
-/* Search, refresh, and the filters, held at the top of the list while it scrolls. */
 .ext-toolbar {
     position: sticky;
     top: 0;
@@ -16594,7 +16731,6 @@ textarea.notes {
     color: var(--muted);
 }
 
-/* Kinds, then what an extension does: one row that scrolls sideways when it must. */
 .gallery-tags.ext-filters {
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -16652,7 +16788,6 @@ textarea.notes {
     min-width: 0;
 }
 
-/* A section of the list: its title and count, then hairline rows or theme cards. */
 .ext-section {
     display: flex;
     flex-direction: column;
@@ -16685,7 +16820,6 @@ textarea.notes {
     flex-direction: column;
 }
 
-/* A row: three short lines, a hairline under it, and nothing drawn around it. */
 .ext-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -16782,7 +16916,6 @@ textarea.notes {
     font-size: 11.5px;
 }
 
-/* The lines under the name start where the name does. */
 .ext-row-open > :not(.ext-row-line) {
     padding-left: 24px;
 }
@@ -16908,7 +17041,6 @@ textarea.notes {
     margin-top: 0;
 }
 
-/* How one stands: a small square mark and a word. */
 .ext-state {
     display: inline-flex;
     align-items: center;
@@ -16991,7 +17123,6 @@ textarea.notes {
     margin: 12px 16px 0;
 }
 
-/* Built in: folded under one line, with how many are on. */
 .ext-builtins > summary {
     display: flex;
     align-items: center;
@@ -17057,7 +17188,6 @@ textarea.notes {
     text-decoration: none;
 }
 
-/* Themes: cards drawn in their own colors, as Appearance draws its themes. */
 .ext-themes {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -17271,7 +17401,6 @@ textarea.notes {
     font-size: 12px;
 }
 
-/* One entry: a quiet head, what it can reach in plain words, what it adds as code. */
 .gallery-entry-content {
     display: flex;
     flex-direction: column;
@@ -17369,7 +17498,6 @@ textarea.notes {
     text-transform: uppercase;
 }
 
-/* What it can reach: one plain sentence a line, and where each comes from. */
 .ext-reach {
     display: flex;
     flex-direction: column;
@@ -17437,7 +17565,6 @@ textarea.notes {
     line-height: 1.5;
 }
 
-/* What it adds: tools and commands as code. */
 .ext-codes {
     display: flex;
     flex-wrap: wrap;
@@ -17470,7 +17597,6 @@ textarea.notes {
     font: 12px / 1.5 var(--mono);
 }
 
-/* The one question before an extension runs: a dialog over the sheet. */
 .ext-dialog-scrim {
     position: absolute;
     inset: 0;
@@ -18440,8 +18566,6 @@ pre.gallery-code {
     }
 }
 
-/* Reply to a selected passage of Pi's answer: the button by the selection, the quote above the message box, and the
-   quote atop the sent message. */
 .quote-reply-button {
     position: fixed;
     z-index: 70;

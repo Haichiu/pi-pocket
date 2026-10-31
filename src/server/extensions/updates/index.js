@@ -55,10 +55,8 @@ function ago(at) {
     return `${Math.round(hours / 24)} days ago`;
 }
 
-/** A version of the beta channel: `0.27.0-beta.1`. */
 const isBeta = (version) => typeof version === "string" && version.includes("-");
 
-/** "0.27.0-beta.1 (beta)": a beta is marked wherever its version shows. */
 const named = (release) =>
     release.beta || isBeta(release.version) ? `${release.version} (beta)` : release.version;
 

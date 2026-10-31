@@ -91,10 +91,7 @@ const context = BACKGROUND_CONTEXT;
 
 export type Attachment = { path: string; name: string; mime: string; size: number };
 
-/**
- * A file in a message's list of attached files (`- path (name, type, size bytes)`, as `submit` writes it), if it is one of
- * the session's uploads. A name can hold " (", so the path is the part that ends with "-name".
- */
+// A name can hold " (", so the path is the part that ends with "-name".
 function attachedFile(line: string, uploads: string): Attachment[] {
     const tail = /, ([^,]+), (\d+) bytes\)$/.exec(line);
 
@@ -1320,10 +1317,6 @@ export class Commands {
         return result;
     }
 
-    /**
-     * Take one's own queued message back to change it: it leaves the queue, as with `withdraw`, and its words and
-     * attached files come back for the message box. Only its sender may, as with moving it.
-     */
     async editQueued(
         id: ConversationId,
         user: User,
@@ -1345,7 +1338,6 @@ export class Commands {
         const item = (await app.harness.snapshot(InboxDoc, id, context))?.items.find(
             (entry) => Number(entry.id) === submissionId,
         );
-        // Taken back only if Pi has not read it yet: then what it says is the message as it was queued.
         const result =
             item === undefined || item.mode === "write"
                 ? "not_found"
@@ -1359,7 +1351,7 @@ export class Commands {
             throw new HttpError(409, "That message has already gone to Pi.");
         }
 
-        // shortcut: a `/skill:` or prompt template message comes back as it was sent, expanded.
+        // A `/skill:` or prompt template message comes back as it was sent: expanded.
         const [written, files] = splitAttachments(
             userContent({ content: item.content }).text.replace(FROM_PREFIX, ""),
         );
@@ -2019,10 +2011,6 @@ export class Commands {
         }
     }
 
-    /**
-     * A new session with this session's history through `entryId`, which then goes its own way. Without `entryId`, the
-     * whole session as it stands: through Pi's latest finished reply (a session list's Fork), or none of it before one.
-     */
     async fork(
         id: ConversationId,
         user: User,
@@ -2185,10 +2173,7 @@ export class Commands {
         return { id: forked };
     }
 
-    /**
-     * The id of Pi's newest finished reply in a session, or undefined before its first: where a fork of the whole session
-     * ends. A reply that called tools is not finished (a fork from it would wait for their results), nor is one cut off.
-     */
+    /** A reply that called tools is not finished: a fork from it would wait for their results. */
     async #latestReply(id: ConversationId): Promise<number | undefined> {
         const conversation = await this.#app.conversation(id);
         let cursor: Cursor | undefined;

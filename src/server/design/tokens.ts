@@ -1,12 +1,3 @@
-/**
- * The tokens engine of the design system (stream T): loads `.pi/design/` into a checked `DesignSystem`, applies a
- * change to it, and writes the files back with `dist/` compiled again (docs/design/design-system.md).
- *
- * - `loadDesignSystem(cwd)` reads, resolves, checks, and compiles. It writes nothing.
- * - `writeDesignSystem(cwd, change)` applies a `SystemChange`, checks the result, and writes only if the change adds no
- *   error. Files that did not change keep their bytes.
- * - `compileDesignSystem(system)` and `systemSummary(system, maxBytes)` are the pure outputs.
- */
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { defang } from "../fence.ts";
@@ -26,12 +17,12 @@ import {
     type RawSystem,
 } from "./tokens-base.ts";
 import { buildSystem, inferType } from "./tokens-model.ts";
+import { cachedSystem, derived } from "./tokens-cache.ts";
+import { systemSummary as summaryOf } from "./tokens-summary.ts";
 
 export { compileDesignSystem, scaleOf, tailwindNames, type Scale } from "./tokens-compile.ts";
-export { systemSummary } from "./tokens-summary.ts";
 export { DESIGN_DIR };
 
-/** A write that the checks refused. `problems` lists what to fix. */
 export class DesignSystemError extends Error {
     problems: SystemProblem[];
 
@@ -42,7 +33,6 @@ export class DesignSystemError extends Error {
     }
 }
 
-/** One problem as a line: `tokens.json › color.bg: message`. */
 export function problemLine(problem: SystemProblem): string {
     const where = [problem.file, problem.token].filter((part) => part !== undefined).join(" › ");
 
@@ -52,10 +42,20 @@ export function problemLine(problem: SystemProblem): string {
     );
 }
 
+/** The system is frozen and shared: a caller that needs to change it must copy it. */
+export function loadDesignSystem(cwd: string): DesignSystem | undefined {
+    return cachedSystem(cwd, () => {
+        const folder = readFolder(cwd);
+
+        return folder === undefined ? undefined : buildSystem(folder.raw);
+    });
+}
+
 /**
- * Loads the project's design system with the files it was read from, or undefined when `.pi/design/` is absent. The
- * raw trees hold every token path the files declare, the ones the engine drops because they do not resolve included.
- * Writes nothing.
+ * The project's design system with the files it was read from, or undefined when `.pi/design/` is absent. The raw trees
+ * hold every token path the files declare, the ones the engine drops because they do not resolve included, so a resync
+ * keeps those as they are. The system and the raw trees come from one read, and the read is not the cache's: a resync
+ * compares the code with the files a write would keep, and reads them again after its scan. Writes nothing.
  */
 export function loadDesignSystemWithRaw(
     cwd: string,
@@ -65,26 +65,22 @@ export function loadDesignSystemWithRaw(
     return folder === undefined ? undefined : { system: buildSystem(folder.raw), raw: folder.raw };
 }
 
-/** Loads the project's design system, or undefined when `.pi/design/` is absent. Writes nothing. */
-export function loadDesignSystem(cwd: string): DesignSystem | undefined {
-    return loadDesignSystemWithRaw(cwd)?.system;
+export function systemSummary(system: DesignSystem, maxBytes: number): string {
+    return derived(system, `summary:${maxBytes}`, () => summaryOf(system, maxBytes));
 }
 
 const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
 
-/** The name of the default mode, as `tokens.json` says. */
 function defaultModeOf(folder: Folder): string {
     return defaultModeName(folder.raw.tokens);
 }
 
-/** The name of the default mode that a `tokens.json` object declares (`light` unless it says otherwise). */
 export function defaultModeName(tokens: unknown): string {
     const mode = isObject(tokens) ? extensionOf(tokens).mode : undefined;
 
     return typeof mode === "string" && MODE_NAME.test(mode) ? mode : "light";
 }
 
-/** A token name as a path, or an error that says what is wrong with it. */
 function tokenPath(name: unknown): string[] {
     if (typeof name !== "string" || name.trim() === "") {
         throw new DesignSystemError('A token name is a dotted path such as "color.bg.surface".');
@@ -108,7 +104,6 @@ function tokenPath(name: unknown): string[] {
 
 const hasValue = (node: Obj) => Object.hasOwn(node, "$value");
 
-/** The group objects along `path` (not the token itself), made when `create` is set. Undefined if a part is missing. */
 function groupFor(
     tree: Obj,
     path: string[],
@@ -145,7 +140,6 @@ function groupFor(
     return { group: node, ...(type === undefined ? {} : { type }) };
 }
 
-/** Sets one token's value in a token tree (`tokens.json` or a mode file). */
 function setToken(
     tree: Obj,
     entry: NonNullable<SystemChange["set"]>[number],
@@ -155,7 +149,6 @@ function setToken(
     const found = groupFor(tree, path, true)!;
     const key = path.at(-1)!;
     const existing = Object.hasOwn(found.group, key) ? found.group[key] : undefined;
-    // A whole token object, or a bare `$value`.
     const whole = isObject(entry.value) && hasValue(entry.value);
 
     if (entry.value === undefined) {
@@ -178,7 +171,6 @@ function setToken(
         const node: Obj = whole ? { ...(entry.value as Obj) } : { $value: entry.value };
 
         if (isDefault && node.$type === undefined) {
-            // A new default token states its type, from the call, its group, or its value.
             const type = entry.type ?? found.type ?? inferType(node.$value);
 
             if (type === undefined) {
@@ -210,7 +202,6 @@ function setToken(
     }
 }
 
-/** Removes a token from a token tree, and the groups it leaves empty. */
 function removeToken(tree: Obj, name: string): boolean {
     const path = tokenPath(name);
     const chain: Obj[] = [tree];
@@ -251,7 +242,6 @@ function removeToken(tree: Obj, name: string): boolean {
     return true;
 }
 
-/** Applies a change to a copy of the folder's state. Returns the new state and the files that the change touches. */
 function applyChange(
     folder: Folder,
     change: SystemChange,
@@ -459,7 +449,6 @@ function applyChange(
     return { raw, dirty, removed };
 }
 
-/** `dist/tokens.<mode>.resolved.json` files of modes that the system no longer has. */
 function staleResolved(cwd: string, modes: string[]): string[] {
     try {
         return readdirSync(join(cwd, DESIGN_DIR, "dist"))
@@ -473,15 +462,23 @@ function staleResolved(cwd: string, modes: string[]): string[] {
     }
 }
 
-/** The problems as one key each, to tell which an edit adds. */
-const keyOf = (problem: SystemProblem) =>
-    `${problem.file ?? ""}|${problem.token ?? ""}|${problem.message}`;
+const SUGGESTION = [
+    /^("[^"]*" is not in tokens\.json, so it has no default value\.) (?:Add it to tokens\.json first\.|Did you mean "[^"]*"\?)$/,
+    /^(The reference \{[^]*\} does not exist\.) Did you mean \{[^{}]*\}\?$/,
+];
 
-/**
- * Applies `change`, checks the result, and writes the files and a fresh `dist/`. Throws a `DesignSystemError` and
- * writes nothing when the change adds an error (errors that were already there do not stop it, so a project with one
- * broken token can still be repaired step by step). Returns the system as written.
- */
+/** The problems as one key each, to tell which an edit adds. A suggestion is optional, so it is no part of the key. */
+const keyOf = (problem: SystemProblem) => {
+    let message = problem.message;
+
+    for (const shape of SUGGESTION) {
+        message = message.replace(shape, "$1");
+    }
+
+    return `${problem.file ?? ""}|${problem.token ?? ""}|${message}`;
+};
+
+// Errors that were already there do not stop a write, so a project with one broken token can still be repaired step by step.
 export function writeDesignSystem(cwd: string, change: SystemChange): DesignSystem {
     const folder = readFolder(cwd) ?? emptyFolder(cwd);
     const before = new Set(
@@ -538,7 +535,6 @@ export function writeDesignSystem(cwd: string, change: SystemChange): DesignSyst
     files.set("dist/tokens.resolved.json", system.compiled.json);
     files.set("dist/components.css", system.compiled.components);
 
-    // A DTCG file for each mode; one for a mode that is gone goes too.
     if (system.compiled.names !== undefined) {
         files.set("dist/names.md", system.compiled.names);
     }

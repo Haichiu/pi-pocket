@@ -1,116 +1,76 @@
-/**
- * The Spacing, Radii, and Other sections of the documentation page. (Split from `docsite.ts`; see it for how the page is built and kept safe.)
- */
-import type { ResolvedToken } from "./system-types.ts";
 import { escapeHtml as esc } from "./docsite-markdown.ts";
 import {
-    varOf,
-    pxOf,
-    plain,
-    limiter,
     type Ctx,
-    valueIn,
-    variants,
     copyName,
-    rowOf,
-    type Built,
-    tokensOf,
+    descOf,
+    limiter,
     moreTokens,
+    plain,
+    pxOf,
     rootOf,
+    rowOf,
+    tokenTable,
+    tokensOf,
+    valueIn,
+    varOf,
+    variants,
 } from "./docsite-core.ts";
+import type { ResolvedToken } from "./system-types.ts";
 
-export function spacingSection(ctx: Ctx): Built {
-    const { limit, note } = limiter();
+// The System view groups by the same words (`SPACE_ROOT` and `SIZE_ROOT` in extensions/design/system.js).
+const SPACE_ROOT = /^(space|spacing|gap|gaps|sp|spaces)$/;
+const SIZE_ROOT = /^(size|sizes|sizing)$/;
+
+const pxIn = (ctx: Ctx, token: ResolvedToken) => pxOf(valueIn(token, ctx.modes[0]!)?.value) ?? 0;
+
+const byPx = (ctx: Ctx, list: ResolvedToken[]) =>
+    [...list].sort((a, b) => pxIn(ctx, a) - pxIn(ctx, b));
+
+export function spacingSection(ctx: Ctx): string | undefined {
     const mine = tokensOf(ctx, "spacing");
 
     if (mine.length === 0) {
         return undefined;
     }
 
-    const plainOnes = mine.filter(
-        (token) => token.tier !== "component" && token.type === "dimension",
-    );
-    const space = limit(
-        plainOnes.filter((token) => /^(space|spacing|gap|gaps|sp|spaces)$/.test(rootOf(token))),
-    );
-    const sizes = limit(plainOnes.filter((token) => /^(size|sizes|sizing)$/.test(rootOf(token))));
-    // The roles that use a step (the gaps of the layout): semantic tokens of the section that are neither the scale nor sizes.
-    const layout = limit(
-        plainOnes.filter(
+    const { take, note } = limiter(ctx);
+    const own = mine.filter((token) => token.tier !== "component" && token.type === "dimension");
+    const space = take(own.filter((token) => SPACE_ROOT.test(rootOf(token))));
+    const sizes = take(own.filter((token) => SIZE_ROOT.test(rootOf(token))));
+    const roles = take(
+        own.filter(
             (token) =>
                 token.tier === "semantic" &&
-                !/^(space|spacing|gap|gaps|sp|spaces|size|sizes|sizing)$/.test(rootOf(token)),
+                !SPACE_ROOT.test(rootOf(token)) &&
+                !SIZE_ROOT.test(rootOf(token)),
         ),
     );
+    const longest = Math.max(...space.map((token) => pxIn(ctx, token)), 1);
+    const bar = (token: ResolvedToken) =>
+        `<div class="bar" style="width:${Math.max(1, Math.round((pxIn(ctx, token) / longest) * 100))}%"></div>`;
+    const part = (
+        id: string,
+        title: string,
+        sub: string,
+        list: ResolvedToken[],
+        sample: (token: ResolvedToken) => string,
+    ) =>
+        list.length === 0
+            ? ""
+            : `<h3 id="${id}">${title}</h3><p class="sub">${sub}</p><div class="rows">${list.map((token) => rowOf(ctx, token, sample(token))).join("")}</div>`;
 
-    for (const token of [...space, ...sizes, ...layout]) {
-        ctx.claimed.add(token);
-    }
-
-    const parts: string[] = [];
-    // The bars share the width: the longest step fills a row, and the others are in proportion to it.
-    const spaceMax = Math.max(
-        ...space.map((token) => pxOf(valueIn(token, ctx.modes[0]!)?.value) ?? 0),
-        1,
-    );
-
-    if (space.length > 0) {
-        parts.push(
-            `<h3 id="spacing-steps">Steps</h3><p class="sub">The steps that padding, margins, and gaps move in. Each bar is in proportion to the longest step.</p><div class="spec cols">${space
-                .map((token) =>
-                    rowOf(
-                        ctx,
-                        token,
-                        `<div class="bar" style="width:${Math.max(1, Math.round(((pxOf(valueIn(token, ctx.modes[0]!)?.value) ?? 0) / spaceMax) * 100))}%"></div>`,
-                    ),
-                )
-                .join("")}</div>`,
-        );
-    }
-
-    if (layout.length > 0) {
-        parts.push(
-            `<h3 id="spacing-roles">Roles</h3><p class="sub">Where the system uses a step.</p><div class="spec cols">${layout
-                .map((token) =>
-                    rowOf(
-                        ctx,
-                        token,
-                        `<div class="bar" style="width:${Math.max(1, Math.round(((pxOf(valueIn(token, ctx.modes[0]!)?.value) ?? 0) / spaceMax) * 100))}%"></div>`,
-                    ),
-                )
-                .join("")}</div>`,
-        );
-    }
-
-    if (sizes.length > 0) {
-        parts.push(
-            `<h3 id="sizes">Sizes</h3><p class="sub">Heights and widths for controls, icons, and marks.</p><div class="spec cols">${sizes
-                .map((token) =>
-                    rowOf(
-                        ctx,
-                        token,
-                        `<div class="box" style="width:${varOf(token, "0")};height:${varOf(token, "0")}"></div>`,
-                    ),
-                )
-                .join("")}</div>`,
-        );
-    }
-
-    return {
-        html: `<p class="intro">The steps and sizes that the layout is built of.</p>${parts.join("")}${note()}${moreTokens(ctx, "spacing")}`,
-        count: mine.length,
-    };
+    return `<p class="intro">The steps and sizes that the layout is built of.</p>${part("spacing-steps", "Steps", "The steps that padding, margins, and gaps move in. Each bar is in proportion to the longest step.", space, bar)}${part("spacing-roles", "Roles", "Where the system uses a step.", roles, bar)}${part("sizes", "Sizes", "Heights and widths for controls, icons, and marks.", sizes, (token) => `<div class="box" style="width:${varOf(token, "0")};height:${varOf(token, "0")}"></div>`)}${note()}${moreTokens(ctx, "spacing")}`;
 }
 
-export function radiiSection(ctx: Ctx): Built {
-    const { limit, note } = limiter();
+export function radiiSection(ctx: Ctx): string | undefined {
     const mine = tokensOf(ctx, "radii");
 
     if (mine.length === 0) {
         return undefined;
     }
 
-    const radii = limit(
+    const { take, note } = limiter(ctx);
+    const radii = take(
         mine.filter(
             (token) =>
                 token.tier !== "component" &&
@@ -118,172 +78,48 @@ export function radiiSection(ctx: Ctx): Built {
                 /^(radius|radii|rounded|corners?|round)$/.test(rootOf(token)),
         ),
     );
-
-    for (const token of radii) {
-        ctx.claimed.add(token);
-    }
-
-    // A pile of near-equal sizes reads better as the jobs they do: small marks, controls, containers, and round things.
-    const BANDS: { id: string; title: string; note: string; has: (px: number) => boolean }[] = [
-        {
-            id: "marks",
-            title: "Marks and tags",
-            note: "Up to 4 px: small things that sit inside text or a control.",
-            has: (px) => px <= 4,
-        },
-        {
-            id: "controls",
-            title: "Controls",
-            note: "5 to 7 px: buttons, fields, and rows, what a hand presses.",
-            has: (px) => px > 4 && px < 8,
-        },
-        {
-            id: "containers",
-            title: "Containers",
-            note: "8 px and more: cards, windows, sheets, and pop-ups, what holds other things.",
-            has: (px) => px >= 8 && px < 100,
-        },
-        {
-            id: "round",
-            title: "Round",
-            note: "Fully round: pills and avatars.",
-            has: (px) => px >= 100,
-        },
-    ];
-    const pxOfToken = (token: ResolvedToken) => pxOf(valueIn(token, ctx.modes[0]!)?.value) ?? 0;
-
-    const card = (token: ResolvedToken) => {
-        const value = variants(ctx, (mode) => esc(plain(token.type, valueIn(token, mode)?.value)));
-
-        return `<div class="radius" data-q="${esc(`${token.name} ${token.description ?? ""}`.toLowerCase())}"><div class="shape" style="border-radius:${varOf(token, "0")}"></div>${copyName(token)}<span class="desc mono">${value}</span>${token.description === undefined ? "" : `<span class="desc">${esc(token.description)}</span>`}</div>`;
-    };
-
-    // A system with roles shows them by use, and its scale after them; one with only a scale shows that, by use.
-    const hasRoles = radii.some((token) => token.tier === "semantic");
-    const bandTokens = hasRoles ? radii.filter((token) => token.tier === "semantic") : radii;
-    const scaleTokens = hasRoles ? radii.filter((token) => token.tier === "primitive") : [];
-    const banded = BANDS.map((band) => ({
-        band,
-        tokens: bandTokens
-            .filter((token) => band.has(pxOfToken(token)))
-            .sort((x, y) => pxOfToken(x) - pxOfToken(y)),
-    })).filter((entry) => entry.tokens.length > 0);
-    const scaleCards =
-        scaleTokens.length === 0
+    const tile = (token: ResolvedToken) =>
+        `<div class="tile" data-s><div class="shape" style="border-radius:${varOf(token, "0")}"></div>${copyName(token)}<span class="desc">${variants(ctx, (mode) => esc(plain(token.type, valueIn(token, mode))))}</span>${descOf(token)}</div>`;
+    const grid = (title: string, list: ResolvedToken[]) =>
+        list.length === 0
             ? ""
-            : `<div data-group><h4 style="margin-top:22px">Scale</h4><p class="sub" style="margin-bottom:0">The steps: every role above points at one, and the value comes from here.</p><div class="radii">${[
-                  ...scaleTokens,
-              ]
-                  .sort((x, y) => pxOfToken(x) - pxOfToken(y))
-                  .map(card)
-                  .join("")}</div></div>`;
-    const cards =
-        radii.length === 0
-            ? ""
-            : banded.length === 1
-              ? `<div class="radii">${banded[0]!.tokens.map(card).join("")}</div>`
-              : banded
-                    .map(
-                        ({ band, tokens }) =>
-                            `<div data-group><h4 style="margin-top:22px">${band.title}</h4><p class="sub" style="margin-bottom:0">${band.note}</p><div class="radii">${tokens.map(card).join("")}</div></div>`,
-                    )
-                    .join("");
+            : `<div data-group><h4>${title}</h4><div class="tiles">${byPx(ctx, list).map(tile).join("")}</div></div>`;
+    const roles = radii.filter((token) => token.tier === "semantic");
+    const scale = radii.filter((token) => token.tier !== "semantic");
 
-    return {
-        html: `<p class="intro">Corners follow what they round.</p>${cards}${scaleCards}${note()}${moreTokens(ctx, "radii")}`,
-        count: mine.length,
-    };
+    return `<p class="intro">Corners follow what they round: small for marks, more for controls, most for containers.</p>${grid("Roles", roles)}${grid(roles.length > 0 ? "Scale" : "Steps", scale)}${note()}${moreTokens(ctx, "radii")}`;
 }
 
-export function otherSection(ctx: Ctx): Built {
-    const { limit, note } = limiter();
+export function shadowSection(ctx: Ctx): string | undefined {
+    const mine = tokensOf(ctx, "shadows");
+
+    if (mine.length === 0) {
+        return undefined;
+    }
+
+    const { take, note } = limiter(ctx);
+    const shadows = take(
+        mine.filter((token) => token.type === "shadow" && token.tier !== "component"),
+    );
+
+    return `<p class="intro">Shadows lift a surface off the page. The shadow color follows the mode.</p><div class="tiles wide">${shadows
+        .map(
+            (token) =>
+                `<div class="tile lift" data-s style="box-shadow:${varOf(token, "none")}">${copyName(token)}${descOf(token)}<span class="desc">${variants(ctx, (mode) => esc(plain("shadow", valueIn(token, mode))))}</span></div>`,
+        )
+        .join("")}</div>${note()}${moreTokens(ctx, "shadows")}`;
+}
+
+export function otherSection(ctx: Ctx): string | undefined {
     const mine = tokensOf(ctx, "other");
 
     if (mine.length === 0) {
         return undefined;
     }
 
-    const free = mine.filter((token) => token.tier !== "component");
-    const breakpoints = limit(
-        free.filter(
-            (token) =>
-                token.type === "dimension" &&
-                /^(breakpoints?|screens?|bp|media)$/.test(rootOf(token)),
-        ),
-    );
-    const borders = limit(
-        free.filter(
-            (token) =>
-                token.type === "dimension" && /^(border|borders|stroke)$/.test(rootOf(token)),
-        ),
-    );
-    const layers = limit(
-        free.filter(
-            (token) =>
-                token.type === "number" && /^(z|zindex|z-index|layers?)$/.test(rootOf(token)),
-        ),
-    );
-
-    for (const token of [...breakpoints, ...borders, ...layers]) {
+    for (const token of mine) {
         ctx.claimed.add(token);
     }
 
-    const parts: string[] = [];
-
-    if (breakpoints.length > 0) {
-        const max = Math.max(
-            ...breakpoints.map((token) => pxOf(valueIn(token, ctx.modes[0]!)?.value) ?? 0),
-            1,
-        );
-
-        parts.push(
-            `<h3 id="breakpoints">Breakpoints</h3><p class="sub">The widths where the layout changes.</p><div class="spec">${breakpoints
-                .map((token) => {
-                    const px = pxOf(valueIn(token, ctx.modes[0]!)?.value) ?? 0;
-
-                    return rowOf(
-                        ctx,
-                        token,
-                        `<div class="bar" style="width:${Math.max(2, Math.round((px / max) * 100))}%"></div>`,
-                    );
-                })
-                .join("")}</div>`,
-        );
-    }
-
-    if (borders.length > 0) {
-        parts.push(
-            `<h3 id="borders">Borders</h3><div class="spec">${borders
-                .map((token) =>
-                    rowOf(
-                        ctx,
-                        token,
-                        `<div style="border-top:${varOf(token, "1px")} solid var(--dd-accent);max-width:100%"></div>`,
-                    ),
-                )
-                .join("")}</div>`,
-        );
-    }
-
-    if (layers.length > 0) {
-        const sorted = [...layers].sort(
-            (a, b) =>
-                Number(valueIn(b, ctx.modes[0]!)?.value ?? 0) -
-                Number(valueIn(a, ctx.modes[0]!)?.value ?? 0),
-        );
-
-        parts.push(
-            `<h3 id="layers">Layers</h3><p class="sub">Stacking order, top first. Use a layer token instead of a new z-index.</p><div class="layers">${sorted
-                .map(
-                    (token) =>
-                        `<div class="layer" data-q="${esc(token.name.toLowerCase())}">${copyName(token)}<span class="mono">${variants(ctx, (mode) => esc(String(valueIn(token, mode)?.value ?? "")))}</span></div>`,
-                )
-                .join("")}</div>`,
-        );
-    }
-
-    return {
-        html: `<p class="intro">Breakpoints, borders, layers, and the tokens that fit no other section.</p>${parts.join("")}${note()}${moreTokens(ctx, "other")}`,
-        count: mine.length,
-    };
+    return `<p class="intro">Breakpoints, borders, layers, and the tokens that fit no other section.</p>${tokenTable(ctx, mine)}`;
 }

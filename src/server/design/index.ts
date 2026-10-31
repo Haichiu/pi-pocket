@@ -1,5 +1,5 @@
 /** Agent-facing Design tools and workspace export routes. Registered by the Design module. */
-import { Type } from "@earendil-works/pi-ai";
+import { StringEnum, Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { ExtensionWeb, PocketHost } from "../host.ts";
 import { readBundle } from "./bundle.ts";
@@ -10,6 +10,7 @@ import {
     mergeNotJudged,
     modeFor,
     notJudgedText,
+    renderedMode,
     reportOf,
 } from "./lint.ts";
 import {
@@ -27,21 +28,10 @@ import { loadDesignSystem } from "./tokens.ts";
 export { designGuide } from "./guide.ts";
 
 const version = Type.Optional(Type.Integer({ minimum: 1 }));
-const preset = Type.Union([
-    Type.Literal("mobile"),
-    Type.Literal("tablet"),
-    Type.Literal("desktop"),
-]);
-const formatSchema = Type.Union([
-    Type.Literal("png"),
-    Type.Literal("pdf"),
-    Type.Literal("pptx"),
-    Type.Literal("html"),
-]);
+const preset = StringEnum(["mobile", "tablet", "desktop"] as const);
+const formatSchema = StringEnum(["png", "pdf", "pptx", "html"] as const);
 
-/** What the tools read besides the host. Tests give their own. */
-export interface DesignToolDeps {
-    /** The project's design system: `loadDesignSystem` of `tokens.ts`. */
+interface DesignToolDeps {
     loadSystem?: (cwd: string) => DesignSystem | undefined;
 }
 
@@ -65,7 +55,6 @@ type Output = (
     { type: "text"; text: string } | { type: "image"; data: string; mimeType: string }
 )[];
 
-/** One line for a finding: level, rule, where, and the message (which carries the value, the count, and the fix). */
 function findingLine(finding: CheckFinding, views: string, all: number): string {
     const where =
         finding.selector === ""
@@ -76,7 +65,6 @@ function findingLine(finding: CheckFinding, views: string, all: number): string 
     return `- ${finding.level} ${finding.rule} ${where}${views.length > 0 && views.split(", ").length < all ? ` (${views})` : ""}: ${finding.message}`;
 }
 
-/** The compact text of the checks: a summary line, then the worst findings. */
 export function checkText(
     reports: { view: string; report: CheckReport }[],
     system: DesignSystem | undefined,
@@ -143,7 +131,6 @@ export function checkText(
     return lines.join("\n");
 }
 
-/** The text after the screenshots: the checks, then what the console and the network reported. */
 function renderNotes(
     page: Pick<DesignPage, "errors" | "failedRequests">,
     reports: { view: string; report: CheckReport }[],
@@ -273,10 +260,10 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                         system === undefined ? undefined : modeFor(system, colorScheme, args.mode);
                 }
 
-                // A named mode draws in its own scheme.
                 const scheme = picked?.scheme ?? colorScheme;
 
                 return withRender(bundle, host, context.abortSignal, async (page) => {
+                    let checked = picked?.mode;
                     const output: Output = [];
                     const reports: { view: string; report: CheckReport }[] = [];
 
@@ -303,10 +290,13 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                             }
 
                             try {
+                                // The mode the page really shows (a data-theme of its own), as the Check tab does.
+                                checked = await renderedMode(page, system, args.mode, picked?.mode);
+
                                 return await checkPage(page, system, {
                                     viewport: size,
                                     colorScheme: scheme,
-                                    mode: picked?.mode,
+                                    mode: checked,
                                 });
                             } catch (error) {
                                 notes.push(
@@ -338,7 +328,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
                                 view,
                                 report: reportOf(
                                     mergeFindings(found),
-                                    { viewport: size, colorScheme: scheme, mode: picked?.mode },
+                                    { viewport: size, colorScheme: scheme, mode: checked },
                                     found[0]!.summary.elements,
                                     system === undefined,
                                     mergeNotJudged(found),
@@ -359,7 +349,7 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
 
                     output.push({
                         type: "text",
-                        text: renderNotes(page, checks ? reports : [], system, picked?.mode, notes),
+                        text: renderNotes(page, checks ? reports : [], system, checked, notes),
                     });
 
                     return {
@@ -465,7 +455,6 @@ export function designTools(host: PocketHost, deps: DesignToolDeps = {}): ToolRe
     return [preview, exportTool, designSystemTool()];
 }
 
-/** What an export needs of a mode: the color scheme to draw in and the `data-theme`. Nothing when no mode is named. */
 function exportMode(
     loadSystem: (cwd: string) => DesignSystem | undefined,
     cwd: string,
@@ -490,7 +479,6 @@ function exportMode(
     return { colorScheme: picked.scheme, theme: picked.theme };
 }
 
-/** The `slide` of an export request: a slide number from 1, or `all`. */
 function slideOf(value: unknown): number | "all" | undefined {
     if (value === undefined || value === null) {
         return undefined;

@@ -455,11 +455,36 @@ export interface AskField {
      */
     name: string;
     /**
-     * What the card says above the field.
+     * What the card says above the field: one line of up to 80 characters, or 300 for a field with `choices`.
      * @since 0.22.0
      * @experimental
      */
     label: string;
+    /**
+     * A short tag over the field, such as "Database": up to 12 characters.
+     * @since 0.27.0
+     * @experimental
+     */
+    header?: string;
+    /**
+     * 2 to 4 answers to pick, with different labels, shown as buttons: the value is the label chosen. `secret` and
+     * `autocomplete` do not apply to such a field; its `placeholder` is for its `other` text.
+     * @since 0.27.0
+     * @experimental
+     */
+    choices?: AskChoice[];
+    /**
+     * With `choices`: one or more can be chosen, and the value is their labels, one per line.
+     * @since 0.27.0
+     * @experimental
+     */
+    multiple?: boolean;
+    /**
+     * With `choices`: the person can type an answer of their own instead, which is then the value.
+     * @since 0.27.0
+     * @experimental
+     */
+    other?: boolean;
     /**
      * A hidden input, as for a password.
      * @since 0.22.0
@@ -478,6 +503,26 @@ export interface AskField {
      * @experimental
      */
     autocomplete?: string;
+}
+
+/**
+ * An answer to pick on an ask's card (`AskField.choices`).
+ * @since 0.27.0
+ * @experimental
+ */
+export interface AskChoice {
+    /**
+     * One line of up to 60 characters: the field's value when it is chosen.
+     * @since 0.27.0
+     * @experimental
+     */
+    label: string;
+    /**
+     * One line of up to 160 characters, under the label.
+     * @since 0.27.0
+     * @experimental
+     */
+    description?: string;
 }
 
 /**

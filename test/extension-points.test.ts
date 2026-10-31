@@ -6,6 +6,7 @@ import {
     type App,
     cleanUp,
     lastText,
+    loadTools,
     newSession,
     openApp,
     owner,
@@ -269,7 +270,6 @@ export default (host, web) => {
             );
         }
 
-        // At /tall, a page of 3000 pixels, which scrolls; the others fit the viewport.
         if (request.url?.endsWith("tall")) {
             return response.end(`<title>Tall</title><div style="height:3000px">Tall page</div>`);
         }
@@ -514,7 +514,6 @@ test("host.roleOf gives a person's role by id, and nothing for an id that is not
     assert.equal(await ask(viewer.id), "viewer");
     assert.equal(await ask("nobody"), null);
 
-    // It follows core: a person whose role changes, or who is removed, reads as they are now.
     app.config.updateUser(guest.id, { role: "viewer" });
     assert.equal(await ask(guest.id), "viewer");
     app.config.removeUser(guest.id);
@@ -655,6 +654,8 @@ test(
 
 test("a hook can keep Pi's own browser tool from typing into a password field", real, async () => {
     const id = await newSession(app);
+
+    await loadTools(app, id, "browser");
     const { createHandler } = await import("../src/server/http.ts");
     const server = createServer(
         createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} }),
@@ -735,7 +736,6 @@ test("a snapshot says where the page is scrolled, in CSS pixels", real, async ()
     };
 
     try {
-        // A long page: at the top, with more below, and after a scroll down, further down.
         const tall = await scroll("tall");
 
         assert.equal(tall.top.y, 0);
@@ -745,7 +745,6 @@ test("a snapshot says where the page is scrolled, in CSS pixels", real, async ()
         assert.ok(tall.down.y > 0, "scrolled down");
         assert.equal(tall.down.height, tall.top.height);
 
-        // A page that fits the viewport has nothing below, and a scroll down moves nothing.
         const short = await scroll("");
 
         assert.ok(short.top.y + short.top.viewport >= short.top.height, "nothing below");
