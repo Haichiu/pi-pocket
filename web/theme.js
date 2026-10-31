@@ -62,6 +62,11 @@ const DEFAULTS = {
     sidebar: "open",
     /** The open sidebar's width, its borders, the rail, and the list's: a 254px list. */
     sidebarWidth: 312,
+    /**
+     * How sessions are switched: false for the sidebar's list; true for tabs, a strip of the numbered sessions above the
+     * conversation (`session-tabs.js`), which Appearance pairs with the folded sidebar.
+     */
+    sessionTabs: false,
     /** How the session list groups: "priority" (by what needs you), "recent" (by day), or "folder". */
     group: "recent",
     /** Other sessions' live work as peek tiles beside the session (a strip on narrow screens). Off until turned on. */

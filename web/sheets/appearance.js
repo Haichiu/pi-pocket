@@ -680,6 +680,31 @@ export function AppearanceSheet() {
                 <//>`
             }
             <${SettingRow}
+                title="Switch sessions with"
+                detail="Tabs: a strip above the session, one segment for each of the first nine sessions. Choosing Tabs folds the sidebar to its rail, and Sidebar unfolds it"
+            >
+                <div class="segmented">
+                    ${[
+                        [false, "Sidebar"],
+                        [true, "Tabs"],
+                    ].map(
+                        ([value, label]) =>
+                            html`<button
+                                class=${Boolean(p.sessionTabs) === value ? "on" : ""}
+                                aria-pressed=${Boolean(p.sessionTabs) === value}
+                                onClick=${() =>
+                                    Boolean(p.sessionTabs) !== value &&
+                                    setPrefs({
+                                        sessionTabs: value,
+                                        sidebar: value ? "rail" : "open",
+                                    })}
+                            >
+                                ${label}
+                            </button>`,
+                    )}
+                </div>
+            <//>
+            <${SettingRow}
                 title="Sidebar"
                 detail="Folded, it shows numbered sessions like workspaces"
             >
