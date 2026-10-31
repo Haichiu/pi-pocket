@@ -3409,6 +3409,8 @@ export function Transcript() {
         if (keep.current !== null) {
             element.scrollTop = element.scrollHeight - keep.current;
             keep.current = null;
+            // A restore to the very top fires no scroll event: the button back down shows from here.
+            setShowJump(element.scrollHeight - element.clientHeight - element.scrollTop >= 60);
         } else if (stick.current) {
             toEnd(element);
         }
