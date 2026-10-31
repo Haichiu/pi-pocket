@@ -141,6 +141,19 @@ export async function setArchived(ids, archived, { undo = true } = {}) {
             }
         },
     );
+
+    // Archiving leaves repeating schedules running, with their reports in a session nobody looks at: say so.
+    for (const id of done) {
+        const repeating = archived ? results[ids.indexOf(id)].value?.repeating : 0;
+
+        if (repeating > 0) {
+            notify(
+                "info",
+                `“${truncate(titles.get(id) ?? "", 48)}” keeps ${repeating} repeating schedule${repeating === 1 ? "" : "s"} running. ${undoWord()} to see ${repeating === 1 ? "it" : "them"}.`,
+                () => navigate(id, { sheet: { type: "schedules" } }),
+            );
+        }
+    }
 }
 
 /**
