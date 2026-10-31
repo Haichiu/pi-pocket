@@ -17,6 +17,7 @@ import {
     ACCESS_LABELS,
     type AccessMode,
     bindHost,
+    listenHost,
     chooseAccess,
     CloudflareTunnel,
     cloudflaredSource,
@@ -1041,8 +1042,7 @@ async function main(): Promise<void> {
         }
 
         state.mode = mode;
-        // `custom` is `--host`'s own address, and only that turns a mode into `custom`; bindHost knows the rest.
-        state.host = mode === "custom" ? options.host! : bindHost(mode);
+        state.host = listenHost(mode, options.host);
 
         if (mode !== "custom") {
             saveSettings(mode);
