@@ -330,7 +330,7 @@ entryPresentation(kind: string, mode: "open" | "folded" | "hidden"): void;
 entryPresentation(kind: string): "open" | "folded" | "hidden" | undefined;
 ```
 
-Since 0.27.0 · Experimental
+Since 0.28.0 · Experimental
 
 How this browser shows one of this module's inputs (`web.presentEntry` on the server). `kind` is `x.<module>.<name>`. `open` shows the message. `folded` shows one line, which opens to the text: that is also how it shows when this browser has no choice. `hidden` keeps the turn and shows nothing until Find jumps to it. The model still reads the message in full.
 

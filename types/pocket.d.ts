@@ -1294,25 +1294,25 @@ export type PublicPageHandler = (
 /**
  * How a module's own input shows in the transcript, while the module is on. Nothing here is stored. The model still
  * reads the message in full.
- * @since 0.27.0
+ * @since 0.28.0
  * @experimental
  */
 export interface PresentEntry {
     /**
      * The stored kind, `x.<module>.<name>`.
-     * @since 0.27.0
+     * @since 0.28.0
      * @experimental
      */
     kind: string;
     /**
      * The one line the transcript shows.
-     * @since 0.27.0
+     * @since 0.28.0
      * @experimental
      */
     label: string;
     /**
      * Matches the start of a user message only when nobody wrote that message.
-     * @since 0.27.0
+     * @since 0.28.0
      * @experimental
      */
     userPrefix?: string;
@@ -1369,7 +1369,7 @@ export interface Web {
      * Says how an input this module sends shows in the transcript, while the module is on. The model still reads
      * the message in full. `kind` is `x.<module>.<name>`. An optional `userPrefix` matches only a user message
      * nobody wrote.
-     * @since 0.27.0
+     * @since 0.28.0
      * @experimental
      */
     presentEntry(spec: PresentEntry): void;
@@ -2638,14 +2638,14 @@ export interface Pocket {
      * `x.<module>.<name>`. `open` shows the message, `folded` one line, and `hidden` keeps the turn without
      * the text until Find. The same mode again changes nothing. The choice stays in this browser, and a person
      * can change it on any of those rows.
-     * @since 0.27.0
+     * @since 0.28.0
      * @experimental
      */
     entryPresentation(kind: string, mode: "open" | "folded" | "hidden"): void;
     /**
      * This browser's choice for one of this module's inputs, or undefined when there is none yet (the rows are
      * folded then). Set a mode only when there is none, so a person's choice stays theirs.
-     * @since 0.27.0
+     * @since 0.28.0
      * @experimental
      */
     entryPresentation(kind: string): "open" | "folded" | "hidden" | undefined;

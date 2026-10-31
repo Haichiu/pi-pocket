@@ -61,7 +61,7 @@ The host's members do not change while modules reload. A new member comes only a
 - `api`, `module`, `route`, `conversationRoute` (since 0.16.0), `client`, `command`, `send`, `error`, and `onDispose`.
 - `provide`, `use`, `onService`, `settings`, `setting`, and `onSettings` (experimental, since 0.22.0: [Events, services, and settings](../services-settings.md)).
 - `publicPage` and `links` (experimental, since 0.22.0): pages at `/l/<token>` for anyone with a module's link, what a page handler gets (`PublicPageRequest`), and what its answer does ([Public pages](../public-pages.md)).
-- `presentEntry` (experimental, since 0.27.0), with `PresentEntry`: how an input this module sends shows in the transcript. The model still reads that message in full ([Adding to the app](../app.md)).
+- `presentEntry` (experimental, since 0.28.0), with `PresentEntry`: how an input this module sends shows in the transcript. The model still reads that message in full ([Adding to the app](../app.md)).
 - What a route handler gets (`WebRequest`: `method`, `params`, `query`, `body`, `user`, `signal`; since 0.16.0 also request-lifetime `snapshot`, `context`, `commit`), and what its answer does.
 - A conversation-bound request's `conversation` metadata and human `linkedSessions.start` / `list`, with their authenticated-actor, receipt, and admission checks (since 0.16.0).
 - The route paths, the methods, the `access` values (`owner`, `steer`, `view`), and the `X-Pocket` header that every call to a route must have.

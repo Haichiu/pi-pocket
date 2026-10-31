@@ -100,7 +100,7 @@ Adds the command `/name` to the message box, for the people who can run it. The 
 presentEntry(spec: PresentEntry): void;
 ```
 
-Since 0.27.0 · Experimental
+Since 0.28.0 · Experimental
 
 Says how an input this module sends shows in the transcript, while the module is on. The model still reads the message in full. Nothing registered here is stored.
 
@@ -431,7 +431,7 @@ interface PresentEntry {
 }
 ```
 
-Since 0.27.0 · Experimental
+Since 0.28.0 · Experimental
 
 What [`presentEntry`](#presententry) registers. `kind` is the stored kind. `label` is the line the transcript shows. `userPrefix` matches the start of a user message that nobody wrote.
 
