@@ -743,7 +743,8 @@ export function Composer() {
         sent(full);
     };
 
-    const send = async () => {
+    // `other`: Ctrl/⌘+Enter, which sends the other way round (Steer and Queue swap; Interrupt stays).
+    const send = async (other = false) => {
         if (!canSend) {
             return;
         }
@@ -780,7 +781,13 @@ export function Composer() {
             actions.submit(
                 withQuote(store.state.replyQuote, full),
                 attachments,
-                busy ? sendMode : "followUp",
+                busy
+                    ? other === true && sendMode !== "interrupt"
+                        ? sendMode === "steer"
+                            ? "followUp"
+                            : "steer"
+                        : sendMode
+                    : "followUp",
                 inlineFiles && mentionsFiles,
             ),
         );
@@ -1039,9 +1046,15 @@ export function Composer() {
             return;
         }
 
-        if (event.key === "Enter" && !event.shiftKey && !coarse && !event.isComposing) {
+        const chord = (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey;
+
+        if (
+            event.key === "Enter" &&
+            !event.isComposing &&
+            (chord || (!event.shiftKey && !coarse))
+        ) {
             event.preventDefault();
-            send();
+            send(chord);
         }
     };
 
