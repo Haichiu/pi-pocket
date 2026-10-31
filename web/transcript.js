@@ -3,7 +3,7 @@
 import { Component } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { activityOpen } from "./activity-fold.js";
-import { initials, personColor } from "./avatar.js";
+import { avatarSrc, initials, personColor } from "./avatar.js";
 import { routeSliding } from "./back.js";
 import { browserAvailable, setBrowserOpen } from "./browser.js";
 import { describeCall, describersRevision } from "./calls.js";
@@ -468,6 +468,8 @@ function UserEntry({ entry, view, users }) {
               ? "var(--muted)"
               : personColor(authorId);
 
+    const picture = avatarSrc({ id: authorId });
+
     // Who it is from, for themes: you, someone else, a linked session, or no one the app knows (Pi's schedule, the main
     // agent, a watch or a webhook).
     const from =
@@ -508,7 +510,7 @@ function UserEntry({ entry, view, users }) {
                     style=${`--who:${mark}`}
                     aria-hidden="true"
                 >
-                    ${name ? initials(name) : "›"}
+                    ${picture ? html`<img src=${picture} alt="" />` : name ? initials(name) : "›"}
                 </span>
                 ${name && html`<b class="prompt-author" data-part="prompt-author">${name}</b>`}
                 ${entry.at && html`<span class="prompt-time">${clock(entry.at)}</span>`}

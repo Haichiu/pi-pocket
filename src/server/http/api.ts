@@ -20,6 +20,7 @@ import {
     quickTunnelHost,
 } from "../auth.ts";
 import type { User } from "../config.ts";
+import { MAX_AVATAR, readAvatar } from "../avatars.ts";
 import { HttpError } from "../errors.ts";
 import { desktopTheme, wallpaperFile } from "../omarchy.ts";
 import { runningNow } from "../running.ts";
@@ -29,7 +30,14 @@ import { conversationRoutes } from "./conversation-routes.ts";
 import { createEventStreams, keptPart } from "./events.ts";
 import { extensionRoute } from "./extension-routes.ts";
 import { isIconColors, storeIconColors } from "../icon-store.ts";
-import { type ApiRequest, conversationId, type HttpOptions, json, readJson } from "./io.ts";
+import {
+    type ApiRequest,
+    conversationId,
+    type HttpOptions,
+    json,
+    readBody,
+    readJson,
+} from "./io.ts";
 import { pushRoutes } from "./push-routes.ts";
 
 /** This machine's non-internal IPv4 addresses, for invite links other devices on its networks can open. */
@@ -153,7 +161,7 @@ export function createApi(options: HttpOptions, auth: Auth) {
             return json(response, 200, await app.hello(user));
         }
 
-        if (first === "me" && method === "POST") {
+        if (first === "me" && second === undefined && method === "POST") {
             const body = await readJson<{ name?: string }>(request);
             const name = String(body.name ?? "")
                 .replace(/\s+/g, " ")
@@ -167,6 +175,40 @@ export function createApi(options: HttpOptions, auth: Auth) {
             app.rename(user, name);
 
             return json(response, 200, { ok: true });
+        }
+
+        if (first === "me" && second === "avatar" && method === "POST") {
+            app.setAvatar(user, await readBody(request, MAX_AVATAR));
+
+            return json(response, 200, { ok: true });
+        }
+
+        if (first === "me" && second === "avatar" && method === "DELETE") {
+            app.setAvatar(user, undefined);
+
+            return json(response, 200, { ok: true });
+        }
+
+        // A picture of anyone this person may see in the people list.
+        if (first === "avatar" && second !== undefined && method === "GET") {
+            const picture = app.people(user).some((each) => each.id === second)
+                ? readAvatar(second)
+                : undefined;
+
+            if (picture === undefined) {
+                throw new HttpError(404, "No picture");
+            }
+
+            // The address carries the picture's version, so a copy never goes stale.
+            response.writeHead(200, {
+                "content-type": picture.type,
+                "content-length": picture.bytes.length,
+                "cache-control": "private, max-age=31536000, immutable",
+                "x-content-type-options": "nosniff",
+            });
+            response.end(picture.bytes);
+
+            return;
         }
 
         if (first === "folder-favorites" && second === undefined && method === "GET") {

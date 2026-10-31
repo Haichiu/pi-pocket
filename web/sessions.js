@@ -2550,7 +2550,7 @@ function Rail({ foldable = false, folded = false }) {
             aria-label="Your name"
             onClick=${() => openSheet({ type: "name" })}
         >
-            ${me && html`<${Avatar} person=${me} size=${30} />`}
+            ${me && html`<${Avatar} person=${store.state.users.find((each) => each.id === me.id) ?? me} size=${30} />`}
         </button>
     </nav>`;
 }
@@ -2562,6 +2562,7 @@ function Rail({ foldable = false, folded = false }) {
  */
 const RAIL_KEYS = [
     "sessions",
+    "users",
     "server",
     "me",
     "pinned",
