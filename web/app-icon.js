@@ -34,10 +34,6 @@ export function iconSvg(vars) {
 const svgUrl = (svg) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
 /**
- * The home-screen icon's address: the server draws the PNG (`src/server/icon-render.ts`). A phone fetches it when the
- * icon is added, and does not take a `data:` or `blob:` address for it.
- */
-/**
  * A palette color as the server takes it: hex with no `#`, 3 or 6 digits. Its alpha is dropped (an icon is opaque), and a
  * color in another form is the app's own.
  */
@@ -52,6 +48,10 @@ const hex = (vars, name) => {
     return /^(?:[0-9a-f]{3}|[0-9a-f]{6})$/.test(opaque) ? opaque : DEFAULTS[name].replace("#", "");
 };
 
+/**
+ * The home-screen icon's address: the server draws the PNG (`src/server/icon-render.ts`). A phone fetches it when the
+ * icon is added, and does not take a `data:` or `blob:` address for it.
+ */
 const homeIconUrl = (vars) => {
     const color = (name) => hex(vars, name);
     const query = new URLSearchParams({
