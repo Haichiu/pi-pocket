@@ -1548,8 +1548,9 @@ export class BackgroundTasks {
         let start = Math.max(since, Math.max(0, end - window));
 
         // A start the client chose can be inside a hidden value, and the rest of it alone is not replaced: go back to
-        // where that value begins, as `#settled` stops before one.
-        if (start > 0) {
+        // where that value begins, as `#settled` stops before one. Not from the end, where nothing follows: an ended
+        // task's last bytes can look like a value's start, and they were shown already.
+        if (start > 0 && start < end) {
             const before = this.#span(
                 conversationId,
                 item,

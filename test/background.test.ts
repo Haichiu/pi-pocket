@@ -388,6 +388,21 @@ test("a look from a byte inside a hidden value shows none of it", { skip }, asyn
 
             assert.equal(look?.text, "[the key] b\n", `from ${from}`);
         }
+
+        // An ended task's last bytes that only look like a value's start show once, not again from the end.
+        const ends = await app.background.start(id, {
+            command: "printf 'ordinary SEC'",
+            notify: false,
+        });
+
+        await until(
+            async () => (await items(id)).every((each) => each.status !== "running"),
+            "its end",
+        );
+        const look = await app.background.output(id, ends.id);
+
+        assert.equal(look?.text, "ordinary SEC");
+        assert.equal((await app.background.output(id, ends.id, { from: look!.to }))?.text, "");
     } finally {
         remove();
     }
