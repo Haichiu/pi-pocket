@@ -1323,8 +1323,12 @@ export class Pip {
         return busy;
     }
 
-    /** Archive a session, or bring it back. */
-    async archive(pipId: ConversationId, sessionId: number, archived: boolean): Promise<void> {
+    /** Archive a session, or bring it back. Gives how many repeating schedules keep running in it. */
+    async archive(
+        pipId: ConversationId,
+        sessionId: number,
+        archived: boolean,
+    ): Promise<{ repeating: number }> {
         const user = this.#person(pipId);
         const id = this.#session(pipId, user, sessionId);
 
@@ -1333,7 +1337,7 @@ export class Pip {
             this.#requireLooked(pipId, sessionId, "archive");
         }
 
-        await this.#app.commands.updateSession(id, this.#through(user), { archived });
+        return this.#app.commands.updateSession(id, this.#through(user), { archived });
     }
 
     /** The calls waiting for approval in the sessions PiP's person can see. */

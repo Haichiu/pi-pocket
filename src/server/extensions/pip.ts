@@ -401,10 +401,19 @@ export default function createPip(host: PocketHost) {
         execute: async (args, api) => {
             const archived = args.archived !== false;
 
-            await host.pip.archive(api.conversationId, args.session, archived);
+            const { repeating } = await host.pip.archive(
+                api.conversationId,
+                args.session,
+                archived,
+            );
+            // Its repeating schedules still run, with their reports where nobody looks: the person must know.
+            const kept =
+                archived && repeating > 0
+                    ? ` It keeps ${repeating} repeating schedule${repeating === 1 ? "" : "s"} running: tell your person.`
+                    : "";
 
             return reply(
-                `${archived ? "Archived" : "Brought back"} /s/${String(args.session)}.${await now(api, args.session)}`,
+                `${archived ? "Archived" : "Brought back"} /s/${String(args.session)}.${kept}${await now(api, args.session)}`,
             );
         },
     });
