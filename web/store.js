@@ -764,9 +764,12 @@ function keepView(view) {
 
     keptViews.set(id, keptRecord(view));
     unsaved.add(id);
-    // Measured and saved after the switch has drawn: not in the tap's time.
-    clearTimeout(trimming);
-    trimming = setTimeout(settleKept, 500);
+    // Measured and saved after the switch has drawn: not in the tap's time. A switch does not put off one already
+    // planned, so quick switches one after another still trim what is kept.
+    trimming ??= setTimeout(() => {
+        trimming = undefined;
+        settleKept();
+    }, 500);
 }
 
 function settleKept() {
