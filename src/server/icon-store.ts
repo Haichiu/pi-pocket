@@ -1,8 +1,8 @@
 /**
  * The owner's app icon colors (`frame.card.ring1.ring2.pi`, hex), kept in the data folder. A phone fetches the page and
  * the icon from a session of its own that has no cookies, so the cookie of the browser (`http/icon-route.ts`) is not
- * enough there: this is what such a request gets. It is the owner's choice for the whole server; a guest's browser
- * still gets its own colors from its cookie.
+ * enough there: this is what such a request gets. It is one choice for the whole server: the last device of the owner
+ * that changes the look sets it, and a browser with no cookie (a guest's too) gets it. A browser with a cookie gets its own colors.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,23 +16,34 @@ export const isIconColors = (value: unknown): value is string =>
 
 const file = () => join(dataDir(), "app-icon.json");
 
+/** The colors as read from `file()` once; the page, the manifest, and the icon ask for them on every request. */
+let kept: { path: string; colors: string[] | null } | undefined;
+
 export function storedIconColors(): string[] | null {
-    if (!existsSync(file())) {
-        return null;
+    const path = file();
+
+    if (kept?.path === path) {
+        return kept.colors;
     }
 
-    try {
-        const { colors } = JSON.parse(readFileSync(file(), "utf8")) as { colors?: unknown };
+    let colors: string[] | null = null;
 
-        return isIconColors(colors) ? colors.split(".") : null;
-    } catch (error) {
-        console.warn(
-            "Pi Pocket: app-icon.json could not be read; the app's own icon is used.",
-            error,
-        );
+    if (existsSync(path)) {
+        try {
+            const stored = (JSON.parse(readFileSync(path, "utf8")) as { colors?: unknown }).colors;
 
-        return null;
+            colors = isIconColors(stored) ? stored.split(".") : null;
+        } catch (error) {
+            console.warn(
+                "Pi Pocket: app-icon.json could not be read; the app's own icon is used.",
+                error,
+            );
+        }
     }
+
+    kept = { path, colors };
+
+    return colors;
 }
 
 export function storeIconColors(colors: unknown): void {
@@ -42,5 +53,6 @@ export function storeIconColors(colors: unknown): void {
 
     if (storedIconColors()?.join(".") !== colors) {
         writeFileSync(file(), `${JSON.stringify({ colors })}\n`);
+        kept = { path: file(), colors: colors.split(".") };
     }
 }

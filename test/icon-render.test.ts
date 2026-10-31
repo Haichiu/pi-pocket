@@ -175,11 +175,10 @@ test("the manifest takes the icons and colors of the cookie, and is left alone w
         made.icons.map((icon: { sizes: string; purpose?: string }) => [icon.sizes, icon.purpose]),
         [
             ["192x192", undefined],
-            ["512x512", undefined],
-            ["512x512", "maskable"],
+            ["192x192", "maskable"],
         ],
     );
-    assert.match(made.icons[2].src, /pi=b9b9b9.*maskable=1/);
+    assert.match(made.icons[1].src, /pi=b9b9b9.*maskable=1/);
 });
 
 test("the owner's colors serve a request with no cookie, and the cookie still wins", async () => {
@@ -206,4 +205,22 @@ test("the owner's colors serve a request with no cookie, and the cookie still wi
     );
     assert.ok(manifestFor(request(), "{}"), "the manifest too");
     assert.throws(() => storeIconColors("nope"), TypeError, "only colors are stored");
+});
+
+test("the icon route draws no more than 192 pixels, and a size that is not a number is a 400", async () => {
+    const { iconRoute } = await import("../src/server/http/icon-route.ts");
+
+    const get = (query: string) => {
+        let body: Buffer = Buffer.alloc(0);
+        const response = { writeHead() {}, end: (data: Buffer) => (body = data) };
+
+        iconRoute({ method: "GET" } as never, response as never, new URL(`http://x/?${query}`));
+
+        return decode(body).size;
+    };
+
+    assert.equal(get("size=99999"), 192);
+    assert.equal(get("size=99999"), 192, "the second one comes from the cache");
+    assert.throws(() => get("size=abc"), { status: 400 });
+    assert.throws(() => get("size=Infinity"), { status: 400 });
 });

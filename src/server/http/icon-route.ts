@@ -2,7 +2,38 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { HttpError } from "../errors.ts";
 import { storedIconColors } from "../icon-store.ts";
-import { APP_ICON, type IconColors, renderIcon } from "../icon-render.ts";
+import { APP_ICON, type IconColors, MIN_ICON, renderIcon } from "../icon-render.ts";
+
+/** The largest icon the route draws: no sign-in is needed, and the drawing runs on the main thread. */
+const MAX_SIZE = 192;
+const CACHE = 32;
+const drawn = new Map<string, Buffer>();
+
+/** `renderIcon` with the size capped, and the last icons drawn kept (the least recently used goes first). */
+function draw(colors: IconColors, size: number, maskable = false): Buffer | null {
+    const n = Math.min(MAX_SIZE, Math.max(MIN_ICON, Math.round(size)));
+    const key = `${Object.values(colors).join(".").toLowerCase()}/${n}/${maskable}`;
+    const kept = drawn.get(key);
+
+    if (kept !== undefined) {
+        drawn.delete(key);
+        drawn.set(key, kept);
+
+        return kept;
+    }
+
+    const png = renderIcon(colors, n, maskable);
+
+    if (png !== null) {
+        drawn.set(key, png);
+
+        if (drawn.size > CACHE) {
+            drawn.delete(drawn.keys().next().value!);
+        }
+    }
+
+    return png;
+}
 
 export function iconRoute(request: IncomingMessage, response: ServerResponse, url: URL): void {
     if (request.method !== "GET" && request.method !== "HEAD") {
@@ -19,11 +50,13 @@ export function iconRoute(request: IncomingMessage, response: ServerResponse, ur
         }
     }
 
-    const png = renderIcon(
-        colors,
-        Number(url.searchParams.get("size") ?? 180),
-        url.searchParams.get("maskable") === "1",
-    );
+    const size = Number(url.searchParams.get("size") ?? 180);
+
+    if (!Number.isFinite(size)) {
+        throw new HttpError(400, "The size is a number");
+    }
+
+    const png = draw(colors, size, url.searchParams.get("maskable") === "1");
 
     if (png === null) {
         throw new HttpError(400, "Colors are 3 or 6 hex digits");
@@ -55,7 +88,7 @@ export function appleTouchIcon(request: IncomingMessage, response: ServerRespons
     }
 
     const [frame, card, ring1, ring2, pi] = colors as [string, string, string, string, string];
-    const png = renderIcon(
+    const png = draw(
         {
             frame: `#${frame}`,
             card: `#${card}`,
@@ -120,6 +153,6 @@ export function manifestFor(request: IncomingMessage, file: string): string | nu
         ...manifest,
         background_color: `#${colors[0]}`,
         theme_color: `#${colors[0]}`,
-        icons: [icon(192, false), icon(512, false), icon(512, true)],
+        icons: [icon(192, false), icon(192, true)],
     });
 }
