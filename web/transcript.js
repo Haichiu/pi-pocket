@@ -3286,6 +3286,15 @@ export function Transcript() {
     const keep = useRef(store.state.transcriptPlace?.keep ?? null);
     const counted = useRef(0);
     const [showJump, setShowJump] = useState(() => store.state.transcriptPlace !== null);
+    // A session read from the device after the loading screen drew: where the reader was comes with its first view.
+    const placed = useRef(view.conversation != null);
+
+    if (!placed.current && view.conversation != null) {
+        placed.current = true;
+        stick.current = store.state.transcriptPlace === null;
+        keep.current = store.state.transcriptPlace?.keep ?? null;
+    }
+
     // Opened by a route on a phone, the scroller slides in with it: the column does not rise in as well, unless it comes
     // after the slide (a slow connection). Chosen as the column first draws, so a draw after does not start it.
     const entrance = useRef(null);
